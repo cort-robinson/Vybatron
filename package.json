@@ -2,8 +2,10 @@
   "name": "vybertron",
   "version": "1.0.0",
   "description": "",
-  "main": "index.js",
+  "main": "src/index.js",
+  "type": "module",
   "scripts": {
+    "start": "node .",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
@@ -18,9 +20,17 @@
   },
   "homepage": "https://github.com/cort-robinson/Vybertron#readme",
   "dependencies": {
+    "@discord-player/extractor": "^4.5.0",
+    "@discordjs/opus": "^0.9.0",
     "@discordjs/voice": "^0.17.0",
+    "discord-player": "^6.7.0",
+    "discord-player-youtubei": "^1.2.0-beta.3",
     "discord.js": "^14.15.3",
+    "dotenv": "^16.4.5",
     "ffmpeg-static": "^5.2.0",
-    "ytdl-core": "^4.11.5"
+    "mediaplex": "^0.0.9",
+    "youtube-ext": "^1.1.25",
+    "ytdl-core": "^4.11.5",
+    "ytdl-core-discord": "^1.1.0"
   }
 }

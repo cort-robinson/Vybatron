@@ -5,6 +5,7 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+const commands = [];
 const commandMap = new Map();
 const commandsPath = path.join(__dirname, '.');
 const commandFiles = fs.readdirSync(commandsPath).filter(file => file.endsWith('.js') && file !== 'index.js');
@@ -14,7 +15,8 @@ async function loadCommandsData() {
     const commandModule = await import(`./${file}`);
     const { data, execute } = commandModule;
     if (data && execute) {
-      commandMap.set(data.name, execute);
+      commands.push(data.toJSON());
+      commandMap.set(data.name, { execute, data });
     } else {
       console.warn(`Command file ${file} does not export data or execute`);
     }
@@ -32,7 +34,7 @@ export async function loadCommands(client) {
     if (!command) return;
 
     try {
-      await command(interaction);
+      await command.execute(interaction);
     } catch (error) {
       console.error(error);
       await interaction.reply({ content: 'There was an error while executing this command!', ephemeral: true });
@@ -59,11 +61,11 @@ export async function loadCommands(client) {
         options: {
           getString: (name) => {
             const index = command.data.options.findIndex(option => option.name === name);
-            return args[index];
+            return args[index] || null;
           },
           getInteger: (name) => {
             const index = command.data.options.findIndex(option => option.name === name);
-            return parseInt(args[index], 10);
+            return parseInt(args[index], 10) || null;
           },
         },
         reply: (response) => message.reply(response),
@@ -71,7 +73,7 @@ export async function loadCommands(client) {
         channel: message.channel,
       };
 
-      await command(mockInteraction);
+      await command.execute(mockInteraction);
     } catch (error) {
       console.error(error);
       message.reply('There was an error while executing this command.');

@@ -1,8 +1,13 @@
+import { SlashCommandBuilder } from '@discordjs/builders';
 import { player } from '../index.js';
 
-export default function stop(message) {
-  const queue = player.nodes.get(message.guild.id);
-  if (!queue) return message.reply('There is no song playing!');
+export const data = new SlashCommandBuilder()
+  .setName('stop')
+  .setDescription('Stop playing and clear the queue');
+
+export async function execute(interaction) {
+  const queue = player.nodes.get(interaction.guild.id);
+  if (!queue) return interaction.reply('There is no song playing!');
   queue.delete();
-  message.reply('Stopped the music and cleared the queue!');
+  interaction.reply('Stopped the music and cleared the queue!');
 }

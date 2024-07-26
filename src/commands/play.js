@@ -1,19 +1,28 @@
+import { SlashCommandBuilder } from '@discordjs/builders';
 import { player } from '../index.js';
 
-export default async function play(message, args) {
-  const channel = message.member.voice.channel;
-  if (!channel) return message.reply('You need to join a voice channel first!');
-  const query = args.join(' ');
+export const data = new SlashCommandBuilder()
+  .setName('play')
+  .setDescription('Play a song')
+  .addStringOption(option =>
+    option.setName('query')
+      .setDescription('The URL or name of the song')
+      .setRequired(true));
+
+export async function execute(interaction) {
+  const channel = interaction.member.voice.channel;
+  if (!channel) return interaction.reply('You need to join a voice channel first!');
+  const query = interaction.options.getString('query');
 
   try {
     const { track } = await player.play(channel, query, {
       nodeOptions: {
-        metadata: message,
+        metadata: interaction,
       },
     });
 
-    message.reply(`**${track.title}** enqueued!`);
+    await interaction.reply(`**${track.title}** enqueued!`);
   } catch (e) {
-    message.reply(`Something went wrong: ${e.message}`);
+    await interaction.reply(`Something went wrong: ${e.message}`);
   }
 }

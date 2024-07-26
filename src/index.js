@@ -16,10 +16,9 @@ export const client = new Client({
 
 export const player = createPlayer(client);
 
-loadCommands(client);
-
 async function init() {
   await player.extractors.loadDefault();
+  await loadCommands(client);
   client.login(process.env.DISCORD_BOT_TOKEN);
 }
 

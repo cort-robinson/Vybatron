@@ -5,9 +5,7 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-const isProduction = process.env.NODE_ENV === 'production';
-
-const token = isProduction ? process.env.PROD_DISCORD_BOT_TOKEN : process.env.DEV_DISCORD_BOT_TOKEN;
+const token = process.env.DISCORD_BOT_TOKEN;
 
 export const client = new Client({
   intents: [

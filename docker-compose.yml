@@ -1,4 +1,16 @@
 services:
+  # Solves YouTube signature-cipher challenges by running the real player
+  # script; youtube-source's built-in Java extractor can no longer keep up
+  # with YouTube's cipher churn ("must find sig function").
+  yt-cipher:
+    image: ghcr.io/kikkia/yt-cipher:master
+    container_name: vybertron-yt-cipher
+    restart: unless-stopped
+    expose:
+      - "8001"
+    networks:
+      - vybertron
+
   lavalink:
     image: ghcr.io/lavalink-devs/lavalink:4
     container_name: vybertron-lavalink

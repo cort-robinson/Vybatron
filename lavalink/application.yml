@@ -53,6 +53,10 @@ plugins:
     oauth:
       enabled: true
       refreshToken: "${YOUTUBE_REFRESH_TOKEN}"
+    # Delegates signature deciphering to the yt-cipher sidecar (internal
+    # network only, no auth needed).
+    remoteCipher:
+      url: "http://yt-cipher:8001"
   lavasrc:
     providers:
       - 'ytsearch:"%ISRC%"'

@@ -1,15 +1,4 @@
 services:
-  # Serves Spotify web-player tokens via headless Chrome; LavaSrc's built-in
-  # token scraper breaks whenever Spotify changes their web player.
-  spotify-tokener:
-    image: ghcr.io/topi314/spotify-tokener:master
-    container_name: vybertron-spotify-tokener
-    restart: unless-stopped
-    expose:
-      - "8080"
-    networks:
-      - vybertron
-
   lavalink:
     image: ghcr.io/lavalink-devs/lavalink:4
     container_name: vybertron-lavalink

@@ -60,7 +60,6 @@ plugins:
       # clientId/clientSecret would require Premium for newly created apps.
       # Cookie lives ~1 year; refresh it in .env from open.spotify.com devtools.
       spDc: "${SPOTIFY_SP_DC}"
-      customTokenEndpoint: "http://spotify-tokener:8080/api/token"
       countryCode: "US"
       playlistLoadLimit: 6
       albumLoadLimit: 6

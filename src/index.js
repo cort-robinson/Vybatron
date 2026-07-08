@@ -1,29 +1,23 @@
 import { Client, GatewayIntentBits, ActivityType } from 'discord.js';
 import { loadCommands } from './commands/index.js';
-import { createPlayer } from './player.js';
 import { config, assertConfig } from './config.js';
 import { initLavalink } from './lavalink.js';
 
 assertConfig();
 
 export const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildVoiceStates,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent,
-  ],
+  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildVoiceStates],
 });
 
-export const player = createPlayer(client);
+initLavalink(client);
 
 client.once('ready', () => {
   console.log(`Logged in as ${client.user.tag}`);
   client.user.setPresence({
-    activities: [{ name: '/play or !play', type: ActivityType.Listening }],
+    activities: [{ name: '/play', type: ActivityType.Listening }],
     status: 'online',
   });
-  initLavalink(client);
+  client.lavalink.init({ id: client.user.id, username: client.user.username });
 });
 
 process.on('unhandledRejection', (reason) => {
@@ -35,7 +29,6 @@ process.on('uncaughtException', (err) => {
 });
 
 async function init() {
-  await player.extractors.loadDefault();
   await loadCommands(client);
   await client.login(config.token);
 }

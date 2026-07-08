@@ -38,6 +38,14 @@ plugins:
       - ANDROID_VR
       - WEB
       - WEBEMBEDDED
+    # Datacenter IPs (VPS) get "This video requires login" from YouTube.
+    # OAuth with a throwaway Google account fixes it. First boot with an empty
+    # refresh token logs a device-flow code: visit google.com/device, enter it,
+    # then copy the refresh token from the log into .env (YOUTUBE_REFRESH_TOKEN)
+    # so it survives restarts.
+    oauth:
+      enabled: true
+      refreshToken: "${YOUTUBE_REFRESH_TOKEN}"
   lavasrc:
     providers:
       - 'ytsearch:"%ISRC%"'

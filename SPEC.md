@@ -32,6 +32,9 @@ cli: docker compose up -d             → full stack (bot + lavalink)
 cli: npm start                        → bot native (dev; lavalink via compose)
 cli: npm run deploy:commands:guild    → guild register (needs GUILD_ID)
 cli: npm run deploy:commands:global   → global register
+ci: .github/workflows/ci.yml          → PR + main push: npm test, docker build, compose config
+cd: .github/workflows/deploy.yml      → main push, gated on repo var DEPLOY_ENABLED=true: SSH to VPS, git pull, compose up --build
+cd-secrets: VPS_HOST | VPS_USER | VPS_SSH_KEY ! set in repo secrets before enabling
 env: DISCORD_BOT_TOKEN ! set
 env: CLIENT_ID ! set
 env: GUILD_ID ? (guild deploy only)
@@ -74,6 +77,9 @@ T9|x|Dockerfile + docker-compose.yml (bot + lavalink)|ADR-0005
 T10|x|update README: new setup, env table, compose instructions; delete stale YT_COOKIE/prefix docs|§G
 T11|x|smoke test: /play YT link, YTM link, Spotify link, SC link, playlist; /skip /queue /stop|V7,V8
 T12|.|re-verify Spotify links when upstream LavaSrc/spotify-tokener ship token fix (`docker compose pull`, retest REST loadtracks)|B2
+T13|x|CI workflow: npm test + docker build + compose config validate on PR & main|V1-V11,§I.ci
+T14|x|CD workflow: SSH deploy to VPS on main push, dormant until DEPLOY_ENABLED var set|§I.cd
+T15|.|provision VPS (user picks Oracle free / Hetzner), add repo secrets, set DEPLOY_ENABLED=true|T14
 
 ## §B bugs
 

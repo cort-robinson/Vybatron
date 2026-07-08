@@ -85,6 +85,26 @@ npm run deploy:commands:guild
 npm run deploy:commands:global
 ```
 
+## Deploying to a VPS (CI/CD)
+
+CI runs tests + a Docker build on every PR and push to `main`. Merges to `main` auto-deploy to a VPS over SSH once enabled.
+
+One-time VPS setup (any Docker-capable box — Hetzner, DigitalOcean, Oracle free tier):
+
+```bash
+curl -fsSL https://get.docker.com | sh
+git clone https://github.com/cort-robinson/Vybertron && cd Vybertron
+# create .env (see above), then:
+docker compose up -d
+```
+
+Enable auto-deploy in the GitHub repo settings:
+
+1. **Secrets** (Settings → Secrets and variables → Actions → Secrets): `VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY` (private key whose public half is in the VPS `~/.ssh/authorized_keys`).
+2. **Variable**: `DEPLOY_ENABLED` = `true`.
+
+Until `DEPLOY_ENABLED` is set, the deploy workflow stays dormant — CI still runs.
+
 ## Tests
 
 ```bash

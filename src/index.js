@@ -1,11 +1,10 @@
-import { Client, GatewayIntentBits } from 'discord.js';
+import { Client, GatewayIntentBits, ActivityType } from 'discord.js';
 import { loadCommands } from './commands/index.js';
 import { createPlayer } from './player.js';
-import dotenv from 'dotenv';
+import { config, assertConfig } from './config.js';
+import { initLavalink } from './lavalink.js';
 
-dotenv.config();
-
-const token = process.env.DISCORD_BOT_TOKEN;
+assertConfig();
 
 export const client = new Client({
   intents: [
@@ -18,10 +17,27 @@ export const client = new Client({
 
 export const player = createPlayer(client);
 
+client.once('ready', () => {
+  console.log(`Logged in as ${client.user.tag}`);
+  client.user.setPresence({
+    activities: [{ name: '/play or !play', type: ActivityType.Listening }],
+    status: 'online',
+  });
+  initLavalink(client);
+});
+
+process.on('unhandledRejection', (reason) => {
+  console.error('Unhandled Rejection:', reason);
+});
+
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught Exception:', err);
+});
+
 async function init() {
   await player.extractors.loadDefault();
   await loadCommands(client);
-  client.login(token);
+  await client.login(config.token);
 }
 
 init();

@@ -27,7 +27,7 @@ export async function loadCommands(client) {
   await loadCommandsData(); // Ensure commands are loaded before registering
 
   client.on('interactionCreate', async interaction => {
-    if (!interaction.isCommand()) return;
+    if (!interaction.isChatInputCommand()) return;
 
     const command = commandMap.get(interaction.commandName);
 
@@ -60,11 +60,13 @@ export async function loadCommands(client) {
         guild: message.guild,
         options: {
           getString: (name) => {
-            const index = command.data.options.findIndex(option => option.name === name);
+            const optionsDef = command.data?.options ?? [];
+            const index = optionsDef.findIndex(option => option.name === name);
             return args[index] || null;
           },
           getInteger: (name) => {
-            const index = command.data.options.findIndex(option => option.name === name);
+            const optionsDef = command.data?.options ?? [];
+            const index = optionsDef.findIndex(option => option.name === name);
             return parseInt(args[index], 10) || null;
           },
         },

@@ -1,20 +1,14 @@
 import { REST } from '@discordjs/rest';
-import { Routes } from 'discord-api-types/v9';
+import { Routes } from 'discord-api-types/v10';
 import fs from 'fs';
 import path from 'path';
-import { fileURLToPath } from 'url';
-import dotenv from 'dotenv';
+import { fileURLToPath, pathToFileURL } from 'url';
+import { config, assertConfig } from './src/config.js';
 
-dotenv.config();
+assertConfig();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-
-// Determine the environment
-const isProduction = process.env.NODE_ENV === 'production';
-
-const token = isProduction ? process.env.PROD_DISCORD_BOT_TOKEN : process.env.DEV_DISCORD_BOT_TOKEN;
-const clientId = isProduction ? process.env.PROD_CLIENT_ID : process.env.DEV_CLIENT_ID;
 
 const commands = [];
 const commandsPath = path.join(__dirname, 'src', 'commands');
@@ -24,7 +18,7 @@ for (const file of commandFiles) {
   const filePath = path.join(commandsPath, file);
   console.log(`Loading command from file: ${file}`);
   try {
-    const command = await import(filePath);
+    const command = await import(pathToFileURL(filePath).href);
     if ('data' in command && 'execute' in command) {
       commands.push(command.data.toJSON());
       console.log(`Successfully loaded command: ${command.data.name}`);
@@ -36,19 +30,30 @@ for (const file of commandFiles) {
   }
 }
 
-const rest = new REST({ version: '9' }).setToken(token);
+const rest = new REST({ version: '10' }).setToken(config.token);
 
-(async () => {
-  try {
-    console.log(`Started refreshing ${commands.length} application (/) commands.`);
+const registerGlobal = async () => {
+  console.log(`Refreshing ${commands.length} global application (/) commands...`);
+  const data = await rest.put(
+    Routes.applicationCommands(config.clientId),
+    { body: commands }
+  );
+  console.log(`Registered ${data.length} global application (/) commands.`);
+};
 
-    const data = await rest.put(
-      Routes.applicationCommands(clientId),
-      { body: commands },
-    );
+const registerGuild = async () => {
+  if (!config.guildId) throw new Error('GUILD_ID is required for guild registration');
+  console.log(`Refreshing ${commands.length} guild application (/) commands for guild ${config.guildId}...`);
+  const data = await rest.put(
+    Routes.applicationGuildCommands(config.clientId, config.guildId),
+    { body: commands }
+  );
+  console.log(`Registered ${data.length} guild application (/) commands.`);
+};
 
-    console.log(`Successfully reloaded ${data.length} application (/) commands.`);
-  } catch (error) {
-    console.error(`[ERROR] Failed to register commands:`, error);
-  }
-})();
+const mode = process.argv[2];
+if (mode === 'guild') {
+  registerGuild().catch(console.error);
+} else {
+  registerGlobal().catch(console.error);
+}

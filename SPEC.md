@@ -62,7 +62,7 @@ V10: track start → exactly 1 "Now Playing" embed; ⊥ track-end messages; ⊥ 
 
 id|status|task|cites
 T1|x|purge deps: drop discord-player stack, vulkava, ytdl*, play-dl, puppeteer, opus/ffmpeg, node-wit; keep discord.js, dotenv, lavalink-client|V7,ADR-0001
-T2|.|delete src/player.js, scripts/get-yt-cookie.mjs, YT_COOKIE config|ADR-0001
+T2|x|delete src/player.js, scripts/get-yt-cookie.mjs, YT_COOKIE config|ADR-0001
 T3|.|rewrite src/lavalink.js: LavalinkManager, sendRawData wiring, trackStart announce, idle timer|V5,V9,V10,ADR-0002
 T4|.|src/config.js: add LAVALINK_*, SPOTIFY_*; drop ytCookie|V2
 T5|.|rewrite all 11 commands on lavalink-client player/queue|V3,V4,V7

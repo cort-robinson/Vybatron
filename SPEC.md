@@ -66,7 +66,7 @@ T2|x|delete src/player.js, scripts/get-yt-cookie.mjs, YT_COOKIE config|ADR-0001
 T3|x|rewrite src/lavalink.js: LavalinkManager, sendRawData wiring, trackStart announce, idle timer|V5,V9,V10,ADR-0002
 T4|x|src/config.js: add LAVALINK_*, SPOTIFY_*; drop ytCookie|V2
 T5|.|rewrite all 11 commands on lavalink-client player/queue|V3,V4,V7
-T6|.|voice-channel guard helper + apply to control commands|V8
+T6|x|voice-channel guard helper + apply to control commands|V8
 T7|.|delete prefix shim + messageCreate handler; trim intents|ADR-0003
 T8|.|lavalink/application.yml: youtube-source + LavaSrc plugins, Spotify creds via env|ADR-0004
 T9|.|Dockerfile + docker-compose.yml (bot + lavalink)|ADR-0005

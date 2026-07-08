@@ -4,8 +4,12 @@ server:
 
 lavalink:
   plugins:
-    - dependency: "dev.lavalink.youtube:youtube-plugin:1.18.1"
-      repository: "https://maven.lavalink.dev/releases"
+    # Snapshot pin: 1.18.1 release can't extract the sig function from
+    # YouTube's current player script ("Must find sig function"). Return to a
+    # release pin when one ships. Jar existence verified per SPEC V11.
+    - dependency: "dev.lavalink.youtube:youtube-plugin:33d100ba10c9fb9242a150d1bac70ab5826335d5"
+      repository: "https://maven.lavalink.dev/snapshots"
+      snapshot: true
     # Snapshot pin: 4.8.3 release has a broken Spotify anonymous-token scraper
     # ("No secret array found in script"). Move back to a release pin once one
     # ships with the fix. Jar existence verified per SPEC V11.

@@ -10,11 +10,15 @@ export const config = {
   token: process.env.DISCORD_BOT_TOKEN,
   clientId: process.env.CLIENT_ID,
   guildId: process.env.GUILD_ID || null,
+  lavalink: {
+    host: process.env.LAVALINK_HOST || 'localhost',
+    port: Number(process.env.LAVALINK_PORT || 2333),
+    password: process.env.LAVALINK_PASSWORD,
+  },
 };
 
-export function assertConfig() {
-  if (!config.token) throw new Error('Missing DISCORD_BOT_TOKEN in environment');
-  if (!config.clientId) throw new Error('Missing CLIENT_ID in environment');
+export function assertConfig(cfg = config) {
+  if (!cfg.token) throw new Error('Missing DISCORD_BOT_TOKEN in environment');
+  if (!cfg.clientId) throw new Error('Missing CLIENT_ID in environment');
+  if (!cfg.lavalink?.password) throw new Error('Missing LAVALINK_PASSWORD in environment');
 }
-
-

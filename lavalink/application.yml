@@ -6,8 +6,12 @@ lavalink:
   plugins:
     - dependency: "dev.lavalink.youtube:youtube-plugin:1.18.1"
       repository: "https://maven.lavalink.dev/releases"
-    - dependency: "com.github.topi314.lavasrc:lavasrc-plugin:4.8.3"
-      repository: "https://maven.lavalink.dev/releases"
+    # Snapshot pin: 4.8.3 release has a broken Spotify anonymous-token scraper
+    # ("No secret array found in script"). Move back to a release pin once one
+    # ships with the fix. Jar existence verified per SPEC V11.
+    - dependency: "com.github.topi314.lavasrc:lavasrc-plugin:20d6b0b"
+      repository: "https://maven.lavalink.dev/snapshots"
+      snapshot: true
   server:
     password: "${LAVALINK_SERVER_PASSWORD}"
     sources:
@@ -51,8 +55,11 @@ plugins:
       ytdlp: false
       jiosaavn: false
     spotify:
-      clientId: "${SPOTIFY_CLIENT_ID}"
-      clientSecret: "${SPOTIFY_CLIENT_SECRET}"
+      # Anonymous token: resolves Spotify links (tracks/albums/playlists) without
+      # API credentials. Text search (spsearch:) would require clientId/clientSecret,
+      # which Spotify now gates behind Premium for new apps.
+      preferAnonymousToken: true
+      customTokenEndpoint: "http://spotify-tokener:8080/api/token"
       countryCode: "US"
       playlistLoadLimit: 6
       albumLoadLimit: 6

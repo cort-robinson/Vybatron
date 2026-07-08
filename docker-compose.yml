@@ -1,4 +1,15 @@
 services:
+  # Fetches Spotify anonymous tokens via headless Chrome; LavaSrc's built-in
+  # scraper breaks whenever Spotify changes their web player.
+  spotify-tokener:
+    image: ghcr.io/topi314/spotify-tokener:master
+    container_name: vybertron-spotify-tokener
+    restart: unless-stopped
+    expose:
+      - "8080"
+    networks:
+      - vybertron
+
   lavalink:
     image: ghcr.io/lavalink-devs/lavalink:4
     container_name: vybertron-lavalink
@@ -6,8 +17,6 @@ services:
     environment:
       - _JAVA_OPTIONS=-Xmx512M
       - LAVALINK_SERVER_PASSWORD=${LAVALINK_PASSWORD}
-      - SPOTIFY_CLIENT_ID=${SPOTIFY_CLIENT_ID}
-      - SPOTIFY_CLIENT_SECRET=${SPOTIFY_CLIENT_SECRET}
     volumes:
       - ./lavalink/application.yml:/opt/Lavalink/application.yml:ro
     expose:

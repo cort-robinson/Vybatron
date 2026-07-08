@@ -1,13 +1,15 @@
-import { SlashCommandBuilder } from '@discordjs/builders';
-import { player } from '../index.js';
+import { SlashCommandBuilder } from 'discord.js';
+import { requireControl } from '../utils/guards.js';
+import { successEmbed } from '../utils/embeds.js';
 
 export const data = new SlashCommandBuilder()
   .setName('stop')
-  .setDescription('Stop playing and clear the queue');
+  .setDescription('Stop playback, clear the queue, and disconnect');
 
 export async function execute(interaction) {
-  const queue = player.nodes.get(interaction.guild.id);
-  if (!queue) return interaction.reply('There is no song playing!');
-  queue.delete();
-  interaction.reply('Stopped the music and cleared the queue!');
+  const player = await requireControl(interaction);
+  if (!player) return;
+
+  await interaction.reply({ embeds: [successEmbed('Stopped', 'Queue cleared. Goodbye!')] });
+  await player.destroy();
 }

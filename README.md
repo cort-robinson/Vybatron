@@ -1,92 +1,119 @@
 # Vybertron
 
-Vybertron is a Discord bot designed to bring good vibes to your server by streaming music from various platforms. Inspired by the home world of the Transformers, Vybertron transforms your server into a musical haven.
+Vybertron is a Discord music bot that brings good vibes to your server. Inspired by the home world of the Transformers, Vybertron transforms your server into a musical haven.
+
+Powered by [Lavalink v4](https://lavalink.dev/) with [discord.js](https://discord.js.org/) and [lavalink-client](https://github.com/tomato6966/lavalink-client).
 
 ## Features
 
-- Play songs from YouTube
-- Add songs to the queue
-- Skip songs
-- View the current queue
-- Stop the music and clear the queue
-- Adjust the volume
+- Plays YouTube and YouTube Music links, searches, and playlists (via the [youtube-source](https://github.com/lavalink-devs/youtube-source) plugin)
+- Spotify track/album/playlist links, mirrored to YouTube (via [LavaSrc](https://github.com/topi314/LavaSrc))
+- SoundCloud playback
+- Queue management: `/playnext`, `/skip`, `/skipto`, `/stop`, `/shuffle`
+- Playback controls: `/pause`, `/resume`, `/volume`, `/nowplaying`
+- Control commands require you to be in the bot's voice channel
+- Auto-disconnects after 5 minutes idle or when the voice channel empties
 
-## Getting Started
+## Commands
 
-These instructions will help you set up and run Vybertron on your local machine for development and testing purposes.
+| Command | Description |
+|---|---|
+| `/play <query>` | Play a song/playlist (URL or search) |
+| `/playnext <query>` | Add a song to the front of the queue |
+| `/queue` | Show the current queue |
+| `/skip` | Skip the current track |
+| `/skipto <index>` | Jump to a queue position |
+| `/stop` | Clear queue and disconnect |
+| `/volume <0-100>` | Set volume |
+| `/nowplaying` | Show current track |
+| `/pause` / `/resume` | Pause / resume |
+| `/shuffle` | Shuffle the queue |
 
-### Prerequisites
+## Setup
 
-- Node.js v16.6.0 or higher
-- A Discord bot token (you can create one on the [Discord Developer Portal](https://discord.com/developers/applications))
-- An .env file with the following variables:
-  ```
-  DISCORD_BOT_TOKEN=your-discord-bot-token
-  ```
+### 1. Discord application
 
-### Installation
+1. Create an application at the [Discord Developer Portal](https://discord.com/developers/applications).
+2. Bot tab → copy the bot token (`DISCORD_BOT_TOKEN`).
+3. General Information → copy the Application ID (`CLIENT_ID`).
+4. OAuth2 → URL Generator: scopes `bot` + `applications.commands`; permissions `Send Messages`, `Embed Links`, `Connect`, `Speak`. Invite the bot with the generated URL.
 
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/yourusername/vybertron.git
-   cd vybertron
-   ```
+No privileged intents are required.
 
-2. Install the dependencies:
-   ```bash
-   npm install
-   ```
+### 2. Spotify credentials (optional, for Spotify links)
 
-3. Create a `.env` file in the root directory and add your Discord bot token:
-   ```env
-   DISCORD_BOT_TOKEN=your-discord-bot-token
-   ```
+Create a free app at [developer.spotify.com](https://developer.spotify.com/dashboard) and copy its client ID and secret.
 
-### Running the Bot
+### 3. Environment
 
-To start the bot, run:
+Create `.env` at the repo root:
+
+```env
+DISCORD_BOT_TOKEN=your-bot-token
+CLIENT_ID=your-app-client-id
+LAVALINK_PASSWORD=pick-a-strong-password
+# Optional: instant command registration in one dev server
+GUILD_ID=your-dev-guild-id
+# Optional: Spotify link support
+SPOTIFY_CLIENT_ID=...
+SPOTIFY_CLIENT_SECRET=...
+```
+
+### 4. Run
+
+**Everything in Docker** (recommended, works identically on a VPS):
+
 ```bash
+docker compose up -d --build
+```
+
+**Dev mode** (bot native for fast iteration, Lavalink in Docker):
+
+```bash
+docker compose up -d lavalink
+npm install
 npm start
 ```
 
-### Commands
+### 5. Register slash commands
 
-The bot supports the following commands:
+```bash
+# Dev: instant, one guild (needs GUILD_ID)
+npm run deploy:commands:guild
 
-- `!play <song>`: Plays a song or adds it to the queue.
-- `!playnext <song>`: Plays a song next, before other queued songs.
-- `!skip`: Skips the current song.
-- `!skipto <position>`: Skips to a specific position in the queue.
-- `!stop`: Stops the music and clears the queue.
-- `!queue`: Displays the current queue.
-- `!volume <level>`: Adjusts the volume (0-100).
+# Prod: global (propagation can take up to 1 hour)
+npm run deploy:commands:global
+```
 
-## Project Structure
+## Tests
+
+```bash
+npm test
+```
+
+## Project structure
 
 ```
 .
 ├── src
-│   ├── commands
-│   │   ├── index.js
-│   │   ├── play.js
-│   │   ├── playnext.js
-│   │   ├── queue.js
-│   │   ├── skip.js
-│   │   ├── skipto.js
-│   │   ├── stop.js
-│   │   └── volume.js
-│   ├── index.js
-│   ├── player.js
-├── deploy-commands.js
-├── package.json
-├── .env
+│   ├── commands/          # one module per slash command ({ data, execute })
+│   ├── utils/             # embeds, voice-channel guards
+│   ├── config.js          # env config + startup assertions
+│   ├── lavalink.js        # LavalinkManager wiring, announce + idle logic
+│   └── index.js           # client bootstrap
+├── lavalink/application.yml   # Lavalink server + plugin config
+├── docker-compose.yml     # bot + lavalink services
+├── deploy-commands.js     # slash command registration
+└── docs/                  # ADRs and glossary
 ```
+
+Design decisions are recorded in [docs/adr](docs/adr); domain terms in [docs/GLOSSARY.md](docs/GLOSSARY.md). The living spec is [SPEC.md](SPEC.md).
+
+## Security notes
+
+- Never commit `.env` or your bot token; regenerate the token immediately if it leaks.
+- The Lavalink port is not published to the host; it is only reachable on the compose network. If you expose it, use a strong `LAVALINK_PASSWORD`.
 
 ## License
 
-This project is licensed under the MIT License.
-
-## Acknowledgements
-
-- [discord.js](https://discord.js.org/)
-- [discord-player](https://discord-player.js.org/)
+MIT

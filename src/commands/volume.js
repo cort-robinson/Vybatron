@@ -1,21 +1,24 @@
-import { SlashCommandBuilder } from '@discordjs/builders';
-import { player } from '../index.js';
+import { SlashCommandBuilder } from 'discord.js';
+import { requireControl } from '../utils/guards.js';
+import { successEmbed } from '../utils/embeds.js';
 
 export const data = new SlashCommandBuilder()
   .setName('volume')
-  .setDescription('Set the volume level')
-  .addIntegerOption(option =>
-    option.setName('level')
-      .setDescription('Volume level between 0 and 100')
-      .setRequired(true));
+  .setDescription('Set playback volume')
+  .addIntegerOption((option) =>
+    option
+      .setName('level')
+      .setDescription('Volume 0-100')
+      .setMinValue(0)
+      .setMaxValue(100)
+      .setRequired(true)
+  );
 
 export async function execute(interaction) {
-  const volume = interaction.options.getInteger('level');
-  if (isNaN(volume) || volume < 0 || volume > 100) {
-    return interaction.reply('Please provide a valid volume level between 0 and 100.');
-  }
-  const queue = player.nodes.get(interaction.guild.id);
-  if (!queue) return interaction.reply('There is no song playing!');
-  queue.node.setVolume(volume);
-  interaction.reply(`Volume set to ${volume}%`);
+  const player = await requireControl(interaction);
+  if (!player) return;
+
+  const level = interaction.options.getInteger('level');
+  await player.setVolume(level);
+  return interaction.reply({ embeds: [successEmbed('Volume', `Set to **${level}**`)] });
 }

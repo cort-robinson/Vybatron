@@ -105,6 +105,14 @@ Enable auto-deploy in the GitHub repo settings:
 
 Until `DEPLOY_ENABLED` is set, the deploy workflow stays dormant — CI still runs.
 
+### YouTube on a VPS ("This video requires login")
+
+YouTube blocks anonymous playback from datacenter IPs. One-time fix with a **throwaway** Google account:
+
+1. Start the stack; watch `docker logs -f vybertron-lavalink` for an OAuth prompt with a `google.com/device` code.
+2. Open [google.com/device](https://google.com/device), sign in with the throwaway account, enter the code.
+3. The log then prints a refresh token — add it to `.env` as `YOUTUBE_REFRESH_TOKEN=...` and `docker compose up -d --force-recreate lavalink`.
+
 ## Tests
 
 ```bash

@@ -11,7 +11,7 @@ export const client = new Client({
 
 initLavalink(client);
 
-client.once('ready', () => {
+client.once('clientReady', () => {
   console.log(`Logged in as ${client.user.tag}`);
   client.user.setPresence({
     activities: [{ name: '/play', type: ActivityType.Listening }],

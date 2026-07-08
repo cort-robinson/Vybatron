@@ -10,7 +10,6 @@ services:
       - SPOTIFY_CLIENT_SECRET=${SPOTIFY_CLIENT_SECRET}
     volumes:
       - ./lavalink/application.yml:/opt/Lavalink/application.yml:ro
-      - lavalink-plugins:/opt/Lavalink/plugins
     expose:
       - "2333"
     networks:
@@ -38,9 +37,6 @@ services:
       - LAVALINK_PASSWORD=${LAVALINK_PASSWORD}
     networks:
       - vybertron
-
-volumes:
-  lavalink-plugins:
 
 networks:
   vybertron:

@@ -57,6 +57,12 @@ plugins:
     # network only, no auth needed).
     remoteCipher:
       url: "http://yt-cipher:8001"
+    # Proof-of-origin token for WEB/WEBEMBEDDED clients; generate on the VPS:
+    #   docker run --rm quay.io/invidious/youtube-trusted-session-generator
+    # then put po_token/visitor_data into .env. Regenerate if streams 403 again.
+    pot:
+      token: "${POT_TOKEN}"
+      visitorData: "${POT_VISITOR_DATA}"
   lavasrc:
     providers:
       - 'ytsearch:"%ISRC%"'

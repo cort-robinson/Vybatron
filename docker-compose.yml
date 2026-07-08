@@ -20,6 +20,8 @@ services:
       - LAVALINK_SERVER_PASSWORD=${LAVALINK_PASSWORD}
       - SPOTIFY_SP_DC=${SPOTIFY_SP_DC}
       - YOUTUBE_REFRESH_TOKEN=${YOUTUBE_REFRESH_TOKEN}
+      - POT_TOKEN=${POT_TOKEN}
+      - POT_VISITOR_DATA=${POT_VISITOR_DATA}
     volumes:
       - ./lavalink/application.yml:/opt/Lavalink/application.yml:ro
     expose:

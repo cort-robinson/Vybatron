@@ -55,10 +55,11 @@ plugins:
       ytdlp: false
       jiosaavn: false
     spotify:
-      # Anonymous token: resolves Spotify links (tracks/albums/playlists) without
-      # API credentials. Text search (spsearch:) would require clientId/clientSecret,
-      # which Spotify now gates behind Premium for new apps.
-      preferAnonymousToken: true
+      # Account token via sp_dc browser cookie (free account works). Anonymous
+      # tokens are aggressively rate-limited by Spotify since 2025; API
+      # clientId/clientSecret would require Premium for newly created apps.
+      # Cookie lives ~1 year; refresh it in .env from open.spotify.com devtools.
+      spDc: "${SPOTIFY_SP_DC}"
       customTokenEndpoint: "http://spotify-tokener:8080/api/token"
       countryCode: "US"
       playlistLoadLimit: 6

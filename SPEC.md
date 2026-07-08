@@ -73,8 +73,10 @@ T8|x|lavalink/application.yml: youtube-source + LavaSrc plugins, Spotify creds v
 T9|x|Dockerfile + docker-compose.yml (bot + lavalink)|ADR-0005
 T10|x|update README: new setup, env table, compose instructions; delete stale YT_COOKIE/prefix docs|§G
 T11|x|smoke test: /play YT link, YTM link, Spotify link, SC link, playlist; /skip /queue /stop|V7,V8
+T12|.|re-verify Spotify links when upstream LavaSrc/spotify-tokener ship token fix (`docker compose pull`, retest REST loadtracks)|B2
 
 ## §B bugs
 
 id|date|cause|fix
 B1|2026-07-08|pinned youtube-plugin 2.1.4 from doc snippet, version ∉ maven repo, Lavalink boot `FileNotFoundException`|V11
+B2|2026-07-08|Spotify anonymous-token ecosystem broken upstream (scraper "No secret array found", tokener CDP -32000, 429 throttle); spDc lyrics-only, ⊥ track lookup|T12 wait upstream

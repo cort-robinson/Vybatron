@@ -1,56 +1,56 @@
-import { SlashCommandBuilder } from '@discordjs/builders';
-import { player } from '../index.js';
-import { useLavalink } from '../lavalink.js';
+import { SlashCommandBuilder } from 'discord.js';
+import { requireUserVoice } from '../utils/guards.js';
 import { successEmbed, errorEmbed } from '../utils/embeds.js';
-import ytdl from 'ytdl-core';
-import ytdlDiscord from 'ytdl-core-discord';
 
 export const data = new SlashCommandBuilder()
   .setName('play')
-  .setDescription('Play a song')
-  .addStringOption(option =>
-    option.setName('query')
-      .setDescription('The URL or name of the song')
-      .setRequired(true));
+  .setDescription('Play a song or playlist (YouTube, YouTube Music, Spotify, SoundCloud)')
+  .addStringOption((option) =>
+    option.setName('query').setDescription('URL or search terms').setRequired(true)
+  );
 
 export async function execute(interaction) {
-  const channel = interaction.member.voice.channel;
-  if (!channel) return interaction.reply('You need to join a voice channel first!');
+  const channel = await requireUserVoice(interaction);
+  if (!channel) return;
   const query = interaction.options.getString('query');
 
-  try {
-    const lavalink = useLavalink();
-    const member = interaction.member;
-    const guild = interaction.guild;
-    const textChannelId = interaction.channel.id;
-    const voiceChannelId = channel.id;
+  await interaction.deferReply();
 
-    let playerLL = lavalink.players.get(guild.id);
-    if (!playerLL) {
-      playerLL = lavalink.createPlayer({
-        guildId: guild.id,
-        voiceChannelId,
-        textChannelId,
-        selfDeaf: true,
-      });
-      await playerLL.connect();
-    } else if (playerLL.voiceChannelId !== voiceChannelId) {
-      playerLL.setVoiceChannel(voiceChannelId);
-      await playerLL.connect();
-    }
+  const lavalink = interaction.client.lavalink;
+  const player =
+    lavalink.getPlayer(interaction.guildId) ??
+    lavalink.createPlayer({
+      guildId: interaction.guildId,
+      voiceChannelId: channel.id,
+      textChannelId: interaction.channelId,
+      selfDeaf: true,
+      volume: 100,
+    });
 
-    const result = await lavalink.search(query, { requester: interaction.user });
-    if (!result || !result.tracks?.length) {
-      return interaction.reply({ embeds: [errorEmbed('No results found.')] });
-    }
-    const track = result.tracks[0];
-    playerLL.queue.add(track);
-    if (!playerLL.playing && !playerLL.paused) {
-      await playerLL.play();
-    }
+  if (!player.connected) await player.connect();
 
-    await interaction.reply({ embeds: [successEmbed('Enqueued', `**${track.title}**`)] });
-  } catch (e) {
-    await interaction.reply({ embeds: [errorEmbed(e.message || 'Something went wrong.')] });
+  const result = await player.search({ query }, interaction.user);
+  if (!result?.tracks?.length) {
+    return interaction.editReply({ embeds: [errorEmbed('No results found.')] });
   }
+
+  if (result.loadType === 'playlist') {
+    player.queue.add(result.tracks);
+    await interaction.editReply({
+      embeds: [
+        successEmbed(
+          'Playlist Enqueued',
+          `**${result.playlist?.name || 'Playlist'}** — ${result.tracks.length} tracks`
+        ),
+      ],
+    });
+  } else {
+    const track = result.tracks[0];
+    player.queue.add(track);
+    await interaction.editReply({
+      embeds: [successEmbed('Enqueued', `**${track.info.title}**`)],
+    });
+  }
+
+  if (!player.playing && !player.paused) await player.play();
 }

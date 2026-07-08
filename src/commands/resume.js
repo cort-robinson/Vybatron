@@ -1,17 +1,18 @@
-import { SlashCommandBuilder } from '@discordjs/builders';
-import { player } from '../index.js';
+import { SlashCommandBuilder } from 'discord.js';
+import { requireControl } from '../utils/guards.js';
+import { successEmbed, errorEmbed } from '../utils/embeds.js';
 
 export const data = new SlashCommandBuilder()
   .setName('resume')
-  .setDescription('Resume the current track');
+  .setDescription('Resume playback');
 
 export async function execute(interaction) {
-  const queue = player.nodes.get(interaction.guild.id);
-  if (!queue || !queue.node.isPaused()) {
-    return interaction.reply({ content: 'Playback is not paused.', ephemeral: true });
+  const player = await requireControl(interaction);
+  if (!player) return;
+
+  if (!player.paused) {
+    return interaction.reply({ embeds: [errorEmbed('Not paused.')], ephemeral: true });
   }
-  queue.node.setPaused(false);
-  return interaction.reply('Resumed playback.');
+  await player.resume();
+  return interaction.reply({ embeds: [successEmbed('Resumed', 'Back to the music!')] });
 }
-
-

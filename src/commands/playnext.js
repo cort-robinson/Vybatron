@@ -1,61 +1,44 @@
-import { SlashCommandBuilder } from '@discordjs/builders';
-import { useQueue, useMainPlayer } from 'discord-player';
+import { SlashCommandBuilder } from 'discord.js';
+import { requireUserVoice } from '../utils/guards.js';
 import { successEmbed, errorEmbed } from '../utils/embeds.js';
-import ytdl from 'ytdl-core';
-import ytdlDiscord from 'ytdl-core-discord';
 
 export const data = new SlashCommandBuilder()
   .setName('playnext')
-  .setDescription('Play a song next')
-  .addStringOption(option =>
-    option.setName('query')
-      .setDescription('The URL or name of the song')
-      .setRequired(true));
+  .setDescription('Add a song to the front of the queue')
+  .addStringOption((option) =>
+    option.setName('query').setDescription('URL or search terms').setRequired(true)
+  );
 
 export async function execute(interaction) {
-  const channel = interaction.member.voice.channel;
-  if (!channel) return interaction.reply('You need to join a voice channel first!');
+  const channel = await requireUserVoice(interaction);
+  if (!channel) return;
   const query = interaction.options.getString('query');
 
-  try {
-    const player = useMainPlayer();
-    const queue = useQueue(interaction.guild.id);
+  await interaction.deferReply();
 
-    const searchResult = await player.search(query, {
-      requestedBy: interaction.user,
+  const lavalink = interaction.client.lavalink;
+  const player =
+    lavalink.getPlayer(interaction.guildId) ??
+    lavalink.createPlayer({
+      guildId: interaction.guildId,
+      voiceChannelId: channel.id,
+      textChannelId: interaction.channelId,
+      selfDeaf: true,
+      volume: 100,
     });
 
-    if (!searchResult || !searchResult.tracks.length) {
-      return interaction.reply({ embeds: [errorEmbed('No results found.')] });
-    }
+  if (!player.connected) await player.connect();
 
-    const track = searchResult.tracks[0];
-
-    if (queue) {
-      queue.insertTrack(track, 0);
-      interaction.reply({ embeds: [successEmbed('Play Next', `**${track.title}** will play next.`)] });
-    } else {
-      await player.play(channel, track.url, {
-        nodeOptions: {
-          metadata: interaction,
-          onBeforeCreateStream: async (t) => {
-            const url = t.url;
-            const isYouTube = url && (/youtu\.be\//i.test(url) || /youtube\.com/i.test(url) || ytdl.validateURL(url));
-            if (!isYouTube) return null;
-            try {
-              return await ytdlDiscord(url, { highWaterMark: 1 << 25, quality: 'highestaudio' });
-            } catch {
-              try {
-                return ytdl(url, { filter: 'audioonly', quality: 'highestaudio', highWaterMark: 1 << 25 });
-              } catch {
-                return null;
-              }
-            }
-          },
-        },
-      });
-    }
-  } catch (e) {
-    interaction.reply({ embeds: [errorEmbed(e.message || 'Something went wrong.')] });
+  const result = await player.search({ query }, interaction.user);
+  if (!result?.tracks?.length) {
+    return interaction.editReply({ embeds: [errorEmbed('No results found.')] });
   }
+
+  const track = result.tracks[0];
+  await player.queue.splice(0, 0, track);
+  await interaction.editReply({
+    embeds: [successEmbed('Playing Next', `**${track.info.title}**`)],
+  });
+
+  if (!player.playing && !player.paused) await player.play();
 }

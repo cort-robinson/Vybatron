@@ -28,8 +28,14 @@ jobs:
           script: |
             set -euo pipefail
             cd ~/Vybertron
+            OLD_HEAD=$(git rev-parse HEAD)
             git fetch origin main
             git reset --hard origin/main
             docker compose pull
             docker compose up -d --build
+            # Bind-mounted configs don't change the compose hash; force a
+            # restart when Lavalink config changed so the new file is read.
+            if ! git diff --quiet "$OLD_HEAD" HEAD -- lavalink/; then
+              docker compose up -d --force-recreate lavalink
+            fi
             docker image prune -f

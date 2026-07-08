@@ -34,9 +34,9 @@ plugins:
     allowDirectVideoIds: true
     allowDirectPlaylistIds: true
     clients:
-      # TVHTML5EMBEDDED is the OAuth-compatible client; must come first so
-      # authenticated requests are attempted before anonymous fallbacks.
-      - TVHTML5EMBEDDED
+      # TV is the only OAuth-capable client in youtube-source 1.18.x; it handles
+      # authenticated playback while the others provide search/metadata.
+      - TV
       - MUSIC
       - ANDROID_VR
       - WEB

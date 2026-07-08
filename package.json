@@ -1,12 +1,14 @@
 {
   "name": "vybertron",
-  "version": "1.0.0",
-  "description": "",
+  "version": "2.0.0",
+  "description": "Discord music bot powered by Lavalink",
   "main": "src/index.js",
   "type": "module",
   "scripts": {
     "start": "node src/index.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "deploy:commands:guild": "node deploy-commands.js guild",
+    "deploy:commands:global": "node deploy-commands.js",
+    "test": "node --test tests/"
   },
   "repository": {
     "type": "git",
@@ -14,27 +16,17 @@
   },
   "keywords": [],
   "author": "",
-  "license": "ISC",
+  "license": "MIT",
   "bugs": {
     "url": "https://github.com/cort-robinson/Vybertron/issues"
   },
   "homepage": "https://github.com/cort-robinson/Vybertron#readme",
   "dependencies": {
-    "@discord-player/extractor": "^4.5.0",
-    "@discordjs/builders": "^1.8.2",
-    "@discordjs/opus": "^0.9.0",
-    "@discordjs/rest": "^2.3.0",
-    "@discordjs/voice": "^0.17.0",
-    "discord-api-types": "^0.37.93",
-    "discord-player": "^6.7.0",
-    "discord-player-youtubei": "^1.2.4",
     "discord.js": "^14.15.3",
     "dotenv": "^16.4.5",
-    "ffmpeg-static": "^5.2.0",
-    "mediaplex": "^0.0.9",
-    "node-wit": "^6.6.0",
-    "youtube-ext": "^1.1.25",
-    "ytdl-core": "^4.11.5",
-    "ytdl-core-discord": "^1.1.0"
+    "lavalink-client": "^2.4.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
   }
 }

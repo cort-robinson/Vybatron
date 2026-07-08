@@ -69,7 +69,7 @@ T5|x|rewrite all 11 commands on lavalink-client player/queue|V3,V4,V7
 T6|x|voice-channel guard helper + apply to control commands|V8
 T7|x|delete prefix shim + messageCreate handler; trim intents|ADR-0003
 T8|x|lavalink/application.yml: youtube-source + LavaSrc plugins, Spotify creds via env|ADR-0004
-T9|.|Dockerfile + docker-compose.yml (bot + lavalink)|ADR-0005
+T9|x|Dockerfile + docker-compose.yml (bot + lavalink)|ADR-0005
 T10|.|update README: new setup, env table, compose instructions; delete stale YT_COOKIE/prefix docs|§G
 T11|.|smoke test: /play YT link, YTM link, Spotify link, SC link, playlist; /skip /queue /stop|V7,V8
 

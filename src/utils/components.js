@@ -7,6 +7,8 @@ import {
 } from './messages.js';
 import {
   end,
+  getControllerRecord,
+  getMessageLink,
   refresh,
 } from './player-controller.js';
 import { safeText, trackIdentity } from './presentation.js';
@@ -20,7 +22,34 @@ async function rejectEndedSession(interaction) {
   return interaction.reply(ephemeralText('This playback session has ended. Add something with /play.'));
 }
 
+function isEphemeralMessage(message) {
+  if (typeof message?.flags?.has === 'function') {
+    return message.flags.has(MessageFlags.Ephemeral);
+  }
+  const flags = Number(message?.flags?.bitfield ?? message?.flags ?? 0);
+  return (flags & MessageFlags.Ephemeral) === MessageFlags.Ephemeral;
+}
+
+async function rejectOrphanedController(interaction) {
+  await disableStaleComponents(interaction);
+  const link = getMessageLink(interaction.guildId);
+  const guidance = link
+    ? ` Open player: ${link}`
+    : ' Start a new session with /play.';
+  return interaction.reply(ephemeralText(
+    `This controller is no longer active.${guidance}`
+  ));
+}
+
 async function handlePlayerComponent(interaction, action) {
+  const messageId = interaction.message?.id;
+  if (messageId && !isEphemeralMessage(interaction.message)) {
+    const record = getControllerRecord(interaction.guildId);
+    if (record?.messageId !== messageId) {
+      return rejectOrphanedController(interaction);
+    }
+  }
+
   const player = interaction.client.lavalink?.getPlayer(interaction.guildId);
   if (!player) return rejectEndedSession(interaction);
 

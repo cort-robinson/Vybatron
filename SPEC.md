@@ -62,6 +62,7 @@ V9: queue empty | voice channel humanless → 5 min idle timer → disconnect + 
 V10: track start → exactly 1 "Now Playing" embed; ⊥ track-end messages; ⊥ autoplay
 V11: ∀ plugin version pinned in lavalink/application.yml ! exist on maven.lavalink.dev (verify maven-metadata.xml before pin)
 V12: ∀ rendered Discord message → non-link component `custom_id` values unique across all action rows
+V13: ∀ guild playback session → concurrent controller writes create ≤1 active public message; older controller IDs cannot control it
 
 ## §T tasks
 
@@ -88,3 +89,4 @@ id|date|cause|fix
 B1|2026-07-08|pinned youtube-plugin 2.1.4 from doc snippet, version ∉ maven repo, Lavalink boot `FileNotFoundException`|V11
 B2|2026-07-08|Spotify anonymous-token ecosystem broken upstream (scraper "No secret array found", tokener CDP -32000, 429 throttle); spDc lyrics-only, ⊥ track lookup|T12 wait upstream
 B3|2026-07-16|single-page queue clamped Previous and Next to page 0, producing duplicate component custom IDs rejected by Discord|V12
+B4|2026-07-16|first track event and command refresh raced while controller message ID was unset, sending two public controllers|V13

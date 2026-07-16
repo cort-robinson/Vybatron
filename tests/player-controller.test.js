@@ -60,6 +60,17 @@ test('controller sends once, edits thereafter, and links to its origin', async (
   assert.equal(getMessageLink('guild'), 'https://discord.com/channels/guild/channel/message-1');
 });
 
+test('concurrent first-track writes create one controller', async () => {
+  const f = fixture();
+  const p = player('concurrent');
+  const create = createOrUpdate(f.client, p);
+  const update = refresh(f.client, p);
+  await Promise.all([create, update]);
+  assert.equal(f.sends, 1);
+  assert.equal(f.edits, 1);
+  assert.equal(getControllerRecord('concurrent').messageId, 'message-1');
+});
+
 test('a deleted controller is replaced once and the registry is updated', async () => {
   const f = fixture();
   const p = player('deleted');

@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { handleMessageComponent } from '../src/utils/components.js';
+import { createOrUpdate, resetControllers } from '../src/utils/player-controller.js';
 import { trackIdentity } from '../src/utils/presentation.js';
 
 function track(index) {
@@ -60,6 +61,8 @@ function interaction(customId, currentPlayer, { voice = 'voice', values = [] } =
   return result;
 }
 
+test.afterEach(resetControllers);
+
 test('controller toggle rechecks voice authorization', async () => {
   const p = player();
   const wrongVoice = interaction('player:v1:toggle', p, { voice: 'other' });
@@ -116,6 +119,29 @@ test('stale player controls disable themselves and explain the ended session', a
   assert.deepEqual(stale.calls.map(([name]) => name), ['message.edit', 'reply']);
   assert.deepEqual(stale.calls[0][1].components, []);
   assert.match(stale.calls[1][1].content, /session has ended/i);
+});
+
+test('an orphaned public controller cannot control the active session', async () => {
+  const p = player();
+  const controllerClient = {
+    channels: {
+      cache: new Map([['text', { send: async () => ({ id: 'active-controller' }) }]]),
+    },
+  };
+  await createOrUpdate(controllerClient, p);
+
+  const stale = interaction('player:v1:toggle', p);
+  stale.message.id = 'orphaned-controller';
+  await handleMessageComponent(stale);
+
+  assert.equal(p.pauseCalls, 0);
+  assert.deepEqual(stale.calls.map(([name]) => name), ['message.edit', 'reply']);
+  assert.match(stale.calls[1][1].content, /no longer active/i);
+
+  const active = interaction('player:v1:toggle', p);
+  active.message.id = 'active-controller';
+  await handleMessageComponent(active);
+  assert.equal(p.pauseCalls, 1);
 });
 
 test('queue jumps reject stale identities and accept a current selection', async () => {

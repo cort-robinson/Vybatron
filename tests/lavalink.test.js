@@ -5,7 +5,12 @@ import {
   clearIdleTimer,
   handleTrackStart,
   handleQueueEnd,
+  handleTrackFailure,
 } from '../src/lavalink.js';
+import {
+  getControllerRecord,
+  resetControllers,
+} from '../src/utils/player-controller.js';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -14,6 +19,11 @@ function mockPlayer(guildId = 'g1') {
   return {
     guildId,
     textChannelId: 'c1',
+    voiceChannelId: 'v1',
+    paused: false,
+    position: 0,
+    volume: 100,
+    queue: { current: track, tracks: [] },
     destroy: () => {
       destroyed += 1;
       return Promise.resolve();
@@ -30,18 +40,36 @@ function mockClient(channel) {
 
 function mockChannel(sendImpl) {
   let sends = 0;
+  let edits = 0;
+  const messages = new Map();
   return {
-    send: (...args) => {
+    messages: {
+      fetch: (id) => Promise.resolve(messages.get(id) || null),
+    },
+    send: async (...args) => {
       sends += 1;
-      return sendImpl ? sendImpl(...args) : Promise.resolve();
+      if (sendImpl) return sendImpl(...args);
+      const message = {
+        id: `m${sends}`,
+        edit: async () => { edits += 1; return message; },
+      };
+      messages.set(message.id, message);
+      return message;
     },
     get sends() {
       return sends;
+    },
+    get edits() {
+      return edits;
     },
   };
 }
 
 const track = { info: { title: 'Song', uri: 'https://youtu.be/x', artworkUrl: null } };
+
+test.afterEach(() => {
+  resetControllers();
+});
 
 test('V9: idle timer destroys player after timeout', async () => {
   const player = mockPlayer('idle-1');
@@ -73,27 +101,40 @@ test('V9: queueEnd starts idle timer (cancellable)', () => {
   assert.equal(player.destroyed, 0);
 });
 
-test('V10: trackStart sends exactly one embed', () => {
+test('V10: first trackStart sends once and later starts edit the controller', async () => {
   const channel = mockChannel();
   const client = mockClient(channel);
-  handleTrackStart(client, mockPlayer('a1'), track);
+  const player = mockPlayer('a1');
+  await handleTrackStart(client, player, track);
   assert.equal(channel.sends, 1);
+
+  const nextTrack = { info: { title: 'Next', uri: 'https://youtu.be/y' } };
+  player.queue.current = nextTrack;
+  await handleTrackStart(client, player, nextTrack);
+  assert.equal(channel.sends, 1);
+  assert.equal(channel.edits, 1);
 });
 
 test('V10: trackStart cancels pending idle destroy', async () => {
   const player = mockPlayer('a2');
   startIdleTimer(player, 15);
-  handleTrackStart(mockClient(mockChannel()), player, track);
+  await handleTrackStart(mockClient(mockChannel()), player, track);
   await sleep(50);
   assert.equal(player.destroyed, 0);
 });
 
-test('V5: trackStart with missing channel does not throw', () => {
-  assert.doesNotThrow(() => handleTrackStart(mockClient(null), mockPlayer('a3'), track));
+test('V5: trackStart with missing channel resolves safely', async () => {
+  await assert.doesNotReject(handleTrackStart(mockClient(null), mockPlayer('a3'), track));
 });
 
 test('V5: failed send does not throw or reject unhandled', async () => {
   const channel = mockChannel(() => Promise.reject(new Error('boom')));
-  assert.doesNotThrow(() => handleTrackStart(mockClient(channel), mockPlayer('a4'), track));
-  await sleep(10);
+  await assert.doesNotReject(handleTrackStart(mockClient(channel), mockPlayer('a4'), track));
+});
+
+test('track failures are carried into the controller record', async () => {
+  const player = mockPlayer('a5');
+  await handleTrackStart(mockClient(mockChannel()), player, track);
+  handleTrackFailure(player, { info: { title: 'Broken track' } });
+  assert.match(getControllerRecord('a5').notice, /Couldn.*play Broken track; skipped/);
 });

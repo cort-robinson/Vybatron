@@ -1,6 +1,7 @@
 import { SlashCommandBuilder } from 'discord.js';
 import { requireControl } from '../utils/guards.js';
-import { successEmbed, errorEmbed } from '../utils/embeds.js';
+import { ephemeralText } from '../utils/messages.js';
+import { refresh, withControllerLink } from '../utils/player-controller.js';
 
 export const data = new SlashCommandBuilder()
   .setName('shuffle')
@@ -11,13 +12,13 @@ export async function execute(interaction) {
   if (!player) return;
 
   if (player.queue.tracks.length < 2) {
-    return interaction.reply({
-      embeds: [errorEmbed('Need at least 2 queued tracks to shuffle.')],
-      ephemeral: true,
-    });
+    return interaction.reply(ephemeralText('Add at least two queued tracks before shuffling.'));
   }
   await player.queue.shuffle();
-  return interaction.reply({
-    embeds: [successEmbed('Shuffled', `${player.queue.tracks.length} tracks randomized.`)],
-  });
+  await refresh(interaction.client, player);
+  return interaction.reply(ephemeralText(withControllerLink(
+    `Shuffled ${player.queue.tracks.length} queued tracks.`,
+    interaction,
+    player
+  )));
 }

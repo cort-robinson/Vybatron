@@ -1,6 +1,8 @@
 import { SlashCommandBuilder } from 'discord.js';
 import { requireControl } from '../utils/guards.js';
-import { successEmbed, errorEmbed } from '../utils/embeds.js';
+import { ephemeralText } from '../utils/messages.js';
+import { withControllerLink } from '../utils/player-controller.js';
+import { safeText } from '../utils/presentation.js';
 
 export const data = new SlashCommandBuilder()
   .setName('skipto')
@@ -19,15 +21,16 @@ export async function execute(interaction) {
 
   const index = interaction.options.getInteger('index');
   if (index < 1 || index > player.queue.tracks.length) {
-    return interaction.reply({
-      embeds: [errorEmbed(`Index must be between 1 and ${player.queue.tracks.length}.`)],
-      ephemeral: true,
-    });
+    return interaction.reply(ephemeralText(
+      `Choose a queue position between 1 and ${player.queue.tracks.length}.`
+    ));
   }
 
   const target = player.queue.tracks[index - 1];
   await player.skip(index);
-  return interaction.reply({
-    embeds: [successEmbed('Skipped To', `**${target.info.title}**`)],
-  });
+  return interaction.reply(ephemeralText(withControllerLink(
+    `Jumped to **${safeText(target.info.title, { maxLength: 140 })}**.`,
+    interaction,
+    player
+  )));
 }

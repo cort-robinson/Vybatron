@@ -1,6 +1,8 @@
 import { SlashCommandBuilder } from 'discord.js';
 import { requireControl } from '../utils/guards.js';
-import { successEmbed, errorEmbed } from '../utils/embeds.js';
+import { ephemeralText } from '../utils/messages.js';
+import { withControllerLink } from '../utils/player-controller.js';
+import { safeText } from '../utils/presentation.js';
 
 export const data = new SlashCommandBuilder()
   .setName('skip')
@@ -12,7 +14,7 @@ export async function execute(interaction) {
 
   const skipped = player.queue.current;
   if (!skipped) {
-    return interaction.reply({ embeds: [errorEmbed('Nothing is playing.')], ephemeral: true });
+    return interaction.reply(ephemeralText('Nothing is playing. Add something with /play.'));
   }
 
   if (player.queue.tracks.length > 0) {
@@ -20,7 +22,10 @@ export async function execute(interaction) {
   } else {
     await player.stopPlaying(true, false);
   }
-  return interaction.reply({
-    embeds: [successEmbed('Skipped', `**${skipped.info.title}**`)],
-  });
+  const suffix = player.queue.tracks.length === 0 ? ' The queue is now empty.' : '';
+  return interaction.reply(ephemeralText(withControllerLink(
+    `Skipped **${safeText(skipped.info.title, { maxLength: 140 })}**.${suffix}`,
+    interaction,
+    player
+  )));
 }

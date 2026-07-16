@@ -1,0 +1,44 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {
+  formatDuration,
+  isUrl,
+  plainText,
+  safeText,
+  safeUrl,
+  trackIdentity,
+} from '../src/utils/presentation.js';
+
+test('presentation text strips controls and collapses whitespace', () => {
+  assert.equal(plainText('  hello\u0000\n\t world  '), 'hello world');
+});
+
+test('presentation text escapes Markdown, neutralizes mentions, and truncates Unicode safely', () => {
+  const value = safeText('**@everyone** 😀😀😀', { maxLength: 14 });
+  assert.ok(value.includes('@\u200b'));
+  assert.ok(value.includes('\\*'));
+  assert.ok(Array.from(value).length <= 14);
+  assert.doesNotMatch(value, /[\u0000-\u001f\u007f-\u009f]/);
+});
+
+test('URL validation permits only HTTP(S)', () => {
+  assert.equal(safeUrl('javascript:alert(1)'), null);
+  assert.equal(safeUrl('ftp://example.com/file'), null);
+  assert.equal(safeUrl('not a url'), null);
+  assert.equal(safeUrl('https://example.com/a').startsWith('https://'), true);
+  assert.equal(isUrl('http://example.com'), true);
+  assert.equal(isUrl('search words'), false);
+});
+
+test('duration and track hashes are stable', () => {
+  assert.equal(formatDuration(65_000), '1:05');
+  assert.equal(formatDuration(3_665_000), '1:01:05');
+  assert.equal(formatDuration(0, true), 'Live');
+  const first = { info: { sourceName: 'youtube', identifier: 'abc', uri: 'https://example.com/a' } };
+  const same = { info: { ...first.info } };
+  const renamed = { info: { ...first.info, title: 'Renamed metadata' } };
+  const other = { info: { ...first.info, identifier: 'def' } };
+  assert.equal(trackIdentity(first), trackIdentity(same));
+  assert.notEqual(trackIdentity(first), trackIdentity(renamed));
+  assert.notEqual(trackIdentity(first), trackIdentity(other));
+});

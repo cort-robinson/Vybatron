@@ -19,3 +19,14 @@ test('V1: every command file exports data and execute with matching name', async
     assert.doesNotThrow(() => mod.data.toJSON(), `${file} data.toJSON() failed`);
   }
 });
+
+test('/play and /playnext query options enable bounded autocomplete', async () => {
+  for (const name of ['play', 'playnext']) {
+    const mod = await import(pathToFileURL(path.join(commandsDir, `${name}.js`)).href);
+    const json = mod.data.toJSON();
+    const query = json.options.find((option) => option.name === 'query');
+    assert.equal(query.autocomplete, true);
+    assert.equal(query.max_length, 200);
+    assert.equal(typeof mod.autocomplete, 'function');
+  }
+});

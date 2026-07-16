@@ -1,29 +1,26 @@
 import { EmbedBuilder } from 'discord.js';
+import { COLORS } from './messages.js';
+import { safeText } from './presentation.js';
 
-const THEME_COLOR = 0x00ffd5; // Vybertron teal
-
+// Retained as a compatibility surface for SPEC §I. New interaction UI uses messages.js.
 export function successEmbed(title, description) {
   return new EmbedBuilder()
-    .setColor(THEME_COLOR)
-    .setTitle(title)
-    .setDescription(description || '')
-    .setTimestamp();
+    .setColor(COLORS.brand)
+    .setTitle(safeText(title, { maxLength: 256 }))
+    .setDescription(safeText(description || '', { fallback: '', maxLength: 4096 }));
 }
 
 export function errorEmbed(message) {
   return new EmbedBuilder()
-    .setColor(0xff3860)
+    .setColor(COLORS.error)
     .setTitle('Error')
-    .setDescription(message)
-    .setTimestamp();
+    .setDescription(safeText(message, { maxLength: 4096 }));
 }
 
 export function infoEmbed(title, description) {
   return new EmbedBuilder()
-    .setColor(0x7289da)
-    .setTitle(title)
-    .setDescription(description || '')
-    .setTimestamp();
+    .setColor(COLORS.info)
+    .setTitle(safeText(title, { maxLength: 256 }))
+    .setDescription(safeText(description || '', { fallback: '', maxLength: 4096 }));
 }
-
 

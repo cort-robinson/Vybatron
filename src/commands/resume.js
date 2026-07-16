@@ -1,6 +1,7 @@
 import { SlashCommandBuilder } from 'discord.js';
 import { requireControl } from '../utils/guards.js';
-import { successEmbed, errorEmbed } from '../utils/embeds.js';
+import { ephemeralText } from '../utils/messages.js';
+import { refresh, withControllerLink } from '../utils/player-controller.js';
 
 export const data = new SlashCommandBuilder()
   .setName('resume')
@@ -11,8 +12,13 @@ export async function execute(interaction) {
   if (!player) return;
 
   if (!player.paused) {
-    return interaction.reply({ embeds: [errorEmbed('Not paused.')], ephemeral: true });
+    return interaction.reply(ephemeralText(
+      withControllerLink('Playback is already running.', interaction, player)
+    ));
   }
   await player.resume();
-  return interaction.reply({ embeds: [successEmbed('Resumed', 'Back to the music!')] });
+  await refresh(interaction.client, player);
+  return interaction.reply(ephemeralText(
+    withControllerLink('Playback resumed.', interaction, player)
+  ));
 }

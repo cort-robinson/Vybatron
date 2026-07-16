@@ -1,6 +1,7 @@
 import { SlashCommandBuilder } from 'discord.js';
 import { requireControl } from '../utils/guards.js';
-import { successEmbed } from '../utils/embeds.js';
+import { ephemeralText } from '../utils/messages.js';
+import { refresh, withControllerLink } from '../utils/player-controller.js';
 
 export const data = new SlashCommandBuilder()
   .setName('volume')
@@ -20,5 +21,10 @@ export async function execute(interaction) {
 
   const level = interaction.options.getInteger('level');
   await player.setVolume(level);
-  return interaction.reply({ embeds: [successEmbed('Volume', `Set to **${level}**`)] });
+  await refresh(interaction.client, player);
+  return interaction.reply(ephemeralText(withControllerLink(
+    level === 0 ? 'Muted.' : `Volume set to ${level}%.`,
+    interaction,
+    player
+  )));
 }

@@ -1,0 +1,74 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {
+  getTrackChoices,
+  resetAutocompleteCache,
+} from '../src/utils/autocomplete.js';
+
+function interaction(query, search) {
+  return {
+    options: { getFocused: () => query },
+    user: { id: 'u1' },
+    client: {
+      lavalink: {
+        nodeManager: { leastUsedNodes: () => search ? [{ search }] : [] },
+        createPlayer: () => { throw new Error('autocomplete must not create a player'); },
+      },
+    },
+  };
+}
+
+function tracks(count) {
+  return Array.from({ length: count }, (_, index) => ({
+    info: {
+      title: `Title ${index}`,
+      author: `Artist ${index}`,
+      uri: `https://example.com/${index}`,
+    },
+  }));
+}
+
+test.beforeEach(resetAutocompleteCache);
+
+test('autocomplete bypasses short queries and URLs', async () => {
+  let searches = 0;
+  const search = async () => { searches += 1; return { tracks: tracks(2) }; };
+  assert.deepEqual(await getTrackChoices(interaction('a', search)), []);
+  assert.deepEqual(await getTrackChoices(interaction('😀', search)), []);
+  assert.deepEqual(await getTrackChoices(interaction('https://example.com/a', search)), []);
+  assert.equal(searches, 0);
+});
+
+test('autocomplete limits results and caches normalized queries', async () => {
+  let searches = 0;
+  const search = async ({ query, source }) => {
+    searches += 1;
+    assert.equal(source, 'ytsearch');
+    assert.equal(query.toLowerCase(), 'daft punk');
+    return { tracks: tracks(12) };
+  };
+  const first = await getTrackChoices(interaction('Daft Punk', search));
+  const second = await getTrackChoices(interaction('daft punk', search));
+  assert.equal(first.length, 8);
+  assert.deepEqual(second, first);
+  assert.equal(searches, 1);
+});
+
+test('autocomplete fails closed when nodes or search are unavailable', async () => {
+  assert.deepEqual(await getTrackChoices(interaction('query', null)), []);
+  assert.deepEqual(await getTrackChoices(interaction('failure', async () => { throw new Error('offline'); })), []);
+  assert.deepEqual(
+    await getTrackChoices(interaction('timeout', () => new Promise(() => {})), { timeoutMs: 5 }),
+    []
+  );
+});
+
+test('autocomplete cache evicts its least-recently-used entry at 100 queries', async () => {
+  let searches = 0;
+  const search = async () => { searches += 1; return { tracks: tracks(1) }; };
+  for (let index = 0; index <= 100; index += 1) {
+    await getTrackChoices(interaction(`query ${index}`, search));
+  }
+  await getTrackChoices(interaction('query 0', search));
+  assert.equal(searches, 102);
+});

@@ -101,9 +101,13 @@ test('view queue and pagination are available without the control guard', async 
   assert.equal(view.calls[0][0], 'reply');
   assert.equal(view.calls[0][1].embeds[0].data.title, 'Queue');
 
-  const page = interaction('queue:v1:page:1', p, { voice: null });
+  const page = interaction('queue:v1:page:1:next', p, { voice: null });
   await handleMessageComponent(page);
   assert.equal(page.calls[0][0], 'update');
+
+  const legacyPage = interaction('queue:v1:page:0', p, { voice: null });
+  await handleMessageComponent(legacyPage);
+  assert.equal(legacyPage.calls[0][0], 'update');
 });
 
 test('stale player controls disable themselves and explain the ended session', async () => {

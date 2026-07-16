@@ -191,12 +191,12 @@ export function buildQueuePayload(player, requestedPage = 0) {
   const maxPage = Math.max(0, Math.ceil(total / QUEUE_PAGE_SIZE) - 1);
   const navigation = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
-      .setCustomId(`queue:v1:page:${Math.max(0, page - 1)}`)
+      .setCustomId(`queue:v1:page:${Math.max(0, page - 1)}:previous`)
       .setLabel('Previous')
       .setStyle(ButtonStyle.Secondary)
       .setDisabled(page === 0),
     new ButtonBuilder()
-      .setCustomId(`queue:v1:page:${Math.min(maxPage, page + 1)}`)
+      .setCustomId(`queue:v1:page:${Math.min(maxPage, page + 1)}:next`)
       .setLabel('Next')
       .setStyle(ButtonStyle.Secondary)
       .setDisabled(page >= maxPage),

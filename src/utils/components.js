@@ -115,7 +115,7 @@ export async function handleMessageComponent(interaction) {
   const playerMatch = /^player:v1:(toggle|skip|queue|stop)$/.exec(customId);
   if (playerMatch) return handlePlayerComponent(interaction, playerMatch[1]);
 
-  const pageMatch = /^queue:v1:(?:page|refresh):(\d+)$/.exec(customId);
+  const pageMatch = /^queue:v1:(?:page|refresh):(\d+)(?::(?:previous|next))?$/.exec(customId);
   if (pageMatch && interaction.isButton()) {
     return handleQueueNavigation(interaction, Number.parseInt(pageMatch[1], 10));
   }

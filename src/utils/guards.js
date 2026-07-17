@@ -10,9 +10,21 @@ async function reject(interaction, message) {
 }
 
 // V3: user must be in a voice channel.
-export async function requireUserVoice(interaction) {
+export async function requireUserVoice(interaction, { checkBotAccess = false } = {}) {
   const channel = interaction.member?.voice?.channel;
   if (!channel) return reject(interaction, 'Join a voice channel, then try again.');
+  if (checkBotAccess && channel.joinable === false) {
+    return reject(
+      interaction,
+      'Vybertron can’t join that voice channel. Check its View Channel and Connect permissions, and make sure the channel isn’t full.'
+    );
+  }
+  if (checkBotAccess && channel.speakable === false) {
+    return reject(
+      interaction,
+      'Vybertron can’t play audio in that voice channel. Grant it the Speak permission, then try again.'
+    );
+  }
   return channel;
 }
 

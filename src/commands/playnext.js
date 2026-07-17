@@ -4,6 +4,7 @@ import { autocompleteTracks } from '../utils/autocomplete.js';
 import { textPayload } from '../utils/messages.js';
 import { refresh, withControllerLink } from '../utils/player-controller.js';
 import { safeText } from '../utils/presentation.js';
+import { searchFailureMessage } from '../utils/search.js';
 
 export const data = new SlashCommandBuilder()
   .setName('playnext')
@@ -20,7 +21,7 @@ export const data = new SlashCommandBuilder()
 export const autocomplete = autocompleteTracks;
 
 export async function execute(interaction) {
-  const channel = await requireUserVoice(interaction);
+  const channel = await requireUserVoice(interaction, { checkBotAccess: true });
   if (!channel) return;
   const query = interaction.options.getString('query');
 
@@ -41,9 +42,7 @@ export async function execute(interaction) {
 
   const result = await player.search({ query }, interaction.user);
   if (!result?.tracks?.length) {
-    return interaction.editReply(textPayload(
-      `No matches for “${safeText(query, { maxLength: 120 })}”. Try a title and artist, or paste a supported link.`
-    ));
+    return interaction.editReply(textPayload(searchFailureMessage(result, query)));
   }
 
   const track = result.tracks[0];

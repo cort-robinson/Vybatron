@@ -44,11 +44,19 @@ test('player payload uses semantic status, timestamp, and native controls', () =
   assert.equal(json.author.name, 'Now Playing');
   assert.equal(json.timestamp, '2023-11-14T22:13:20.000Z');
   assert.match(json.description, /Ends <t:\d+:R>/);
-  assert.match(json.description, /Loop off/);
+  assert.match(json.description, /Up next/);
+  assert.match(json.description, /Track 1/);
+  assert.match(json.footer.text, /Volume 80%/);
   assert.equal(playing.components.length, 2);
-  assert.equal(playing.components[0].components.length, 5);
-  assert.equal(playing.components[1].components[0].data.label, 'Seek');
-  assert.equal(playing.components[1].components[0].data.disabled, false);
+  assert.deepEqual(
+    playing.components[0].components.map((component) => component.data.label),
+    ['Pause', 'Skip', 'View queue', 'Stop']
+  );
+  assert.deepEqual(
+    playing.components[1].components.map((component) => component.data.label),
+    ['Shuffle', 'Loop: off', 'Seek', 'Refresh', 'Open track']
+  );
+  assert.equal(playing.components[1].components[2].data.disabled, false);
   const playerIds = playing.components
     .flatMap((row) => row.components)
     .map((component) => component.data.custom_id)
@@ -58,6 +66,7 @@ test('player payload uses semantic status, timestamp, and native controls', () =
 
   const paused = buildPlayerPayload(makePlayer(0), { state: 'paused' });
   assert.match(paused.embeds[0].toJSON().description, /Paused at/);
+  assert.equal(paused.embeds[0].toJSON().color, COLORS.paused);
   assert.equal(paused.components[0].components[0].data.label, 'Resume');
   assert.equal(paused.components[0].components[0].data.disabled, false);
 
@@ -69,7 +78,7 @@ test('player payload uses semantic status, timestamp, and native controls', () =
   const livePlayer = makePlayer(0);
   livePlayer.queue.current.info.isStream = true;
   const live = buildPlayerPayload(livePlayer);
-  assert.equal(live.components[1].components[0].data.disabled, true);
+  assert.equal(live.components[1].components[2].data.disabled, true);
 });
 
 for (const size of [0, 1, 10, 11, 25, 26, 250]) {
@@ -79,6 +88,7 @@ for (const size of [0, 1, 10, 11, 25, 26, 250]) {
     assert.equal(clampQueuePage(player, 10_000), maxPage);
     const payload = buildQueuePayload(player, maxPage);
     const json = payload.embeds[0].toJSON();
+    assert.equal(json.color, COLORS.brand);
     assert.ok(json.description.length <= 4096);
     assert.match(json.description, /1:00/);
     assert.match(json.description, /listener0/);

@@ -68,6 +68,11 @@ for (const size of [0, 1, 10, 11, 25, 26, 250]) {
     assert.ok(payload.components.length >= 1 && payload.components.length <= 2);
     const previous = payload.components[0].components[0].data;
     const next = payload.components[0].components[1].data;
+    const customIds = payload.components
+      .flatMap((row) => row.components)
+      .map((component) => component.data.custom_id)
+      .filter(Boolean);
+    assert.equal(new Set(customIds).size, customIds.length);
     assert.equal(previous.disabled, maxPage === 0);
     assert.equal(next.disabled, true);
     if (size > 0) {

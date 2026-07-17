@@ -1,7 +1,8 @@
-import { Client, GatewayIntentBits, ActivityType } from 'discord.js';
+import { Client, GatewayIntentBits } from 'discord.js';
 import { loadCommands } from './commands/index.js';
 import { config, assertConfig } from './config.js';
 import { initLavalink } from './lavalink.js';
+import { startPresence } from './utils/presence.js';
 
 assertConfig();
 
@@ -13,10 +14,7 @@ initLavalink(client);
 
 client.once('clientReady', () => {
   console.log(`Logged in as ${client.user.tag}`);
-  client.user.setPresence({
-    activities: [{ name: '/play', type: ActivityType.Listening }],
-    status: 'online',
-  });
+  startPresence(client);
   client.lavalink.init({ id: client.user.id, username: client.user.username });
 });
 

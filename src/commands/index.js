@@ -9,6 +9,27 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const commandMap = new Map();
 
+export function friendlyInteractionError(error, context) {
+  const details = [error?.code, error?.message, error?.cause?.message]
+    .filter(Boolean)
+    .join(' ')
+    .toLocaleLowerCase();
+
+  if (/50013|50001|missing permissions|missing access/.test(details)) {
+    return 'Vybertron is missing a Discord permission needed for that action. Check View Channel, Send Messages, Embed Links, Connect, and Speak permissions.';
+  }
+  if (/10062|40060|unknown interaction|already (?:been )?acknowledged/.test(details)) {
+    return 'Discord didn’t accept that control in time. The player may already have updated; use Refresh before trying again.';
+  }
+  if (/no available nodes?|lavalink|econnrefused|connection refused|socket (?:closed|hang up)/.test(details)) {
+    return 'The audio service is temporarily unavailable. Wait a moment, then try again.';
+  }
+  if (context.startsWith('/play') && /youtube|spotify|soundcloud|load|search|track/.test(details)) {
+    return 'That track couldn’t be loaded. Try another result or paste a direct YouTube, Spotify, or SoundCloud link.';
+  }
+  return `Vybertron hit an unexpected problem while handling ${context}. Try once more. If it keeps happening, share the reference below.`;
+}
+
 async function loadCommandsData() {
   const commandFiles = fs
     .readdirSync(__dirname)
@@ -34,7 +55,7 @@ async function reportInteractionError(interaction, error, context) {
     return;
   }
 
-  const payload = errorPayload(`Couldn’t complete ${context}. Try again.`, referenceId);
+  const payload = errorPayload(friendlyInteractionError(error, context), referenceId);
   try {
     if (interaction.isMessageComponent() && (interaction.deferred || interaction.replied)) {
       await interaction.followUp(payload);

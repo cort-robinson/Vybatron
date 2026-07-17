@@ -2,11 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { requireUserVoice, requireControl } from '../src/utils/guards.js';
 
-function mockInteraction({ voiceChannelId = null, player = undefined } = {}) {
+function mockInteraction({ voiceChannelId = null, voiceChannel = null, player = undefined } = {}) {
   const replies = [];
   return {
     guildId: 'g1',
-    member: { voice: { channel: voiceChannelId ? { id: voiceChannelId } : null } },
+    member: { voice: { channel: voiceChannel || (voiceChannelId ? { id: voiceChannelId } : null) } },
     client: { lavalink: { getPlayer: () => player } },
     deferred: false,
     replied: false,
@@ -37,6 +37,26 @@ test('V3: user in voice channel passes', async () => {
   const result = await requireUserVoice(i);
   assert.equal(result.id, 'vc1');
   assert.equal(i.replies.length, 0);
+});
+
+test('voice permission failures explain how to recover', async () => {
+  const cannotJoin = mockInteraction({
+    voiceChannel: { id: 'vc1', joinable: false, speakable: true },
+  });
+  assert.equal(await requireUserVoice(cannotJoin, { checkBotAccess: true }), null);
+  assert.match(cannotJoin.replies[0].content, /View Channel and Connect/);
+
+  const cannotSpeak = mockInteraction({
+    voiceChannel: { id: 'vc1', joinable: true, speakable: false },
+  });
+  assert.equal(await requireUserVoice(cannotSpeak, { checkBotAccess: true }), null);
+  assert.match(cannotSpeak.replies[0].content, /Speak permission/);
+
+  const existingSession = mockInteraction({
+    voiceChannel: { id: 'vc1', joinable: false, speakable: false },
+    player: { voiceChannelId: 'vc1' },
+  });
+  assert.equal(await requireControl(existingSession), existingSession.client.lavalink.getPlayer());
 });
 
 test('V8: no active player rejects', async () => {

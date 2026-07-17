@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { friendlyInteractionError } from '../src/commands/index.js';
 
 const commandsDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'src', 'commands');
 const files = fs
@@ -29,4 +30,23 @@ test('/play and /playnext query options enable bounded autocomplete', async () =
     assert.equal(query.max_length, 200);
     assert.equal(typeof mod.autocomplete, 'function');
   }
+});
+
+test('unexpected interaction errors provide actionable recovery guidance', () => {
+  assert.match(
+    friendlyInteractionError({ code: 50013, message: 'Missing Permissions' }, '/play'),
+    /Check View Channel/
+  );
+  assert.match(
+    friendlyInteractionError({ message: 'No available Lavalink nodes' }, '/play'),
+    /audio service is temporarily unavailable/
+  );
+  assert.match(
+    friendlyInteractionError({ message: 'YouTube track failed to load' }, '/play'),
+    /paste a direct YouTube/
+  );
+  assert.match(
+    friendlyInteractionError(new Error('unexpected'), '/volume'),
+    /share the reference below/
+  );
 });

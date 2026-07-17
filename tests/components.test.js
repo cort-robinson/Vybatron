@@ -86,7 +86,7 @@ test('controller toggle rechecks voice authorization', async () => {
   const allowed = interaction('player:v1:toggle', p);
   await handleMessageComponent(allowed);
   assert.equal(p.pauseCalls, 1);
-  assert.deepEqual(allowed.calls.map(([name]) => name), ['deferUpdate', 'followUp']);
+  assert.deepEqual(allowed.calls.map(([name]) => name), ['deferUpdate']);
 
   const paused = player();
   paused.paused = true;
@@ -102,6 +102,7 @@ test('skip and confirmed stop handle empty and active queue states safely', asyn
   await handleMessageComponent(skip);
   assert.equal(empty.skipCalls.length, 0);
   assert.equal(empty.stopPlayingCalls, 1);
+  assert.deepEqual(skip.calls.map(([name]) => name), ['deferUpdate']);
 
   const active = player();
   const stop = interaction('player:v1:stop', active);
@@ -120,10 +121,12 @@ test('shuffle, loop, and refresh buttons update the shared controller', async ()
   const shuffle = interaction('player:v1:shuffle', p);
   await handleMessageComponent(shuffle);
   assert.equal(p.shuffleCalls, 1);
+  assert.deepEqual(shuffle.calls.map(([name]) => name), ['deferUpdate']);
 
   const loop = interaction('player:v1:loop', p);
   await handleMessageComponent(loop);
   assert.equal(p.repeatMode, 'track');
+  assert.deepEqual(loop.calls.map(([name]) => name), ['deferUpdate']);
 
   const refresh = interaction('player:v1:refresh', p, { voice: null });
   await handleMessageComponent(refresh);
@@ -245,5 +248,5 @@ test('queue jumps reject stale identities and accept a current selection', async
   const current = interaction('queue:v1:jump:0', p, { values: [value] });
   await handleMessageComponent(current);
   assert.deepEqual(p.skipCalls, [2]);
-  assert.deepEqual(current.calls.map(([name]) => name), ['deferUpdate', 'editReply', 'followUp']);
+  assert.deepEqual(current.calls.map(([name]) => name), ['deferUpdate', 'editReply']);
 });

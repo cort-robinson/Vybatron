@@ -96,10 +96,10 @@ async function handlePlayerComponent(interaction, action) {
 
   if (action === 'toggle') {
     await interaction.deferUpdate();
-    const state = await togglePlayback(controlledPlayer);
+    await togglePlayback(controlledPlayer);
     await refresh(interaction.client, controlledPlayer);
     await updateVoiceStatus(interaction.client, controlledPlayer);
-    return interaction.followUp(ephemeralText(`Playback ${state}.`));
+    return null;
   }
 
   if (action === 'skip') {
@@ -110,9 +110,7 @@ async function handlePlayerComponent(interaction, action) {
     }
     await interaction.deferUpdate();
     await skipCurrent(controlledPlayer);
-    return interaction.followUp(ephemeralText(
-      `Skipped ${safeText(skipped.info?.title, { fallback: 'the current track', maxLength: 120 })}.`
-    ));
+    return null;
   }
 
   if (action === 'shuffle') {
@@ -120,9 +118,9 @@ async function handlePlayerComponent(interaction, action) {
       return interaction.reply(ephemeralText('Add at least two queued tracks before shuffling.'));
     }
     await interaction.deferUpdate();
-    const count = await shuffleQueue(controlledPlayer);
+    await shuffleQueue(controlledPlayer);
     await refresh(interaction.client, controlledPlayer);
-    return interaction.followUp(ephemeralText(`Shuffled ${count} queued tracks.`));
+    return null;
   }
 
   if (action === 'loop') {
@@ -130,7 +128,7 @@ async function handlePlayerComponent(interaction, action) {
     await interaction.deferUpdate();
     await setLoopMode(controlledPlayer, mode);
     await refresh(interaction.client, controlledPlayer);
-    return interaction.followUp(ephemeralText(`Loop mode set to ${mode}.`));
+    return null;
   }
 
   if (action === 'stop') {
@@ -191,9 +189,7 @@ async function handleQueueJump(interaction, page, ownerId = 'any') {
   await interaction.deferUpdate();
   await player.skip(index);
   await interaction.editReply(buildQueuePayload(player, page, ownerId));
-  return interaction.followUp(ephemeralText(
-    `Jumped to ${safeText(target.info?.title, { fallback: 'the selected track', maxLength: 120 })}.`
-  ));
+  return null;
 }
 
 export async function handleMessageComponent(interaction) {

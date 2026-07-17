@@ -21,9 +21,13 @@ import {
 } from './presentation.js';
 
 export const COLORS = Object.freeze({
-  brand: 0x009e85,
+  // Restrained from the app icon: electric cyan carries active product state,
+  // magenta is the Vybertron signature, and amber is reserved for pause/warning.
+  brand: 0x00c8ff,
+  accent: 0xf20aa7,
+  paused: 0xffb84d,
   error: 0xed4245,
-  info: 0x5865f2,
+  info: 0xf20aa7,
   neutral: 0x6d6f78,
 });
 
@@ -64,7 +68,7 @@ export function errorPayload(message, referenceId) {
 
 function playerStatus(state) {
   switch (state) {
-    case 'paused': return { label: 'Paused', color: COLORS.info };
+    case 'paused': return { label: 'Paused', color: COLORS.paused };
     case 'queue-finished': return { label: 'Queue Finished', color: COLORS.neutral };
     case 'unavailable': return { label: 'Playback Unavailable', color: COLORS.error };
     case 'ended': return { label: 'Session Ended', color: COLORS.neutral };
@@ -87,13 +91,8 @@ function playerComponents(player, state, track) {
       .setStyle(ButtonStyle.Secondary)
       .setDisabled(disabled),
     new ButtonBuilder()
-      .setCustomId(PLAYER_IDS.shuffle)
-      .setLabel('Shuffle')
-      .setStyle(ButtonStyle.Secondary)
-      .setDisabled(disabled),
-    new ButtonBuilder()
-      .setCustomId(PLAYER_IDS.loop)
-      .setLabel(`Loop: ${player?.repeatMode || 'off'}`)
+      .setCustomId(PLAYER_IDS.queue)
+      .setLabel('View queue')
       .setStyle(ButtonStyle.Secondary)
       .setDisabled(disabled),
     new ButtonBuilder()
@@ -103,6 +102,16 @@ function playerComponents(player, state, track) {
       .setDisabled(disabled)
   );
   const utilityRow = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId(PLAYER_IDS.shuffle)
+      .setLabel('Shuffle')
+      .setStyle(ButtonStyle.Secondary)
+      .setDisabled(disabled),
+    new ButtonBuilder()
+      .setCustomId(PLAYER_IDS.loop)
+      .setLabel(`Loop: ${player?.repeatMode || 'off'}`)
+      .setStyle(ButtonStyle.Secondary)
+      .setDisabled(disabled),
     new ButtonBuilder()
       .setCustomId(PLAYER_IDS.seek)
       .setLabel('Seek')
@@ -114,11 +123,6 @@ function playerComponents(player, state, track) {
         || !Number.isFinite(track?.info?.duration)
         || track.info.duration <= 0
       ),
-    new ButtonBuilder()
-      .setCustomId(PLAYER_IDS.queue)
-      .setLabel('View queue')
-      .setStyle(ButtonStyle.Secondary)
-      .setDisabled(disabled),
     new ButtonBuilder()
       .setCustomId(PLAYER_IDS.refresh)
       .setLabel('Refresh')
@@ -162,6 +166,26 @@ function playbackLine(player, info, state) {
   return `\`${position} / ${duration}\` • Ends <t:${endsAt}:R>`;
 }
 
+function playerQueuePreview(player) {
+  const tracks = player?.queue?.tracks || [];
+  if (tracks.length === 0) {
+    return '**Up next**\nNothing queued — add something with `/play`.';
+  }
+
+  const preview = tracks.slice(0, 2).map((queuedTrack, index) => {
+    const info = queuedTrack?.info || {};
+    const title = safeText(info.title, { fallback: 'Unknown track', maxLength: 90 });
+    const author = safeText(info.author, { fallback: 'Unknown artist', maxLength: 60 });
+    return `${index + 1}. ${title} — ${author}`;
+  });
+  const remaining = remainingQueueDuration(player);
+  const summary = [
+    `${tracks.length} ${pluralize(tracks.length, 'track')} queued`,
+    remaining === null ? 'Remaining time unknown' : `${formatDuration(remaining)} remaining`,
+  ];
+  return ['**Up next**', ...preview, `_${summary.join(' • ')}_`].join('\n');
+}
+
 export function remainingQueueDuration(player) {
   const current = player?.queue?.current;
   const tracks = player?.queue?.tracks || [];
@@ -189,21 +213,20 @@ export function buildPlayerPayload(player, {
     const artwork = safeUrl(info.artworkUrl);
     if (artwork) embed.setThumbnail(artwork);
 
-    const queued = player?.queue?.tracks?.length || 0;
     const volume = Number.isFinite(player?.volume) ? Math.round(player.volume) : 100;
-    const remaining = remainingQueueDuration(player);
-    const remainingText = remaining === null ? 'Unknown remaining' : `${formatDuration(remaining)} remaining`;
     const lines = [
       safeText(info.author, { fallback: 'Unknown artist', maxLength: 160 }),
       playbackLine(player, info, state),
-      `${queued} ${pluralize(queued, 'track')} queued • ${remainingText} • Volume ${volume}% • Loop ${player?.repeatMode || 'off'}`,
+      '',
+      playerQueuePreview(player),
     ];
-    if (notice) lines.push(`> ${safeText(notice, { maxLength: 500 })}`);
-    if (reason) lines.push(safeText(reason, { maxLength: 500 }));
+    if (notice) lines.push('', `> ${safeText(notice, { maxLength: 500 })}`);
+    if (reason) lines.push('', safeText(reason, { maxLength: 500 }));
     embed.setDescription(lines.join('\n'));
 
     const requester = requesterName(track);
-    if (requester) embed.setFooter({ text: `Requested by ${requester}` });
+    const footer = requester ? `Requested by ${requester} • Volume ${volume}%` : `Volume ${volume}%`;
+    embed.setFooter({ text: footer });
     if (Number.isFinite(startedAt)) embed.setTimestamp(startedAt);
   } else {
     const fallback = reason || (state === 'queue-finished'
@@ -255,7 +278,7 @@ export function buildQueuePayload(player, requestedPage = 0, ownerId = 'any') {
   pageTracks.forEach((track, offset) => lines.push(queueLine(track, start + offset + 1)));
 
   const embed = new EmbedBuilder()
-    .setColor(COLORS.info)
+    .setColor(COLORS.brand)
     .setTitle('Queue')
     .setDescription(lines.join('\n'));
   const remaining = remainingQueueDuration(player);

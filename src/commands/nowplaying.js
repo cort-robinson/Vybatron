@@ -1,6 +1,12 @@
-import { MessageFlags, SlashCommandBuilder } from 'discord.js';
+import {
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  MessageFlags,
+  SlashCommandBuilder,
+} from 'discord.js';
 import { buildPlayerPayload, ephemeralText } from '../utils/messages.js';
-import { getControllerRecord } from '../utils/player-controller.js';
+import { getControllerRecord, getMessageLink } from '../utils/player-controller.js';
 
 export const data = new SlashCommandBuilder()
   .setName('nowplaying')
@@ -13,12 +19,20 @@ export async function execute(interaction) {
     return interaction.reply(ephemeralText('Nothing is playing. Add something with /play.'));
   }
   const record = getControllerRecord(interaction.guildId);
+  const payload = buildPlayerPayload(player, {
+    state: player.paused ? 'paused' : 'playing',
+    track,
+    startedAt: record?.startedAt || Date.now(),
+  });
+  const link = getMessageLink(interaction.guildId);
+  const components = link
+    ? [new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setLabel('Open player').setStyle(ButtonStyle.Link).setURL(link)
+    )]
+    : [];
   return interaction.reply({
-    ...buildPlayerPayload(player, {
-      state: player.paused ? 'paused' : 'playing',
-      track,
-      startedAt: record?.startedAt || Date.now(),
-    }),
+    ...payload,
+    components,
     flags: MessageFlags.Ephemeral,
   });
 }

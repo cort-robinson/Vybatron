@@ -2,6 +2,7 @@ import { SlashCommandBuilder } from 'discord.js';
 import { requireControl } from '../utils/guards.js';
 import { ephemeralText } from '../utils/messages.js';
 import { refresh, withControllerLink } from '../utils/player-controller.js';
+import { updateVoiceStatus } from '../utils/voice-status.js';
 
 export const data = new SlashCommandBuilder()
   .setName('pause')
@@ -18,6 +19,7 @@ export async function execute(interaction) {
   }
   await player.pause();
   await refresh(interaction.client, player);
+  await updateVoiceStatus(interaction.client, player);
   return interaction.reply(ephemeralText(
     withControllerLink('Playback paused.', interaction, player)
   ));

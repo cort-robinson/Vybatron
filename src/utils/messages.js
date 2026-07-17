@@ -29,7 +29,10 @@ export const QUEUE_PAGE_SIZE = 10;
 const PLAYER_IDS = Object.freeze({
   toggle: 'player:v1:toggle',
   skip: 'player:v1:skip',
+  shuffle: 'player:v1:shuffle',
+  loop: 'player:v1:loop',
   queue: 'player:v1:queue',
+  refresh: 'player:v1:refresh',
   stop: 'player:v1:stop',
 });
 
@@ -67,38 +70,73 @@ function playerStatus(state) {
 
 function playerComponents(player, state, track) {
   const active = state === 'playing' || state === 'paused';
-  const sessionClosed = state === 'ended' || state === 'unavailable';
-  const hasQueue = (player?.queue?.tracks?.length || 0) > 0;
-  const row = new ActionRowBuilder().addComponents(
+  const disabled = !active || !track;
+  const playbackRow = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId(PLAYER_IDS.toggle)
       .setLabel(state === 'paused' ? 'Resume' : 'Pause')
       .setStyle(ButtonStyle.Primary)
-      .setDisabled(!active || !track),
+      .setDisabled(disabled),
     new ButtonBuilder()
       .setCustomId(PLAYER_IDS.skip)
       .setLabel('Skip')
       .setStyle(ButtonStyle.Secondary)
-      .setDisabled(!active || !track || !hasQueue),
+      .setDisabled(disabled),
     new ButtonBuilder()
-      .setCustomId(PLAYER_IDS.queue)
-      .setLabel('View queue')
+      .setCustomId(PLAYER_IDS.shuffle)
+      .setLabel('Shuffle')
       .setStyle(ButtonStyle.Secondary)
-      .setDisabled(sessionClosed || (!track && !hasQueue)),
+      .setDisabled(disabled),
+    new ButtonBuilder()
+      .setCustomId(PLAYER_IDS.loop)
+      .setLabel(`Loop: ${player?.repeatMode || 'off'}`)
+      .setStyle(ButtonStyle.Secondary)
+      .setDisabled(disabled),
     new ButtonBuilder()
       .setCustomId(PLAYER_IDS.stop)
       .setLabel('Stop')
       .setStyle(ButtonStyle.Danger)
-      .setDisabled(sessionClosed)
+      .setDisabled(disabled)
+  );
+  const utilityRow = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId(PLAYER_IDS.queue)
+      .setLabel('View queue')
+      .setStyle(ButtonStyle.Secondary)
+      .setDisabled(disabled),
+    new ButtonBuilder()
+      .setCustomId(PLAYER_IDS.refresh)
+      .setLabel('Refresh')
+      .setStyle(ButtonStyle.Secondary)
+      .setDisabled(disabled)
   );
 
   const trackUrl = safeUrl(track?.info?.uri);
   if (trackUrl) {
-    row.addComponents(
+    utilityRow.addComponents(
       new ButtonBuilder().setLabel('Open track').setStyle(ButtonStyle.Link).setURL(trackUrl)
     );
   }
-  return [row];
+  return [playbackRow, utilityRow];
+}
+
+function playbackLine(player, info, state) {
+  const position = formatDuration(player?.position, info.isStream);
+  const duration = formatDuration(info.duration, info.isStream);
+  if (info.isStream) return state === 'paused' ? 'Paused • Live' : 'Live';
+  if (state === 'paused') return `Paused at \`${position} / ${duration}\``;
+  const remaining = Math.max(0, (info.duration || 0) - (player?.position || 0));
+  const endsAt = Math.floor((Date.now() + remaining) / 1000);
+  return `\`${position} / ${duration}\` • Ends <t:${endsAt}:R>`;
+}
+
+export function remainingQueueDuration(player) {
+  const current = player?.queue?.current;
+  const tracks = player?.queue?.tracks || [];
+  if (current?.info?.isStream || tracks.some((queued) => queued?.info?.isStream)) return null;
+  let total = current ? Math.max(0, (current.info?.duration || 0) - (player?.position || 0)) : 0;
+  for (const queued of tracks) total += Math.max(0, queued?.info?.duration || 0);
+  return total;
 }
 
 export function buildPlayerPayload(player, {
@@ -121,9 +159,12 @@ export function buildPlayerPayload(player, {
 
     const queued = player?.queue?.tracks?.length || 0;
     const volume = Number.isFinite(player?.volume) ? Math.round(player.volume) : 100;
+    const remaining = remainingQueueDuration(player);
+    const remainingText = remaining === null ? 'Unknown remaining' : `${formatDuration(remaining)} remaining`;
     const lines = [
       safeText(info.author, { fallback: 'Unknown artist', maxLength: 160 }),
-      `\`${formatDuration(player?.position, info.isStream)} / ${formatDuration(info.duration, info.isStream)}\` • ${queued} ${pluralize(queued, 'track')} queued • Volume ${volume}%`,
+      playbackLine(player, info, state),
+      `${queued} ${pluralize(queued, 'track')} queued • ${remainingText} • Volume ${volume}% • Loop ${player?.repeatMode || 'off'}`,
     ];
     if (notice) lines.push(`> ${safeText(notice, { maxLength: 500 })}`);
     if (reason) lines.push(safeText(reason, { maxLength: 500 }));
@@ -165,7 +206,7 @@ function currentQueueLine(track) {
   return `${safeText(info.title, { fallback: 'Unknown track', maxLength: 150 })} — ${safeText(info.author, { fallback: 'Unknown artist', maxLength: 90 })} • \`${formatDuration(info.duration, info.isStream)}\`${requestedBy}`;
 }
 
-export function buildQueuePayload(player, requestedPage = 0) {
+export function buildQueuePayload(player, requestedPage = 0, ownerId = 'any') {
   const current = player?.queue?.current || null;
   const tracks = player?.queue?.tracks || [];
   const page = clampQueuePage(player, requestedPage);
@@ -185,23 +226,27 @@ export function buildQueuePayload(player, requestedPage = 0) {
     .setColor(COLORS.info)
     .setTitle('Queue')
     .setDescription(lines.join('\n'));
+  const remaining = remainingQueueDuration(player);
+  embed.setFooter({
+    text: `${total} upcoming • ${remaining === null ? 'Unknown remaining' : `${formatDuration(remaining)} remaining`}`,
+  });
   const artwork = safeUrl(current?.info?.artworkUrl);
   if (artwork) embed.setThumbnail(artwork);
 
   const maxPage = Math.max(0, Math.ceil(total / QUEUE_PAGE_SIZE) - 1);
   const navigation = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
-      .setCustomId(`queue:v1:page:${Math.max(0, page - 1)}:previous`)
+      .setCustomId(`queue:v2:page:${ownerId}:${Math.max(0, page - 1)}:previous`)
       .setLabel('Previous')
       .setStyle(ButtonStyle.Secondary)
       .setDisabled(page === 0),
     new ButtonBuilder()
-      .setCustomId(`queue:v1:page:${Math.min(maxPage, page + 1)}:next`)
+      .setCustomId(`queue:v2:page:${ownerId}:${Math.min(maxPage, page + 1)}:next`)
       .setLabel('Next')
       .setStyle(ButtonStyle.Secondary)
       .setDisabled(page >= maxPage),
     new ButtonBuilder()
-      .setCustomId(`queue:v1:refresh:${page}`)
+      .setCustomId(`queue:v2:refresh:${ownerId}:${page}`)
       .setLabel('Refresh')
       .setStyle(ButtonStyle.Secondary)
   );
@@ -209,7 +254,7 @@ export function buildQueuePayload(player, requestedPage = 0) {
   const components = [navigation];
   if (pageTracks.length > 0) {
     const select = new StringSelectMenuBuilder()
-      .setCustomId(`queue:v1:jump:${page}`)
+      .setCustomId(`queue:v2:jump:${ownerId}:${page}`)
       .setPlaceholder('Jump to a track…')
       .addOptions(pageTracks.map((track, offset) => {
         const absoluteIndex = start + offset + 1;
@@ -226,6 +271,24 @@ export function buildQueuePayload(player, requestedPage = 0) {
   }
 
   return { embeds: [embed], components, allowedMentions: NO_MENTIONS };
+}
+
+export function buildStopConfirmationPayload() {
+  return {
+    content: 'Stop playback, clear the queue, and disconnect?',
+    components: [new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId('player:v1:stop-confirm')
+        .setLabel('Stop and disconnect')
+        .setStyle(ButtonStyle.Danger),
+      new ButtonBuilder()
+        .setCustomId('player:v1:stop-cancel')
+        .setLabel('Cancel')
+        .setStyle(ButtonStyle.Secondary)
+    )],
+    flags: MessageFlags.Ephemeral,
+    allowedMentions: NO_MENTIONS,
+  };
 }
 
 export function buildEmptyQueuePayload() {

@@ -42,10 +42,19 @@ test('player payload uses semantic status, timestamp, and native controls', () =
   assert.equal(json.color, COLORS.brand);
   assert.equal(json.author.name, 'Now Playing');
   assert.equal(json.timestamp, '2023-11-14T22:13:20.000Z');
+  assert.match(json.description, /Ends <t:\d+:R>/);
+  assert.match(json.description, /Loop off/);
+  assert.equal(playing.components.length, 2);
   assert.equal(playing.components[0].components.length, 5);
+  const playerIds = playing.components
+    .flatMap((row) => row.components)
+    .map((component) => component.data.custom_id)
+    .filter(Boolean);
+  assert.equal(new Set(playerIds).size, playerIds.length);
   assert.deepEqual(playing.allowedMentions.parse, []);
 
   const paused = buildPlayerPayload(makePlayer(0), { state: 'paused' });
+  assert.match(paused.embeds[0].toJSON().description, /Paused at/);
   assert.equal(paused.components[0].components[0].data.label, 'Resume');
   assert.equal(paused.components[0].components[0].data.disabled, false);
 
@@ -65,6 +74,7 @@ for (const size of [0, 1, 10, 11, 25, 26, 250]) {
     assert.ok(json.description.length <= 4096);
     assert.match(json.description, /1:00/);
     assert.match(json.description, /listener0/);
+    assert.match(json.footer.text, /remaining/);
     assert.ok(payload.components.length >= 1 && payload.components.length <= 2);
     const previous = payload.components[0].components[0].data;
     const next = payload.components[0].components[1].data;

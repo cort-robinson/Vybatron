@@ -8,6 +8,7 @@ import {
   showStatus,
 } from './utils/player-controller.js';
 import { plainText } from './utils/presentation.js';
+import { clearVoiceStatus, updateVoiceStatus } from './utils/voice-status.js';
 
 export const IDLE_MS = 5 * 60 * 1000;
 
@@ -26,6 +27,7 @@ export function startIdleTimer(player, options = IDLE_MS) {
       : 'Disconnected after five minutes with an empty queue.';
     void (async () => {
       try {
+        if (client) await clearVoiceStatus(client, player);
         if (client) await end(client, player, message);
       } catch {
         // A controller edit must never prevent the idle disconnect.
@@ -46,15 +48,19 @@ export function clearIdleTimer(guildId) {
   }
 }
 
-export function handleTrackStart(client, player, track) {
+export async function handleTrackStart(client, player, track) {
   clearIdleTimer(player.guildId);
-  return createOrUpdate(client, player, { state: 'playing', track }).catch(() => null);
+  await Promise.allSettled([
+    createOrUpdate(client, player, { state: 'playing', track }),
+    updateVoiceStatus(client, player),
+  ]);
 }
 
 export function handleQueueEnd(clientOrPlayer, maybePlayer) {
   const client = maybePlayer ? clientOrPlayer : null;
   const player = maybePlayer || clientOrPlayer;
   if (client) {
+    void clearVoiceStatus(client, player).catch(() => {});
     void showStatus(
       client,
       player,
@@ -90,6 +96,16 @@ export function handleTrackFailure(player, track) {
   setNotice(player.guildId, `Couldn’t play ${title}; skipped.`);
 }
 
+export async function handleTrackError(player, track, payload, logger = console) {
+  handleTrackFailure(player, track);
+  if (payload?.type !== 'TrackExceptionEvent') return;
+  try {
+    await player.skip(0, false);
+  } catch (error) {
+    logger.error(`[Lavalink] failed to recover guild ${player.guildId} after track error`, error);
+  }
+}
+
 export function initLavalink(client) {
   const lavalink = new LavalinkManager({
     nodes: [
@@ -102,9 +118,11 @@ export function initLavalink(client) {
     ],
     sendToShard: (guildId, payload) => client.guilds.cache.get(guildId)?.shard?.send(payload),
     autoSkip: true,
+    autoSkipOnResolveError: true,
     client: { id: config.clientId, username: 'Vybertron' },
     playerOptions: {
       defaultSearchPlatform: 'ytsearch',
+      maxErrorsPerTime: { threshold: 30_000, maxAmount: 3 },
       onDisconnect: { autoReconnect: false, destroyPlayer: true },
     },
   });
@@ -115,11 +133,14 @@ export function initLavalink(client) {
   client.on('voiceStateUpdate', (oldState) => handleVoiceStateUpdate(client, oldState));
 
   lavalink.on('trackStart', (player, track) => void handleTrackStart(client, player, track));
-  lavalink.on('trackError', (player, track) => handleTrackFailure(player, track));
+  lavalink.on('trackError', (player, track, payload) => {
+    void handleTrackError(player, track, payload);
+  });
   lavalink.on('trackStuck', (player, track) => handleTrackFailure(player, track));
   lavalink.on('queueEnd', (player) => handleQueueEnd(client, player));
   lavalink.on('playerDestroy', (player) => {
     clearIdleTimer(player.guildId);
+    void clearVoiceStatus(client, player).catch(() => {});
     void end(client, player, 'Playback session ended.').catch(() => {});
   });
 

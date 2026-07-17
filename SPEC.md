@@ -20,7 +20,9 @@ Discord music bot. Slash commands only. Plays YouTube + YT Music + Spotify (mirr
 ```
 cmd: /play <query>        → enqueue (playlist → all tracks, reply count) + start
 cmd: /playnext <query>    → insert front of queue
-cmd: /queue               → list tracks
+cmd: /queue               → paginated tracks + requester + duration + remaining
+cmd: /remove <position>   → remove upcoming queue track (1-based)
+cmd: /move <from> <to>    → move upcoming queue track to final 1-based position
 cmd: /skip                → next track
 cmd: /skipto <index>      → jump to index
 cmd: /stop                → clear queue + disconnect now
@@ -28,6 +30,8 @@ cmd: /volume <0..100>     → set volume (default 100, no persist)
 cmd: /nowplaying          → current track embed
 cmd: /pause | /resume     → toggle playback
 cmd: /shuffle             → shuffle queue
+cmd: /loop <off|track|queue> → set repeat mode
+ui: persistent controller → pause/resume | skip | shuffle | loop | queue | refresh | confirmed stop
 cli: docker compose up -d             → full stack (bot + lavalink)
 cli: npm start                        → bot native (dev; lavalink via compose)
 cli: npm run deploy:commands:guild    → guild register (needs GUILD_ID)
@@ -59,10 +63,13 @@ V6: guild deploy without GUILD_ID → throw
 V7: one queue ∀ commands — lavalink-client `player.queue` sole state, ⊥ second engine
 V8: ∀ control command (skip|stop|volume|shuffle|pause|resume|skipto) → invoker ∈ bot's voice channel, else reject
 V9: queue empty | voice channel humanless → 5 min idle timer → disconnect + destroy player
-V10: track start → exactly 1 "Now Playing" embed; ⊥ track-end messages; ⊥ autoplay
+V10: player session → exactly 1 controller message; track/state/queue change → edit same; destroy → disable + forget; ⊥ per-track spam; ⊥ autoplay
 V11: ∀ plugin version pinned in lavalink/application.yml ! exist on maven.lavalink.dev (verify maven-metadata.xml before pin)
 V12: ∀ rendered Discord message → non-link component `custom_id` values unique across all action rows
 V13: ∀ guild playback session → concurrent controller writes create ≤1 active public message; older controller IDs cannot control it
+V14: voice-status permission/API failure → log once + continue playback
+V15: ∀ mutating command/button → invoker ∈ bot voice channel; queue/refresh read-only
+V16: queue position args → upcoming tracks only, 1-based; invalid|same move → reject without mutation
 
 ## §T tasks
 
@@ -82,6 +89,10 @@ T12|.|re-verify Spotify links when upstream LavaSrc/spotify-tokener ship token f
 T13|x|CI workflow: npm test + docker build + compose config validate on PR & main|V1-V11,§I.ci
 T14|x|CD workflow: SSH deploy to VPS on main push, dormant until DEPLOY_ENABLED var set|§I.cd
 T15|.|provision VPS (user picks Oracle free / Hetzner), add repo secrets, set DEPLOY_ENABLED=true|T14
+T16|x|controller live end time + shuffle/loop/refresh + confirmed stop|V10,V13,V15
+T17|x|paginated owned queue + /remove + /move + /loop|V12,V15,V16
+T18|x|voice channel playing/paused status + pre-disconnect clear|V14
+T19|x|track error recovery advances failed protocol tracks|V5,V7
 
 ## §B bugs
 

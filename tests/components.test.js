@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { handleMessageComponent } from '../src/utils/components.js';
+import { handleMessageComponent, handleModalSubmit } from '../src/utils/components.js';
 import { createOrUpdate, resetControllers } from '../src/utils/player-controller.js';
 import { trackIdentity } from '../src/utils/presentation.js';
 
@@ -10,6 +10,7 @@ function track(index) {
       title: `Track ${index}`,
       author: 'Artist',
       duration: 60_000,
+      isSeekable: true,
       identifier: `id-${index}`,
       uri: `https://example.com/${index}`,
     },
@@ -31,19 +32,21 @@ function player() {
     stopPlayingCalls: 0,
     shuffleCalls: 0,
     repeatMode: 'off',
+    seekCalls: [],
     destroyCalls: 0,
     async pause() { this.paused = true; this.pauseCalls += 1; },
     async resume() { this.paused = false; this.resumeCalls += 1; },
     async skip(index) { this.skipCalls.push(index); },
     async stopPlaying() { this.stopPlayingCalls += 1; },
     async setRepeatMode(mode) { this.repeatMode = mode; },
+    async seek(position) { this.position = position; this.seekCalls.push(position); },
     async destroy() { this.destroyCalls += 1; },
   };
   result.queue.shuffle = async () => { result.shuffleCalls += 1; };
   return result;
 }
 
-function interaction(customId, currentPlayer, { voice = 'voice', values = [] } = {}) {
+function interaction(customId, currentPlayer, { voice = 'voice', values = [], timestamp = '0:30' } = {}) {
   const calls = [];
   const result = {
     customId,
@@ -54,6 +57,7 @@ function interaction(customId, currentPlayer, { voice = 'voice', values = [] } =
     client: { lavalink: { getPlayer: () => currentPlayer } },
     message: { edit: async (payload) => { calls.push(['message.edit', payload]); } },
     values,
+    fields: { getTextInputValue: () => timestamp },
     deferred: false,
     replied: false,
     isButton: () => !customId.includes(':jump:'),
@@ -62,7 +66,9 @@ function interaction(customId, currentPlayer, { voice = 'voice', values = [] } =
     async followUp(payload) { calls.push(['followUp', payload]); },
     async update(payload) { this.replied = true; calls.push(['update', payload]); },
     async deferUpdate() { this.deferred = true; calls.push(['deferUpdate']); },
+    async deferReply(payload) { this.deferred = true; calls.push(['deferReply', payload]); },
     async editReply(payload) { calls.push(['editReply', payload]); },
+    async showModal(payload) { this.replied = true; calls.push(['showModal', payload]); },
     calls,
   };
   return result;
@@ -122,6 +128,50 @@ test('shuffle, loop, and refresh buttons update the shared controller', async ()
   const refresh = interaction('player:v1:refresh', p, { voice: null });
   await handleMessageComponent(refresh);
   assert.deepEqual(refresh.calls.map(([name]) => name), ['deferUpdate']);
+});
+
+test('seek button enforces voice access and opens a track-bound modal', async () => {
+  const p = player();
+  const denied = interaction('player:v1:seek', p, { voice: 'other' });
+  await handleMessageComponent(denied);
+  assert.equal(denied.calls[0][0], 'reply');
+
+  const allowed = interaction('player:v1:seek', p);
+  await handleMessageComponent(allowed);
+  assert.equal(allowed.calls[0][0], 'showModal');
+  assert.match(allowed.calls[0][1].data.custom_id, /^player:v1:seek-submit:[a-f0-9]{12}$/);
+});
+
+test('seek modal rejects stale tracks and seeks the current track', async () => {
+  const p = player();
+  const identity = trackIdentity(p.queue.current);
+  const valid = interaction(`player:v1:seek-submit:${identity}`, p, { timestamp: '0:30' });
+  await handleModalSubmit(valid);
+  assert.deepEqual(p.seekCalls, [30_000]);
+  assert.deepEqual(valid.calls.map(([name]) => name), ['deferReply', 'editReply']);
+
+  const stale = interaction('player:v1:seek-submit:000000000000', p);
+  await handleModalSubmit(stale);
+  assert.deepEqual(p.seekCalls, [30_000]);
+  assert.equal(stale.calls[0][0], 'reply');
+
+  const racedIdentity = trackIdentity(p.queue.current);
+  const raced = interaction(`player:v1:seek-submit:${racedIdentity}`, p);
+  raced.deferReply = async function deferReply(payload) {
+    this.deferred = true;
+    this.calls.push(['deferReply', payload]);
+    p.queue.current = track(9);
+  };
+  await handleModalSubmit(raced);
+  assert.deepEqual(p.seekCalls, [30_000]);
+  assert.match(raced.calls[1][1].content, /track changed/i);
+
+  p.queue.current.info.isStream = true;
+  const streamIdentity = trackIdentity(p.queue.current);
+  const stream = interaction(`player:v1:seek-submit:${streamIdentity}`, p);
+  await handleModalSubmit(stream);
+  assert.deepEqual(stream.calls.map(([name]) => name), ['deferReply', 'editReply']);
+  assert.match(stream.calls[1][1].content, /does not support seeking/i);
 });
 
 test('view queue and pagination are available without the control guard', async () => {

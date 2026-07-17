@@ -3,8 +3,10 @@ import { requireControl } from './guards.js';
 import {
   buildEmptyQueuePayload,
   buildQueuePayload,
+  buildSeekModal,
   buildStopConfirmationPayload,
   ephemeralText,
+  textPayload,
 } from './messages.js';
 import {
   end,
@@ -15,11 +17,12 @@ import {
 import {
   nextLoopMode,
   setLoopMode,
+  seekToTimestamp,
   shuffleQueue,
   skipCurrent,
   togglePlayback,
 } from './operations.js';
-import { safeText, trackIdentity } from './presentation.js';
+import { formatDuration, safeText, trackIdentity } from './presentation.js';
 import { clearVoiceStatus, updateVoiceStatus } from './voice-status.js';
 
 async function disableStaleComponents(interaction) {
@@ -81,6 +84,15 @@ async function handlePlayerComponent(interaction, action) {
 
   const controlledPlayer = await requireControl(interaction);
   if (!controlledPlayer) return null;
+
+  if (action === 'seek') {
+    const track = controlledPlayer.queue.current;
+    if (!track || track.info?.isStream || track.info?.isSeekable === false
+      || !Number.isFinite(track.info?.duration) || track.info.duration <= 0) {
+      return interaction.reply(ephemeralText('This track does not support seeking.'));
+    }
+    return interaction.showModal(buildSeekModal(controlledPlayer));
+  }
 
   if (action === 'toggle') {
     await interaction.deferUpdate();
@@ -186,7 +198,7 @@ async function handleQueueJump(interaction, page, ownerId = 'any') {
 
 export async function handleMessageComponent(interaction) {
   const customId = interaction.customId || '';
-  const playerMatch = /^player:v1:(toggle|skip|shuffle|loop|queue|refresh|stop|stop-confirm|stop-cancel)$/.exec(customId);
+  const playerMatch = /^player:v1:(toggle|skip|shuffle|loop|seek|queue|refresh|stop|stop-confirm|stop-cancel)$/.exec(customId);
   if (playerMatch) return handlePlayerComponent(interaction, playerMatch[1]);
 
   const pageMatch = /^queue:v1:(?:page|refresh):(\d+)(?::(?:previous|next))?$/.exec(customId);
@@ -218,4 +230,28 @@ export async function handleMessageComponent(interaction) {
   }
 
   return null;
+}
+
+export async function handleModalSubmit(interaction) {
+  const match = /^player:v1:seek-submit:([a-f0-9]{12})$/.exec(interaction.customId || '');
+  if (!match) return null;
+
+  const player = await requireControl(interaction);
+  if (!player) return null;
+  const track = player.queue.current;
+  if (!track || trackIdentity(track) !== match[1]) {
+    return interaction.reply(ephemeralText('The track changed; open Seek again.'));
+  }
+
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+  if (!player.queue.current || trackIdentity(player.queue.current) !== match[1]) {
+    return interaction.editReply(textPayload('The track changed; open Seek again.'));
+  }
+  const result = await seekToTimestamp(player, interaction.fields.getTextInputValue('timestamp'));
+  if (result.error) return interaction.editReply(textPayload(result.error));
+
+  await refresh(interaction.client, player);
+  const link = getMessageLink(interaction.guildId);
+  const suffix = link ? ` Open player: ${link}` : '';
+  return interaction.editReply(textPayload(`Jumped to ${formatDuration(result.position)}.${suffix}`));
 }

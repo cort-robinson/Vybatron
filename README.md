@@ -10,8 +10,8 @@ Powered by [Lavalink v4](https://lavalink.dev/) with [discord.js](https://discor
 - Spotify track/album/playlist links, mirrored to YouTube (via [LavaSrc](https://github.com/topi314/LavaSrc))
 - SoundCloud playback
 - Queue management: `/playnext`, `/skip`, `/skipto`, `/remove`, `/move`, `/stop`, `/shuffle`
-- Playback controls: `/pause`, `/resume`, `/volume`, `/loop`, `/nowplaying`
-- Persistent player controls with live end time, requester, queue, loop, and confirmed stop actions
+- Playback controls: `/pause`, `/resume`, `/volume`, `/loop`, `/seek`, `/nowplaying`
+- Persistent player controls with live end time, requester, queue, loop, seek, and confirmed stop actions
 - Voice channel status shows the current track when permission is available
 - Control commands require you to be in the bot's voice channel
 - Auto-disconnects after 5 minutes idle or when the voice channel empties
@@ -33,6 +33,7 @@ Powered by [Lavalink v4](https://lavalink.dev/) with [discord.js](https://discor
 | `/pause` / `/resume` | Pause / resume |
 | `/shuffle` | Shuffle the queue |
 | `/loop <off\|track\|queue>` | Set the loop mode |
+| `/seek <timestamp>` | Jump within the current track (`mm:ss` or `hh:mm:ss`) |
 
 ## Setup
 

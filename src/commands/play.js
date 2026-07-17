@@ -4,7 +4,7 @@ import { autocompleteTracks } from '../utils/autocomplete.js';
 import { textPayload } from '../utils/messages.js';
 import { refresh, withControllerLink } from '../utils/player-controller.js';
 import { safeText } from '../utils/presentation.js';
-import { searchFailureMessage } from '../utils/search.js';
+import { resolveTrackQuery, searchFailureMessage } from '../utils/search.js';
 
 export const data = new SlashCommandBuilder()
   .setName('play')
@@ -40,7 +40,12 @@ export async function execute(interaction) {
 
   if (!player.connected) await player.connect();
 
-  const result = await player.search({ query }, interaction.user);
+  const { result, expired } = await resolveTrackQuery(player, query, interaction.user);
+  if (expired) {
+    return interaction.editReply(textPayload(
+      'That search suggestion expired. Type your search again and choose a fresh result.'
+    ));
+  }
   if (!result?.tracks?.length) {
     return interaction.editReply(textPayload(searchFailureMessage(result, query)));
   }

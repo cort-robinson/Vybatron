@@ -23,6 +23,7 @@ import {
   togglePlayback,
 } from './operations.js';
 import { formatDuration, safeText, trackIdentity } from './presentation.js';
+import { updateTrackPresence } from './presence.js';
 import { clearVoiceStatus, updateVoiceStatus } from './voice-status.js';
 
 async function disableStaleComponents(interaction) {
@@ -97,6 +98,7 @@ async function handlePlayerComponent(interaction, action) {
   if (action === 'toggle') {
     await interaction.deferUpdate();
     await togglePlayback(controlledPlayer);
+    updateTrackPresence(interaction.client, controlledPlayer);
     await refresh(interaction.client, controlledPlayer);
     await updateVoiceStatus(interaction.client, controlledPlayer);
     return null;
@@ -246,6 +248,7 @@ export async function handleModalSubmit(interaction) {
   const result = await seekToTimestamp(player, interaction.fields.getTextInputValue('timestamp'));
   if (result.error) return interaction.editReply(textPayload(result.error));
 
+  updateTrackPresence(interaction.client, player);
   await refresh(interaction.client, player);
   const link = getMessageLink(interaction.guildId);
   const suffix = link ? ` Open player: ${link}` : '';

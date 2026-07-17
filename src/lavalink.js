@@ -8,6 +8,7 @@ import {
   showStatus,
 } from './utils/player-controller.js';
 import { plainText } from './utils/presentation.js';
+import { clearTrackPresence, updateTrackPresence } from './utils/presence.js';
 import { clearVoiceStatus, updateVoiceStatus } from './utils/voice-status.js';
 
 export const IDLE_MS = 5 * 60 * 1000;
@@ -50,6 +51,7 @@ export function clearIdleTimer(guildId) {
 
 export async function handleTrackStart(client, player, track) {
   clearIdleTimer(player.guildId);
+  updateTrackPresence(client, player, track);
   await Promise.allSettled([
     createOrUpdate(client, player, { state: 'playing', track }),
     updateVoiceStatus(client, player),
@@ -60,6 +62,7 @@ export function handleQueueEnd(clientOrPlayer, maybePlayer) {
   const client = maybePlayer ? clientOrPlayer : null;
   const player = maybePlayer || clientOrPlayer;
   if (client) {
+    clearTrackPresence(client, player);
     void clearVoiceStatus(client, player).catch(() => {});
     void showStatus(
       client,
@@ -140,6 +143,7 @@ export function initLavalink(client) {
   lavalink.on('queueEnd', (player) => handleQueueEnd(client, player));
   lavalink.on('playerDestroy', (player) => {
     clearIdleTimer(player.guildId);
+    clearTrackPresence(client, player);
     void clearVoiceStatus(client, player).catch(() => {});
     void end(client, player, 'Playback session ended.').catch(() => {});
   });
@@ -150,6 +154,7 @@ export function initLavalink(client) {
     console.warn(`[Lavalink] node ${node.id} disconnected`);
     for (const player of lavalink.players.values()) {
       if (player.node?.id && player.node.id !== node.id) continue;
+      clearTrackPresence(client, player);
       void end(client, player, 'The playback service disconnected. Try /play again.', {
         state: 'unavailable',
       }).catch(() => {});

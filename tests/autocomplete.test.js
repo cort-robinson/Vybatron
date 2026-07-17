@@ -3,12 +3,13 @@ import assert from 'node:assert/strict';
 import {
   getTrackChoices,
   resetAutocompleteCache,
+  resolveAutocompleteTrack,
 } from '../src/utils/autocomplete.js';
 
-function interaction(query, search) {
+function interaction(query, search, userId = 'u1') {
   return {
     options: { getFocused: () => query },
-    user: { id: 'u1' },
+    user: { id: userId },
     client: {
       lavalink: {
         nodeManager: { leastUsedNodes: () => search ? [{ search }] : [] },
@@ -52,6 +53,19 @@ test('autocomplete limits results and caches normalized queries', async () => {
   assert.equal(first.length, 8);
   assert.deepEqual(second, first);
   assert.equal(searches, 1);
+  assert.match(first[0].value, /^autocomplete:u1:[a-f0-9]{12}$/);
+  assert.ok(first[0].value.length <= 100);
+  assert.equal(resolveAutocompleteTrack(first[0].value, 'u1').track.info.title, 'Title 0');
+  assert.equal(resolveAutocompleteTrack(first[0].value, 'u2').track, null);
+});
+
+test('autocomplete caches choices per user so requester ownership stays correct', async () => {
+  let searches = 0;
+  const search = async () => { searches += 1; return { tracks: tracks(1) }; };
+  const first = await getTrackChoices(interaction('same query', search, 'u1'));
+  const second = await getTrackChoices(interaction('same query', search, 'u2'));
+  assert.equal(searches, 2);
+  assert.notEqual(first[0].value, second[0].value);
 });
 
 test('autocomplete fails closed when nodes or search are unavailable', async () => {

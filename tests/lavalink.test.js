@@ -5,6 +5,7 @@ import {
   clearIdleTimer,
   handleTrackStart,
   handleQueueEnd,
+  handleTrackError,
   handleTrackFailure,
 } from '../src/lavalink.js';
 import {
@@ -16,6 +17,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 function mockPlayer(guildId = 'g1') {
   let destroyed = 0;
+  let skips = 0;
   return {
     guildId,
     textChannelId: 'c1',
@@ -28,8 +30,16 @@ function mockPlayer(guildId = 'g1') {
       destroyed += 1;
       return Promise.resolve();
     },
+    skip: async (position, throwError) => {
+      assert.equal(position, 0);
+      assert.equal(throwError, false);
+      skips += 1;
+    },
     get destroyed() {
       return destroyed;
+    },
+    get skips() {
+      return skips;
     },
   };
 }
@@ -137,4 +147,10 @@ test('track failures are carried into the controller record', async () => {
   await handleTrackStart(mockClient(mockChannel()), player, track);
   handleTrackFailure(player, { info: { title: 'Broken track' } });
   assert.match(getControllerRecord('a5').notice, /Couldn.*play Broken track; skipped/);
+});
+
+test('protocol track errors recover to the next queue entry', async () => {
+  const player = mockPlayer('error-recovery');
+  await handleTrackError(player, track, { type: 'TrackExceptionEvent' }, { error: () => {} });
+  assert.equal(player.skips, 1);
 });

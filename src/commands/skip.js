@@ -1,6 +1,7 @@
 import { SlashCommandBuilder } from 'discord.js';
 import { requireControl } from '../utils/guards.js';
 import { ephemeralText } from '../utils/messages.js';
+import { skipCurrent } from '../utils/operations.js';
 import { withControllerLink } from '../utils/player-controller.js';
 import { safeText } from '../utils/presentation.js';
 
@@ -17,11 +18,7 @@ export async function execute(interaction) {
     return interaction.reply(ephemeralText('Nothing is playing. Add something with /play.'));
   }
 
-  if (player.queue.tracks.length > 0) {
-    await player.skip();
-  } else {
-    await player.stopPlaying(true, false);
-  }
+  await skipCurrent(player);
   const suffix = player.queue.tracks.length === 0 ? ' The queue is now empty.' : '';
   return interaction.reply(ephemeralText(withControllerLink(
     `Skipped **${safeText(skipped.info.title, { maxLength: 140 })}**.${suffix}`,

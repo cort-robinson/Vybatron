@@ -9,8 +9,10 @@ Powered by [Lavalink v4](https://lavalink.dev/) with [discord.js](https://discor
 - Plays YouTube and YouTube Music links, searches, and playlists (via the [youtube-source](https://github.com/lavalink-devs/youtube-source) plugin)
 - Spotify track/album/playlist links, mirrored to YouTube (via [LavaSrc](https://github.com/topi314/LavaSrc))
 - SoundCloud playback
-- Queue management: `/playnext`, `/skip`, `/skipto`, `/stop`, `/shuffle`
-- Playback controls: `/pause`, `/resume`, `/volume`, `/nowplaying`
+- Queue management: `/playnext`, `/skip`, `/skipto`, `/remove`, `/move`, `/stop`, `/shuffle`
+- Playback controls: `/pause`, `/resume`, `/volume`, `/loop`, `/nowplaying`
+- Persistent player controls with live end time, requester, queue, loop, and confirmed stop actions
+- Voice channel status shows the current track when permission is available
 - Control commands require you to be in the bot's voice channel
 - Auto-disconnects after 5 minutes idle or when the voice channel empties
 
@@ -20,7 +22,9 @@ Powered by [Lavalink v4](https://lavalink.dev/) with [discord.js](https://discor
 |---|---|
 | `/play <query>` | Play a song/playlist (URL or search) |
 | `/playnext <query>` | Add a song to the front of the queue |
-| `/queue` | Show the current queue |
+| `/queue` | Show the paginated current queue |
+| `/remove <position>` | Remove an upcoming queue track |
+| `/move <from> <to>` | Move an upcoming track to a final queue position |
 | `/skip` | Skip the current track |
 | `/skipto <index>` | Jump to a queue position |
 | `/stop` | Clear queue and disconnect |
@@ -28,6 +32,7 @@ Powered by [Lavalink v4](https://lavalink.dev/) with [discord.js](https://discor
 | `/nowplaying` | Show current track |
 | `/pause` / `/resume` | Pause / resume |
 | `/shuffle` | Shuffle the queue |
+| `/loop <off\|track\|queue>` | Set the loop mode |
 
 ## Setup
 
@@ -36,7 +41,9 @@ Powered by [Lavalink v4](https://lavalink.dev/) with [discord.js](https://discor
 1. Create an application at the [Discord Developer Portal](https://discord.com/developers/applications).
 2. Bot tab → copy the bot token (`DISCORD_BOT_TOKEN`).
 3. General Information → copy the Application ID (`CLIENT_ID`).
-4. OAuth2 → URL Generator: scopes `bot` + `applications.commands`; permissions `Send Messages`, `Embed Links`, `Connect`, `Speak`. Invite the bot with the generated URL.
+4. OAuth2 → URL Generator: scopes `bot` + `applications.commands`; permissions `Send Messages`, `Embed Links`, `Connect`, `Speak`, `Set Voice Channel Status`. Invite the bot with the generated URL.
+
+`Set Voice Channel Status` is optional. Without it, playback and controls still work; only the `🎵 Track — Artist` channel status is omitted.
 
 No privileged intents are required.
 

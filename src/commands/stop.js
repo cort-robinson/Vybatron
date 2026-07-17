@@ -3,6 +3,7 @@ import { requireControl } from '../utils/guards.js';
 import { ephemeralText } from '../utils/messages.js';
 import { end, withControllerLink } from '../utils/player-controller.js';
 import { plainText } from '../utils/presentation.js';
+import { clearVoiceStatus } from '../utils/voice-status.js';
 
 export const data = new SlashCommandBuilder()
   .setName('stop')
@@ -23,6 +24,7 @@ export async function execute(interaction) {
     player
   )));
   try {
+    await clearVoiceStatus(interaction.client, player);
     await end(interaction.client, player, `Stopped by ${username}.`);
   } finally {
     await player.destroy();

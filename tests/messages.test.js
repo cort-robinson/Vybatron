@@ -15,6 +15,7 @@ function makeTrack(index) {
       title: `Track ${index} **bold**`,
       author: `Artist ${index}`,
       duration: 60_000 + index,
+      isSeekable: true,
       identifier: `id-${index}`,
       sourceName: 'youtube',
       uri: `https://example.com/${index}`,
@@ -46,6 +47,8 @@ test('player payload uses semantic status, timestamp, and native controls', () =
   assert.match(json.description, /Loop off/);
   assert.equal(playing.components.length, 2);
   assert.equal(playing.components[0].components.length, 5);
+  assert.equal(playing.components[1].components[0].data.label, 'Seek');
+  assert.equal(playing.components[1].components[0].data.disabled, false);
   const playerIds = playing.components
     .flatMap((row) => row.components)
     .map((component) => component.data.custom_id)
@@ -62,6 +65,11 @@ test('player payload uses semantic status, timestamp, and native controls', () =
   assert.equal(ended.components[0].components[0].data.disabled, true);
   assert.equal(ended.components[0].components[2].data.disabled, true);
   assert.equal(ended.components[0].components[3].data.disabled, true);
+
+  const livePlayer = makePlayer(0);
+  livePlayer.queue.current.info.isStream = true;
+  const live = buildPlayerPayload(livePlayer);
+  assert.equal(live.components[1].components[0].data.disabled, true);
 });
 
 for (const size of [0, 1, 10, 11, 25, 26, 250]) {

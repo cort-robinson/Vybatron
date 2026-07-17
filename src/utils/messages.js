@@ -4,7 +4,10 @@ import {
   ButtonStyle,
   EmbedBuilder,
   MessageFlags,
+  ModalBuilder,
   StringSelectMenuBuilder,
+  TextInputBuilder,
+  TextInputStyle,
 } from 'discord.js';
 import {
   formatDuration,
@@ -31,6 +34,7 @@ const PLAYER_IDS = Object.freeze({
   skip: 'player:v1:skip',
   shuffle: 'player:v1:shuffle',
   loop: 'player:v1:loop',
+  seek: 'player:v1:seek',
   queue: 'player:v1:queue',
   refresh: 'player:v1:refresh',
   stop: 'player:v1:stop',
@@ -100,6 +104,17 @@ function playerComponents(player, state, track) {
   );
   const utilityRow = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
+      .setCustomId(PLAYER_IDS.seek)
+      .setLabel('Seek')
+      .setStyle(ButtonStyle.Secondary)
+      .setDisabled(
+        disabled
+        || track?.info?.isStream
+        || track?.info?.isSeekable === false
+        || !Number.isFinite(track?.info?.duration)
+        || track.info.duration <= 0
+      ),
+    new ButtonBuilder()
       .setCustomId(PLAYER_IDS.queue)
       .setLabel('View queue')
       .setStyle(ButtonStyle.Secondary)
@@ -118,6 +133,23 @@ function playerComponents(player, state, track) {
     );
   }
   return [playbackRow, utilityRow];
+}
+
+export function buildSeekModal(player) {
+  const track = player?.queue?.current;
+  const timestamp = new TextInputBuilder()
+    .setCustomId('timestamp')
+    .setLabel('Position (mm:ss or hh:mm:ss)')
+    .setStyle(TextInputStyle.Short)
+    .setRequired(true)
+    .setMinLength(4)
+    .setMaxLength(12)
+    .setValue(formatDuration(player?.position || 0));
+
+  return new ModalBuilder()
+    .setCustomId(`player:v1:seek-submit:${trackIdentity(track)}`)
+    .setTitle('Seek within track')
+    .addComponents(new ActionRowBuilder().addComponents(timestamp));
 }
 
 function playbackLine(player, info, state) {

@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { handleMessageComponent } from '../utils/components.js';
+import { handleMessageComponent, handleModalSubmit } from '../utils/components.js';
 import { errorPayload } from '../utils/messages.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -70,6 +70,15 @@ export async function loadCommands(client) {
     if (interaction.isMessageComponent()) {
       try {
         await handleMessageComponent(interaction);
+      } catch (error) {
+        await reportInteractionError(interaction, error, 'player controls');
+      }
+      return;
+    }
+
+    if (interaction.isModalSubmit()) {
+      try {
+        await handleModalSubmit(interaction);
       } catch (error) {
         await reportInteractionError(interaction, error, 'player controls');
       }

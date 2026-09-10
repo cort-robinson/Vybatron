@@ -4,10 +4,10 @@ server:
 
 lavalink:
   plugins:
-    # Snapshot pin: 1.18.1 release can't extract the sig function from
-    # YouTube's current player script ("Must find sig function"). Return to a
-    # release pin when one ships. Jar existence verified per SPEC V11.
-    - dependency: "dev.lavalink.youtube:youtube-plugin:33d100ba10c9fb9242a150d1bac70ab5826335d5"
+    # Snapshot pin: restores TV OAuth playback after YouTube rejected the old
+    # client identity (#233), and fixes truncated itag 18 streams (#235).
+    # Jar verified per SPEC V11; decoded a complete track before deploying.
+    - dependency: "dev.lavalink.youtube:youtube-plugin:f45bbb7aebfcbc1c553769e04af6cd43afa8b7c3"
       repository: "https://maven.lavalink.dev/snapshots"
       snapshot: true
     # Snapshot pin: 4.8.3 release has a broken Spotify anonymous-token scraper
@@ -45,18 +45,15 @@ plugins:
       - ANDROID_VR
       - WEB
       - WEBEMBEDDED
-    # Datacenter IPs (VPS) get "This video requires login" from YouTube.
-    # OAuth with a throwaway Google account fixes it. First boot with an empty
-    # refresh token logs a device-flow code: visit google.com/device, enter it,
-    # then copy the refresh token from the log into .env (YOUTUBE_REFRESH_TOKEN)
-    # so it survives restarts.
+    # OAuth handles authenticated playback while the Compose WARP sidecar keeps
+    # YouTube media requests off the blocked VPS egress address.
     oauth:
       enabled: true
       refreshToken: "${YOUTUBE_REFRESH_TOKEN}"
-    # Delegates signature deciphering to the yt-cipher sidecar (internal
-    # network only, no auth needed).
+    # yt-cipher shares Lavalink's WARP network namespace and is reachable only
+    # over loopback, so no public port or sidecar authentication is needed.
     remoteCipher:
-      url: "http://yt-cipher:8001"
+      url: "http://127.0.0.1:8001"
     # Proof-of-origin token for WEB/WEBEMBEDDED clients; generate on the VPS:
     #   docker run --rm quay.io/invidious/youtube-trusted-session-generator
     # then put po_token/visitor_data into .env. Regenerate if streams 403 again.

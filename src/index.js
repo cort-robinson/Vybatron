@@ -3,6 +3,7 @@ import { loadCommands } from './commands/index.js';
 import { config, assertConfig } from './config.js';
 import { initLavalink } from './lavalink.js';
 import { startPresence } from './utils/presence.js';
+import { startHealthServer } from './health.js';
 
 assertConfig();
 
@@ -11,6 +12,7 @@ export const client = new Client({
 });
 
 initLavalink(client);
+startHealthServer(client);
 
 client.once('clientReady', () => {
   console.log(`Logged in as ${client.user.tag}`);

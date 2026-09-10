@@ -4,6 +4,8 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { handleMessageComponent, handleModalSubmit } from '../utils/components.js';
 import { errorPayload } from '../utils/messages.js';
+import { MessageFlags } from 'discord.js';
+import { acquirePlaybackRequest } from '../utils/maintenance.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -111,10 +113,20 @@ export async function loadCommands(client) {
     const command = commandMap.get(interaction.commandName);
     if (!command) return;
 
+    let release;
     try {
+      if (['play', 'playnext'].includes(interaction.commandName)) {
+        release = acquirePlaybackRequest(client);
+        if (!release) {
+          await interaction.reply({ content: 'Vybertron is briefly updating its playback service. Try again in a minute.', flags: MessageFlags.Ephemeral });
+          return;
+        }
+      }
       await command.execute(interaction);
     } catch (error) {
       await reportInteractionError(interaction, error, `/${interaction.commandName}`);
+    } finally {
+      release?.();
     }
   });
 }

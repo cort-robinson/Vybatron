@@ -1,0 +1,11 @@
+[Unit]
+Description=Check Vybertron playback every five minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitInactiveSec=5min
+AccuracySec=15s
+Unit=vybertron-recovery.service
+
+[Install]
+WantedBy=timers.target

@@ -117,6 +117,9 @@ export function initLavalink(client) {
         host: config.lavalink.host,
         port: config.lavalink.port,
         authorization: config.lavalink.password,
+        // The audio service may take longer than five attempts to recover.
+        retryAmount: Infinity,
+        retryDelay: 10_000,
       },
     ],
     sendToShard: (guildId, payload) => client.guilds.cache.get(guildId)?.shard?.send(payload),

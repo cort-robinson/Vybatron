@@ -153,6 +153,11 @@ docker compose restart bot
 Restarting WARP alone can leave the audio services in its old network namespace.
 Do not delete `warp-data`; it contains the saved registration.
 
+The optional [VPS recovery monitor](ops/README.md) checks actual audio, performs
+bounded service recovery, and installs official YouTube plugin updates only after
+isolated full playback tests. It waits for an empty queue, verifies installation,
+rolls failed updates back, and sends persistent outage/recovery alerts to Discord.
+
 ## Tests
 
 ```bash

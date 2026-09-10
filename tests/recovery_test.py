@@ -201,6 +201,13 @@ class RecoveryTests(unittest.TestCase):
         self.assertEqual(self.backend.current(), OLD)
         self.assertEqual(self.coordinator.state['candidate'], NEW)
 
+    def test_old_rollback_result_cannot_hide_a_new_playback_outage(self):
+        self.coordinator.state['rollback_healthy'] = True
+        self.backend.results[OLD] = result(False)
+        self.backend.available, self.backend.gate = [NEW], False
+        self.assertEqual(self.cycle()['status'], 'source')
+        self.assertFalse(self.calls('deploy'))
+
     def test_failed_candidate_never_touches_live_config_or_retries_immediately(self):
         self.backend.available = [NEW]
         self.backend.results[NEW] = result(False)

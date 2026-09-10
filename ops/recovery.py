@@ -311,7 +311,7 @@ console.log(JSON.stringify({api:!!stats,bot:health?.ready===true,playing:stats?.
 
     def deploy(self):
         command(['docker', 'compose', 'config', '--quiet'], cwd=self.repo)
-        command(['docker', 'compose', 'up', '-d', '--force-recreate', '--wait', '--wait-timeout', '120', 'lavalink'], cwd=self.repo, timeout=150)
+        command(['docker', 'compose', 'up', '-d', '--no-deps', '--force-recreate', '--wait', '--wait-timeout', '120', 'lavalink'], cwd=self.repo, timeout=150)
         return self.wait_ready()
 
     def maintenance(self, action=''):
@@ -490,6 +490,7 @@ class Coordinator:
             if observe_only:
                 return self.finish('pending_update', now, 'an interrupted update requires rollback')
             self.recover_pending()
+        self.state.pop('rollback_healthy', None)
         observation = self.backend.observe()
         kind = observation['kind']
         if kind != 'ready':

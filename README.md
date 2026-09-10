@@ -75,7 +75,9 @@ SPOTIFY_CLIENT_SECRET=...
 docker compose up -d --build
 ```
 
-**Dev mode** (bot native for fast iteration, Lavalink in Docker):
+**Dev mode** (bot native for fast iteration, Lavalink in Docker): publish
+Lavalink's port on the `warp` service in a local Compose override first. The
+default stack deliberately keeps the audio API inside the Compose network.
 
 ```bash
 docker compose up -d lavalink
@@ -115,11 +117,36 @@ Until `DEPLOY_ENABLED` is set, the deploy workflow stays dormant — CI still ru
 
 ### YouTube on a VPS ("This video requires login")
 
-YouTube blocks anonymous playback from datacenter IPs. One-time fix with a **throwaway** Google account:
+The audio services share a WARP network namespace to avoid the blocked VPS
+egress address. OAuth is also configured for authenticated playback. To set up
+OAuth with a **throwaway** Google account:
 
 1. Start the stack; watch `docker logs -f vybertron-lavalink` for an OAuth prompt with a `google.com/device` code.
 2. Open [google.com/device](https://google.com/device), sign in with the throwaway account, enter the code.
 3. The log then prints a refresh token — add it to `.env` as `YOUTUBE_REFRESH_TOKEN=...` and `docker compose up -d --force-recreate lavalink`.
+
+### Search outage recovery
+
+If autocomplete is empty and `/play` cannot load any query, check
+`docker compose ps` and `docker compose exec warp warp-cli --accept-tos status`.
+Lavalink's HTTP health check can pass even when WARP's DNS is unavailable.
+
+WARP is limited to 384 MiB of RAM and 512 MiB including swap. The supervisor
+restarts a missing `warp-svc` daemon within five seconds after startup, keeping
+the shared network namespace intact. This handles a daemon killed by memory
+pressure; it does not detect every upstream outage or a hung daemon.
+
+If the WARP **container** needs replacement, recreate the audio services
+together, then reconnect the bot after Lavalink is ready:
+
+```bash
+docker compose up -d --force-recreate warp yt-cipher lavalink
+docker compose up -d --wait lavalink
+docker compose restart bot
+```
+
+Restarting WARP alone can leave the audio services in its old network namespace.
+Do not delete `warp-data`; it contains the saved registration.
 
 ## Tests
 

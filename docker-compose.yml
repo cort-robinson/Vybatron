@@ -1,4 +1,32 @@
 services:
+  # Gives only the audio stack a clean egress IP. The bot and VPS host keep
+  # their normal network path, so Discord control traffic and SSH are isolated
+  # from WARP. The alias lets the bot reach Lavalink in this shared namespace.
+  warp:
+    image: caomingjun/warp@sha256:7b2df2f0d589bdcd3d93c28ccc08cf04d54c81f193682dd1b6da82d7b39e4bb6
+    container_name: vybertron-warp
+    restart: unless-stopped
+    entrypoint: ["/bin/bash", "/opt/warp/supervise.sh"]
+    # Normally about 100 MiB. Bound daemon growth before it exhausts the VPS.
+    mem_limit: 384m
+    memswap_limit: 512m
+    environment:
+      - WARP_SLEEP=5
+    cap_add:
+      - NET_ADMIN
+      - MKNOD
+    device_cgroup_rules:
+      - "c 10:200 rwm"
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    volumes:
+      - warp-data:/var/lib/cloudflare-warp
+      - ./warp/supervise.sh:/opt/warp/supervise.sh:ro
+    networks:
+      vybertron:
+        aliases:
+          - lavalink
+
   # Solves YouTube signature-cipher challenges by running the real player
   # script; youtube-source's built-in Java extractor can no longer keep up
   # with YouTube's cipher churn ("must find sig function").
@@ -6,28 +34,31 @@ services:
     image: ghcr.io/kikkia/yt-cipher:master
     container_name: vybertron-yt-cipher
     restart: unless-stopped
-    expose:
-      - "8001"
-    networks:
-      - vybertron
+    network_mode: service:warp
+    depends_on:
+      warp:
+        condition: service_healthy
 
   lavalink:
     image: ghcr.io/lavalink-devs/lavalink:4
     container_name: vybertron-lavalink
     restart: unless-stopped
+    network_mode: service:warp
+    depends_on:
+      warp:
+        condition: service_healthy
+      yt-cipher:
+        condition: service_started
     environment:
-      - _JAVA_OPTIONS=-Xmx512M
+      # Keep YouTube API and signed media requests on WARP's stable IPv4 egress.
+      - _JAVA_OPTIONS=-Xmx512M -Djava.net.preferIPv4Stack=true
       - LAVALINK_SERVER_PASSWORD=${LAVALINK_PASSWORD}
       - SPOTIFY_SP_DC=${SPOTIFY_SP_DC}
       - YOUTUBE_REFRESH_TOKEN=${YOUTUBE_REFRESH_TOKEN}
-      - POT_TOKEN=${POT_TOKEN}
-      - POT_VISITOR_DATA=${POT_VISITOR_DATA}
+      - POT_TOKEN=${POT_TOKEN:-}
+      - POT_VISITOR_DATA=${POT_VISITOR_DATA:-}
     volumes:
       - ./lavalink/application.yml:/opt/Lavalink/application.yml:ro
-    expose:
-      - "2333"
-    networks:
-      - vybertron
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "--header", "Authorization: ${LAVALINK_PASSWORD}", "http://localhost:2333/version"]
       interval: 10s
@@ -54,3 +85,6 @@ services:
 
 networks:
   vybertron:
+
+volumes:
+  warp-data:

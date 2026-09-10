@@ -33,9 +33,16 @@ jobs:
             git reset --hard origin/main
             docker compose pull
             docker compose up -d --build
-            # Bind-mounted configs don't change the compose hash; force a
-            # restart when Lavalink config changed so the new file is read.
-            if ! git diff --quiet "$OLD_HEAD" HEAD -- lavalink/; then
+            # Bind-mounted files don't change the Compose hash.
+            if ! git diff --quiet "$OLD_HEAD" HEAD -- warp/ docker-compose.yml; then
+              # These services share WARP's network namespace. Recreate them
+              # together, then reconnect the bot after Lavalink is healthy.
+              docker compose up -d --force-recreate warp yt-cipher lavalink
+              docker compose up -d --wait lavalink
+              docker compose restart bot
+            elif ! git diff --quiet "$OLD_HEAD" HEAD -- lavalink/; then
               docker compose up -d --force-recreate lavalink
+              docker compose up -d --wait lavalink
+              docker compose restart bot
             fi
             docker image prune -f

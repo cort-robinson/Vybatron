@@ -131,6 +131,11 @@ If autocomplete is empty and `/play` cannot load any query, check
 `docker compose ps` and `docker compose exec warp warp-cli --accept-tos status`.
 Lavalink's HTTP health check can pass even when WARP's DNS is unavailable.
 
+If search works but the queue immediately finishes, inspect Lavalink's playback
+exceptions. Track loading only verifies metadata; source upgrades must also be
+checked by decoding audio, including the end of a track. A TV client error saying
+"The page needs to be reloaded" requires the YouTube plugin's client identity fix.
+
 WARP is limited to 384 MiB of RAM and 512 MiB including swap. The supervisor
 restarts a missing `warp-svc` daemon within five seconds after startup, keeping
 the shared network namespace intact. This handles a daemon killed by memory

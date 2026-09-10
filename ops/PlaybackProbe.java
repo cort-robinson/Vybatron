@@ -27,6 +27,7 @@ public class PlaybackProbe {
         String message = text.toString().toLowerCase(Locale.ROOT);
         if (message.contains("unsatisfiedlinkerror") || message.contains("noclassdeffounderror") || message.contains("nosuchmethoderror")) return "probe_environment";
         if (message.contains("invalid_grant") || message.contains("invalid refresh") || message.contains("missing oauth")) return "credentials";
+        if (message.contains("not made this video available in your country") || message.contains("video is unavailable") || message.contains("private video")) return "unavailable";
         if (message.contains("unknownhost") || message.contains("connectexception") || message.contains("sockettimeout")) return "network";
         if (message.contains("timeout")) return "timeout";
         return "source";
@@ -116,8 +117,9 @@ public class PlaybackProbe {
             }
             if (failure.get() != null) throw failure.get();
             boolean complete = !full || (ended.get() == AudioTrackEndReason.FINISHED && position >= track.getDuration() - 2000);
-            return Map.of("ok", frames >= 250 && nonzero > 0 && complete, "frames", frames, "positionMs", position,
-                "durationMs", track.getDuration(), "category", complete ? "audio" : "incomplete", "ended", Objects.toString(ended.get(), "running"));
+            boolean ok = frames >= 250 && nonzero > 0 && complete;
+            return Map.of("ok", ok, "frames", frames, "positionMs", position,
+                "durationMs", track.getDuration(), "category", ok ? "audio" : frames == 0 ? "source" : "incomplete", "ended", Objects.toString(ended.get(), "running"));
         } catch (Throwable error) {
             return Map.of("ok", false, "category", category(error));
         } finally {

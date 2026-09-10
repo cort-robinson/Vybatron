@@ -29,7 +29,9 @@ LOCK = '/run/lock/vybertron-maintenance.lock'
 JDK = 'eclipse-temurin:17-jdk@sha256:36d9a76dc231587873b103c68a789b85d91b41d314dda69730d6bc43a777f2a9'
 GITHUB = 'https://api.github.com/repos/lavalink-devs/youtube-source'
 MAVEN = 'https://maven.lavalink.dev'
-TRACKS = ['https://www.youtube.com/watch?v=s3a4OQR-10M', 'https://www.youtube.com/watch?v=2SUwOgmvzK4']
+# One broadly available short video plus a complete music track. The original
+# incident video intermittently has regional restrictions on WARP's egress.
+TRACKS = ['https://www.youtube.com/watch?v=jNQXAC9IVRw', 'https://www.youtube.com/watch?v=2SUwOgmvzK4']
 VERSION = re.compile(r'^[a-f0-9]{40}$|^\d+\.\d+\.\d+(?:[-.][A-Za-z0-9]+)*$')
 DEPENDENCY = re.compile(r'dev\.lavalink\.youtube:youtube-plugin:([A-Za-z0-9.-]+)')
 UPDATE_INTERVAL = 6 * 3600
@@ -520,7 +522,7 @@ class Coordinator:
         due = (now - self.state.get('upstream_checked_at', 0) >= UPDATE_INTERVAL
                or self.state.get('candidate') or (not healthy and failures >= 2))
         if (due and not observe_only and self.backend.settings.get('auto_update', False)
-                and 'credentials' not in categories):
+                and not categories.intersection({'credentials', 'unavailable'})):
             try:
                 candidates = [self.state['candidate']] if self.state.get('candidate') else self.backend.candidates(current)
                 self.state['upstream_checked_at'] = now
@@ -554,6 +556,8 @@ class Coordinator:
             return self.finish('healthy', now)
         if 'credentials' in categories:
             return self.finish('credentials', now, 'the YouTube credentials need attention; a plugin update cannot refresh the account authorization')
+        if 'unavailable' in categories:
+            return self.finish('canary_degraded', now, 'test content is unavailable or region-restricted; this requires checking the test videos')
         if any(track.get('ok') for track in probe['tracks']):
             return self.finish('canary_degraded', now, 'one test video failed while another played; playback is not completely down')
         return self.finish('source', now, 'YouTube search or playback checks failed; no tested plugin update has restored playback yet')

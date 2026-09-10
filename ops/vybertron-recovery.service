@@ -10,4 +10,3 @@ ExecStart=/usr/bin/python3 /root/Vybertron/ops/recovery.py run
 Environment=PYTHONUNBUFFERED=1
 UMask=0077
 TimeoutStartSec=15min
-

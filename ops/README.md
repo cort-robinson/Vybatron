@@ -4,6 +4,8 @@ The systemd timer checks the running stack about five minutes after each complet
 run. It checks WARP health and shared network namespaces, Discord/Lavalink
 connectivity, YouTube search, and five seconds of decoded audio from each of two
 known videos. It never joins a Discord voice channel or saves audio.
+The samples include a broadly available short video and a full music track;
+explicit regional/private-video restrictions do not trigger plugin updates.
 
 Persistent infrastructure failures allow at most two service recovery attempts in
 six hours, at least thirty minutes apart. A missing WARP daemon already has a

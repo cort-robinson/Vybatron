@@ -162,6 +162,15 @@ class RecoveryTests(unittest.TestCase):
         self.assertFalse(self.calls('candidates'))
         self.assertFalse(self.calls('deploy'))
 
+    def test_unavailable_content_does_not_trigger_plugin_updates(self):
+        self.backend.results[OLD] = result(False, 'unavailable')
+        self.backend.available = [NEW]
+        self.cycle()
+        self.cycle()
+        self.assertEqual(self.coordinator.state['status'], 'canary_degraded')
+        self.assertFalse(self.calls('candidates'))
+        self.assertFalse(self.calls('deploy'))
+
     def test_probe_cache_retention_preserves_current_bundle_and_unrelated_files(self):
         cache = Path(self.temp.name) / 'cache'
         active = cache / ('a' * 24)

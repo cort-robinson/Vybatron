@@ -1,5 +1,6 @@
 import { createServer } from 'node:http';
 import { maintenanceStatus, setMaintenance } from './utils/maintenance.js';
+import { playbackHealth } from './utils/playback-health.js';
 
 export function getHealth(client) {
   const discordReady = client.isReady();
@@ -11,6 +12,10 @@ export function getHealth(client) {
 // Loopback only: health checks expose no guild, user, token, or player data.
 export function startHealthServer(client, { port = 3000 } = {}) {
   const server = createServer((request, response) => {
+    if (request.method === 'GET' && request.url === '/playback') {
+      response.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }).end(JSON.stringify(playbackHealth(client)));
+      return;
+    }
     if (request.method === 'POST' && ['/maintenance/begin', '/maintenance/end'].includes(request.url)) {
       const status = setMaintenance(client, request.url.endsWith('/begin'));
       response.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify(status));

@@ -162,13 +162,14 @@ async function read(url, auth=true) {
  try { const r=await fetch(url,{headers:auth?headers:{},signal:AbortSignal.timeout(6000)}); return r.ok?await r.json():null; }
  catch { return null; }
 }
-const [stats,info,health,search]=await Promise.all([
+const [stats,info,health,search,playback]=await Promise.all([
  read('http://lavalink:2333/v4/stats'), read('http://lavalink:2333/v4/info'),
  read('http://127.0.0.1:3000/health',false),
- read('http://lavalink:2333/v4/loadtracks?identifier=ytsearch%3Aloser%20tame%20impala')]);
+ read('http://lavalink:2333/v4/loadtracks?identifier=ytsearch%3Aloser%20tame%20impala'),
+ read('http://127.0.0.1:3000/playback',false)]);
 console.log(JSON.stringify({api:!!stats,bot:health?.ready===true,playing:stats?.playingPlayers??null,
  version:info?.plugins?.find(p=>p.name==='youtube-plugin')?.version,
- search:search?.loadType==='search'&&search.data?.length>0}));
+ search:search?.loadType==='search'&&search.data?.length>0,failures:playback?.failures??[]}));
 """
         result = json.loads(command(['docker', 'exec', '-i', 'vybertron-bot', 'node', '--input-type=module'], data=script, timeout=20))
         result['kind'] = 'audio_service' if not result['api'] else 'bot' if not result['bot'] else 'ready'
@@ -261,7 +262,7 @@ console.log(JSON.stringify({api:!!stats,bot:health?.ready===true,playing:stats?.
         trim_probe_cache(bundle.parent, bundle)
         return bundle, image
 
-    def probe(self, version, full=False, installed=False):
+    def probe(self, version, full=False, installed=False, tracks=None):
         bundle, image = self.prepare_probe()
         plugin = self.installed_artifact() if installed else self.artifact(version)
         if installed and version != self.current():
@@ -284,7 +285,7 @@ console.log(JSON.stringify({api:!!stats,bot:health?.ready===true,playing:stats?.
                     '-e', '_JAVA_OPTIONS=-Xmx128m -Djava.net.preferIPv4Stack=true',
                     '-v', f'{bundle}:/probe:ro', '-v', f'{plugin}:/plugin.jar:ro', '--entrypoint', 'java', image,
                     '-cp', '/probe/classes:/probe/lib/*:/plugin.jar', 'PlaybackProbe', '/probe/application.yml',
-                    'full' if full else 'short', *TRACKS]
+                    'full' if full else 'short', *(TRACKS if tracks is None else tracks)]
             output = command(args, timeout=280 if full else 120)
             result = json.loads(output.splitlines()[-1])
             if not isinstance(result.get('ok'), bool) or not isinstance(result.get('tracks'), list):
@@ -513,7 +514,40 @@ class Coordinator:
         current = self.backend.current()
         if observation.get('version') != current:
             return self.finish('configuration_drift', now, 'the loaded plugin differs from the configured version')
-        probe = self.backend.probe(current, installed=True)
+        handled = self.state.get('handled_failures', [])
+        live_failures = [item for item in observation.get('failures', [])
+                         if isinstance(item, dict) and isinstance(item.get('id'), str)
+                         and item['id'] not in handled and isinstance(item.get('at'), (int, float))
+                         and 0 <= now - item['at'] / 1000 < 900
+                         and re.fullmatch(r'[A-Za-z0-9_-]{11}', str(item.get('identifier', '')))]
+        if live_failures:
+            # A fresh probe can succeed while the long-running source is broken.
+            # Recheck the actual failed video, not just the fixed canaries.
+            target = 'https://www.youtube.com/watch?v=' + live_failures[-1]['identifier']
+            probe = self.backend.probe(current, installed=True, tracks=[target])
+            self.state['last_live_failure_probe'] = probe
+            if probe['ok']:
+                recoveries = [stamp for stamp in self.state.get('recoveries', []) if now - stamp < RECOVERY_WINDOW]
+                eligible = (not observe_only and len(recoveries) < 2
+                            and (not recoveries or now - recoveries[-1] >= RECOVERY_COOLDOWN)
+                            and observation.get('playing') == 0 and self.backend.update_idle())
+                if not eligible or not self.backend.begin_update():
+                    return self.finish('live_playback', now, 'real playback failed despite a passing fresh probe; recovery is waiting for an idle queue or its recovery limit')
+                try:
+                    self.state['recoveries'] = [*recoveries, now]
+                    self.save()
+                    self.backend.deploy()
+                    observation = self.backend.observe()
+                    if observation['kind'] != 'ready':
+                        raise RecoveryError('services_not_ready')
+                    self.state['handled_failures'] = [*handled, *(item['id'] for item in live_failures)][-30:]
+                    self.save()
+                    self.event('Vybertron restarted the idle audio service after a real playback failure that fresh audio probes could not reproduce. The bot reconnected; retry /play. Repeated recovery attempts are limited.')
+                finally:
+                    self.backend.end_update()
+                probe = self.backend.probe(current, installed=True)
+        else:
+            probe = self.backend.probe(current, installed=True)
         self.state['last_probe'] = probe
         healthy = probe['ok'] and observation.get('search', False)
         categories = {track.get('category') for track in probe['tracks'] if not track.get('ok')}

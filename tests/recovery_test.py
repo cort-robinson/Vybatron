@@ -37,16 +37,18 @@ class FakeBackend:
         self.settings = {'auto_update': True}
         self.kind, self.playing, self.idle, self.gate = 'ready', 0, True, True
         self.available, self.calls = [], []
+        self.failures, self.probed_tracks = [], []
         self.results, self.verify_ok, self.deploy_error, self.fix_recovery = {}, True, False, False
 
     def current(self):
         return r.version_of(self.config_path.read_text())
 
     def observe(self):
-        return {'kind': self.kind, 'playing': self.playing, 'version': self.current(), 'search': True}
+        return {'kind': self.kind, 'playing': self.playing, 'version': self.current(), 'search': True, 'failures': self.failures}
 
-    def probe(self, version, full=False, installed=False):
+    def probe(self, version, full=False, installed=False, tracks=None):
         self.calls.append(('probe', version, full, installed))
+        self.probed_tracks.append(tracks)
         return self.results.get(version, result())
 
     def candidates(self, current):
@@ -110,6 +112,61 @@ class RecoveryTests(unittest.TestCase):
         self.assertEqual(len(self.calls('recover')), 2)
         self.cycle(delta=r.RECOVERY_WINDOW)
         self.assertEqual(len(self.calls('recover')), 3)
+
+    def live_failure(self):
+        self.backend.failures = [{'id': 'event-1', 'at': self.clock * 1000, 'identifier': 'RYnFIRc0k6E'}]
+
+    def test_live_failure_with_passing_fresh_probe_recovers_once(self):
+        self.live_failure()
+        self.cycle()
+        self.assertEqual(self.calls('deploy'), [('deploy', OLD)])
+        self.assertEqual(self.backend.probed_tracks[0], ['https://www.youtube.com/watch?v=RYnFIRc0k6E'])
+        self.assertIn('event-1', self.coordinator.state['handled_failures'])
+        self.cycle()
+        self.assertEqual(len(self.calls('deploy')), 1)
+        self.assertEqual(len(self.calls('end')), 1)
+
+    def test_live_failure_waits_for_idle_queue(self):
+        self.live_failure()
+        self.backend.idle = False
+        self.assertEqual(self.cycle()['status'], 'live_playback')
+        self.assertFalse(self.calls('deploy'))
+        self.assertNotIn('handled_failures', self.coordinator.state)
+
+    def test_live_failure_honors_existing_recovery_cooldown(self):
+        self.live_failure()
+        self.coordinator.state['recoveries'] = [self.clock]
+        self.assertEqual(self.cycle()['status'], 'live_playback')
+        self.assertFalse(self.calls('deploy'))
+
+    def test_reproducible_live_source_failure_does_not_blindly_restart(self):
+        self.live_failure()
+        self.backend.results[OLD] = result(False)
+        self.assertEqual(self.cycle()['status'], 'source')
+        self.assertFalse(self.calls('deploy'))
+        self.assertEqual(self.backend.probed_tracks[0], ['https://www.youtube.com/watch?v=RYnFIRc0k6E'])
+
+    def test_live_failure_observe_only_cannot_restart(self):
+        self.live_failure()
+        self.cycle(observe_only=True)
+        self.assertFalse(self.calls('deploy'))
+
+    def test_failed_live_recovery_is_rate_limited_and_not_acknowledged(self):
+        self.live_failure()
+        self.backend.deploy_error = True
+        with self.assertRaises(r.RecoveryError):
+            self.cycle()
+        self.assertEqual(len(self.calls('end')), 1)
+        self.assertNotIn('handled_failures', self.coordinator.state)
+        self.cycle()
+        self.assertEqual(len(self.calls('deploy')), 1)
+
+    def test_expired_and_invalid_live_failure_ids_are_ignored(self):
+        self.backend.failures = [{'id': 'expired', 'at': 0, 'identifier': 'RYnFIRc0k6E'},
+                                 {'id': 'invalid', 'at': self.clock * 1000, 'identifier': 'https://private.example'}]
+        self.cycle()
+        self.assertFalse(self.calls('deploy'))
+        self.assertEqual(self.backend.probed_tracks, [None])
 
     def test_stopped_containers_and_known_playing_players_are_not_restarted(self):
         self.backend.kind = 'stopped'

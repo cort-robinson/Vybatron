@@ -4,6 +4,7 @@ import { once } from 'node:events';
 import { startHealthServer } from '../src/health.js';
 import { acquirePlaybackRequest, maintenanceStatus, setMaintenance } from '../src/utils/maintenance.js';
 import { loadCommands } from '../src/commands/index.js';
+import { recordPlaybackFailure } from '../src/utils/playback-health.js';
 
 test('health reports outages and recovery over HTTP without exposing private client state', async () => {
   let discordReady = false;
@@ -24,6 +25,10 @@ test('health reports outages and recovery over HTTP without exposing private cli
     const healthy = await fetch(`${url}/health`);
     assert.equal(healthy.status, 200);
     assert.deepEqual(await healthy.json(), { ready: true, discordReady: true, audioReady: true });
+    recordPlaybackFailure(client, { info: { sourceName: 'youtube', identifier: 'RYnFIRc0k6E' } });
+    const playback = await (await fetch(`${url}/playback`)).json();
+    assert.equal(playback.failures[0].identifier, 'RYnFIRc0k6E');
+    assert.doesNotMatch(JSON.stringify(playback), /private/);
     discordReady = false;
     assert.equal((await fetch(`${url}/health`)).status, 503);
     assert.equal((await fetch(`${url}/anything-else`)).status, 404);

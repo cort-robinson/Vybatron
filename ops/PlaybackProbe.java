@@ -27,6 +27,9 @@ public class PlaybackProbe {
         String message = text.toString().toLowerCase(Locale.ROOT);
         if (message.contains("unsatisfiedlinkerror") || message.contains("noclassdeffounderror") || message.contains("nosuchmethoderror")) return "probe_environment";
         if (message.contains("invalid_grant") || message.contains("invalid refresh") || message.contains("missing oauth")) return "credentials";
+        // A last-resort client's generic unavailable error must not hide a
+        // streaming failure from the authenticated client.
+        if (message.contains("403") || message.contains("no supported audio streams") || message.contains("page needs to be reloaded")) return "source";
         if (message.contains("not made this video available in your country") || message.contains("video is unavailable") || message.contains("private video")) return "unavailable";
         if (message.contains("unknownhost") || message.contains("connectexception") || message.contains("sockettimeout")) return "network";
         if (message.contains("timeout")) return "timeout";

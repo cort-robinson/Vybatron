@@ -14,6 +14,16 @@ replacing its shared network namespace. Intentionally stopped containers stay
 stopped. Known active players prevent service restarts. Audio source failures do
 not trigger blind restarts.
 
+The bot also exposes recent real YouTube playback failures on its loopback-only
+`/playback` endpoint. Only ten public video IDs and event timestamps are retained,
+for fifteen minutes; server-reported playback progress clears a recovered video.
+The monitor tests the actual failed video. If a fresh player succeeds while the
+live service failed, it can restart the idle audio service under the same
+cooldown and attempt limits. Each event is handled once. Failures reproduced by
+the probe follow the source-update policy instead. This detects stale live-source
+state that fixed, fresh-process canaries alone cannot detect. Failed final tracks
+show Playback Unavailable rather than Queue Finished.
+
 With `auto_update` enabled, official youtube-source releases and main commits are
 checked every six hours and after repeated playback failures. A candidate must
 be at least as recent as the current upstream commit, have a published Maven jar,

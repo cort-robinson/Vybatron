@@ -10,10 +10,12 @@ import {
 import { plainText } from './utils/presentation.js';
 import { clearTrackPresence, updateTrackPresence } from './utils/presence.js';
 import { clearVoiceStatus, updateVoiceStatus } from './utils/voice-status.js';
+import { recordPlaybackFailure, recordPlaybackProgress } from './utils/playback-health.js';
 
 export const IDLE_MS = 5 * 60 * 1000;
 
 const idleTimers = new Map();
+const playbackFailures = new WeakMap();
 
 export function startIdleTimer(player, options = IDLE_MS) {
   const settings = typeof options === 'number' ? { ms: options } : options;
@@ -50,6 +52,7 @@ export function clearIdleTimer(guildId) {
 }
 
 export async function handleTrackStart(client, player, track) {
+  playbackFailures.delete(player);
   clearIdleTimer(player.guildId);
   updateTrackPresence(client, player, track);
   await Promise.allSettled([
@@ -67,8 +70,10 @@ export function handleQueueEnd(clientOrPlayer, maybePlayer) {
     void showStatus(
       client,
       player,
-      'queue-finished',
-      'No tracks remain. Add something within five minutes to keep this session open.'
+      playbackFailures.has(player) ? 'unavailable' : 'queue-finished',
+      playbackFailures.has(player)
+        ? 'The audio source rejected playback. Try /play again; if it continues, try another result.'
+        : 'No tracks remain. Add something within five minutes to keep this session open.'
     ).catch(() => {});
   }
   startIdleTimer(player, { client, reason: 'queue-empty' });
@@ -95,6 +100,7 @@ export function handleVoiceStateUpdate(client, oldState) {
 }
 
 export function handleTrackFailure(player, track) {
+  playbackFailures.set(player, true);
   const title = plainText(track?.info?.title, { fallback: 'A track', maxLength: 120 });
   setNotice(player.guildId, `Couldn’t play ${title}; skipped.`);
 }
@@ -139,10 +145,15 @@ export function initLavalink(client) {
   client.on('voiceStateUpdate', (oldState) => handleVoiceStateUpdate(client, oldState));
 
   lavalink.on('trackStart', (player, track) => void handleTrackStart(client, player, track));
+  lavalink.on('playerUpdate', (_previous, player) => recordPlaybackProgress(client, player));
   lavalink.on('trackError', (player, track, payload) => {
+    recordPlaybackFailure(client, track);
     void handleTrackError(player, track, payload);
   });
-  lavalink.on('trackStuck', (player, track) => handleTrackFailure(player, track));
+  lavalink.on('trackStuck', (player, track) => {
+    recordPlaybackFailure(client, track);
+    handleTrackFailure(player, track);
+  });
   lavalink.on('queueEnd', (player) => handleQueueEnd(client, player));
   lavalink.on('playerDestroy', (player) => {
     clearIdleTimer(player.guildId);

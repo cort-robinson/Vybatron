@@ -51,17 +51,19 @@ function mockClient(channel) {
 function mockChannel(sendImpl) {
   let sends = 0;
   let edits = 0;
+  let lastPayload;
   const messages = new Map();
   return {
     messages: {
       fetch: (id) => Promise.resolve(messages.get(id) || null),
     },
     send: async (...args) => {
+      lastPayload = args[0];
       sends += 1;
       if (sendImpl) return sendImpl(...args);
       const message = {
         id: `m${sends}`,
-        edit: async () => { edits += 1; return message; },
+        edit: async (payload) => { lastPayload = payload; edits += 1; return message; },
       };
       messages.set(message.id, message);
       return message;
@@ -72,6 +74,7 @@ function mockChannel(sendImpl) {
     get edits() {
       return edits;
     },
+    get lastPayload() { return lastPayload; },
   };
 }
 
@@ -153,4 +156,21 @@ test('protocol track errors recover to the next queue entry', async () => {
   const player = mockPlayer('error-recovery');
   await handleTrackError(player, track, { type: 'TrackExceptionEvent' }, { error: () => {} });
   assert.equal(player.skips, 1);
+});
+
+test('a failed final track displays playback unavailable instead of queue finished', async () => {
+  const player = mockPlayer('failed-last');
+  const channel = mockChannel();
+  const client = mockClient(channel);
+  await handleTrackStart(client, player, track);
+  handleTrackFailure(player, track);
+  handleQueueEnd(client, player);
+  await sleep(10);
+  assert.match(JSON.stringify(channel.lastPayload), /Playback Unavailable/);
+  assert.doesNotMatch(JSON.stringify(channel.lastPayload), /Queue Finished/);
+  await handleTrackStart(client, player, track);
+  handleQueueEnd(client, player);
+  await sleep(10);
+  assert.match(JSON.stringify(channel.lastPayload), /Queue Finished/);
+  clearIdleTimer(player.guildId);
 });

@@ -25,12 +25,20 @@ jobs:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
+          command_timeout: 25m
           script: |
             set -euo pipefail
             cd ~/Vybertron
+            exec 9>/run/lock/vybertron-maintenance.lock
+            flock -w 600 9
+            # Refuse to discard an interrupted update's live configuration.
+            if [ -f ops/recovery.py ]; then python3 ops/recovery.py restore-pin; fi
             OLD_HEAD=$(git rev-parse HEAD)
+            OLD_AUDIO_CONFIG=$(sha256sum lavalink/application.yml | cut -d ' ' -f1)
             git fetch origin main
             git reset --hard origin/main
+            # Preserve an automatically tested pin across unrelated deployments.
+            python3 ops/recovery.py restore-pin
             docker compose pull
             docker compose up -d --build
             # Bind-mounted files don't change the Compose hash.
@@ -40,9 +48,14 @@ jobs:
               docker compose up -d --force-recreate warp yt-cipher lavalink
               docker compose up -d --wait lavalink
               docker compose restart bot
-            elif ! git diff --quiet "$OLD_HEAD" HEAD -- lavalink/; then
+            elif [ "$OLD_AUDIO_CONFIG" != "$(sha256sum lavalink/application.yml | cut -d ' ' -f1)" ]; then
               docker compose up -d --force-recreate lavalink
               docker compose up -d --wait lavalink
               docker compose restart bot
+            fi
+            if [ -f /var/lib/vybertron-recovery/settings.json ]; then
+              install -m 644 ops/vybertron-recovery.service ops/vybertron-recovery.timer /etc/systemd/system/
+              systemctl daemon-reload
+              systemctl enable --now vybertron-recovery.timer
             fi
             docker image prune -f

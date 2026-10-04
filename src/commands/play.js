@@ -1,10 +1,11 @@
 import { MessageFlags, SlashCommandBuilder } from 'discord.js';
-import { requireUserVoice } from '../utils/guards.js';
+import { requireUserVoice, recheckEnqueueRequest } from '../utils/guards.js';
 import { autocompleteTracks } from '../utils/autocomplete.js';
 import { textPayload } from '../utils/messages.js';
 import { refresh, withControllerLink } from '../utils/player-controller.js';
 import { safeText } from '../utils/presentation.js';
-import { resolveTrackQuery, searchFailureMessage } from '../utils/search.js';
+import { resolveTrackQuery, searchFailureMessage, validatePlaybackQuery } from '../utils/search.js';
+import { enqueueTracks, getOrCreatePlayer } from '../utils/enqueue.js';
 
 export const data = new SlashCommandBuilder()
   .setName('play')
@@ -24,54 +25,59 @@ export async function execute(interaction) {
   const channel = await requireUserVoice(interaction, { checkBotAccess: true });
   if (!channel) return;
   const query = interaction.options.getString('query');
+  const invalid = validatePlaybackQuery(query);
+  if (invalid) return interaction.reply({ ...textPayload(invalid), flags: MessageFlags.Ephemeral });
 
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
-  const lavalink = interaction.client.lavalink;
-  const player =
-    lavalink.getPlayer(interaction.guildId) ??
-    lavalink.createPlayer({
-      guildId: interaction.guildId,
-      voiceChannelId: channel.id,
-      textChannelId: interaction.channelId,
-      selfDeaf: true,
-      volume: 100,
-    });
+  const { player, created } = getOrCreatePlayer(interaction, channel);
+  let added = false;
+  try {
+    const { result, expired } = await resolveTrackQuery(player, query, interaction.user);
+    if (expired) {
+      return interaction.editReply(textPayload(
+        'That search suggestion expired. Type your search again and choose a fresh result.'
+      ));
+    }
+    if (!result?.tracks?.length) {
+      return interaction.editReply(textPayload(searchFailureMessage(result, query)));
+    }
 
-  if (!player.connected) await player.connect();
+    if (!await recheckEnqueueRequest(interaction, player, channel)) return;
+    const starting = !player.playing && !player.paused && !player.queue.current;
+    const previousQueueSize = player.queue.tracks.length;
+    const firstPosition = previousQueueSize + 1;
+    const fairQueue = interaction.client.library?.settings(interaction.guildId).fairQueue;
+    let acknowledgement;
 
-  const { result, expired } = await resolveTrackQuery(player, query, interaction.user);
-  if (expired) {
+    if (result.loadType === 'playlist') {
+      await enqueueTracks(interaction.client, player, result.tracks); added = true;
+      const playlistName = safeText(result.playlist?.name || 'Playlist', { maxLength: 120 });
+      acknowledgement = starting
+        ? `Added ${result.tracks.length} tracks from **${playlistName}**. Starting playback.`
+        : fairQueue ? `Added ${result.tracks.length} tracks from **${playlistName}**. Fair queue lets listeners take turns.`
+        : `Added ${result.tracks.length} tracks from **${playlistName}** at queue positions ${firstPosition}–${firstPosition + result.tracks.length - 1}.`;
+    } else {
+      const track = result.tracks[0];
+      await enqueueTracks(interaction.client, player, track); added = true;
+      const title = safeText(track.info.title, { maxLength: 140 });
+      const position = player.queue.tracks.indexOf(track) + 1;
+      acknowledgement = starting && previousQueueSize === 0
+        ? `Starting **${title}**.`
+        : `Added **${title}** at queue position ${position}.${starting ? ' Starting your queue.' : ''}`;
+    }
+
+    if (!await recheckEnqueueRequest(interaction, player, channel)) return;
+    if (!player.connected) await player.connect();
+    if (!await recheckEnqueueRequest(interaction, player, channel)) return;
+    if (!player.playing && !player.paused) await player.play();
+    if (!await recheckEnqueueRequest(interaction, player, channel)) return;
+    await refresh(interaction.client, player);
+    if (result.spotifyImport?.notice) acknowledgement += `\n${result.spotifyImport.notice}`;
     return interaction.editReply(textPayload(
-      'That search suggestion expired. Type your search again and choose a fresh result.'
+      withControllerLink(acknowledgement, interaction, player)
     ));
+  } finally {
+    if (created && !added && !player.queue.current && !player.queue.tracks.length) await player.destroy('unused-request-disconnect').catch(() => {});
   }
-  if (!result?.tracks?.length) {
-    return interaction.editReply(textPayload(searchFailureMessage(result, query)));
-  }
-
-  const starting = !player.playing && !player.paused && !player.queue.current;
-  const firstPosition = player.queue.tracks.length + 1;
-  let acknowledgement;
-
-  if (result.loadType === 'playlist') {
-    player.queue.add(result.tracks);
-    const playlistName = safeText(result.playlist?.name || 'Playlist', { maxLength: 120 });
-    acknowledgement = starting
-      ? `Added ${result.tracks.length} tracks from **${playlistName}**. Starting playback.`
-      : `Added ${result.tracks.length} tracks from **${playlistName}** at queue positions ${firstPosition}–${firstPosition + result.tracks.length - 1}.`;
-  } else {
-    const track = result.tracks[0];
-    player.queue.add(track);
-    const title = safeText(track.info.title, { maxLength: 140 });
-    acknowledgement = starting
-      ? `Starting **${title}**.`
-      : `Added **${title}** at queue position ${firstPosition}.`;
-  }
-
-  if (!player.playing && !player.paused) await player.play();
-  await refresh(interaction.client, player);
-  return interaction.editReply(textPayload(
-    withControllerLink(acknowledgement, interaction, player)
-  ));
 }

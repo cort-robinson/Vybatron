@@ -37,6 +37,8 @@ DEPENDENCY = re.compile(r'dev\.lavalink\.youtube:youtube-plugin:([A-Za-z0-9.-]+)
 UPDATE_INTERVAL = 6 * 3600
 RECOVERY_COOLDOWN = 30 * 60
 RECOVERY_WINDOW = 6 * 3600
+MAX_OUTBOX = 32
+MAX_ALERTS_PER_RUN = 5
 
 
 class RecoveryError(Exception):
@@ -56,7 +58,56 @@ def command(args, *, data=None, timeout=30, cwd=None):
 
 
 def read_json(path, default=None):
-    return json.loads(path.read_text()) if path.exists() else (default if default is not None else {})
+    if not path.exists():
+        return default if default is not None else {}
+    try:
+        if path.stat().st_size > 2 * 1024 * 1024:
+            raise RecoveryError('state_too_large')
+        value = json.loads(path.read_text())
+        if not isinstance(value, dict):
+            raise RecoveryError('invalid_state')
+        return value
+    except (ValueError, OSError):
+        raise RecoveryError('state_unavailable') from None
+
+
+def validate_settings(settings):
+    if not isinstance(settings, dict) or not isinstance(settings.get('auto_update', False), bool):
+        raise RecoveryError('invalid_monitor_settings')
+    guild, channel = settings.get('discord_guild_id'), settings.get('discord_channel_id')
+    if guild or channel:
+        if not all(isinstance(value, str) and re.fullmatch(r'\d{17,20}', value) for value in [guild, channel]):
+            raise RecoveryError('invalid_alert_destination')
+    return settings
+
+
+def probe_result(value):
+    """Validate decoder evidence and retain only credential-free diagnostics."""
+    if (not isinstance(value, dict) or not isinstance(value.get('ok'), bool)
+            or not isinstance(value.get('searchOk'), bool)
+            or not isinstance(value.get('tracks'), list) or not 1 <= len(value['tracks']) <= 10):
+        raise RecoveryError('invalid_probe_response')
+    categories = {'audio', 'source', 'credentials', 'unavailable', 'network', 'timeout', 'incomplete', 'probe_environment'}
+    endings = {'running', 'FINISHED', 'LOAD_FAILED', 'STOPPED', 'REPLACED', 'CLEANUP'}
+    tracks = []
+    for track in value['tracks']:
+        if (not isinstance(track, dict) or not isinstance(track.get('ok'), bool)
+                or track.get('category') not in categories):
+            raise RecoveryError('invalid_probe_response')
+        clean = {'ok': track['ok'], 'category': track['category']}
+        for key in ['frames', 'positionMs', 'durationMs']:
+            if key in track:
+                if type(track[key]) is not int or not 0 <= track[key] <= 10 ** 12:
+                    raise RecoveryError('invalid_probe_response')
+                clean[key] = track[key]
+        if 'ended' in track:
+            if track['ended'] not in endings:
+                raise RecoveryError('invalid_probe_response')
+            clean['ended'] = track['ended']
+        tracks.append(clean)
+    if value['ok'] != (value['searchOk'] and all(track['ok'] for track in tracks)):
+        raise RecoveryError('invalid_probe_response')
+    return {'ok': value['ok'], 'searchOk': value['searchOk'], 'tracks': tracks}
 
 
 def atomic_write(path, text, mode=0o600):
@@ -128,14 +179,17 @@ def public_json(url):
     request = urllib.request.Request(url, headers={'User-Agent': 'Vybertron-Recovery/1.0', 'Accept': 'application/vnd.github+json'})
     try:
         with urllib.request.urlopen(request, timeout=20) as response:
-            return json.load(response)
+            value = json.loads(response.read(2 * 1024 * 1024))
+            if not isinstance(value, dict):
+                raise ValueError()
+            return value
     except (urllib.error.URLError, ValueError):
         raise RecoveryError('upstream_metadata_unavailable') from None
 
 
 class Backend:
     def __init__(self, repo, directory, settings):
-        self.repo, self.directory, self.settings = repo, directory, settings
+        self.repo, self.directory, self.settings = repo, directory, validate_settings(settings)
         self.config_path = repo / 'lavalink/application.yml'
         self.containers = {}
 
@@ -158,15 +212,16 @@ class Backend:
             return {'kind': 'network', 'playing': None}
         script = """
 const headers={Authorization:process.env.LAVALINK_PASSWORD};
+const healthBase='http://127.0.0.1:'+(Number(process.env.VYBERTRON_HEALTH_PORT)||3000);
 async function read(url, auth=true) {
  try { const r=await fetch(url,{headers:auth?headers:{},signal:AbortSignal.timeout(6000)}); return r.ok?await r.json():null; }
  catch { return null; }
 }
 const [stats,info,health,search,playback]=await Promise.all([
  read('http://lavalink:2333/v4/stats'), read('http://lavalink:2333/v4/info'),
- read('http://127.0.0.1:3000/health',false),
+ read(healthBase+'/health',false),
  read('http://lavalink:2333/v4/loadtracks?identifier=ytsearch%3Aloser%20tame%20impala'),
- read('http://127.0.0.1:3000/playback',false)]);
+ read(healthBase+'/playback',false)]);
 console.log(JSON.stringify({api:!!stats,bot:health?.ready===true,playing:stats?.playingPlayers??null,
  version:info?.plugins?.find(p=>p.name==='youtube-plugin')?.version,
  search:search?.loadType==='search'&&search.data?.length>0,failures:playback?.failures??[]}));
@@ -287,10 +342,7 @@ console.log(JSON.stringify({api:!!stats,bot:health?.ready===true,playing:stats?.
                     '-cp', '/probe/classes:/probe/lib/*:/plugin.jar', 'PlaybackProbe', '/probe/application.yml',
                     'full' if full else 'short', *(TRACKS if tracks is None else tracks)]
             output = command(args, timeout=280 if full else 120)
-            result = json.loads(output.splitlines()[-1])
-            if not isinstance(result.get('ok'), bool) or not isinstance(result.get('tracks'), list):
-                raise RecoveryError('invalid_probe_response')
-            return result
+            return probe_result(json.loads(output.splitlines()[-1]))
         except (ValueError, IndexError):
             raise RecoveryError('invalid_probe_response') from None
         finally:
@@ -317,7 +369,7 @@ console.log(JSON.stringify({api:!!stats,bot:health?.ready===true,playing:stats?.
 
     def maintenance(self, action=''):
         route = '/maintenance' + ('/' + action if action else '')
-        script = "const r=await fetch('http://127.0.0.1:3000" + route + "',{method:'" + ('POST' if action else 'GET') + "',signal:AbortSignal.timeout(5000)});if(!r.ok)process.exit(1);console.log(JSON.stringify(await r.json()));"
+        script = "const r=await fetch('http://127.0.0.1:'+(Number(process.env.VYBERTRON_HEALTH_PORT)||3000)+'" + route + "',{method:'" + ('POST' if action else 'GET') + "',signal:AbortSignal.timeout(5000)});if(!r.ok)process.exit(1);console.log(JSON.stringify(await r.json()));"
         return json.loads(command(['docker', 'exec', '-i', 'vybertron-bot', 'node', '--input-type=module'], data=script, timeout=10))
 
     def begin_update(self):
@@ -374,12 +426,14 @@ console.log(JSON.stringify({api:!!stats,bot:health?.ready===true,playing:stats?.
     def notify(self, event):
         channel = self.settings.get('discord_channel_id')
         guild = self.settings.get('discord_guild_id')
-        if not channel or not guild or not re.fullmatch(r'\d+', channel + guild):
+        if not channel or not guild:
             return False
         bot = json.loads(command(['docker', 'inspect', 'vybertron-bot']))[0]
         environment = dict(item.split('=', 1) for item in bot['Config']['Env'] if '=' in item)
         token = environment.get('DISCORD_BOT_TOKEN')
-        headers = {'Authorization': f'Bot {token}', 'Content-Type': 'application/json', 'User-Agent': 'Vybertron-Recovery/1.0'}
+        if not token:
+            return False
+        headers = {'Authorization': f'Bot {token}', 'Content-Type': 'application/json', 'User-Agent': 'Vybertron-Recovery/2.0'}
         base = f'https://discord.com/api/v10/channels/{channel}'
         try:
             with urllib.request.urlopen(urllib.request.Request(base, headers=headers), timeout=10) as response:
@@ -404,7 +458,12 @@ class Coordinator:
         save_json(self.path, self.state)
 
     def event(self, message):
-        self.state.setdefault('outbox', []).append({'id': uuid.uuid4().hex[:24], 'message': message})
+        outbox = self.state.get('outbox', [])
+        if not isinstance(outbox, list):
+            raise RecoveryError('invalid_alert_outbox')
+        if not any(isinstance(event, dict) and event.get('message') == message for event in outbox):
+            outbox.append({'id': uuid.uuid4().hex[:24], 'message': message})
+        self.state['outbox'] = outbox[-MAX_OUTBOX:]
         self.save()
 
     def finish(self, kind, now, detail=''):
@@ -487,6 +546,9 @@ class Coordinator:
                 self.backend.end_update()
 
     def cycle(self, now, observe_only=False):
+        deployment = read_json(self.backend.directory / 'deployment.json')
+        if deployment and deployment.get('phase') not in ['complete', 'rolled_back']:
+            return self.finish('pending_deployment', now, 'an interrupted deployment must be resolved before automatic recovery')
         if self.state.get('pending'):
             if observe_only:
                 return self.finish('pending_update', now, 'an interrupted update requires rollback')
@@ -500,11 +562,22 @@ class Coordinator:
                         and (not recoveries or now - recoveries[-1] >= RECOVERY_COOLDOWN)
                         and not observation.get('playing'))
             if eligible and not observe_only:
-                self.state['recoveries'] = [*recoveries, now]
-                self.save()
-                self.backend.recover(kind)
-                observation = self.backend.observe()
-                kind = observation['kind']
+                # Unknown player counts never establish that paused/queued music
+                # is safe to interrupt. The loopback gate must confirm idleness.
+                try:
+                    idle = self.backend.update_idle()
+                except RecoveryError:
+                    idle = False
+                if idle and self.backend.begin_update():
+                    try:
+                        self.state['recoveries'] = [*recoveries, now]
+                        self.save()
+                        self.backend.recover(kind)
+                        observation = self.backend.observe()
+                        kind = observation['kind']
+                    finally:
+                        with contextlib.suppress(RecoveryError):
+                            self.backend.end_update()
             if kind != 'ready':
                 details = {'stopped': 'a container is stopped; intentionally stopped containers are not restarted',
                            'namespace': 'the audio containers have lost their shared network',
@@ -517,6 +590,7 @@ class Coordinator:
         handled = self.state.get('handled_failures', [])
         live_failures = [item for item in observation.get('failures', [])
                          if isinstance(item, dict) and isinstance(item.get('id'), str)
+                         and re.fullmatch(r'[A-Za-z0-9_-]{1,64}', item['id'])
                          and item['id'] not in handled and isinstance(item.get('at'), (int, float))
                          and 0 <= now - item['at'] / 1000 < 900
                          and re.fullmatch(r'[A-Za-z0-9_-]{11}', str(item.get('identifier', '')))]
@@ -540,7 +614,10 @@ class Coordinator:
                     observation = self.backend.observe()
                     if observation['kind'] != 'ready':
                         raise RecoveryError('services_not_ready')
-                    self.state['handled_failures'] = [*handled, *(item['id'] for item in live_failures)][-30:]
+                    # Testing one video must not acknowledge failures from
+                    # another video that has never been checked.
+                    verified = [item['id'] for item in live_failures if item['identifier'] == live_failures[-1]['identifier']]
+                    self.state['handled_failures'] = [*handled, *verified][-30:]
                     self.save()
                     self.event('Vybertron restarted the idle audio service after a real playback failure that fresh audio probes could not reproduce. The bot reconnected; retry /play. Repeated recovery attempts are limited.')
                 finally:
@@ -615,14 +692,37 @@ def restore_runtime_pin(repo, directory):
         save_json(directory / 'state.json', state)
 
 
+def deliver_alerts(coordinator):
+    """Bound retries and stop on the first failed delivery or Discord limit."""
+    outbox = coordinator.state.get('outbox', [])
+    if not isinstance(outbox, list):
+        raise RecoveryError('invalid_alert_outbox')
+    coordinator.state['outbox'] = [event for event in outbox
+                                 if isinstance(event, dict) and isinstance(event.get('id'), str)
+                                 and re.fullmatch(r'[a-f0-9]{24}', event['id'])
+                                 and isinstance(event.get('message'), str) and 0 < len(event['message']) <= 1900][-MAX_OUTBOX:]
+    coordinator.save()
+    for event in list(coordinator.state['outbox'])[:MAX_ALERTS_PER_RUN]:
+        try:
+            sent = coordinator.backend.notify(event)
+        except Exception:
+            sent = False
+        if not sent:
+            break
+        coordinator.state['outbox'].remove(event)
+        coordinator.save()
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=['run', 'check', 'status', 'restore-pin'])
+    parser.add_argument('action', choices=['run', 'check', 'status', 'restore-pin', 'probe'])
+    parser.add_argument('--full', action='store_true', help='Decode complete tracks with the probe action')
     parser.add_argument('--repo', type=Path, default=REPO)
     parser.add_argument('--state-dir', type=Path, default=STATE_DIR)
     args = parser.parse_args()
     directory = args.state_dir.resolve()
     directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+    os.chmod(directory, 0o700)
     if args.action == 'status':
         state = read_json(directory / 'state.json')
         print(json.dumps({key: value for key, value in state.items() if key not in ['outbox', 'pending']}, indent=2))
@@ -631,6 +731,17 @@ def main():
         # The deployment workflow already holds the same maintenance lock.
         restore_runtime_pin(args.repo, directory)
         return
+    if args.action == 'probe':
+        # Deployment holds the maintenance lock. This isolated check never
+        # mutates players, updates plugins, queues alerts, or opens Discord voice.
+        backend = Backend(args.repo.resolve(), directory, {})
+        try:
+            result = backend.probe(backend.current(), full=args.full, installed=True)
+            print(json.dumps(result))
+            raise SystemExit(0 if result['ok'] else 2)
+        except RecoveryError as error:
+            print(json.dumps({'ok': False, 'error': str(error)}))
+            raise SystemExit(1) from None
     if (directory / 'paused').exists():
         print('Automatic recovery is paused.')
         return
@@ -650,14 +761,7 @@ def main():
             code = str(error) if isinstance(error, RecoveryError) else type(error).__name__
             coordinator.finish('monitor_error', time.time(), 'the recovery monitor could not complete its checks (' + code + ')')
         if args.action == 'run':
-            for event in list(coordinator.state.get('outbox', [])):
-                try:
-                    sent = backend.notify(event)
-                except Exception:
-                    sent = False
-                if sent:
-                    coordinator.state['outbox'].remove(event)
-                    coordinator.save()
+            deliver_alerts(coordinator)
         print(json.dumps({key: coordinator.state.get(key) for key in ['status', 'checked_at', 'version', 'detail', 'update_error']}))
 
 

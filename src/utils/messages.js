@@ -13,12 +13,16 @@ import {
   formatDuration,
   NO_MENTIONS,
   plainText,
+  playbackRate,
   pluralize,
+  progressBar,
+  remainingTrackDuration,
   requesterName,
   safeText,
   safeUrl,
   trackIdentity,
 } from './presentation.js';
+import { getAudioPreset } from './filters.js';
 
 export const COLORS = Object.freeze({
   // Restrained from the app icon: electric cyan carries active product state,
@@ -26,6 +30,7 @@ export const COLORS = Object.freeze({
   brand: 0x00c8ff,
   accent: 0xf20aa7,
   paused: 0xffb84d,
+  recovering: 0xffb84d,
   error: 0xed4245,
   info: 0xf20aa7,
   neutral: 0x6d6f78,
@@ -69,6 +74,7 @@ export function errorPayload(message, referenceId) {
 function playerStatus(state) {
   switch (state) {
     case 'paused': return { label: 'Paused', color: COLORS.paused };
+    case 'recovering': return { label: 'Recovering audio', color: COLORS.recovering };
     case 'queue-finished': return { label: 'Queue Finished', color: COLORS.neutral };
     case 'unavailable': return { label: 'Playback Unavailable', color: COLORS.error };
     case 'ended': return { label: 'Session Ended', color: COLORS.neutral };
@@ -78,6 +84,7 @@ function playerStatus(state) {
 
 function playerComponents(player, state, track) {
   const active = state === 'playing' || state === 'paused';
+  const recovering = state === 'recovering';
   const disabled = !active || !track;
   const playbackRow = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
@@ -89,16 +96,21 @@ function playerComponents(player, state, track) {
       .setCustomId(PLAYER_IDS.skip)
       .setLabel('Skip')
       .setStyle(ButtonStyle.Secondary)
-      .setDisabled(disabled),
+      .setDisabled(disabled && !recovering),
     new ButtonBuilder()
       .setCustomId(PLAYER_IDS.queue)
       .setLabel('View queue')
       .setStyle(ButtonStyle.Secondary)
-      .setDisabled(disabled),
+      .setDisabled(!active && !recovering),
     new ButtonBuilder()
       .setCustomId(PLAYER_IDS.stop)
       .setLabel('Stop')
       .setStyle(ButtonStyle.Danger)
+      .setDisabled(!active && !recovering),
+    new ButtonBuilder()
+      .setCustomId(`player:v2:favorite:${trackIdentity(track)}`)
+      .setLabel('Favorite')
+      .setStyle(ButtonStyle.Secondary)
       .setDisabled(disabled)
   );
   const utilityRow = new ActionRowBuilder().addComponents(
@@ -127,10 +139,10 @@ function playerComponents(player, state, track) {
       .setCustomId(PLAYER_IDS.refresh)
       .setLabel('Refresh')
       .setStyle(ButtonStyle.Secondary)
-      .setDisabled(disabled)
+      .setDisabled(!active && !recovering)
   );
 
-  const trackUrl = safeUrl(track?.info?.uri);
+  const trackUrl = safeUrl(track?.info?.uri, { maxLength: 512 });
   if (trackUrl) {
     utilityRow.addComponents(
       new ButtonBuilder().setLabel('Open track').setStyle(ButtonStyle.Link).setURL(trackUrl)
@@ -159,9 +171,14 @@ export function buildSeekModal(player) {
 function playbackLine(player, info, state) {
   const position = formatDuration(player?.position, info.isStream);
   const duration = formatDuration(info.duration, info.isStream);
+  if (!['playing', 'paused'].includes(state)) {
+    return state === 'recovering' ? 'Keeping your queue while the audio reconnects.' : `${position} / ${duration}`;
+  }
   if (info.isStream) return state === 'paused' ? 'Paused • Live' : 'Live';
   if (state === 'paused') return `Paused at \`${position} / ${duration}\``;
-  const remaining = Math.max(0, (info.duration || 0) - (player?.position || 0));
+  const remaining = remainingTrackDuration(player, { info });
+  if (player?.repeatMode === 'track') return `\`${position} / ${duration}\` • Track loop on`;
+  if (remaining === null) return `\`${position} / ${duration}\``;
   const endsAt = Math.floor((Date.now() + remaining) / 1000);
   return `\`${position} / ${duration}\` • Ends <t:${endsAt}:R>`;
 }
@@ -181,7 +198,7 @@ function playerQueuePreview(player) {
   const remaining = remainingQueueDuration(player);
   const summary = [
     `${tracks.length} ${pluralize(tracks.length, 'track')} queued`,
-    remaining === null ? 'Remaining time unknown' : `${formatDuration(remaining)} remaining`,
+    player?.repeatMode && player.repeatMode !== 'off' ? `Loop: ${player.repeatMode}` : remaining === null ? 'Remaining time unknown' : `${formatDuration(remaining)} remaining`,
   ];
   return ['**Up next**', ...preview, `_${summary.join(' • ')}_`].join('\n');
 }
@@ -189,10 +206,32 @@ function playerQueuePreview(player) {
 export function remainingQueueDuration(player) {
   const current = player?.queue?.current;
   const tracks = player?.queue?.tracks || [];
-  if (current?.info?.isStream || tracks.some((queued) => queued?.info?.isStream)) return null;
-  let total = current ? Math.max(0, (current.info?.duration || 0) - (player?.position || 0)) : 0;
-  for (const queued of tracks) total += Math.max(0, queued?.info?.duration || 0);
+  if (player?.repeatMode && player.repeatMode !== 'off') return null;
+  const rate = playbackRate(player);
+  if (!rate) return null;
+  let total = current ? remainingTrackDuration(player) : 0;
+  if (total === null) return null;
+  for (const queued of tracks) {
+    const info = queued?.info;
+    if (!info || info.isStream || !Number.isFinite(info.duration) || info.duration <= 0) return null;
+    total += info.duration / rate;
+  }
   return total;
+}
+
+function queueStartDelay(player, index) {
+  if (player?.paused || (player?.repeatMode && player.repeatMode !== 'off')) return null;
+  const rate = playbackRate(player);
+  if (!rate) return null;
+  let delay = player?.queue?.current ? remainingTrackDuration(player) : 0;
+  if (delay === null) return null;
+  const tracks = player?.queue?.tracks || [];
+  for (let previous = 0; previous < index; previous += 1) {
+    const info = tracks[previous]?.info;
+    if (!info || info.isStream || !Number.isFinite(info.duration) || info.duration <= 0) return null;
+    delay += info.duration / rate;
+  }
+  return delay;
 }
 
 export function buildPlayerPayload(player, {
@@ -207,7 +246,7 @@ export function buildPlayerPayload(player, {
 
   if (track?.info) {
     const info = track.info;
-    embed.setTitle(plainText(info.title, { fallback: 'Unknown track', maxLength: 256 }));
+    embed.setTitle(safeText(info.title, { fallback: 'Unknown track', maxLength: 256 }));
     const uri = safeUrl(info.uri);
     if (uri) embed.setURL(uri);
     const artwork = safeUrl(info.artworkUrl);
@@ -220,12 +259,19 @@ export function buildPlayerPayload(player, {
       '',
       playerQueuePreview(player),
     ];
+    const progress = !info.isStream && ['playing', 'paused'].includes(state)
+      ? progressBar(player?.position, info.duration)
+      : null;
+    if (progress) lines.splice(2, 0, `\`${progress}\``);
     if (notice) lines.push('', `> ${safeText(notice, { maxLength: 500 })}`);
     if (reason) lines.push('', safeText(reason, { maxLength: 500 }));
     embed.setDescription(lines.join('\n'));
 
     const requester = requesterName(track);
-    const footer = requester ? `Requested by ${requester} • Volume ${volume}%` : `Volume ${volume}%`;
+    const audio = getAudioPreset(player);
+    const source = info.sourceName ? ` • ${plainText(info.sourceName, { maxLength: 30 })}` : '';
+    const preset = audio.label !== 'Original' ? ` • ${audio.label}` : '';
+    const footer = `${requester ? `Requested by ${requester} • ` : ''}Volume ${volume}%${preset}${source}`;
     embed.setFooter({ text: footer });
     if (Number.isFinite(startedAt)) embed.setTimestamp(startedAt);
   } else {
@@ -244,14 +290,15 @@ export function clampQueuePage(player, page) {
   return Math.min(Math.max(Number.parseInt(page, 10) || 0, 0), maxPage);
 }
 
-function queueLine(track, index) {
+function queueLine(track, index, delay = null) {
   const info = track?.info || {};
   const title = safeText(info.title, { fallback: 'Unknown track', maxLength: 110 });
   const author = safeText(info.author, { fallback: 'Unknown artist', maxLength: 70 });
   const duration = formatDuration(info.duration, info.isStream);
   const requester = requesterName(track);
   const requestedBy = requester ? ` • ${safeText(requester, { maxLength: 50 })}` : '';
-  return `**${index}.** ${title} — ${author} • \`${duration}\`${requestedBy}`;
+  const eta = delay === null ? '' : ` • in ~${formatDuration(delay)}`;
+  return `**${index}.** ${title} — ${author} • \`${duration}\`${eta}${requestedBy}`;
 }
 
 function currentQueueLine(track) {
@@ -275,7 +322,7 @@ export function buildQueuePayload(player, requestedPage = 0, ownerId = 'any') {
     lines.push(`**Now playing**\n${currentQueueLine(current)}`);
   }
   lines.push(total > 0 ? `**Up next • ${start + 1}–${end} of ${total}**` : '**Up next**\nNo tracks queued.');
-  pageTracks.forEach((track, offset) => lines.push(queueLine(track, start + offset + 1)));
+  pageTracks.forEach((track, offset) => lines.push(queueLine(track, start + offset + 1, queueStartDelay(player, start + offset))));
 
   const embed = new EmbedBuilder()
     .setColor(COLORS.brand)
@@ -283,7 +330,7 @@ export function buildQueuePayload(player, requestedPage = 0, ownerId = 'any') {
     .setDescription(lines.join('\n'));
   const remaining = remainingQueueDuration(player);
   embed.setFooter({
-    text: `${total} upcoming • ${remaining === null ? 'Unknown remaining' : `${formatDuration(remaining)} remaining`}`,
+    text: `${total} upcoming • ${player?.repeatMode && player.repeatMode !== 'off' ? `Loop: ${player.repeatMode}` : remaining === null ? 'Unknown remaining' : `${formatDuration(remaining)} remaining`}${player?.paused ? ' • Paused' : ''}`,
   });
   const artwork = safeUrl(current?.info?.artworkUrl);
   if (artwork) embed.setThumbnail(artwork);

@@ -1,0 +1,34 @@
+{
+  "_provenance": "Selected public catalog fields from Spotify official embeds, fetched 2026-10-04. Audio previews are dummy values retained only to verify that the extractor discards them. Collection samples are subsets; no completeness claim.",
+  "track": {
+    "type": "track",
+    "id": "3n3Ppam7vgaVa1iaRUc9Lp",
+    "uri": "spotify:track:3n3Ppam7vgaVa1iaRUc9Lp",
+    "title": "Mr. Brightside",
+    "artists": [{ "name": "The Killers", "uri": "spotify:artist:0C0XlULifJtAgn6ZNCW2eu" }],
+    "duration": 222200,
+    "isPlayable": true,
+    "isExplicit": false,
+    "audioPreview": { "url": "https://p.scdn.co/mp3-preview/never-play-this" }
+  },
+  "album": {
+    "type": "album",
+    "id": "4OHNH3sDzIxnmUADXzv2kT",
+    "uri": "spotify:album:4OHNH3sDzIxnmUADXzv2kT",
+    "title": "Hot Fuss",
+    "trackList": [
+      { "uri": "spotify:track:3sj8vanUG3a2leRLXwmtuo", "title": "Jenny Was A Friend Of Mine", "subtitle": "The Killers", "duration": 244880, "isPlayable": true, "entityType": "track", "audioPreview": { "url": "https://p.scdn.co/mp3-preview/never-play-this" } },
+      { "uri": "spotify:track:1RGJcbR0wOwtB12P0zuWLL", "title": "Somebody Told Me - Mylo Mix", "subtitle": "The Killers, Mylo", "duration": 437293, "isPlayable": true, "entityType": "track" }
+    ]
+  },
+  "playlist": {
+    "type": "playlist",
+    "id": "37i9dQZF1DXcBWIGoYBM5M",
+    "uri": "spotify:playlist:37i9dQZF1DXcBWIGoYBM5M",
+    "title": "Today’s Top Hits",
+    "trackList": [
+      { "uri": "spotify:track:11hcBLPtbMp4aQI6zGQLub", "title": "Patient Zero", "subtitle": "Taylor Swift", "duration": 225868, "isPlayable": true, "entityType": "track" },
+      { "uri": "spotify:track:4EoJ151oQ5jY48z4RhSE96", "title": "the cure", "subtitle": "Olivia Rodrigo", "duration": 297090, "isPlayable": true, "isExplicit": true, "entityType": "track" }
+    ]
+  }
+}

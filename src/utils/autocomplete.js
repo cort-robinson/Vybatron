@@ -1,4 +1,5 @@
 import { isUrl, plainText, trackIdentity } from './presentation.js';
+import { validatePlaybackQuery } from './query.js';
 
 const CACHE_TTL_MS = 15_000;
 const CACHE_LIMIT = 100;
@@ -81,7 +82,7 @@ export function resolveAutocompleteTrack(value, ownerId) {
 
 export async function getTrackChoices(interaction, { timeoutMs = 2_500 } = {}) {
   const query = plainText(interaction.options.getFocused(), { fallback: '', maxLength: 200 });
-  if (Array.from(query).length < 2 || isUrl(query)) return [];
+  if (Array.from(query).length < 2 || isUrl(query) || validatePlaybackQuery(query)) return [];
 
   const ownerId = String(interaction.user?.id || 'unknown');
   const cacheKey = `${ownerId}:${query.toLocaleLowerCase()}`;

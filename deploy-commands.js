@@ -1,58 +1,39 @@
 import { REST, Routes } from 'discord.js';
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath, pathToFileURL } from 'url';
-import { config, assertConfig } from './src/config.js';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { config } from './src/config.js';
 
-assertConfig();
+const root = path.dirname(fileURLToPath(import.meta.url));
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-const commands = [];
-const commandsPath = path.join(__dirname, 'src', 'commands');
-const commandFiles = fs.readdirSync(commandsPath).filter(file => file.endsWith('.js') && file !== 'index.js');
-
-for (const file of commandFiles) {
-  const filePath = path.join(commandsPath, file);
-  console.log(`Loading command from file: ${file}`);
-  try {
-    const command = await import(pathToFileURL(filePath).href);
-    if ('data' in command && 'execute' in command) {
-      commands.push(command.data.toJSON());
-      console.log(`Successfully loaded command: ${command.data.name}`);
-    } else {
-      console.log(`[WARNING] The command at ${filePath} is missing a required "data" or "execute" property.`);
-    }
-  } catch (error) {
-    console.error(`[ERROR] Failed to load command at ${filePath}:`, error);
+export async function commandDefinitions(directory = path.join(root, 'src', 'commands')) {
+  const files = (await fs.readdir(directory)).filter(file => file.endsWith('.js') && file !== 'index.js').sort();
+  const commands = []; const names = new Set();
+  for (const file of files) {
+    const command = await import(pathToFileURL(path.join(directory, file)).href);
+    if (!command.data || typeof command.execute !== 'function') throw new Error(`Command module ${file} is incomplete. Registration was cancelled.`);
+    const definition = command.data.toJSON();
+    if (names.has(definition.name)) throw new Error(`Duplicate command ${definition.name}. Registration was cancelled.`);
+    names.add(definition.name);
+    commands.push({ ...definition, dm_permission: false });
   }
+  if (!commands.length) throw new Error('No commands were loaded. Registration was cancelled.');
+  return commands;
 }
 
-const rest = new REST({ version: '10' }).setToken(config.token);
+export async function registerCommands({ mode = 'global', cfg = config, rest = null, definitions = commandDefinitions } = {}) {
+  if (!['guild', 'global'].includes(mode)) throw new Error('Choose guild or global command registration.');
+  if (!cfg.token || !cfg.clientId) throw new Error('DISCORD_BOT_TOKEN and CLIENT_ID are required for registration.');
+  if (mode === 'guild' && !cfg.guildId) throw new Error('GUILD_ID is required for guild registration.');
+  const body = await definitions();
+  const api = rest || new REST({ version: '10', timeout: 15_000 }).setToken(cfg.token);
+  const route = mode === 'guild' ? Routes.applicationGuildCommands(cfg.clientId, cfg.guildId) : Routes.applicationCommands(cfg.clientId);
+  const result = await api.put(route, { body });
+  console.log(`Registered ${result.length} ${mode} commands.`);
+  return result;
+}
 
-const registerGlobal = async () => {
-  console.log(`Refreshing ${commands.length} global application (/) commands...`);
-  const data = await rest.put(
-    Routes.applicationCommands(config.clientId),
-    { body: commands }
-  );
-  console.log(`Registered ${data.length} global application (/) commands.`);
-};
-
-const registerGuild = async () => {
-  if (!config.guildId) throw new Error('GUILD_ID is required for guild registration');
-  console.log(`Refreshing ${commands.length} guild application (/) commands for guild ${config.guildId}...`);
-  const data = await rest.put(
-    Routes.applicationGuildCommands(config.clientId, config.guildId),
-    { body: commands }
-  );
-  console.log(`Registered ${data.length} guild application (/) commands.`);
-};
-
-const mode = process.argv[2];
-if (mode === 'guild') {
-  registerGuild().catch(console.error);
-} else {
-  registerGlobal().catch(console.error);
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  try { await registerCommands({ mode: process.argv[2] || 'global' }); }
+  catch (error) { console.error(`Command registration failed: ${error.message}`); process.exitCode = 1; }
 }

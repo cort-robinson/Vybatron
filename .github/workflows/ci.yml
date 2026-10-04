@@ -5,15 +5,23 @@ on:
   push:
     branches: [main]
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
 
       - name: Install dependencies
@@ -22,11 +30,24 @@ jobs:
       - name: Run tests
         run: npm test
 
+      - name: Check production dependencies
+        run: npm audit --omit=dev --audit-level=high
+
       - name: Test recovery policy
         run: python3 -m unittest discover -s tests -p '*_test.py'
 
       - name: Build bot image
         run: docker build -t vybertron-bot:ci .
+
+      - name: Verify container persistence permissions
+        run: >-
+          docker run --rm --read-only --tmpfs /tmp:rw,noexec,nosuid,size=32m
+          -v vybertron-ci-data:/app/data -e VYBERTRON_DATA_DIR=/app/data
+          vybertron-bot:ci node --input-type=module -e
+          "import {writeFile,readFile} from 'node:fs/promises';
+          if(process.getuid()===0)throw new Error('root runtime');
+          await writeFile('/app/data/ci-check','ok');
+          if(await readFile('/app/data/ci-check','utf8')!=='ok')throw new Error('unwritable data volume');"
 
       - name: Verify WARP daemon recovery
         run: bash tests/warp-supervisor.test.sh

@@ -6,6 +6,7 @@ import {
   clampQueuePage,
   COLORS,
   QUEUE_PAGE_SIZE,
+  remainingQueueDuration,
 } from '../src/utils/messages.js';
 import { trackIdentity } from '../src/utils/presentation.js';
 
@@ -50,7 +51,7 @@ test('player payload uses semantic status, timestamp, and native controls', () =
   assert.equal(playing.components.length, 2);
   assert.deepEqual(
     playing.components[0].components.map((component) => component.data.label),
-    ['Pause', 'Skip', 'View queue', 'Stop']
+    ['Pause', 'Skip', 'View queue', 'Stop', 'Favorite']
   );
   assert.deepEqual(
     playing.components[1].components.map((component) => component.data.label),
@@ -111,3 +112,57 @@ for (const size of [0, 1, 10, 11, 25, 26, 250]) {
     }
   });
 }
+
+test('ETA accounts for audio speed and hides guesses for unknown duration, loops, and paused queues', () => {
+  const player = makePlayer(2);
+  player.filterManager = { data: { timescale: { speed: 2, rate: 1 } } };
+  assert.equal(remainingQueueDuration(player), (45_000 + 60_001 + 60_002) / 2);
+  let json = buildQueuePayload(player).embeds[0].toJSON();
+  assert.match(json.description, /in ~0:22/);
+  assert.match(json.description, /in ~0:52/);
+  assert.match(buildPlayerPayload(player).embeds[0].data.description, /25%/);
+  player.paused = true;
+  json = buildQueuePayload(player).embeds[0].toJSON();
+  assert.doesNotMatch(json.description, /in ~/);
+  assert.match(json.footer.text, /Paused/);
+  player.paused = false;
+  player.queue.tracks[0].info.duration = undefined;
+  assert.equal(remainingQueueDuration(player), null);
+  json = buildQueuePayload(player).embeds[0].toJSON();
+  assert.match(json.footer.text, /Unknown remaining/);
+  assert.equal((json.description.match(/in ~/g) || []).length, 1);
+  player.repeatMode = 'track';
+  assert.equal(remainingQueueDuration(player), null);
+  assert.doesNotMatch(buildPlayerPayload(player).embeds[0].data.description, /Ends <t:/);
+  assert.match(buildPlayerPayload(player).embeds[0].data.description, /Track loop on/);
+  assert.doesNotMatch(buildQueuePayload(player).embeds[0].data.description, /in ~/);
+});
+
+test('arbitrary external titles remain valid Discord payloads with Unicode and mention limits', () => {
+  const player = makePlayer(10);
+  for (const track of [player.queue.current, ...player.queue.tracks]) {
+    track.info.title = `**@everyone**${'🎵'.repeat(400)}`;
+    track.info.author = `${'🎸'.repeat(400)}@here`;
+    track.requester.username = '😀'.repeat(400);
+  }
+  const playerPayload = buildPlayerPayload(player);
+  const queuePayload = buildQueuePayload(player);
+  assert.ok(playerPayload.embeds[0].data.title.length <= 256);
+  assert.ok(playerPayload.embeds[0].data.title.includes('@\u200b'));
+  assert.ok(playerPayload.embeds[0].data.description.length <= 4096);
+  assert.ok(queuePayload.embeds[0].data.description.length <= 4096);
+  assert.ok(queuePayload.components[1].components[0].options.every((option) => option.data.label.length <= 100));
+  assert.doesNotThrow(() => JSON.stringify(playerPayload));
+  assert.doesNotThrow(() => JSON.stringify(queuePayload));
+});
+
+test('overlong or credential-bearing track URLs cannot break or leak through player links', () => {
+  const player = makePlayer(0);
+  player.queue.current.info.uri = `https://example.com/${'a'.repeat(600)}`;
+  let payload = buildPlayerPayload(player);
+  assert.equal(payload.components[1].components.some((button) => button.data.url), false);
+  player.queue.current.info.uri = 'https://user:password@example.com/track';
+  payload = buildPlayerPayload(player);
+  assert.equal(payload.embeds[0].data.url, undefined);
+  assert.equal(payload.components[1].components.some((button) => button.data.url), false);
+});

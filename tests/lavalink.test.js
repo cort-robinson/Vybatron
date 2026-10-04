@@ -7,6 +7,7 @@ import {
   handleQueueEnd,
   handleTrackError,
   handleTrackFailure,
+  handleVoiceStateUpdate,
 } from '../src/lavalink.js';
 import {
   getControllerRecord,
@@ -109,6 +110,7 @@ test('V9: restarting idle timer does not double-destroy', async () => {
 
 test('V9: queueEnd starts idle timer (cancellable)', () => {
   const player = mockPlayer('idle-4');
+  player.queue.current = null;
   handleQueueEnd(player);
   clearIdleTimer('idle-4');
   assert.equal(player.destroyed, 0);
@@ -134,6 +136,43 @@ test('V10: trackStart cancels pending idle destroy', async () => {
   await handleTrackStart(mockClient(mockChannel()), player, track);
   await sleep(50);
   assert.equal(player.destroyed, 0);
+});
+
+test('a track start preserves the existing empty-channel disconnect deadline', async () => {
+  const player = mockPlayer('empty-channel-start');
+  const client = mockClient(mockChannel());
+  startIdleTimer(player, { ms: 15, reason: 'voice-empty', client });
+  await handleTrackStart(client, player, track);
+  await sleep(45);
+  assert.equal(player.destroyed, 1);
+});
+
+test('repeated unrelated voice events do not restart the empty-channel deadline', async () => {
+  const player = mockPlayer('empty-channel-repeat');
+  const client = mockClient(mockChannel());
+  client.lavalink = { getPlayer: () => player };
+  const oldState = { guild: { id: player.guildId, channels: { cache: new Map([['v1', {
+    members: { filter: () => ({ size: 0 }) },
+  }]]) } } };
+  startIdleTimer(player, { ms: 15, reason: 'voice-empty', client });
+  handleVoiceStateUpdate(client, oldState);
+  handleVoiceStateUpdate(client, oldState);
+  await sleep(45);
+  assert.equal(player.destroyed, 1);
+});
+
+test('a listener joining an empty queue does not cancel queue-idle disconnect', async () => {
+  const player = mockPlayer('queue-empty-join');
+  player.queue.current = null;
+  const client = mockClient(mockChannel());
+  client.lavalink = { getPlayer: () => player };
+  const oldState = { guild: { id: player.guildId, channels: { cache: new Map([['v1', {
+    members: { filter: () => ({ size: 1 }) },
+  }]]) } } };
+  startIdleTimer(player, { ms: 15, reason: 'queue-empty', client });
+  handleVoiceStateUpdate(client, oldState);
+  await sleep(45);
+  assert.equal(player.destroyed, 1);
 });
 
 test('V5: trackStart with missing channel resolves safely', async () => {
@@ -164,11 +203,14 @@ test('a failed final track displays playback unavailable instead of queue finish
   const client = mockClient(channel);
   await handleTrackStart(client, player, track);
   handleTrackFailure(player, track);
+  player.queue.current = null;
   handleQueueEnd(client, player);
   await sleep(10);
   assert.match(JSON.stringify(channel.lastPayload), /Playback Unavailable/);
   assert.doesNotMatch(JSON.stringify(channel.lastPayload), /Queue Finished/);
+  player.queue.current = track;
   await handleTrackStart(client, player, track);
+  player.queue.current = null;
   handleQueueEnd(client, player);
   await sleep(10);
   assert.match(JSON.stringify(channel.lastPayload), /Queue Finished/);

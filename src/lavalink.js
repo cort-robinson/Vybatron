@@ -11,6 +11,13 @@ import { plainText } from './utils/presentation.js';
 import { clearTrackPresence, updateTrackPresence } from './utils/presence.js';
 import { clearVoiceStatus, updateVoiceStatus } from './utils/voice-status.js';
 import { recordPlaybackFailure, recordPlaybackProgress } from './utils/playback-health.js';
+import { fillRadioQueue } from './utils/radio.js';
+import {
+  createPlaybackRecovery,
+  HardenedPlayer,
+  isPlaybackRecovering,
+} from './playback-recovery.js';
+import { createPlaybackWatchdog } from './playback-watchdog.js';
 
 export const IDLE_MS = 5 * 60 * 1000;
 
@@ -27,7 +34,9 @@ export function startIdleTimer(player, options = IDLE_MS) {
     idleTimers.delete(player.guildId);
     const message = reason === 'voice-empty'
       ? 'Disconnected after the voice channel stayed empty for five minutes.'
-      : 'Disconnected after five minutes with an empty queue.';
+      : reason === 'audio-unavailable'
+        ? 'Disconnected after five minutes without playable audio. Use /session resume to recover your saved queue.'
+        : 'Disconnected after five minutes with an empty queue.';
     void (async () => {
       try {
         if (client) await clearVoiceStatus(client, player);
@@ -35,28 +44,34 @@ export function startIdleTimer(player, options = IDLE_MS) {
       } catch {
         // A controller edit must never prevent the idle disconnect.
       } finally {
-        await Promise.resolve(player.destroy()).catch(() => {});
+        await Promise.resolve(player.destroy(`${reason}-disconnect`)).catch(() => {});
       }
     })();
   }, ms);
   if (typeof timer.unref === 'function') timer.unref();
-  idleTimers.set(player.guildId, timer);
+  idleTimers.set(player.guildId, { timer, reason, player });
 }
 
 export function clearIdleTimer(guildId) {
-  const timer = idleTimers.get(guildId);
-  if (timer) {
-    clearTimeout(timer);
+  const entry = idleTimers.get(guildId);
+  if (entry) {
+    clearTimeout(entry.timer);
     idleTimers.delete(guildId);
   }
 }
 
+function clearQueueIdleTimer(player) {
+  if (idleTimers.get(player.guildId)?.reason !== 'voice-empty') clearIdleTimer(player.guildId);
+}
+
 export async function handleTrackStart(client, player, track) {
+  client.lavalink?.playbackRecovery?.started(player);
+  client.lavalink?.playbackWatchdog?.trackStarted(player);
   playbackFailures.delete(player);
-  clearIdleTimer(player.guildId);
+  clearQueueIdleTimer(player);
   updateTrackPresence(client, player, track);
   await Promise.allSettled([
-    createOrUpdate(client, player, { state: 'playing', track }),
+    createOrUpdate(client, player, { state: player.paused ? 'paused' : 'playing', track }),
     updateVoiceStatus(client, player),
   ]);
 }
@@ -64,6 +79,7 @@ export async function handleTrackStart(client, player, track) {
 export function handleQueueEnd(clientOrPlayer, maybePlayer) {
   const client = maybePlayer ? clientOrPlayer : null;
   const player = maybePlayer || clientOrPlayer;
+  if (isPlaybackRecovering(player) || player.queue?.current) return;
   if (client) {
     clearTrackPresence(client, player);
     void clearVoiceStatus(client, player).catch(() => {});
@@ -72,11 +88,15 @@ export function handleQueueEnd(clientOrPlayer, maybePlayer) {
       player,
       playbackFailures.has(player) ? 'unavailable' : 'queue-finished',
       playbackFailures.has(player)
-        ? 'The audio source rejected playback. Try /play again; if it continues, try another result.'
+        ? player.queue?.tracks?.length
+          ? 'The audio source is temporarily unavailable. Your remaining queue is safe; use /play to retry when it recovers.'
+          : 'The audio source rejected playback after recovery. Try /play again, or choose another result.'
         : 'No tracks remain. Add something within five minutes to keep this session open.'
     ).catch(() => {});
   }
-  startIdleTimer(player, { client, reason: 'queue-empty' });
+  if (!idleTimers.has(player.guildId)) {
+    startIdleTimer(player, { client, reason: player.queue?.tracks?.length ? 'audio-unavailable' : 'queue-empty' });
+  }
 }
 
 export function handleVoiceStateUpdate(client, oldState) {
@@ -89,29 +109,44 @@ export function handleVoiceStateUpdate(client, oldState) {
     void showStatus(
       client,
       player,
-      player.paused ? 'paused' : 'playing',
+      isPlaybackRecovering(player) ? 'recovering'
+        : player.queue?.current ? player.paused ? 'paused' : 'playing'
+          : playbackFailures.has(player) ? 'unavailable' : 'queue-finished',
       'The voice channel is empty. Disconnecting in five minutes unless someone returns.'
     ).catch(() => {});
-    startIdleTimer(player, { client, reason: 'voice-empty' });
+    if (idleTimers.get(player.guildId)?.reason !== 'voice-empty') {
+      startIdleTimer(player, { client, reason: 'voice-empty' });
+    }
   } else {
-    clearIdleTimer(player.guildId);
+    if (idleTimers.get(player.guildId)?.reason === 'voice-empty') clearIdleTimer(player.guildId);
+    if (!player.queue?.current && !isPlaybackRecovering(player) && !idleTimers.has(player.guildId)) {
+      handleQueueEnd(client, player);
+    }
     void refresh(client, player).catch(() => {});
   }
 }
 
-export function handleTrackFailure(player, track) {
+export function handleTrackFailure(player, track, { skipped = true } = {}) {
   playbackFailures.set(player, true);
   const title = plainText(track?.info?.title, { fallback: 'A track', maxLength: 120 });
-  setNotice(player.guildId, `Couldn’t play ${title}; skipped.`);
+  setNotice(player.guildId, skipped
+    ? `Couldn’t play ${title}; skipped.`
+    : `Audio unavailable for ${title}. Your queue is preserved.`);
 }
 
 export async function handleTrackError(player, track, payload, logger = console) {
+  if (player.LavalinkManager?.playbackRecovery
+    && (['TrackExceptionEvent', 'TrackStuckEvent'].includes(payload?.type)
+      || payload?.reason === 'loadFailed')) {
+    await player.LavalinkManager.playbackRecovery.handleFailure(player, track, payload);
+    return;
+  }
   handleTrackFailure(player, track);
   if (payload?.type !== 'TrackExceptionEvent') return;
   try {
     await player.skip(0, false);
   } catch (error) {
-    logger.error(`[Lavalink] failed to recover guild ${player.guildId} after track error`, error);
+    logger.error('[Lavalink] failed to advance after a track error.');
   }
 }
 
@@ -132,30 +167,100 @@ export function initLavalink(client) {
     autoSkip: true,
     autoSkipOnResolveError: true,
     client: { id: config.clientId, username: 'Vybertron' },
+    playerClass: HardenedPlayer,
     playerOptions: {
       defaultSearchPlatform: 'ytsearch',
       maxErrorsPerTime: { threshold: 30_000, maxAmount: 3 },
       onDisconnect: { autoReconnect: false, destroyPlayer: true },
+      onEmptyQueue: {
+        autoPlayFunction: async (player, lastTrack) => {
+          try { await fillRadioQueue(player, lastTrack, client); } catch (error) {
+            console.error('[Lavalink] radio lookup failed.');
+          }
+        },
+      },
     },
   });
 
   client.lavalink = lavalink;
 
-  client.on('raw', (d) => lavalink.sendRawData(d));
+  const recovery = createPlaybackRecovery({
+    manager: lavalink,
+    onRecovering: (player, _track, details) => {
+      clearQueueIdleTimer(player);
+      clearTrackPresence(client, player);
+      void showStatus(client, player, 'recovering', details.type === 'node'
+        ? 'Reconnecting to the audio service. Your queue and playback position are safe.'
+        : details.type === 'voice'
+          ? 'Reconnecting to Discord voice. Keeping your queue and track position.'
+        : 'Reconnecting the audio stream. Keeping your queue and track position.').catch(() => {});
+    },
+    onFailed: (player, track, details) => {
+      handleTrackFailure(player, track, { skipped: !details.transport });
+      if (details.transport) {
+        clearTrackPresence(client, player);
+        void showStatus(client, player, 'unavailable',
+          details.voice
+            ? 'Discord voice could not reconnect. Your queue is preserved; try /play again or restore it with /session.'
+            : 'The audio service could not recover. Your queue is safe; try /play again.').catch(() => {});
+      }
+    },
+    onResumed: (player) => {
+      lavalink.playbackWatchdog.touch(player);
+      updateTrackPresence(client, player);
+      void createOrUpdate(client, player, { state: player.paused ? 'paused' : 'playing' }).catch(() => {});
+      void updateVoiceStatus(client, player).catch(() => {});
+    },
+  });
+  lavalink.playbackRecovery = recovery;
+  lavalink.playbackWatchdog = createPlaybackWatchdog({
+    isRecovering: recovery.isRecovering,
+    onStall: (player, track) => {
+      recordPlaybackFailure(client, track);
+      return recovery.handleFailure(player, track, { type: 'WatchdogStall' });
+    },
+  });
+  lavalink.playbackWatchdog.start();
+  for (const node of lavalink.nodeManager.nodes.values()) recovery.attachNode(node);
+  lavalink.nodeManager.on('create', (node) => recovery.attachNode(node));
+  lavalink.nodeManager.on('raw', (node, payload) => {
+    if (payload.op === 'ready') {
+      void recovery.nodeReady(node, payload).catch(() => {
+        console.error(`[Lavalink] node ${node.id} session recovery failed.`);
+      });
+    }
+  });
+
+  client.on('raw', (d) => {
+    if (recovery.consumeVoiceUpdate(d)) return;
+    void lavalink.sendRawData(d).catch(() => {
+      console.error('[Lavalink] Discord voice update failed.');
+    });
+  });
   client.on('voiceStateUpdate', (oldState) => handleVoiceStateUpdate(client, oldState));
 
   lavalink.on('trackStart', (player, track) => void handleTrackStart(client, player, track));
-  lavalink.on('playerUpdate', (_previous, player) => recordPlaybackProgress(client, player));
+  lavalink.on('playerUpdate', (_previous, player) => {
+    if (lavalink.playbackWatchdog.observe(player)) recordPlaybackProgress(client, player);
+  });
+  lavalink.on('playerClientUpdate', (previous, player) => {
+    if (previous?.paused !== player.paused || previous?.lastPosition !== player.lastPosition) {
+      lavalink.playbackWatchdog.touch(player);
+    }
+  });
+  lavalink.on('playerSocketClosed', (player, payload) => { void recovery.handleVoiceClosed(player, payload); });
   lavalink.on('trackError', (player, track, payload) => {
     recordPlaybackFailure(client, track);
     void handleTrackError(player, track, payload);
   });
-  lavalink.on('trackStuck', (player, track) => {
+  lavalink.on('trackStuck', (player, track, payload) => {
     recordPlaybackFailure(client, track);
-    handleTrackFailure(player, track);
+    void handleTrackError(player, track, payload);
   });
   lavalink.on('queueEnd', (player) => handleQueueEnd(client, player));
   lavalink.on('playerDestroy', (player) => {
+    recovery.invalidate(player);
+    lavalink.playbackWatchdog.remove(player);
     clearIdleTimer(player.guildId);
     clearTrackPresence(client, player);
     void clearVoiceStatus(client, player).catch(() => {});
@@ -163,16 +268,10 @@ export function initLavalink(client) {
   });
 
   lavalink.nodeManager.on('connect', (node) => console.log(`[Lavalink] node ${node.id} connected`));
-  lavalink.nodeManager.on('error', (node, err) => console.error(`[Lavalink] node ${node.id} error:`, err?.message || err));
+  lavalink.nodeManager.on('error', (node) => console.error(`[Lavalink] node ${node.id} connection error.`));
   lavalink.nodeManager.on('disconnect', (node) => {
     console.warn(`[Lavalink] node ${node.id} disconnected`);
-    for (const player of lavalink.players.values()) {
-      if (player.node?.id && player.node.id !== node.id) continue;
-      clearTrackPresence(client, player);
-      void end(client, player, 'The playback service disconnected. Try /play again.', {
-        state: 'unavailable',
-      }).catch(() => {});
-    }
+    recovery.nodeDisconnected(node);
   });
 
   return lavalink;

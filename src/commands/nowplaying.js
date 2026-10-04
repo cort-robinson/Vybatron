@@ -20,9 +20,10 @@ export async function execute(interaction) {
   }
   const record = getControllerRecord(interaction.guildId);
   const payload = buildPlayerPayload(player, {
-    state: player.paused ? 'paused' : 'playing',
+    state: ['recovering', 'unavailable'].includes(record?.state) ? record.state : player.paused ? 'paused' : 'playing',
     track,
     startedAt: record?.startedAt || Date.now(),
+    reason: record?.reason,
   });
   const link = getMessageLink(interaction.guildId);
   const components = link

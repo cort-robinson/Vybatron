@@ -1,4 +1,4 @@
-import { SlashCommandBuilder } from 'discord.js';
+import { MessageFlags, SlashCommandBuilder } from 'discord.js';
 import { buildQueuePayload, ephemeralText } from '../utils/messages.js';
 
 export const data = new SlashCommandBuilder()
@@ -11,5 +11,5 @@ export async function execute(interaction) {
   if (!player || (!current && player.queue.tracks.length === 0)) {
     return interaction.reply(ephemeralText('Queue is empty. Add something with /play.'));
   }
-  return interaction.reply(buildQueuePayload(player, 0, interaction.user.id));
+  return interaction.reply({ ...buildQueuePayload(player, 0, interaction.user.id), flags: MessageFlags.Ephemeral });
 }

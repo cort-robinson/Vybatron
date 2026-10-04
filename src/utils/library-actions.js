@@ -1,0 +1,64 @@
+import { EmbedBuilder, MessageFlags } from 'discord.js';
+import { requireControl, recheckEnqueueRequest, canManageMusic } from './guards.js';
+import { LIBRARY_LIMITS, trackReference } from './library.js';
+import { COLORS, ephemeralText, textPayload } from './messages.js';
+import { safeText, trackIdentity, NO_MENTIONS } from './presentation.js';
+import { enqueueTracks, getOrCreatePlayer, resolveReferences } from './enqueue.js';
+import { refresh, withControllerLink } from './player-controller.js';
+
+export function collectionPayload(title, tracks, page = 1, footer = '') {
+  const totalPages = Math.max(1, Math.ceil(tracks.length / 10));
+  const selected = Math.max(1, Math.min(totalPages, page));
+  const start = (selected - 1) * 10;
+  const lines = tracks.slice(start, start + 10).map((track, i) => `**${start + i + 1}.** ${safeText(track.title, { maxLength: 130 })} — ${safeText(track.author, { maxLength: 70 })}`);
+  return {
+    embeds: [new EmbedBuilder().setColor(COLORS.brand).setTitle(title).setDescription(lines.join('\n') || 'Nothing saved yet. Favorite a playing track to start your collection.').setFooter({ text: `Page ${selected}/${totalPages} · ${tracks.length} tracks${footer ? ` · ${footer}` : ''}` })],
+    allowedMentions: NO_MENTIONS, flags: MessageFlags.Ephemeral,
+  };
+}
+
+export async function addCurrentFavorite(interaction, expectedIdentity = null) {
+  const player = await requireControl(interaction, { checkDJ: false });
+  if (!player) return null;
+  const current = player.queue.current;
+  if (!current || (expectedIdentity && trackIdentity(current) !== expectedIdentity)) {
+    return interaction.reply(ephemeralText('The track changed. Favorite the song on the current player.'));
+  }
+  const reference = trackReference(current);
+  if (!reference) return interaction.reply(ephemeralText('This source does not provide a public track link that can be saved.'));
+  const result = await interaction.client.library.updateGuild(interaction.guildId, guild => {
+    const list = guild.favorites[interaction.user.id] ||= [];
+    if (list.some(t => t.uri === reference.uri)) return false;
+    if (list.length >= LIBRARY_LIMITS.favorites) throw new Error(`Your favorites hold at most ${LIBRARY_LIMITS.favorites} tracks. Remove one first.`);
+    list.push(reference); return true;
+  });
+  return interaction.reply(ephemeralText(result ? `Saved **${safeText(reference.title, { maxLength: 140 })}** to your favorites. Find it with /favorite list.` : 'This song is already in your favorites.'));
+}
+
+export function mixKey(value) {
+  const key = String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  if (!/^[a-z0-9][a-z0-9 _-]{0,39}$/.test(key)) throw new Error('Name your mix with 1–40 letters, numbers, spaces, hyphens or underscores.');
+  return key;
+}
+
+export function mayEditMix(interaction, mix) { return !mix || mix.ownerId === interaction.user.id || canManageMusic(interaction); }
+
+export async function loadCollection(interaction, channel, references, label) {
+  const { player, created } = getOrCreatePlayer(interaction, channel);
+  let added = false;
+  try {
+    const { tracks, missing } = await resolveReferences(player, references, interaction.user);
+    if (!tracks.length) return interaction.editReply(textPayload('These saved tracks are currently unavailable. Try /play with a fresh result.'));
+    if (!await recheckEnqueueRequest(interaction, player, channel)) return;
+    await enqueueTracks(interaction.client, player, tracks); added = true;
+    if (!await recheckEnqueueRequest(interaction, player, channel)) return;
+    if (!player.connected) await player.connect();
+    if (!await recheckEnqueueRequest(interaction, player, channel)) return;
+    if (!player.playing && !player.paused) await player.play();
+    if (!await recheckEnqueueRequest(interaction, player, channel)) return;
+    await refresh(interaction.client, player);
+    return interaction.editReply(textPayload(withControllerLink(`Added ${tracks.length} ${tracks.length === 1 ? 'track' : 'tracks'} from **${safeText(label, { maxLength: 100 })}**.${missing.length ? ` ${missing.length} unavailable tracks were left out.` : ''}`, interaction, player)));
+  } finally {
+    if (created && !added && !player.queue.current && !player.queue.tracks.length) await player.destroy('unused-request-disconnect').catch(() => {});
+  }
+}

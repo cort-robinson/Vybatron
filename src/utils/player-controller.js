@@ -3,6 +3,22 @@ import { trackIdentity } from './presentation.js';
 
 const controllers = new Map();
 const controllerOperations = new Map();
+let endedPlayers = new WeakSet();
+
+function activePlayer(client, player) {
+  if (endedPlayers.has(player) || player.getData?.('vybertron.stopping')
+    || player.getData?.('internal_destroystatus')) return false;
+  const manager = client.lavalink || player.LavalinkManager;
+  return typeof manager?.getPlayer !== 'function' || manager.getPlayer(player.guildId) === player;
+}
+
+function ownsRecord(player, record) {
+  return record?.player === player && controllers.get(player.guildId) === record;
+}
+
+function canRender(client, player, record, ending = false) {
+  return ownsRecord(player, record) && (ending || activePlayer(client, player));
+}
 
 function enqueueControllerOperation(guildId, operation) {
   const previous = controllerOperations.get(guildId) || Promise.resolve();
@@ -29,16 +45,17 @@ async function fetchControllerMessage(client, record) {
   return channel.messages.fetch(record.messageId).catch(() => null);
 }
 
-async function sendController(client, record, payload) {
+async function sendController(client, player, record, payload) {
   const channel = await resolveChannel(client, record.channelId);
-  if (!channel?.send) return null;
+  if (!channel?.send || !canRender(client, player, record)) return null;
   const message = await channel.send(payload);
   if (message?.id) record.messageId = message.id;
   return message;
 }
 
-async function renderExisting(client, player, record, payload, { replaceMissing = true } = {}) {
+async function renderExisting(client, player, record, payload, { replaceMissing = true, ending = false } = {}) {
   const message = await fetchControllerMessage(client, record);
+  if (!canRender(client, player, record, ending)) return null;
   if (message?.edit) {
     try {
       await message.edit(payload);
@@ -47,61 +64,77 @@ async function renderExisting(client, player, record, payload, { replaceMissing 
       if (!replaceMissing) return null;
     }
   }
-  return replaceMissing ? sendController(client, record, payload) : null;
+  return replaceMissing ? sendController(client, player, record, payload) : null;
 }
 
-export async function createOrUpdate(client, player, {
+async function upsertController(client, player, {
   state = 'playing',
   track = player?.queue?.current || null,
   notice = null,
+  reason = null,
 } = {}) {
-  if (!player?.guildId || !player?.textChannelId) return null;
-  return enqueueControllerOperation(player.guildId, async () => {
-    const existing = controllers.get(player.guildId);
-    const record = existing || {
-      guildId: player.guildId,
-      channelId: player.textChannelId,
-      messageId: null,
-      startedAt: Date.now(),
-      lastTrack: null,
-      lastTrackKey: null,
-      notice: null,
-    };
+  if (!activePlayer(client, player)) return null;
+  const existing = controllers.get(player.guildId);
+  const record = existing?.player === player ? existing : {
+    player,
+    guildId: player.guildId,
+    channelId: player.textChannelId,
+    messageId: existing?.channelId === player.textChannelId ? existing.messageId : null,
+    startedAt: Date.now(),
+    lastTrack: null,
+    lastTrackKey: null,
+    notice: null,
+    state,
+    reason: null,
+  };
 
-    const key = track ? trackIdentity(track) : null;
-    if (key && key !== record.lastTrackKey) record.startedAt = Date.now();
-    if (track) {
-      record.lastTrack = track;
-      record.lastTrackKey = key;
-    }
-    const visibleNotice = notice || record.notice;
-    const payload = buildPlayerPayload(player, {
-      state,
-      track,
-      startedAt: record.startedAt,
-      notice: visibleNotice,
-    });
-
-    controllers.set(player.guildId, record);
-    const message = record.messageId
-      ? await renderExisting(client, player, record, payload)
-      : await sendController(client, record, payload);
-    if (message) record.notice = null;
-    return message;
+  const key = track ? trackIdentity(track) : null;
+  if (key && key !== record.lastTrackKey) record.startedAt = Date.now();
+  if (track) {
+    record.lastTrack = track;
+    record.lastTrackKey = key;
+  }
+  record.state = state;
+  record.reason = reason;
+  const visibleNotice = notice || record.notice;
+  const payload = buildPlayerPayload(player, {
+    state,
+    track,
+    startedAt: record.startedAt,
+    notice: visibleNotice,
+    reason,
   });
+
+  controllers.set(player.guildId, record);
+  const message = record.messageId
+    ? await renderExisting(client, player, record, payload)
+    : await sendController(client, player, record, payload);
+  if (message) record.notice = null;
+  return message;
+}
+
+export async function createOrUpdate(client, player, options = {}) {
+  if (!player?.guildId || !player?.textChannelId) return null;
+  return enqueueControllerOperation(player.guildId, () => upsertController(client, player, options));
 }
 
 export async function refresh(client, player) {
   if (!player?.guildId) return null;
   return enqueueControllerOperation(player.guildId, async () => {
     const record = controllers.get(player.guildId);
-    if (!record) return null;
-    const track = player?.queue?.current || record.lastTrack;
+    if (!ownsRecord(player, record) || !activePlayer(client, player)) return null;
+    const state = ['recovering', 'unavailable', 'queue-finished'].includes(record.state)
+      ? record.state
+      : !player?.queue?.current ? 'queue-finished' : player?.paused ? 'paused' : 'playing';
+    const track = state === 'queue-finished'
+      ? null
+      : player?.queue?.current || (['recovering', 'unavailable'].includes(state) ? record.lastTrack : null);
     const payload = buildPlayerPayload(player, {
-      state: player?.paused ? 'paused' : 'playing',
+      state,
       track,
       startedAt: record.startedAt,
       notice: record.notice,
+      reason: record.reason,
     });
     const message = await renderExisting(client, player, record, payload);
     if (message) record.notice = null;
@@ -110,10 +143,13 @@ export async function refresh(client, player) {
 }
 
 export async function showStatus(client, player, state, reason) {
-  if (!player?.guildId) return null;
+  if (!player?.guildId || !player?.textChannelId) return null;
   return enqueueControllerOperation(player.guildId, async () => {
+    if (!activePlayer(client, player)) return null;
     const record = controllers.get(player.guildId);
-    if (!record) return null;
+    if (record?.player !== player) return upsertController(client, player, { state, reason });
+    record.state = state;
+    record.reason = reason;
     const track = state === 'queue-finished' ? null : (player?.queue?.current || record.lastTrack);
     const payload = buildPlayerPayload(player, {
       state,
@@ -133,9 +169,11 @@ export async function end(
   { state = 'ended' } = {}
 ) {
   if (!player?.guildId) return null;
+  // Fence late starts immediately, including ones waiting behind a Discord edit.
+  endedPlayers.add(player);
   return enqueueControllerOperation(player.guildId, async () => {
     const record = controllers.get(player.guildId);
-    if (!record) return null;
+    if (!ownsRecord(player, record)) return null;
     const payload = buildPlayerPayload(player, {
       state,
       track: player?.queue?.current || record.lastTrack,
@@ -143,9 +181,9 @@ export async function end(
       reason,
     });
     try {
-      return await renderExisting(client, player, record, payload, { replaceMissing: false });
+      return await renderExisting(client, player, record, payload, { replaceMissing: false, ending: true });
     } finally {
-      controllers.delete(player.guildId);
+      if (ownsRecord(player, record)) controllers.delete(player.guildId);
     }
   });
 }
@@ -177,4 +215,5 @@ export function clearController(guildId) {
 
 export function resetControllers() {
   controllers.clear();
+  endedPlayers = new WeakSet();
 }

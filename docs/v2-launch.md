@@ -40,9 +40,31 @@ rollback are in [ops/README.md](../ops/README.md).
 
 Clean-install verification on2026-10-04: **298 Node tests** and **44 Python
 tests** pass, with no skipped tests; production dependency audit reports zero
-vulnerabilities. Candidate container identity and deployment checks are recorded
-when packaging finishes. Do not label a candidate fully launched until the
-listening gate below is complete.
+vulnerabilities. The exact release container also passes all298 Node tests on
+Linux. Separate fresh containers verify that the non-root runtime can write and
+reopen its persistent library with a read-only root filesystem. CI passes for
+the candidate revision below.
+
+## Running candidate
+
+- Source revision: `3ac0de1c75dcca2e784d8d1bacd5377ed7207a74`.
+- Image: `sha256:2e8fd71f549b8362d6255431ef4d7a00c1919bd9befbbc311dd381894a00459f`.
+- The VPS confirms this image and revision, user `node`, a read-only root,
+  persistent `/app/data`, a256 MiB memory limit, and healthy Discord/audio
+  readiness. Only the bot was replaced; the verified audio images and plugin
+  were retained. The full Compose resource limits are validated separately.
+- All25 commands are registered in **Bot Testing** only. Global registration
+  and merging the release are pending listening acceptance.
+- A forced idle Lavalink control-socket disconnect recovered in10.867seconds
+  with the same bot process and healthy readiness. This establishes control
+  reconnection; audible continuity and queued-track preservation are checked
+  separately during the listening gate.
+- The prior bot image and Bot Testing command catalog are retained in private
+  rollback state on the VPS. No credentials are recorded in this evidence.
+
+This evidence records the running code candidate. Subsequent documentation
+commits do not change that image's source identity. Do not label the candidate
+fully launched until the listening gate below is complete.
 
 ## Final listening acceptance
 

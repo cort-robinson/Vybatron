@@ -102,6 +102,193 @@ function fixture(options = {}) {
     track, wire, start, error, forward };
 }
 
+// Lavalink 4.2.2's EventEmitter converts the live AudioTrack with toTrack(),
+// which calls Lavaplayer encodeTrack(). Its final long is getPosition(), so a
+// server event's encoding is not the catalog encoding once playback has moved.
+// https://github.com/lavalink-devs/Lavalink/blob/4.2.2/LavalinkServer/src/main/java/lavalink/server/util/util.kt
+// https://github.com/lavalink-devs/lavaplayer/blob/master/main/src/main/java/com/sedmelluq/discord/lavaplayer/player/DefaultAudioPlayerManager.java
+const CATALOG_ENCODING = 'QAAAjQIAJVJpY2sgQXN0bGV5IC0gTmV2ZXIgR29ubmEgR2l2ZSBZb3UgVXAADlJpY2tBc3RsZXlWRVZPAAAAAAADPCAAC2RRdzR3OVdnWGNRAAEAK2h0dHBzOi8vd3d3LnlvdXR1YmUuY29tL3dhdGNoP3Y9ZFF3NHc5V2dYY1EAB3lvdXR1YmUAAAAAAAAAAA==';
+
+function atServerPosition(encoded, position) {
+  const bytes = Buffer.from(encoded, 'base64');
+  bytes.writeBigInt64BE(BigInt(position), bytes.length - 8);
+  return bytes.toString('base64');
+}
+
+function serverEchoFixture(options = {}) {
+  const remote = { track: null, position: 0, paused: false };
+  const started = [];
+  let f;
+  f = fixture({ ...options, request: async (body, endpoint) => {
+    if (body.track?.encoded === null) remote.track = null;
+    else if (body.track?.encoded) {
+      remote.track = { ...f.wire(), encoded: body.track.encoded,
+        userData: structuredClone(body.track.userData || {}) };
+      remote.position = body.position ?? 0;
+      remote.paused = body.paused ?? false;
+    } else if (body.track?.userData && remote.track) {
+      remote.track.userData = structuredClone(body.track.userData);
+    }
+    // PlayerRestHandler's omitted track/userData fields do not replace the
+    // active AudioTrack or its userData for pause/resume/seek/filter PATCHes.
+    if (typeof body.position === 'number' && remote.track) remote.position = body.position;
+    if (typeof body.paused === 'boolean') remote.paused = body.paused;
+    await options.request?.(body, endpoint);
+  } });
+  const buildTrack = f.track;
+  f.track = (identifier = 'dQw4w9WgXcQ', extra) => {
+    assert.equal(identifier.length, 11);
+    const catalog = Buffer.from(CATALOG_ENCODING, 'base64');
+    const original = Buffer.from('dQw4w9WgXcQ');
+    for (let offset = catalog.indexOf(original); offset >= 0; offset = catalog.indexOf(original, offset + original.length)) {
+      Buffer.from(identifier).copy(catalog, offset);
+    }
+    const track = buildTrack(identifier, extra);
+    track.encoded = catalog.toString('base64');
+    return track;
+  };
+  function wire() {
+    assert.ok(remote.track, 'the server has an active AudioTrack');
+    return { ...structuredClone(remote.track), encoded: atServerPosition(remote.track.encoded, remote.position),
+      info: { ...remote.track.info, position: remote.position } };
+  }
+  async function emit(payload, track = wire()) {
+    await f.node.handleEvent({ guildId: 'g1', track, ...payload });
+    await settle();
+  }
+  async function start({ position = 0, paused = false, upcoming = [f.track('Zi_XLOBDo_Y')] } = {}) {
+    const first = f.track();
+    await f.player.queue.add(upcoming);
+    await f.player.play({ clientTrack: first, position, paused });
+    await emit({ type: 'TrackStartEvent' });
+    return first;
+  }
+  f.manager.on('trackStart', (_player, track) => started.push(track));
+  return { ...f, remote, started, serverWire: wire, emit, start };
+}
+
+test('server-encoded nonzero paused restore accepts TrackStart and pause/resume keep its wire token', async () => {
+  const f = serverEchoFixture();
+  const first = await f.start({ position: 107_420, paused: true });
+  assert.notEqual(f.serverWire().encoded, first.encoded);
+  assert.equal(f.started.length, 1);
+  assert.equal(f.player.paused, true);
+  assert.equal(f.player.playing, false);
+  assert.equal(f.player.lastPosition, 107_420);
+  const token = f.serverWire().userData[ATTEMPT_KEY];
+  await f.player.resume();
+  assert.deepEqual(Object.keys(f.writes.at(-1)).sort(), ['endpoint', 'paused']);
+  await f.player.pause();
+  await f.player.resume();
+  assert.equal(f.serverWire().userData[ATTEMPT_KEY], token);
+  await f.emit({ type: 'TrackStartEvent' });
+  assert.equal(f.player.playing, true);
+  assert.equal(f.player.paused, false);
+  assert.equal(f.recovery.summary().staleEvents, 0);
+});
+
+test('server-encoded FINISHED after seek advances the native queue once', async () => {
+  const f = serverEchoFixture();
+  const first = await f.start();
+  await f.player.seek(95_000);
+  f.remote.position = first.info.duration;
+  const ended = f.serverWire();
+  assert.notEqual(ended.encoded, first.encoded);
+  f.remote.track = null;
+  await f.emit({ type: 'TrackEndEvent', reason: 'finished' }, ended);
+  await f.emit({ type: 'TrackEndEvent', reason: 'finished' }, ended);
+  assert.equal(f.player.queue.current.info.identifier, 'Zi_XLOBDo_Y');
+  assert.equal(f.player.queue.tracks.length, 0);
+  assert.equal(f.writes.filter((write) => write.track?.encoded).length, 2);
+  assert.equal(f.recovery.summary().retries, 0);
+  assert.equal(f.recovery.summary().staleEvents, 1);
+});
+
+test('server-encoded exception after restored resume retries the exact recording at its nonzero position', async () => {
+  let f;
+  f = serverEchoFixture({ search: async () => ({ tracks: [f.track()] }) });
+  await f.start({ position: 107_420, paused: true });
+  await f.player.resume();
+  const failed = f.serverWire();
+  f.remote.track = null;
+  await f.emit({ type: 'TrackExceptionEvent',
+    exception: { message: 'Temporary source failure', severity: 'fault' } }, failed);
+  assert.equal(f.tasks.length, 1);
+  await f.tasks[0];
+  await settle();
+  const retry = f.writes.filter((write) => write.track?.encoded).at(-1);
+  assert.equal(retry.position, 107_420);
+  assert.equal(retry.paused, false);
+  assert.notEqual(retry.track.userData[ATTEMPT_KEY], failed.userData[ATTEMPT_KEY]);
+  await f.emit({ type: 'TrackEndEvent', reason: 'loadFailed' }, failed);
+  await f.emit({ type: 'TrackStartEvent' });
+  assert.equal(f.player.queue.current.info.identifier, 'dQw4w9WgXcQ');
+  assert.equal(f.player.queue.tracks.length, 1);
+  assert.equal(f.recovery.summary().retries, 1);
+  assert.equal(f.recovery.summary().recovered, 1);
+  assert.equal(f.recovery.summary().staleEvents, 1);
+});
+
+test('server-encoded exception preserves the failure position after a missing-track zero update', async () => {
+  let f;
+  f = serverEchoFixture({ search: async () => ({ tracks: [f.track()] }) });
+  await f.start({ position: 107_420, paused: true });
+  await f.player.resume();
+  const failed = f.serverWire();
+  f.remote.track = null;
+  // Lavalink's player update reports track?.position ?: 0 after an executor
+  // fails. Its TrackExceptionEvent still serializes the failed AudioTrack.
+  await f.node.message(JSON.stringify({ op: 'playerUpdate', guildId: 'g1',
+    state: { position: 0, connected: true, ping: 1, time: Date.now() } }));
+  assert.equal(f.player.lastPosition, 0);
+  await f.emit({ type: 'TrackExceptionEvent',
+    exception: { message: 'Temporary source failure', severity: 'fault' } }, failed);
+  await f.tasks[0];
+  const retry = f.writes.filter((write) => write.track?.encoded).at(-1);
+  assert.equal(retry.position, 107_420);
+  assert.equal(retry.paused, false);
+  assert.equal(f.player.queue.tracks.length, 1);
+});
+
+test('server-encoded exception rejects invalid event positions and keeps the reported fallback', async () => {
+  for (const invalid of [-1, 200_001, '107420', Infinity, 12.5]) {
+    let f;
+    f = serverEchoFixture({ search: async () => ({ tracks: [f.track()] }) });
+    await f.start({ position: 55_000 });
+    const failed = f.serverWire();
+    failed.info.position = invalid;
+    f.remote.track = null;
+    await f.emit({ type: 'TrackExceptionEvent',
+      exception: { message: 'Temporary source failure', severity: 'fault' } }, failed);
+    await f.tasks[0];
+    const retry = f.writes.filter((write) => write.track?.encoded).at(-1);
+    assert.equal(retry.position, 55_000);
+  }
+});
+
+test('server-encoded same-identifier events with old or missing attempt tokens stay fenced', async () => {
+  const f = serverEchoFixture();
+  await f.start({ position: 95_000 });
+  const old = f.serverWire();
+  await f.player.play({ clientTrack: f.track(), position: 107_420, paused: false });
+  const current = f.serverWire();
+  assert.notEqual(current.encoded, old.encoded);
+  assert.notEqual(current.userData[ATTEMPT_KEY], old.userData[ATTEMPT_KEY]);
+  for (const payload of [
+    { type: 'TrackStartEvent' },
+    { type: 'TrackEndEvent', reason: 'finished' },
+    { type: 'TrackExceptionEvent', exception: { message: 'Old source failure' } },
+  ]) await f.emit(payload, old);
+  const missing = structuredClone(current);
+  delete missing.userData[ATTEMPT_KEY];
+  await f.emit({ type: 'TrackEndEvent', reason: 'finished' }, missing);
+  await f.emit({ type: 'TrackStartEvent' }, current);
+  assert.equal(f.tasks.length, 0);
+  assert.equal(f.player.queue.tracks.length, 1);
+  assert.equal(f.started.length, 2);
+  assert.equal(f.recovery.summary().staleEvents, 4);
+});
+
 test('real-client adapter retries the exact identifier without shifting the pending queue', async () => {
   let fresh;
   const f = fixture({ search: async (_player, query, requester) => {

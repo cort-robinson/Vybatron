@@ -328,10 +328,12 @@ export function createPlaybackRecovery({
     const token = payload?.track?.userData?.[ATTEMPT_KEY];
     const encoded = payload?.track?.encoded;
     if (token && (token !== state.token || state.endedTokens.has(token))) return false;
+    // The current attempt token identifies playback. Lavalink re-encodes the
+    // live AudioTrack for events, including its current position; a seek or
+    // nonzero restore therefore changes encoded without changing the attempt.
+    // Missing/old tokens must still be rejected after the first stamped play.
+    if (state.token) return token === state.token;
     if (encoded && state.encoded && encoded !== state.encoded) return false;
-    // Lavalink v4 echoes userData on every track event. Missing tokens can be
-    // accepted before the first stamped request (e.g. a restored session).
-    if (state.token && !token && payload?.track) return false;
     return true;
   }
 
@@ -366,9 +368,9 @@ export function createPlaybackRecovery({
     return null;
   }
 
-  function recoveryPosition(player, candidate) {
+  function recoveryPosition(player, candidate, reportedPosition = player.lastPosition) {
     if (candidate.info?.isStream || candidate.info?.isSeekable === false) return 0;
-    const position = Math.max(0, Number(player.lastPosition) || 0);
+    const position = Math.max(0, Number(reportedPosition) || 0);
     const length = duration(candidate);
     return length > 0 ? Math.min(position, Math.max(0, length - 1000)) : position;
   }
@@ -425,6 +427,14 @@ export function createPlaybackRecovery({
   async function run(player, failedTrack, payload, state, epoch, signal) {
     const original = state.original || failedTrack;
     state.original = original;
+    // After a failed executor is removed, playerUpdate can report position 0
+    // before its exception arrives. The accepted current-token event retains
+    // the failed AudioTrack's position; snapshot it before awaiting a retry.
+    const eventPosition = payload?.track?.info?.position;
+    const length = duration(failedTrack);
+    const failurePosition = Number.isSafeInteger(eventPosition) && eventPosition >= 0
+      && Number.isFinite(length) && length > 0 && eventPosition <= length
+      ? eventPosition : player.lastPosition;
     const circuit = circuitFor(player, original);
     if (!isPermanentFailure(payload) && circuit.until <= now()) {
       while (state.attempts < retryDelays.length && valid(player, state, epoch, failedTrack)) {
@@ -446,7 +456,7 @@ export function createPlaybackRecovery({
         counters.retries += 1;
         try {
           await player.play({ clientTrack: replacement, noReplace: false,
-            position: recoveryPosition(player, replacement), paused: state.paused,
+            position: recoveryPosition(player, replacement, failurePosition), paused: state.paused,
             [RECOVERY_PLAY]: guard });
           return;
         } catch (error) {

@@ -44,7 +44,7 @@ async function request(base, pathname, { method = 'GET', headers = {}, body } = 
       });
       res.on('error', reject);
     });
-    req.once('timeout', () => req.destroy(new Error('Test HTTP deadline'))); req.on('error', reject); req.end(body);
+    req.once('timeout', () => req.destroy(new Error(`Test HTTP deadline (${method} ${pathname})`))); req.on('error', reject); req.end(body);
   });
 }
 
@@ -381,6 +381,65 @@ test('Static serving blocks encoded/double-encoded traversal, hidden files, syml
   const secured = await f.request('/');
   assert.match(secured.headers['content-security-policy'], /media-src 'none'/); assert.equal(secured.headers['x-frame-options'], 'DENY');
   assert.equal(secured.headers['access-control-allow-origin'], undefined);
+});
+
+test('Completed static GET and HEAD responses preserve subsequent HTTP connections', { timeout: 5000 }, async t => {
+  const f = await fixture(t);
+  for (let batch = 0; batch < 12; batch++) {
+    const [shell, script, head] = await Promise.all([
+      f.request('/'), f.request('/app-abcdefgh.js'), f.request('/app-abcdefgh.js', { method: 'HEAD' }),
+    ]);
+    assert.equal(shell.status, 200); assert.match(shell.text, /Portal shell/);
+    assert.equal(script.status, 200); assert.equal(script.text, 'window.portal = true;');
+    assert.equal(head.status, 200); assert.equal(head.text, '');
+    assert.equal(head.headers['content-length'], script.headers['content-length']);
+    assert.equal(head.headers['content-type'], script.headers['content-type']);
+    assert.equal((await f.request('/guilds/123')).text, shell.text);
+    assert.equal((await f.request('/api/bootstrap')).status, 401);
+  }
+});
+
+test('Static metadata failure and disconnected readers release their opened files', { timeout: 5000 }, async t => {
+  const f = await fixture(t);
+  const failedFile = path.join(f.config.webDist, 'failed.js');
+  const delayedFile = path.join(f.config.webDist, 'delayed.js');
+  const largeFile = path.join(f.config.webDist, 'large.js');
+  await fs.writeFile(failedFile, 'not served'); await fs.writeFile(delayedFile, 'not served');
+  await fs.writeFile(largeFile, Buffer.alloc(2 * 1024 * 1024, 120));
+  const handles = []; const open = fs.open.bind(fs);
+  let unblock; const gate = new Promise(resolve => { unblock = resolve; }); t.after(unblock);
+  t.mock.method(fs, 'open', async (filename, ...args) => {
+    const handle = await open(filename, ...args);
+    if ([failedFile, delayedFile, largeFile].includes(filename)) handles.push(handle);
+    if (filename === failedFile) handle.stat = async () => { throw new Error('Injected metadata failure'); };
+    if (filename === delayedFile) await gate;
+    return handle;
+  });
+  const failed = await f.request('/failed.js');
+  assert.equal(failed.status, 503); assert.equal(failed.headers['cache-control'], 'no-store');
+  assert.equal(failed.text.includes('Injected'), false);
+  await until(() => handles.length === 1 && handles.every(handle => handle.fd === -1));
+
+  const accepted = once(f.app.server, 'connection');
+  const early = http.get(`${f.base}/delayed.js`, { agent: false });
+  early.on('error', () => {}); t.after(() => early.destroy());
+  const [socket] = await accepted;
+  const disconnected = new Promise(resolve => socket.once('close', resolve));
+  await until(() => handles.length === 2);
+  early.destroy(); await disconnected;
+  unblock();
+  await until(() => handles.every(handle => handle.fd === -1) && f.app.resourceCounts().requests === 0);
+
+  await new Promise((resolve, reject) => {
+    const req = http.get(`${f.base}/large.js`, { agent: false }, res => {
+      res.once('data', () => { res.destroy(); req.destroy(); resolve(); });
+      res.on('error', reject);
+    });
+    req.setTimeout(2000, () => req.destroy(new Error('Static disconnect deadline')));
+    req.on('error', reject); t.after(() => req.destroy());
+  });
+  await until(() => handles.length === 3 && handles.every(handle => handle.fd === -1));
+  assert.equal((await f.request('/')).status, 200);
 });
 
 test('Production refuses test transports; config rejects insecure origin, malformed secrets, and default dist is sibling web/dist', { timeout: 5000 }, async () => {

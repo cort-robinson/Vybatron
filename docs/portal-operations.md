@@ -134,7 +134,7 @@ The VPS has joined the existing personal tailnet as
 `vybertron.tailbeae5.ts.net`. Background Funnel forwards public HTTPS port 443
 only to `http://127.0.0.1:3001`. The OAuth secret is privately provisioned and the
 owner registered `https://vybertron.tailbeae5.ts.net/auth/discord/callback`.
-Local verification has passed 385 core tests, 32 API tests, five joined
+Local verification has passed 385 core tests, 34 API tests, five joined
 OAuth/API/bot tests, 34 functional/protocol browser tests, 62 recovery tests and separate
 non-root, read-only, 192 MiB container checks that reopen encrypted logins across
 container replacement. Independent recovery review confirmed original file

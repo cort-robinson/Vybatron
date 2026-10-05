@@ -1,6 +1,6 @@
 import http from 'node:http';
 import path from 'node:path';
-import { promises as fs, createReadStream, constants as fsConstants } from 'node:fs';
+import { promises as fs, constants as fsConstants } from 'node:fs';
 import { LIMITS, isLoopback } from './config.js';
 import { SessionStore, randomToken, tokenHash } from './store.js';
 import { Transport } from './transport.js';
@@ -88,19 +88,25 @@ export async function createPortalServer(config, testOptions = {}) {
     if (!file.startsWith(`${root}${path.sep}`) || !types[path.extname(file).toLowerCase()]) throw notFound();
     let handle;
     try { handle = await fs.open(file, fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW || 0)); } catch { throw notFound(); }
-    const stat = await handle.stat();
-    if (!stat.isFile() || stat.size > limits.staticBytes) { await handle.close(); throw notFound(); }
-    const ext = path.extname(file).toLowerCase();
-    const isWorker = /(?:^|[\/\\])(?:sw|service-worker|workbox[^\/\\]*)\.js$/i.test(file);
-    res.setHeader('Cache-Control', isWorker ? 'no-store' : /[-.][a-zA-Z0-9_-]{8,}\.(?:js|css|woff2?)$/.test(file) ? 'public, max-age=31536000, immutable' : 'no-cache');
-    if (isWorker) res.setHeader('Service-Worker-Allowed', '/');
-    res.writeHead(200, { 'Content-Type': types[ext], 'Content-Length': stat.size });
-    if (req.method === 'HEAD') { await handle.close(); res.end(); return; }
-    const stream = createReadStream(file, { fd: handle.fd, autoClose: false });
-    res.once('close', () => stream.destroy());
-    stream.once('close', () => { void handle.close().catch(() => {}); });
-    stream.once('error', () => res.destroy());
-    stream.pipe(res);
+    try {
+      const stat = await handle.stat();
+      if (!stat.isFile() || stat.size > limits.staticBytes) throw notFound();
+      if (res.destroyed) return;
+      const ext = path.extname(file).toLowerCase();
+      const isWorker = /(?:^|[\/\\])(?:sw|service-worker|workbox[^\/\\]*)\.js$/i.test(file);
+      res.setHeader('Cache-Control', isWorker ? 'no-store' : /[-.][a-zA-Z0-9_-]{8,}\.(?:js|css|woff2?)$/.test(file) ? 'public, max-age=31536000, immutable' : 'no-cache');
+      if (isWorker) res.setHeader('Service-Worker-Allowed', '/');
+      res.writeHead(200, { 'Content-Type': types[ext], 'Content-Length': stat.size });
+      if (req.method === 'HEAD') { res.end(); return; }
+      // The stream must own the FileHandle, not its numeric descriptor. Destroy
+      // closes even an autoClose:false stream; closing that descriptor again can
+      // close a different file/socket that has already reused it on Unix.
+      const stream = handle.createReadStream();
+      handle = null;
+      res.once('close', () => stream.destroy());
+      stream.once('error', () => res.destroy());
+      stream.pipe(res);
+    } finally { await handle?.close(); }
   }
 
   async function events(req, res, guildId, token, session, signal) {

@@ -207,8 +207,10 @@ are denied. The real private bridge verifies the application owner as maintainer
 Portal-only and Tailscale service restarts passed. The final of two controlled
 idle host reboots verified automatic service startup and the corrected Tailscale
 limits without manual service starts. Container/image/volume identities,
-music and encrypted-login file hashes, and the shared audio network namespace
-were preserved. Startup HTTPS was allowed to settle before final verification.
+music file hashes, the auth-volume inventory and the shared audio network namespace
+were preserved. The live auth volume was empty at these reboots; actual device-login
+recovery remains an owner acceptance check. Startup HTTPS was allowed to settle
+before final verification.
 The final controlled check decoded both complete canaries through `FINISHED`:
 946 frames at 18,900/18,947 ms and 10,866 frames at 217,300/217,385 ms. Fresh
 production readiness, idle state, data hashes and public ingress were checked

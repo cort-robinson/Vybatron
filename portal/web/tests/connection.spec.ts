@@ -86,10 +86,10 @@ test('a delayed command snapshot cannot replace a later Discord state', async ({
     server.state.snapshot.revision = 'later-discord-revision';
     server.state.snapshot.session.status = 'playing';
     server.state.snapshot.session.current!.title = 'Later Discord selection'; server.broadcast();
-    await expect(page.getByRole('heading', { name: 'Later Discord selection' })).toBeVisible();
+    await expect(page.getByTestId('player').getByText('Later Discord selection', { exact: true })).toBeVisible();
     server.releaseCommandReplies();
     await expect(page.getByRole('button', { name: 'Pause playback' })).toBeEnabled();
-    await expect(page.getByRole('heading', { name: 'Later Discord selection' })).toBeVisible();
+    await expect(page.getByTestId('player').getByText('Later Discord selection', { exact: true })).toBeVisible();
     expect(server.snapshotReads).toHaveLength(reads + 1);
     expect(server.commands).toHaveLength(1);
   } finally { await page.close(); await server.close(); }
@@ -122,7 +122,7 @@ test('manual reconnect retains the player and typed input until a genuinely fres
     server.disconnectAndHold();
     await expect(page.getByRole('button', { name: 'Pause playback' })).toBeDisabled();
     await page.getByRole('button', { name: 'Reconnect', exact: true }).click();
-    await expect(page.getByRole('heading', { name: 'Evening Light' })).toBeVisible();
+    await expect(page.getByTestId('player').getByText('Evening Light', { exact: true })).toBeVisible();
     await expect(page.getByTitle('Stream-confirmed Night Drive', { exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'Add music', exact: true }).click();
     await page.getByRole('searchbox', { name: 'Music search' }).fill('a retained public playlist input');
@@ -143,7 +143,7 @@ test('an application 503 on an open native stream respects server recovery witho
     const reads = server.snapshotReads.length; const events = server.eventReads.length;
     server.applicationError(503);
     await expect(page.getByRole('button', { name: 'Pause playback' })).toBeDisabled();
-    await expect(page.getByRole('heading', { name: 'Evening Light' })).toBeVisible();
+    await expect(page.getByTestId('player').getByText('Evening Light', { exact: true })).toBeVisible();
     await page.waitForTimeout(1100);
     await expect(page.getByRole('button', { name: 'Pause playback' })).toBeDisabled();
     expect(server.snapshotReads).toHaveLength(reads); expect(server.eventReads).toHaveLength(events);
@@ -165,7 +165,7 @@ for (const status of [401, 403, 404]) {
       const reads = server.snapshotReads.length;
       server.applicationError(status);
       if (status === 401) await expect(page.getByRole('link', { name: /Continue with Discord/ })).toBeVisible();
-      await expect(page.getByRole('heading', { name: 'Evening Light' })).toHaveCount(0);
+      await expect(page.getByTestId('player').getByText('Evening Light', { exact: true })).toHaveCount(0);
       await expect(page.getByRole('button', { name: 'Remove favorite Evening Light' })).toHaveCount(0);
       expect(server.snapshotReads).toHaveLength(reads);
       expect(server.commands).toHaveLength(0);
@@ -236,11 +236,11 @@ for (const status of [401, 403, 404]) {
       server.denyAccess(status);
       if (status === 401) await expect(page.getByRole('link', { name: /Continue with Discord/ })).toBeVisible();
       else await expect(page.getByText('You no longer have access to this listening space.', { exact: true }).first()).toBeVisible();
-      await expect(page.getByRole('heading', { name: 'Evening Light' })).toHaveCount(0);
+      await expect(page.getByTestId('player').getByText('Evening Light', { exact: true })).toHaveCount(0);
       await expect(page.getByRole('button', { name: 'Remove favorite Evening Light' })).toHaveCount(0);
       server.releaseCommandReplies();
       await page.waitForTimeout(1100);
-      await expect(page.getByRole('heading', { name: 'Evening Light' })).toHaveCount(0);
+      await expect(page.getByTestId('player').getByText('Evening Light', { exact: true })).toHaveCount(0);
       await expect(page.getByRole('button', { name: 'Remove favorite Evening Light' })).toHaveCount(0);
       expect(server.commands).toHaveLength(1);
       expect(server.streams.size).toBe(0);
@@ -258,7 +258,7 @@ test('an unchanged-revision hidden-channel projection clears the older player an
     const session = server.state.snapshot.session;
     Object.assign(session, { status: 'idle', current: null, queue: [], listeners: [], voiceChannel: null, textChannel: null, canAdd: false, canControl: false, canVote: false, reason: 'The music channel is no longer visible.' });
     server.state.library.history = []; server.holdLibraryReads(); server.broadcast();
-    await expect(page.getByRole('heading', { name: 'Evening Light' })).toHaveCount(0);
+    await expect(page.getByTestId('player').getByText('Evening Light', { exact: true })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Replay Afterglow' })).toHaveCount(0);
     server.releaseLibraryReads();
     await expect(page.getByRole('heading', { name: /Your server.*story starts here/ })).toBeVisible();

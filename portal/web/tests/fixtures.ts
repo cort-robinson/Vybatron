@@ -123,7 +123,16 @@ export async function mockPortal(page: Page, options: { signedOut?: boolean; bas
       if (body.command === 'replay') s.queue.unshift(state.library.history[Number(o.index) - 1].track);
       if (body.command === 'settings' && state.snapshot.settings) { if (body.subcommand === 'volume') state.snapshot.settings.volume = Number(o.value); if (body.subcommand === 'musicchannel') state.snapshot.settings.musicTextChannelId = String(o.channel); if (body.subcommand === 'djrole') state.snapshot.settings.djRoleId = o.role ? String(o.role) : null; if (body.subcommand === 'fairqueue') state.snapshot.settings.fairQueue = !!o.enabled; }
       if (body.command === 'session') { state.snapshot.savedSession.exists = false; if (body.subcommand === 'resume') { s.current = state.library.favorites[1]; s.queue = fixtureState().snapshot.session.queue; s.positionMs = 107_000; s.status = 'paused'; } }
-      if (body.command === 'mix') { if (body.subcommand === 'save') state.library.mixes.push({ id: 'new-mix', name: String(o.name), ownerId: 'alex', version: createHash('md5').update(String(commands.length)).digest('hex'), canEdit: true, tracks: [s.current, ...s.queue].filter((t): t is Track => !!t) }); if (body.subcommand === 'delete') state.library.mixes = state.library.mixes.filter(m => m.name !== o.name); }
+      if (body.command === 'mix') {
+        if (body.subcommand === 'save') {
+          const key = (name: string) => name.trim().toLowerCase().replace(/\s+/g, ' ');
+          const existing = state.library.mixes.find(mix => key(mix.name) === key(String(o.name)));
+          const mix = { id: existing?.id || `new-mix-${commands.length}`, name: existing?.name || String(o.name), ownerId: 'alex', version: createHash('md5').update(String(commands.length)).digest('hex'), canEdit: true, tracks: [s.current, ...s.queue].filter((t): t is Track => !!t) };
+          if (existing && o.replace) Object.assign(existing, mix);
+          else state.library.mixes.push(mix);
+        }
+        if (body.subcommand === 'delete') state.library.mixes = state.library.mixes.filter(m => m.name !== o.name);
+      }
       state.snapshot.revision = `revision-${commands.length + 1}`;
       if (uncertain) { uncertain = false; await route.fulfill({ status: 503, json: { error: { code: 'upstream_timeout', message: 'The bot response did not arrive in time.' } } }); return; }
       await route.fulfill(reply({ ok: true, message: 'Your listening space is updated.', snapshot: state.snapshot }));

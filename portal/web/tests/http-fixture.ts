@@ -103,7 +103,7 @@ export async function startHttpFixture(options: { initialSnapshotFailures?: numb
     const file = resolve(root, `.${art ? path.replace('/test-art', '') : path === '/' ? '/index.html' : path}`);
     if (!file.startsWith(root + sep)) { response.writeHead(404); response.end(); return; }
     try {
-      const data = await readFile(file); const type: Record<string, string> = { '.html': 'text/html', '.js': 'application/javascript', '.css': 'text/css', '.woff2': 'font/woff2', '.png': 'image/png', '.svg': 'image/svg+xml', '.webmanifest': 'application/manifest+json' };
+      const data = await readFile(file); const type: Record<string, string> = { '.html': 'text/html', '.js': 'application/javascript', '.css': 'text/css', '.woff2': 'font/woff2', '.png': 'image/png', '.webp': 'image/webp', '.avif': 'image/avif', '.svg': 'image/svg+xml', '.webmanifest': 'application/manifest+json' };
       response.writeHead(200, { 'Content-Type': type[extname(file)] || 'application/octet-stream', 'Cache-Control': 'no-cache' }); response.end(data);
     } catch { response.writeHead(404); response.end(); }
   });

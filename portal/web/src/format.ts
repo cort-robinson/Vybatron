@@ -12,5 +12,5 @@ export function totalTime(ms: number): string { return ms >= 3_600_000 ? `${Math
 export function date(at: number): string { return new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }).format(at); }
 export function statusLabel(snapshot: GuildSnapshot | null): string {
   if (!snapshot) return 'Connecting';
-  return { idle: 'Ready to listen', playing: 'Listening in Discord', paused: 'Paused in Discord', recovering: 'Recovering playback', unavailable: 'Playback unavailable' }[snapshot.session.status];
+  return { idle: 'Ready to listen', playing: 'Playing', paused: 'Paused', recovering: 'Recovering', unavailable: 'Unavailable' }[snapshot.session.status];
 }

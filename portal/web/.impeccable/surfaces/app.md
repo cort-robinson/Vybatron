@@ -25,6 +25,6 @@ The browsing state uses open rows and ample dark space; desktop expansion uses
 large artwork on the left and Up Next on the right. Phone expansion uses art,
 identity, timeline, transport, volume/filter, and persistent bottom navigation.
 
-Unresolved beyond web scope: live OAuth, deployment and physical Discord playback
-gates. Selected-item tokens now bind favorites, history and mix confirmations;
+Live OAuth and deployment have independent operations evidence. Physical Discord
+listening remains a separate device acceptance check, not a layout assertion. Selected-item tokens now bind favorites, history and mix confirmations;
 conflicts require fresh snapshot/library reads and deliberate retry.

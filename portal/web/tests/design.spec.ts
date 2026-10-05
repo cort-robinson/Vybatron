@@ -26,7 +26,7 @@ test('capture approved desktop and phone states with interaction and console evi
     evidence.push({ name, width, height, density, errors, playerOverflow, violations: accessibility.violations.map(v => ({ id: v.id, impact: v.impact, nodes: v.nodes.map(n => n.html) })) });
     await page.getByRole('button', { name: 'Session', exact: true }).click();
     if (name === 'desktop') {
-      await page.getByRole('button', { name: 'Add music', exact: true }).click(); await page.getByRole('searchbox', { name: 'Music search' }).fill('Midnight City'); await page.getByRole('button', { name: 'Search', exact: true }).click(); await expect(page.getByText('Midnight City', { exact: true })).toBeVisible();
+      await page.getByRole('button', { name: 'Add music', exact: true }).click(); await page.getByRole('searchbox', { name: 'Music search' }).fill('Midnight City'); await page.getByRole('button', { name: 'Search', exact: true }).click(); await expect(page.getByRole('dialog').getByText('Midnight City', { exact: true })).toBeVisible();
       await page.screenshot({ path: fileURLToPath(new URL('search.png', directory)) });
       await page.getByRole('button', { name: 'Close dialog' }).click(); await streamAction(page, 'disconnect');
       await page.screenshot({ path: fileURLToPath(new URL('disconnected.png', directory)) });

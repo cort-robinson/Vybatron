@@ -35,16 +35,16 @@ typography:
     letterSpacing: "-0.015em"
   track-title:
     fontFamily: "Manrope Variable, sans-serif"
-    fontSize: "15px"
+    fontSize: "16px"
     fontWeight: 750
   body:
     fontFamily: "Manrope Variable, sans-serif"
-    fontSize: "13px"
+    fontSize: "16px"
     fontWeight: 500
     lineHeight: 1.6
   button:
     fontFamily: "Manrope Variable, sans-serif"
-    fontSize: "14px"
+    fontSize: "16px"
     fontWeight: 750
 rounded:
   artwork: "3px"
@@ -156,8 +156,8 @@ The variable family supplies precise, compact hierarchy without a separate displ
 - **Headline:** page headings use the frontmatter headline role; intermediate desktop reduces them to (30px), phone to (25px).
 - **Title:** section headings use the title role, reducing to (19px) on phone. Current compact identity uses (17px, 750); queue titles use the track-title role.
 - **Expanded identity:** desktop uses (clamp(27px, 3.2vw, 44px), 800, line-height 1.3); phone uses (clamp(24px, 6.2vw, 34px)), with (22px) at the narrowest breakpoint.
-- **Body:** explanatory text commonly uses the body role; queue author metadata uses (14px), then (11px) on phone. Descriptions are constrained to roughly 47 to 70 characters per line depending on context.
-- **Label:** buttons use the button role; navigation is (15px, 650) on desktop, (10px) on phone. Numeric durations use tabular figures. Small utility captions in the existing build are not a general-purpose type minimum.
+- **Body:** explanatory text commonly uses the body role; queue author metadata uses (14px) on desktop and phone. Descriptions are constrained to roughly 47 to 70 characters per line depending on context.
+- **Label:** buttons use the button role; navigation is (15px, 650) on desktop, (14px) on phone. Numeric durations use tabular figures. Small utility captions in the existing build are not a general-purpose type minimum.
 
 **The Single Identity Rule.** Render the current song once per player state, beside its favorite action when that action is visible. Expansion transforms the existing player rather than creating another now-playing strip.
 
@@ -165,9 +165,9 @@ The variable family supplies precise, compact hierarchy without a separate displ
 
 Desktop uses a fixed sidebar (clamp(226px, 17.45vw, 260px)), topbar (114px), and bottom player (154px). Main content starts beside the sidebar with open horizontal queue rows; page padding is (32px 24px 70px 37px). Queue columns align index, drag affordance, artwork/title, requester, duration, favorite, and options.
 
-Expanded desktop content occupies the space between topbar and player, in a (56:44) artwork/Up Next grid with a (37px) gap. Cover sizing is bounded by available width and viewport height. Desktop adjustments at (1330px) and (1100px) reduce spacing and metadata density without adding another player.
+Expanded desktop content occupies the space between topbar and player, in a (52:48) artwork/Up Next grid with a (32px) gap. Cover sizing is bounded by available width and viewport height. Desktop adjustments at (1330px) and (1100px) reduce spacing and metadata density without adding another player.
 
-At (960px) and below, the sidebar becomes a top server header (90px), navigation becomes a fixed bottom bar (72px plus safe-area inset), and the compact player sits immediately above it (103px). Rows drop desktop columns, requester, drag handle, and duration; menu actions preserve keyboard reorder controls. Search remains reachable through Add music. Phone expansion scrolls vertically through cover, centered identity, timeline, transport, and volume/filter controls; the side-by-side Up Next pane is hidden and Back to queue returns to it. Current favorite is hidden in the compact phone state and visible beside the title when expanded. At (360px), narrower padding and smaller identity/transport accommodate the supported minimum body width (320px).
+At (1023px) and below, the sidebar becomes a top server header (112px plus safe-area inset), navigation becomes a fixed bottom bar (64px plus safe-area inset), and the compact player sits immediately above it (108px). Rows drop desktop columns, requester, drag handle, and duration; menu actions preserve keyboard reorder controls. Search remains reachable through Add music. Phone expansion reserves a fixed control area for timeline, transport, volume and filter; the cover and centered identity use the remaining height with a scrollable upper pane when needed; the side-by-side Up Next pane is hidden and Back to queue returns to it. Current favorite is hidden in the compact phone state and visible beside the title when expanded. At (360px), narrower padding and smaller identity/transport accommodate the supported minimum body width (320px).
 
 Spacing is contextual rather than a strict arithmetic scale: recurring compact gaps, control padding, and section spacing are recorded in frontmatter. Preserve the spacious queue and denser secondary forms rather than boxing every row.
 
@@ -185,7 +185,7 @@ Depth combines translucent navy surfaces, fine borders, and diffuse cool light. 
 
 **The Artwork Atmosphere Rule.** Tint the expanded sleeve with its actual current artwork. Keep atmosphere behind content, localized around the cover, and independent of playback authority.
 
-Ambient artwork drifts over (30s), aurora over (24s), both ease-in-out and alternating. Immersive artwork is localized beside the desktop sidebar with (24px) blur and (.34) opacity; phone uses (18px) blur and (.36) opacity. Subtle lowers expanded artwork to (.16). Off hides artwork tint and retains a static subdued aurora. Movement requires live connection, playing state, visible document, enabled preference, and no reduced-motion preference. Paused/recovering/hidden/disconnected states settle. Reduced motion removes ambient animation and reduces other animation/transition durations to (.001ms).
+Ambient artwork drifts over (30s), aurora over (24s), both ease-in-out and alternating. Immersive artwork is localized beside the desktop sidebar with (24px) blur and (.34) opacity; phone uses (18px) blur and (.36) opacity. Subtle lowers expanded artwork to (.16). Off hides artwork tint and retains a static subdued aurora. Movement requires live connection, playing state, visible document, enabled preference, and no reduced-motion preference. Paused/recovering/hidden/disconnected states settle. Reduced motion removes ambient animation and spatial transitions while retaining static pending feedback and readable busy labels. Player clock updates suspend while hidden and resume when visible.
 
 ## Shapes
 
@@ -227,7 +227,7 @@ Settings preserve authorized channel and role dropdowns. When an admin catalog i
 
 Connection banners explain stale/offline state and fresh-state recovery. Permission notes explain the useful next step. Loading uses a labeled status spinner; errors use alert text; empty states provide a relevant next action. Reconnect and conflicts fetch fresh state, preserve drafts, and require a deliberate retry. Authorization loss clears protected data rather than leaving a plausible interactive stale view. UI availability is guidance, never a substitute for server enforcement.
 
-Implementation evidence is source-only: `web/src/styles.css`, `App.tsx`, all source components, and `usePortal.ts`, aligned with `PRODUCT.md`, the app surface brief, and the shared contract. This record does not certify live OAuth, deployment, Discord playback, or cross-device integration. Indexed library removals still lack a library revision in the contract; server validation remains necessary and cross-device conflicts are unresolved outside this visual scope.
+Implementation evidence is source-only: `web/src/styles.css`, `App.tsx`, all source components, and `usePortal.ts`, aligned with `PRODUCT.md`, the app surface brief, and the shared contract. This record does not certify live OAuth, deployment, Discord playback, or cross-device integration. Indexed favorite/history actions carry the originally selected item token; mix deletion carries the selected saved version. Conflicts refresh authoritative state and require a deliberate retry.
 
 ## Do's and Don'ts
 
@@ -244,3 +244,35 @@ Implementation evidence is source-only: `web/src/styles.css`, `App.tsx`, all sou
 - **Don't** replay an uncertain or stale mutation after reconnect.
 - **Don't** duplicate current identity, timeline, or transport between compact and expanded states.
 - **Don't** make bright accent washes compete with track text or disabled-state explanations.
+
+
+## October 5 UI repair
+
+The approved visual world remains Aurora Queue plus Luminous Sleeve. Typography
+uses 16px primary text and 14px secondary/status text; no miniature phone labels.
+Touch controls have separate 44px targets. Compact artwork/title opens the same
+player; long titles cannot overlap transport. Expanded artwork takes the space
+left after identity, context and controls. Short phones and landscape keep the
+transport visible, using a compact sleeve when vertical space is limited.
+
+One main landmark remains present during expansion. Header search opens on
+activation, focuses the query, and returns focus without reopening. Shared
+popover behavior handles first-action focus, Escape, outside dismissal and Tab.
+Voice destination is primary; the status describes the bot session rather than
+claiming the viewer is listening. Permission explanations remain in the sleeve.
+
+Everyday radio and voting live in the player disclosure. Personal preferences
+are available to members; server defaults, activity and diagnostics remain
+admin-only. Less common command forms are explicitly Advanced controls.
+Favorites, history and mixes are searchable and paged. Inactive panes retain
+form drafts without mounting their heavy list subtrees. Queue paging preserves
+absolute source positions, fresh revisions and selected item tokens.
+
+Opaque navigation/player chrome and reading surfaces prevent ghost text and
+bright aurora behind controls. Reduced motion keeps a deliberate static pending
+mark plus labels and busy state, rather than globally disabling all feedback.
+The decorative background and responsive fallback cover use compressed WebP;
+original compositions and hashes are recorded in public/assets/PROVENANCE.md.
+
+This is a design record. Exact-source tests, rendered evidence and release
+verification are recorded separately in docs/portal-ui-repair.md.

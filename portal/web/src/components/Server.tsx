@@ -11,23 +11,13 @@ export interface InstallPrompt extends Event { prompt: () => Promise<void>; user
 const discordIdPattern = '[0-9]{1,20}';
 const isDiscordId = (value: string) => /^[0-9]{1,20}$/.test(value);
 
-export function ServerView({ portal, ambient, setAmbient, installPrompt, install }: { portal: Portal; ambient: AmbientMode; setAmbient: (value: AmbientMode) => void; installPrompt: InstallPrompt | null; install: () => void }) {
+export function ServerView({ portal, ambient, setAmbient, installPrompt, install, active = true }: { active?: boolean; portal: Portal; ambient: AmbientMode; setAmbient: (value: AmbientMode) => void; installPrompt: InstallPrompt | null; install: () => void }) {
   const [tab, setTab] = useState<'settings' | 'activity' | 'diagnostics' | 'commands'>('settings');
   const [reset, setReset] = useState(false);
   const { pending, can, run } = portal;
   const snapshot = portal.snapshot?.guild.id === portal.guildId ? portal.snapshot : null;
   const admin = snapshot?.guild.admin === true;
-  const view = useRef<HTMLDivElement>(null);
-  const [visible, setVisible] = useState(false);
-  useEffect(() => {
-    // App keeps its sections mounted. Discovery follows an actual Settings visit.
-    const element = view.current; if (!element) return;
-    const update = () => setVisible(!element.closest('[hidden]'));
-    const observer = new MutationObserver(update);
-    for (let parent = element.parentElement; parent; parent = parent.parentElement) observer.observe(parent, { attributes: true, attributeFilter: ['hidden'] });
-    update(); return () => observer.disconnect();
-  }, []);
-  const configuration = useConfiguration(portal.guildId, visible && tab === 'settings' && admin);
+  const configuration = useConfiguration(portal.guildId, active && tab === 'settings' && admin);
   const settings = snapshot?.settings;
   const [volume, setVolume] = useState('100');
   const [channel, setChannel] = useState('');
@@ -59,11 +49,11 @@ export function ServerView({ portal, ambient, setAmbient, installPrompt, install
     return ok;
   };
   const tabs = ['settings', ...(snapshot?.guild.admin ? ['activity', 'diagnostics'] : []), 'commands'] as const;
-  return <div ref={view} className="server-view"><div className="tabs" role="tablist" aria-label="Server sections">{tabs.map(t => <button key={t} id={`server-tab-${t}`} role="tab" aria-selected={tab === t} aria-controls={`server-panel-${t}`} tabIndex={tab === t ? 0 : -1}
-    onClick={() => setTab(t as typeof tab)} onKeyDown={event => { if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return; event.preventDefault(); const index = tabs.indexOf(tab); const next = event.key === 'Home' ? tabs[0] : event.key === 'End' ? tabs[tabs.length - 1] : tabs[(index + (event.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length]; setTab(next as typeof tab); document.getElementById(`server-tab-${next}`)?.focus(); }}>{t === 'settings' ? 'Settings' : t === 'activity' ? 'Activity' : t === 'diagnostics' ? 'Diagnostics' : 'More controls'}</button>)}</div>
+  return <div className="server-view" hidden={!active}><div className="tabs" role="tablist" aria-label="Server sections">{tabs.map(t => <button key={t} id={`server-tab-${t}`} role="tab" aria-selected={tab === t} aria-controls={`server-panel-${t}`} tabIndex={tab === t ? 0 : -1}
+    onClick={() => setTab(t as typeof tab)} onKeyDown={event => { if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return; event.preventDefault(); const index = tabs.indexOf(tab); const next = event.key === 'Home' ? tabs[0] : event.key === 'End' ? tabs[tabs.length - 1] : tabs[(index + (event.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length]; setTab(next as typeof tab); document.getElementById(`server-tab-${next}`)?.focus(); }}>{t === 'settings' ? admin ? 'Settings' : 'Preferences' : t === 'activity' ? 'Activity' : t === 'diagnostics' ? 'Diagnostics' : 'Advanced controls'}</button>)}</div>
     <section role="tabpanel" id={`server-panel-${tab}`} aria-labelledby={`server-tab-${tab}`}>
-      {tab === 'settings' && <><div className="section-heading"><div><h2>Your listening space</h2><p className="section-description">A few good defaults. The music does the rest.</p></div>{snapshot?.guild.admin && <span className="pill"><ShieldCheckIcon size={16} />Server manager</span>}</div>
-        {!settings || !admin ? <div className="permission-note"><ShieldCheckIcon size={23} /><div><strong>Server settings need Manage Server permission.</strong><p>You can still add music, save favorites, and use the controls your voice and DJ access allow.</p></div></div> : <div className="settings-list">
+      {active && tab === 'settings' && <><div className="section-heading"><div><h2>{admin ? 'Your listening space' : 'Your preferences'}</h2><p className="section-description">Set the mood for this listening space.</p></div>{snapshot?.guild.admin && <span className="pill"><ShieldCheckIcon size={16} />Server manager</span>}</div>
+        {!admin ? null : !settings ? <div className="permission-note"><ShieldCheckIcon size={23} /><div><strong>Server settings need Manage Server permission.</strong><p>You can still add music, save favorites, and use the controls your voice and DJ access allow.</p></div></div> : <div className="settings-list">
           <div className="setting-row" role="group" aria-label="Channel and role options">
             <div><h3>Channel and role options</h3>{configuration.loading ? <p role="status"><span className="spinner" aria-hidden="true" /> Loading channel and role options…</p> : configuration.error ? <p role="alert">{configuration.error}</p> : <p>Refresh when channels or roles change. You can also use a Discord ID when names are unavailable.</p>}</div>
             <button type="button" className="button secondary" disabled={configuration.loading} onClick={configuration.reload}><ArrowClockwiseIcon size={18} />{configuration.error ? 'Try again' : 'Refresh options'}</button>
@@ -85,11 +75,11 @@ export function ServerView({ portal, ambient, setAmbient, installPrompt, install
           <div className="setting-row"><div><h3>This device’s session</h3><p>Discord sign-in lasts up to seven days per device.</p></div><button className="text-button" onClick={() => void portal.logout()}>Sign out</button></div>
         </div></div>
       </>}
-      {tab === 'activity' && snapshot?.guild.admin && <ActivityView portal={portal} />}
-      {tab === 'diagnostics' && snapshot?.guild.admin && <DiagnosticsView portal={portal} />}
-      {tab === 'commands' && <SupplementalCommands portal={portal} />}
+      {active && tab === 'activity' && snapshot?.guild.admin && <ActivityView portal={portal} />}
+      {active && tab === 'diagnostics' && snapshot?.guild.admin && <DiagnosticsView portal={portal} />}
+      <SupplementalCommands portal={portal} active={active && tab === 'commands'} />
     </section>
-    {reset && <Confirm title="Reset this server’s defaults?" detail="Restores the bot’s default listening settings. This follows the same rules as the Discord settings command." action="Reset defaults" busy={!!pending.length} onClose={() => setReset(false)} onConfirm={() => { void save('reset', {}).then(ok => { if (ok) setReset(false); }); }} />}
+    {active && reset && <Confirm title="Reset this server’s defaults?" detail="Restores the bot’s default listening settings. This follows the same rules as the Discord settings command." action="Reset defaults" busy={!!pending.length} onClose={() => setReset(false)} onConfirm={() => { void save('reset', {}).then(ok => { if (ok) setReset(false); }); }} />}
   </div>;
 }
 
@@ -132,7 +122,7 @@ function DiagnosticsView({ portal }: { portal: Portal }) {
   return <><div className="section-heading"><div><h2>Behind the music</h2><p className="section-description">Read-only connection and recovery health.</p></div><button className="button secondary" onClick={reload} disabled={loading}><ArrowClockwiseIcon size={18} />Refresh</button></div>{error ? <ErrorState message={error} retry={reload} /> : loading ? <Loading label="Checking the connections…" /> : data && <><dl className="diagnostic-list"><div><dt>Discord connection</dt><dd className={data.botReady ? 'healthy-text' : 'warm-text'}>{data.botReady ? <CheckCircleIcon /> : <WarningCircleIcon />}{data.botReady ? 'Ready' : 'Unavailable'}</dd></div><div><dt>Audio connection</dt><dd className={data.audioReady ? 'healthy-text' : 'warm-text'}>{data.audioReady ? <CheckCircleIcon /> : <WarningCircleIcon />}{data.audioReady ? 'Ready' : 'Unavailable'}</dd></div><div><dt>Bot uptime</dt><dd><ClockIcon />{totalTime(data.uptimeSeconds * 1000)}</dd></div><div><dt>Recovery</dt><dd>{data.recoveryState}</dd></div></dl>{data.lastError && <div className="inline-error"><WarningCircleIcon size={22} /><div><strong>Last reported error</strong><p>{data.lastError}</p></div></div>}<p className="permission-note">Diagnostics don’t interrupt playback. Recovery is managed by the bot.</p></>}</>;
 }
 
-function SupplementalCommands({ portal }: { portal: Portal }) {
+function SupplementalCommands({ portal, active }: { portal: Portal; active: boolean }) {
   const schemas = portal.bootstrap?.commands || [];
   const [name, setName] = useState(''); const [subcommand, setSubcommand] = useState(''); const [group, setGroup] = useState('');
   const [values, setValues] = useState<Record<string, string>>({});
@@ -181,14 +171,15 @@ function SupplementalCommands({ portal }: { portal: Portal }) {
     if (name === 'mix' && subcommand === 'delete') setDeleteIntent(command);
     else await portal.run(command, capability);
   };
-  return <><div className="section-heading"><div><h2>Every music control, within reach</h2><p className="section-description">Forms come from Vybertron’s supported commands. Discord’s permissions still apply.</p></div><TerminalWindowIcon size={27} /></div>
-    {!schemas.length ? <Empty title="Command forms aren’t available yet" description="The player, queue, and library controls still work. Refresh when the bot connection is ready." /> : <form className="command-form" onSubmit={event => { event.preventDefault(); void submit(); }}><label>Command<select aria-label="Command" value={name} onChange={event => { setName(event.target.value); setSubcommand(''); setGroup(''); setValues({}); setSelection(null); setDeleteIntent(null); }} required><option value="">Choose a command</option>{schemas.map(s => <option key={s.name} value={s.name}>/{s.name}</option>)}</select></label>{schema?.description && <p>{schema.description}</p>}
-      {!!groups.length && <><label>Command group<select value={group} onChange={event => { setGroup(event.target.value); setSubcommand(''); setValues({}); setSelection(null); setDeleteIntent(null); }}><option value="">Choose a group</option>{groups.map(g => <option key={g.name} value={g.name}>{g.name}</option>)}</select></label><p className="permission-note">Grouped commands are available in Discord. The portal contract currently supports a single subcommand.</p></>}
+  if (!active) return null;
+  return <><div className="section-heading"><div><h2>Advanced music controls</h2><p className="section-description">For less common actions. Use the player and My Music for everyday listening; your Discord permissions still apply.</p></div><TerminalWindowIcon size={27} /></div>
+    {!schemas.length ? <Empty title="Command forms aren’t available yet" description="The player, queue, and library controls still work. Refresh when the bot connection is ready." /> : <form className="command-form" onSubmit={event => { event.preventDefault(); void submit(); }}><label>Command<select aria-label="Command" value={name} onChange={event => { setName(event.target.value); setSubcommand(''); setGroup(''); setValues({}); setSelection(null); setDeleteIntent(null); }} required><option value="">Choose an extra control</option>{schemas.map(s => <option key={s.name} value={s.name}>{s.description || s.name}</option>)}</select></label>{schema?.description && <p>{schema.description}</p>}
+      {!!groups.length && <><label>Command group<select value={group} onChange={event => { setGroup(event.target.value); setSubcommand(''); setValues({}); setSelection(null); setDeleteIntent(null); }}><option value="">Choose a group</option>{groups.map(g => <option key={g.name} value={g.name}>{g.name}</option>)}</select></label><p className="permission-note">Use the matching Discord command for this grouped control.</p></>}
       {!!subcommands.length && <label>Action<select value={subcommand} required onChange={event => { setSubcommand(event.target.value); setValues({}); setSelection(null); setDeleteIntent(null); }}><option value="">Choose an action</option>{subcommands.map(s => <option key={s.name} value={s.name}>{s.name}</option>)}</select></label>}
       {fields.map(field => <CommandField key={`${name}:${subcommand}:${field.name}`} field={field} value={values[field.name] ?? ''} setValue={value => { setValues(previous => ({ ...previous, [field.name]: value })); if (field.name === selectionField) setSelection(captureSelection(value)); }} portal={portal} />)}
       {selectionField && <div className="permission-note"><div>{selection && selection.guildId === portal.guildId ? <><strong>Selected: {selection.label}</strong><p>This keeps the item you chose. After a library change, review the current selection before trying again.</p></> : <p>Enter a {selectionField === 'index' ? 'library index' : 'mix name'} to select an item from your loaded library.</p>}<button type="button" className="text-button" disabled={!portal.library || !!portal.libraryError || portal.connection !== 'live' || !!portal.pending.length || !values[selectionField]} onClick={() => setSelection(captureSelection(values[selectionField]))}>Review current selection</button></div></div>}
       {name && !portal.can(capability) && <p className="permission-note">{capability === 'admin' ? 'Manage Server permission is required.' : portal.blockedReason}</p>}
-      <button className="button primary" disabled={!allowed || !!subcommands.length && !subcommand}><GearSixIcon size={19} />Run command</button>
+      <button className="button primary" disabled={!allowed || !!subcommands.length && !subcommand}><GearSixIcon size={19} />Apply control</button>
     </form>}
     {deleteIntent && <Confirm title={`Delete “${deleteIntent.options?.name}”?`} detail="Removes the selected saved version of this shared mix. The live queue stays in place." action="Delete mix" busy={!!portal.pending.length} onClose={() => setDeleteIntent(null)} onConfirm={() => { void portal.run(deleteIntent, 'library').then(ok => { if (ok) setDeleteIntent(null); }); }} />}
   </>;

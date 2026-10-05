@@ -31,22 +31,22 @@ for (const viewport of [{ width: 1280, height: 720 }, { width: 393, height: 852 
 test('one player transforms, stays across navigation, and sends scoped core commands', async ({ page }) => {
   const fixture = await mockPortal(page); await page.goto('/');
   await expect(page.getByRole('button', { name: 'Pause playback' })).toBeEnabled();
-  await expect(page.getByRole('heading', { name: 'Evening Light' })).toHaveCount(1);
+  await expect(page.getByTestId('player').getByText('Evening Light', { exact: true })).toHaveCount(1);
   await page.getByRole('button', { name: 'Pause playback' }).click();
   await expect(page.getByRole('button', { name: 'Resume playback' })).toBeEnabled();
   expect(fixture.commands[0]).toEqual({ command: 'pause', expectedRevision: 'revision-1' });
   expect(fixture.commands[0]).not.toHaveProperty('actorId');
   await page.getByRole('button', { name: 'Open player', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Evening Light' })).toHaveCount(1);
+  await expect(page.getByTestId('player').getByText('Evening Light', { exact: true })).toHaveCount(1);
   await page.getByRole('button', { name: 'Resume playback', exact: true }).click();
   await expect(page.getByRole('slider', { name: 'Playback position' })).toBeEnabled();
   await page.getByRole('slider', { name: 'Playback position' }).focus(); await page.keyboard.press('Home');
   await expect.poll(() => fixture.commands.find(c => c.command === 'seek')?.options?.timestamp).toBe('00:00:00');
   await page.getByRole('button', { name: 'My Music', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Always your favorites' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Favorites', exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Pause playback' })).toBeEnabled();
   await page.getByRole('button', { name: 'More playback controls' }).click();
-  await page.getByRole('button', { name: 'Artist radio on' }).click();
+  await page.getByRole('button', { name: 'Turn artist radio on' }).click();
   await expect.poll(() => fixture.commands.at(-1)?.command).toBe('radio');
   await page.getByRole('button', { name: 'More playback controls' }).click();
   await page.getByRole('button', { name: 'Stop and discard session' }).click();
@@ -106,7 +106,7 @@ test('queued favorites work outside voice and confirmed clearing preserves the p
   await page.getByRole('button', { name: 'Clear queue', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Make room for a good vibe' })).toBeVisible();
   expect(fixture.commands.at(-1)).toEqual({ command: 'clear', expectedRevision: 'revision-3' });
-  await expect(page.getByRole('heading', { name: 'Evening Light' })).toBeVisible();
+  await expect(page.getByTestId('player').getByText('Evening Light', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Resume playback' })).toBeEnabled();
   await expect(page.getByRole('slider', { name: 'Playback position' })).toHaveAttribute('aria-valuetext', '1:47 of 3:57');
 });
@@ -163,6 +163,7 @@ test('a GET started before going offline cannot enable writes after transport lo
 test('voice and DJ restrictions preserve library and voting access without admin data', async ({ page }) => {
   const fixture = await mockPortal(page, { basic: true }); await page.goto('/');
   await expect(page.getByRole('button', { name: 'Pause playback' })).toBeDisabled();
+  await page.getByRole('button', { name: 'More playback controls' }).click();
   await page.getByRole('button', { name: 'Vote to skip', exact: true }).click();
   await expect.poll(() => fixture.commands[0]?.command).toBe('voteskip');
   await page.getByRole('button', { name: 'Server', exact: true }).click();
@@ -184,10 +185,10 @@ test('play-next and history replay require DJ control and send the fresh revisio
   await page.getByRole('button', { name: 'Close dialog' }).click();
   await page.getByRole('button', { name: 'My Music', exact: true }).click(); await page.getByRole('tab', { name: 'History' }).click();
   await expect(page.getByRole('button', { name: 'Replay Afterglow' })).toBeDisabled();
-  await page.getByRole('button', { name: 'Server', exact: true }).click(); await page.getByRole('tab', { name: 'More controls' }).click();
+  await page.getByRole('button', { name: 'Server', exact: true }).click(); await page.getByRole('tab', { name: 'Advanced controls' }).click();
   for (const name of ['playnext', 'replay']) {
     await page.getByLabel('Command', { exact: true }).selectOption(name);
-    await expect(page.getByRole('button', { name: 'Run command' })).toBeDisabled();
+    await expect(page.getByRole('button', { name: 'Apply control' })).toBeDisabled();
   }
   expect(fixture.commands).toHaveLength(0);
   fixture.state.snapshot.session.canControl = true; fixture.state.snapshot.session.reason = null; fixture.state.snapshot.revision = 'revision-dj-ready';
@@ -202,15 +203,15 @@ test('play-next and history replay require DJ control and send the fresh revisio
   await page.getByRole('button', { name: 'Replay Afterglow' }).click();
   await expect(page.getByRole('button', { name: 'Replay Afterglow' })).toBeEnabled();
   expect(fixture.commands[1]).toEqual({ command: 'replay', options: { index: 1 }, expectedHistoryId: 'history-1', expectedRevision: 'revision-2' });
-  await page.getByRole('button', { name: 'Server', exact: true }).click(); await page.getByRole('tab', { name: 'More controls' }).click();
+  await page.getByRole('button', { name: 'Server', exact: true }).click(); await page.getByRole('tab', { name: 'Advanced controls' }).click();
   await page.getByLabel('Command', { exact: true }).selectOption('playnext'); await page.getByLabel('query').fill('Night Drive');
-  await page.getByRole('button', { name: 'Run command' }).click(); await expect(page.getByRole('button', { name: 'Run command' })).toBeEnabled();
+  await page.getByRole('button', { name: 'Apply control' }).click(); await expect(page.getByRole('button', { name: 'Apply control' })).toBeEnabled();
   expect(fixture.commands[2]).toEqual({ command: 'playnext', options: { query: 'Night Drive' }, expectedRevision: 'revision-3' });
   await page.getByLabel('Command', { exact: true }).selectOption('replay'); await page.getByLabel('index').fill('1');
-  await page.getByRole('button', { name: 'Run command' }).click(); await expect(page.getByRole('button', { name: 'Run command' })).toBeEnabled();
+  await page.getByRole('button', { name: 'Apply control' }).click(); await expect(page.getByRole('button', { name: 'Apply control' })).toBeEnabled();
   expect(fixture.commands[3]).toEqual({ command: 'replay', options: { index: 1 }, expectedHistoryId: 'history-1', expectedRevision: 'revision-4' });
   fixture.state.snapshot.session.canControl = false; await streamAction(page, 'reconnect', fixture.state.snapshot);
-  await expect(page.getByRole('button', { name: 'Run command' })).toBeDisabled(); expect(fixture.commands).toHaveLength(4);
+  await expect(page.getByRole('button', { name: 'Apply control' })).toBeDisabled(); expect(fixture.commands).toHaveLength(4);
 });
 
 test('visible current favorites and mix saves remain available outside voice, including schema forms', async ({ page }) => {
@@ -227,17 +228,17 @@ test('visible current favorites and mix saves remain available outside voice, in
   expect(fixture.commands[2]).toEqual({ command: 'mix', subcommand: 'save', options: { name: 'Visible session', replace: false }, expectedRevision: 'revision-3' });
   await expect(page.getByRole('button', { name: 'Queue mix', exact: true }).first()).toBeDisabled();
   await page.getByRole('tab', { name: 'History' }).click(); await expect(page.getByRole('button', { name: 'Replay Afterglow' })).toBeDisabled();
-  await page.getByRole('button', { name: 'Server', exact: true }).click(); await page.getByRole('tab', { name: 'More controls' }).click();
+  await page.getByRole('button', { name: 'Server', exact: true }).click(); await page.getByRole('tab', { name: 'Advanced controls' }).click();
   await page.getByLabel('Command', { exact: true }).selectOption('mix'); await page.getByRole('combobox', { name: 'Action', exact: true }).selectOption('save');
-  await page.getByLabel('name').fill('From schema'); await page.getByRole('button', { name: 'Run command' }).click();
-  await expect(page.getByRole('button', { name: 'Run command' })).toBeEnabled();
+  await page.getByLabel('name').fill('From schema'); await page.getByRole('button', { name: 'Apply control' }).click();
+  await expect(page.getByRole('button', { name: 'Apply control' })).toBeEnabled();
   expect(fixture.commands[3]).toEqual({ command: 'mix', subcommand: 'save', options: { name: 'From schema' }, expectedRevision: 'revision-4' });
   await page.getByLabel('Command', { exact: true }).selectOption('favorite'); await page.getByRole('combobox', { name: 'Action', exact: true }).selectOption('add');
-  await page.getByRole('spinbutton', { name: 'position', exact: true }).fill('2'); await page.getByRole('button', { name: 'Run command' }).click();
-  await expect(page.getByRole('button', { name: 'Run command' })).toBeEnabled();
+  await page.getByRole('spinbutton', { name: 'position', exact: true }).fill('2'); await page.getByRole('button', { name: 'Apply control' }).click();
+  await expect(page.getByRole('button', { name: 'Apply control' })).toBeEnabled();
   expect(fixture.commands[4]).toEqual({ command: 'favorite', subcommand: 'add', options: { position: 2 }, expectedRevision: 'revision-5' });
   await page.getByRole('combobox', { name: 'Action', exact: true }).selectOption('clear'); await page.getByLabel('confirm').selectOption('true');
-  await page.getByRole('button', { name: 'Run command' }).click(); await expect(page.getByRole('button', { name: 'Run command' })).toBeEnabled();
+  await page.getByRole('button', { name: 'Apply control' }).click(); await expect(page.getByRole('button', { name: 'Apply control' })).toBeEnabled();
   expect(fixture.commands[5]).toMatchObject({ command: 'favorite', subcommand: 'clear', options: { confirm: true } });
   await expect(page.getByRole('button', { name: 'Pause playback' })).toBeDisabled();
 });
@@ -249,7 +250,7 @@ test('maintainer settings accept known Discord IDs without revealing a private c
   const channelSave = channel.locator('..').getByRole('button', { name: 'Save', exact: true });
   const roleSave = role.locator('..').getByRole('button', { name: 'Save', exact: true });
   await expect(channel).toHaveValue('123456789012345678'); await expect(role).toHaveValue('223456789012345678');
-  await expect(page.getByRole('heading', { name: 'Evening Light' })).toHaveCount(0);
+  await expect(page.getByTestId('player').getByText('Evening Light', { exact: true })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Resume playback' })).toBeDisabled();
   await channel.fill('<#123456789012345678>'); await expect(channelSave).toBeDisabled();
   await role.fill('1e18'); await expect(roleSave).toBeDisabled(); expect(fixture.commands).toHaveLength(0);
@@ -259,14 +260,14 @@ test('maintainer settings accept known Discord IDs without revealing a private c
   expect(fixture.commands[1]).toEqual({ command: 'settings', subcommand: 'djrole', options: { role: '423456789012345678' } });
   await role.fill(''); await roleSave.click(); await expect(roleSave).toBeEnabled();
   expect(fixture.commands[2]).toEqual({ command: 'settings', subcommand: 'djrole', options: {} });
-  await page.getByRole('tab', { name: 'More controls' }).click(); await page.getByLabel('Command', { exact: true }).selectOption('settings');
+  await page.getByRole('tab', { name: 'Advanced controls' }).click(); await page.getByLabel('Command', { exact: true }).selectOption('settings');
   await page.getByRole('combobox', { name: 'Action', exact: true }).selectOption('musicchannel'); await page.getByLabel('channel ID', { exact: true }).fill('5e17');
-  await page.getByRole('button', { name: 'Run command' }).click(); expect(fixture.commands).toHaveLength(3);
-  await page.getByLabel('channel ID', { exact: true }).fill('523456789012345678'); await page.getByRole('button', { name: 'Run command' }).click();
-  await expect(page.getByRole('button', { name: 'Run command' })).toBeEnabled();
+  await page.getByRole('button', { name: 'Apply control' }).click(); expect(fixture.commands).toHaveLength(3);
+  await page.getByLabel('channel ID', { exact: true }).fill('523456789012345678'); await page.getByRole('button', { name: 'Apply control' }).click();
+  await expect(page.getByRole('button', { name: 'Apply control' })).toBeEnabled();
   expect(fixture.commands[3]).toMatchObject({ command: 'settings', subcommand: 'musicchannel', options: { channel: '523456789012345678' } });
   await page.getByRole('combobox', { name: 'Action', exact: true }).selectOption('djrole'); await page.getByLabel('role ID', { exact: true }).fill('623456789012345678');
-  await page.getByRole('button', { name: 'Run command' }).click(); await expect(page.getByRole('button', { name: 'Run command' })).toBeEnabled();
+  await page.getByRole('button', { name: 'Apply control' }).click(); await expect(page.getByRole('button', { name: 'Apply control' })).toBeEnabled();
   expect(fixture.commands[4]).toMatchObject({ command: 'settings', subcommand: 'djrole', options: { role: '623456789012345678' } });
   await page.getByRole('tab', { name: 'Diagnostics', exact: true }).click(); await expect(page.getByText('Discord connection', { exact: true })).toBeVisible();
   expect(fixture.state.snapshot.channels).toEqual([]); expect(fixture.state.snapshot.roles).toEqual([]);
@@ -290,8 +291,8 @@ test('library, shared mixes, history, settings, schema forms, activity and diagn
   await musicChannel.selectOption('lounge');
   await page.getByLabel('Music text channel').locator('..').getByRole('button', { name: 'Save', exact: true }).click();
   await expect.poll(() => fixture.commands.at(-1)?.subcommand).toBe('musicchannel');
-  await page.getByRole('tab', { name: 'More controls' }).click(); await page.getByLabel('Command', { exact: true }).selectOption('seek');
-  await page.getByLabel('timestamp').fill('01:30'); await page.getByRole('button', { name: 'Run command' }).click();
+  await page.getByRole('tab', { name: 'Advanced controls' }).click(); await page.getByLabel('Command', { exact: true }).selectOption('seek');
+  await page.getByLabel('timestamp').fill('01:30'); await page.getByRole('button', { name: 'Apply control' }).click();
   await expect.poll(() => fixture.commands.at(-1)?.options?.timestamp).toBe('01:30');
   await page.getByRole('tab', { name: 'Activity', exact: true }).click(); await expect(page.getByText('Night Drive joined the shared queue.')).toBeVisible();
   await page.getByRole('tab', { name: 'Diagnostics', exact: true }).click(); await expect(page.getByText('Discord connection', { exact: true })).toBeVisible();
@@ -311,7 +312,7 @@ test('permission loss clears protected tracks and disconnected context', async (
   const fixture = await mockPortal(page); await page.goto('/');
   await expect(page.getByRole('button', { name: 'Pause playback' })).toBeEnabled();
   fixture.denySnapshot(403); await streamAction(page, 'reconnect');
-  await expect(page.getByRole('heading', { name: 'Evening Light' })).toHaveCount(0);
+  await expect(page.getByTestId('player').getByText('Evening Light', { exact: true })).toHaveCount(0);
   await expect(page.getByText('Night Drive', { exact: true })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Resume playback' })).toBeDisabled();
 });
@@ -328,7 +329,7 @@ test('an HTTP-rejected SSE connection verifies session loss and clears the playe
 test('phone player is singular, keyboard-accessible, responsive and reduced-motion safe', async ({ page }) => {
   await page.setViewportSize({ width: 393, height: 852 }); await page.emulateMedia({ reducedMotion: 'reduce' }); await mockPortal(page); await page.goto('/');
   await expect(page.getByRole('button', { name: 'Pause playback' })).toBeEnabled(); await page.getByRole('button', { name: 'Open player', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Evening Light' })).toHaveCount(1);
+  await expect(page.getByTestId('player').getByText('Evening Light', { exact: true })).toHaveCount(1);
   await expect(page.getByRole('slider', { name: 'Playback position' })).toHaveCount(1);
   await expect(page.getByRole('button', { name: 'Pause playback' })).toHaveCount(1);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);

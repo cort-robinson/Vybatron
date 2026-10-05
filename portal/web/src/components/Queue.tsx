@@ -1,21 +1,29 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ArrowDownIcon, ArrowUpIcon, DotsThreeIcon, HeartIcon, ListNumbersIcon, PlayIcon, PlusIcon, TrashIcon, DotsSixVerticalIcon } from '@phosphor-icons/react';
 import type { Track } from '../types';
 import type { Portal } from '../usePortal';
 import { time, totalTime } from '../format';
-import { Artwork, Avatar, Empty, IconButton } from './ui';
+import { ActionPopover, Artwork, Avatar, Empty, IconButton } from './ui';
+import { Pagination } from './Pagination';
+import './queue.css';
 
 export function Queue({ portal, compact = false, onAdd }: { portal: Portal; compact?: boolean; onAdd: () => void }) {
   const { snapshot, library, run, can, pending } = portal;
   const queue = snapshot?.session.queue || [];
-  const [openId, setOpenId] = useState<string | null>(null);
+  const [page, setPage] = useState(0);
   const [dropIndex, setDropIndex] = useState<number | null>(null);
   const drag = useRef<{ index: number; revision: string; guildId: string } | null>(null);
   const controllable = can('control') && !pending.length;
   const editable = can('library') && !pending.length;
   const duration = queue.reduce((sum, track) => sum + (track.isStream ? 0 : track.durationMs), 0);
+  const pageSize = compact ? 15 : 50;
+  const currentPage = Math.min(page, Math.max(0, Math.ceil(queue.length / pageSize) - 1));
+  const startIndex = currentPage * pageSize;
+  useEffect(() => { setPage(0); drag.current = null; setDropIndex(null); }, [portal.guildId, compact]);
+  useEffect(() => { if (page !== currentPage) setPage(currentPage); }, [page, currentPage]);
+  const changePage = (nextPage: number) => { setPage(nextPage); drag.current = null; setDropIndex(null); };
   const change = async (command: string, options: Record<string, number>, revision = snapshot?.revision) => {
-    setOpenId(null); await run({ command, options, expectedRevision: revision }, 'control');
+    await run({ command, options, expectedRevision: revision }, 'control');
   };
   const favorite = async (track: Track, position: number) => {
     const index = library?.favorites.findIndex(t => t.id === track.id) ?? -1;
@@ -29,8 +37,9 @@ export function Queue({ portal, compact = false, onAdd }: { portal: Portal; comp
     {!queue.length ? <Empty title="Make room for a good vibe" description={snapshot?.session.current ? 'The next song is up to you. Add a track or let artist radio keep things going.' : 'Search for a song or drop a public music link. Everyone listens together in Discord.'}
       action={<button className="button primary" disabled={!can('add')} title={!can('add') ? portal.blockedReason : undefined} onClick={onAdd}><PlusIcon size={19} />Add music</button>} /> : <>
       {!compact && <div className="queue-columns" aria-hidden="true"><span>#</span><span /><span>Song</span><span>Added by</span><span>Length</span><span /><span /></div>}
-      <ol className="track-list">
-        {queue.map((track, index) => {
+      <ol className="track-list" start={startIndex + 1}>
+        {queue.slice(startIndex, startIndex + pageSize).map((track, pageIndex) => {
+          const index = startIndex + pageIndex;
           const favoriteIndex = library?.favorites.findIndex(t => t.id === track.id) ?? -1;
           const isFavorite = favoriteIndex >= 0;
           const key = `${track.id}:${index}`;
@@ -50,21 +59,22 @@ export function Queue({ portal, compact = false, onAdd }: { portal: Portal; comp
             <span className="track-duration">{track.isStream ? 'LIVE' : time(track.durationMs)}</span>
             {!compact && <IconButton className={isFavorite ? 'favorite active' : 'favorite'} label={isFavorite ? `Remove ${track.title} from favorites` : `Save ${track.title} to favorites`} aria-pressed={isFavorite}
               disabled={!editable || !library} onClick={() => void favorite(track, index + 1)}><HeartIcon size={23} weight={isFavorite ? 'fill' : 'regular'} /></IconButton>}
-            <div className="row-menu"><IconButton label={`Song options for ${track.title}`} aria-expanded={openId === key} onClick={() => setOpenId(openId === key ? null : key)}><DotsThreeIcon size={25} weight="bold" /></IconButton>
-              {openId === key && <div className="menu-panel">
+            <ActionPopover className="row-menu" label={`Song options for ${track.title}`} trigger={<DotsThreeIcon size={25} weight="bold" />}>
+              {close => <>
                 <p>{track.title}</p>
-                <button disabled={!controllable} onClick={() => void change('skipto', { position: index + 1 })}><PlayIcon />Play now</button>
-                <button disabled={!controllable || index === 0} onClick={() => void change('move', { from: index + 1, to: index })}><ArrowUpIcon />Move up</button>
-                <button disabled={!controllable || index === queue.length - 1} onClick={() => void change('move', { from: index + 1, to: index + 2 })}><ArrowDownIcon />Move down</button>
-                {compact && <button disabled={!editable || !library} onClick={() => { setOpenId(null); void favorite(track, index + 1); }}><HeartIcon weight={isFavorite ? 'fill' : 'regular'} />{isFavorite ? 'Remove favorite' : 'Save to favorites'}</button>}
-                <button className="danger-text" disabled={!controllable} onClick={() => void change('remove', { position: index + 1 })}><TrashIcon />Remove from queue</button>
+                <button disabled={!controllable} onClick={() => { close(); void change('skipto', { position: index + 1 }); }}><PlayIcon />Play now</button>
+                <button disabled={!controllable || index === 0} onClick={() => { close(); void change('move', { from: index + 1, to: index }); }}><ArrowUpIcon />Move up</button>
+                <button disabled={!controllable || index === queue.length - 1} onClick={() => { close(); void change('move', { from: index + 1, to: index + 2 }); }}><ArrowDownIcon />Move down</button>
+                {compact && <button disabled={!editable || !library} onClick={() => { close(); void favorite(track, index + 1); }}><HeartIcon weight={isFavorite ? 'fill' : 'regular'} />{isFavorite ? 'Remove favorite' : 'Save to favorites'}</button>}
+                <button className="danger-text" disabled={!controllable} onClick={() => { close(); void change('remove', { position: index + 1 }); }}><TrashIcon />Remove from queue</button>
                 {!controllable && <small>{portal.blockedReason}</small>}
-              </div>}
-            </div>
+              </>}
+            </ActionPopover>
           </li>;
         })}
       </ol>
-      {!compact && <p className="queue-footnote">{queue.length} / 500 queued · Save a song to My Music with its heart.</p>}
+      <Pagination page={currentPage} total={queue.length} pageSize={pageSize} onPageChange={changePage} label={compact ? 'Expanded queue pages' : 'Queue pages'} />
+      {!compact && <p className="queue-footnote">Save a song to My Music with its heart.</p>}
     </>}
   </section>;
 }

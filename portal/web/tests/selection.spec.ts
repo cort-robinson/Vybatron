@@ -107,10 +107,10 @@ for (const action of ['favorite/play', 'favorite/remove', 'replay', 'mix/delete'
     const oldTokens: Partial<Command> = command === 'favorite' ? { expectedTrackId: fixture.state.library.favorites[1].id }
       : command === 'replay' ? { expectedHistoryId: 'history-1' } : { expectedMixVersion: fixture.state.library.mixes[0].version };
     await page.goto('/'); await page.getByRole('button', { name: 'Server', exact: true }).click();
-    await page.getByRole('tab', { name: 'More controls' }).click();
+    await page.getByRole('tab', { name: 'Advanced controls' }).click();
     await page.getByLabel('Command', { exact: true }).selectOption(command);
     if (subcommand) await page.getByRole('combobox', { name: 'Action', exact: true }).selectOption(subcommand);
-    await expect(page.getByRole('button', { name: 'Run command' })).toBeDisabled();
+    await expect(page.getByRole('button', { name: 'Apply control' })).toBeDisabled();
     await page.getByLabel(field).fill(input);
     await expect(page.getByText(`Selected: ${command === 'favorite' ? 'Evening Light' : command === 'replay' ? 'Afterglow' : 'Night shift'}`, { exact: true })).toBeVisible();
     if (command === 'favorite') fixture.state.library.favorites.shift();
@@ -118,12 +118,12 @@ for (const action of ['favorite/play', 'favorite/remove', 'replay', 'mix/delete'
     else fixture.state.library.mixes[0].version = 'b'.repeat(32);
     await refreshLibrary(page);
     await streamAction(page, 'disconnect');
-    await expect(page.getByRole('button', { name: 'Run command' })).toBeDisabled();
+    await expect(page.getByRole('button', { name: 'Apply control' })).toBeDisabled();
     await expect(page.getByLabel(field)).toHaveValue(input);
     await streamAction(page, 'reconnect');
-    await expect(page.getByRole('button', { name: 'Run command' })).toBeEnabled();
+    await expect(page.getByRole('button', { name: 'Apply control' })).toBeEnabled();
     expect(fixture.commands).toHaveLength(0);
-    await page.getByRole('button', { name: 'Run command' }).click();
+    await page.getByRole('button', { name: 'Apply control' }).click();
     if (command === 'mix') {
       // The form's confirmation also retains its captured command across another update.
       fixture.state.library.mixes[0].version = 'c'.repeat(32); await refreshLibrary(page);
@@ -137,7 +137,7 @@ for (const action of ['favorite/play', 'favorite/remove', 'replay', 'mix/delete'
       : command === 'replay' ? { expectedHistoryId: 'history-2' } : { expectedMixVersion: 'c'.repeat(32) };
     await page.getByRole('button', { name: 'Review current selection', exact: true }).click();
     expect(fixture.commands).toHaveLength(1);
-    await page.getByRole('button', { name: 'Run command' }).click();
+    await page.getByRole('button', { name: 'Apply control' }).click();
     if (command === 'mix') await page.getByRole('dialog').getByRole('button', { name: 'Delete mix', exact: true }).click();
     await expect.poll(() => fixture.commands.length).toBe(2);
     expect(fixture.commands[1]).toEqual({ command, ...(subcommand ? { subcommand } : {}), options: { [field]: field === 'index' ? Number(input) : input }, expectedRevision: 'revision-1', ...freshTokens });
@@ -146,22 +146,22 @@ for (const action of ['favorite/play', 'favorite/remove', 'replay', 'mix/delete'
 
 test('schema selection clears across actions and rejects unknown library indexes', async ({ page }) => {
   const fixture = await mockPortal(page); await page.goto('/');
-  await page.getByRole('button', { name: 'Server', exact: true }).click(); await page.getByRole('tab', { name: 'More controls' }).click();
+  await page.getByRole('button', { name: 'Server', exact: true }).click(); await page.getByRole('tab', { name: 'Advanced controls' }).click();
   await page.getByLabel('Command', { exact: true }).selectOption('favorite');
   await page.getByRole('combobox', { name: 'Action', exact: true }).selectOption('play');
   await page.getByLabel('index').fill('999');
-  await expect(page.getByRole('button', { name: 'Run command' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Apply control' })).toBeDisabled();
   await page.getByLabel('index').fill('1');
-  await expect(page.getByRole('button', { name: 'Run command' })).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Apply control' })).toBeEnabled();
   await page.getByRole('combobox', { name: 'Action', exact: true }).selectOption('remove');
-  await expect(page.getByRole('button', { name: 'Run command' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Apply control' })).toBeDisabled();
   await page.getByLabel('index').fill('1');
-  await page.getByRole('button', { name: 'Run command' }).click();
-  await expect(page.getByRole('button', { name: 'Run command' })).toBeEnabled();
+  await page.getByRole('button', { name: 'Apply control' }).click();
+  await expect(page.getByRole('button', { name: 'Apply control' })).toBeEnabled();
   expect(fixture.commands[0]).toEqual({ command: 'favorite', subcommand: 'remove', options: { index: 1 }, expectedTrackId: fixture.state.snapshot.session.queue[0].id, expectedRevision: 'revision-1' });
   await page.getByLabel('Command', { exact: true }).selectOption('play');
   await page.getByLabel('query').fill('Night Drive');
-  await page.getByRole('button', { name: 'Run command' }).click();
+  await page.getByRole('button', { name: 'Apply control' }).click();
   await expect.poll(() => fixture.commands.length).toBe(2);
   expect(fixture.commands[1]).toEqual({ command: 'play', options: { query: 'Night Drive' }, expectedRevision: 'revision-2' });
 });
@@ -171,14 +171,14 @@ test('phone schema selection remains visible and removable outside voice without
   const fixture = await mockPortal(page, { outsideVoice: true }); const selected = fixture.state.library.favorites[0].id;
   const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
   await page.goto('/'); await page.getByRole('button', { name: 'Server', exact: true }).click();
-  await page.getByRole('tab', { name: 'More controls' }).click(); await page.getByLabel('Command', { exact: true }).selectOption('favorite');
+  await page.getByRole('tab', { name: 'Advanced controls' }).click(); await page.getByLabel('Command', { exact: true }).selectOption('favorite');
   await page.getByRole('combobox', { name: 'Action', exact: true }).selectOption('remove'); await page.getByLabel('index').fill('1');
   await expect(page.getByText('Selected: Night Drive', { exact: true })).toBeVisible();
-  await page.getByRole('button', { name: 'Run command' }).click({ trial: true });
+  await page.getByRole('button', { name: 'Apply control' }).click({ trial: true });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.screenshot({ path: test.info().outputPath('selection-phone.png') });
-  await page.getByRole('button', { name: 'Run command' }).click();
-  await expect(page.getByRole('button', { name: 'Run command' })).toBeEnabled();
+  await page.getByRole('button', { name: 'Apply control' }).click();
+  await expect(page.getByRole('button', { name: 'Apply control' })).toBeEnabled();
   expect(fixture.commands).toEqual([{ command: 'favorite', subcommand: 'remove', options: { index: 1 }, expectedTrackId: selected, expectedRevision: 'revision-1' }]);
   expect(errors).toEqual([]);
 });

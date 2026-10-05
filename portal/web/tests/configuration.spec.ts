@@ -13,7 +13,7 @@ async function connected(page: Page, server: Fixture) {
 }
 async function settings(page: Page) {
   await page.getByRole('button', { name: 'Server', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Your listening space' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /Your listening space|Your preferences/ })).toBeVisible();
 }
 async function loaded(page: Page) {
   await expect(page.getByRole('combobox', { name: 'Music text channel', exact: true })).toBeVisible();
@@ -34,9 +34,9 @@ test('configuration: one catalog GET per Settings visit despite fresh three-seco
     expect(server.configurationReads).toEqual([{ guildId: 'testing', method: 'GET' }]);
     await page.screenshot({ path: test.info().outputPath('configuration-desktop.png'), fullPage: true });
 
-    await page.getByRole('tab', { name: 'More controls' }).click();
+    await page.getByRole('tab', { name: 'Advanced controls' }).click();
     server.state.snapshot.revision = 'configuration-hidden-tab-frame'; server.broadcast();
-    await expect(page.getByRole('heading', { name: 'Every music control, within reach' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Advanced music controls' })).toBeVisible();
     expect(server.configurationReads).toHaveLength(1);
     await page.getByRole('tab', { name: 'Settings', exact: true }).click(); await loaded(page);
     expect(server.configurationReads).toHaveLength(2);
@@ -124,7 +124,7 @@ test('configuration: admin revocation clears options and aborts an in-flight ref
     await expect.poll(() => server.heldConfigurations.size).toBe(1);
     server.state.snapshot.guild.admin = false; server.state.snapshot.settings = null;
     server.state.snapshot.revision = 'configuration-admin-revoked'; server.broadcast();
-    await expect(page.getByText('Server settings need Manage Server permission.', { exact: true })).toBeVisible();
+    await expect(page.getByRole('tab', { name: 'Preferences', exact: true })).toBeVisible();
     await expect(page.locator('#music-channel')).toHaveCount(0); await expect(page.locator('#dj-role')).toHaveCount(0);
     await expect.poll(() => server.configurationAborts).toEqual(['testing']);
     server.releaseConfigurationReads();
@@ -205,7 +205,7 @@ test('configuration: basic members never discover catalogs while personal settin
     server.state.snapshot.guild.admin = false; server.state.snapshot.settings = null;
     server.state.snapshot.channels = []; server.state.snapshot.roles = [];
     await connected(page, server); await settings(page);
-    await expect(page.getByText('Server settings need Manage Server permission.', { exact: true })).toBeVisible();
+    await expect(page.getByRole('tab', { name: 'Preferences', exact: true })).toBeVisible();
     await page.getByLabel('Ambient motion', { exact: true }).selectOption('off'); server.broadcast();
     await expect(page.getByLabel('Ambient motion', { exact: true })).toHaveValue('off');
     expect(server.configurationReads).toHaveLength(0); expect(server.commands).toHaveLength(0);

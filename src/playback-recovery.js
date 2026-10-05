@@ -6,6 +6,7 @@ export const ATTEMPT_KEY = 'vybertronPlaybackAttempt';
 export const RESUME_SECONDS = 120;
 const RECOVERY_PLAY = Symbol('recoveryPlay');
 const playbackLocks = new WeakMap();
+const destructionTasks = new WeakMap();
 const playbackWriters = new AsyncLocalStorage();
 const destroyingPlayers = new WeakSet();
 const attachedNodes = new WeakSet();
@@ -105,13 +106,21 @@ export class HardenedPlayer extends Player {
   }
 
   destroy(...args) {
+    if (destructionTasks.has(this)) return destructionTasks.get(this);
     if (this.LavalinkManager?.getPlayer(this.guildId) !== this) return Promise.resolve(this);
     destroyingPlayers.add(this);
     service(this)?.invalidate(this);
-    return withPlaybackLock(this, () => {
-      if (this.LavalinkManager?.getPlayer(this.guildId) !== this) return this;
-      return super.destroy(...args);
-    });
+    const recovery = service(this);
+    const result = recovery?.destroyPlayer ? recovery.destroyPlayer(this, ...args)
+      : withPlaybackLock(this, () => {
+        if (this.LavalinkManager?.getPlayer(this.guildId) !== this) return this;
+        return super.destroy(...args);
+      });
+    destructionTasks.set(this, result);
+    // The native library has fire-and-forget destroy callers. Keep failures
+    // observable by command callers without an unhandled rejection.
+    void result.then(() => destructionTasks.delete(this), () => destructionTasks.delete(this));
+    return result;
   }
 
   connect() {
@@ -212,6 +221,10 @@ export function exactTrackQuery(track) {
 export function isPermanentFailure(payload) {
   const exception = payload?.exception || payload;
   const description = `${exception?.message || ''} ${exception?.cause || ''}`;
+  // Youtube's aggregate includes every client's failure. A single client's
+  // login restriction alongside HTTP/stream errors does not establish that
+  // the recording is unavailable; retain the bounded exact-source retry.
+  if (/\bAllClientsFailedException\b|\ball clients failed to load\b/i.test(description)) return false;
   return /private video|video (?:has been |was )?(?:removed|deleted)|copyright|not available in (?:your|this) country|unavailable in (?:your|this) country|age[ -]restricted|this video requires login/i.test(description);
 }
 
@@ -248,6 +261,8 @@ export function createPlaybackRecovery({
   const states = new WeakMap();
   const circuits = new Map();
   const disconnected = new Map();
+  const idleDisconnected = new Map();
+  const finalizedPlayers = new WeakSet();
   const counters = { retries: 0, recovered: 0, skipped: 0, circuitTrips: 0, staleEvents: 0, voiceReconnects: 0 };
 
   function stateFor(player) {
@@ -265,6 +280,50 @@ export function createPlaybackRecovery({
 
   function valid(player, state, epoch, track) {
     return state.epoch === epoch && playerActive(player) && player.queue.current === track;
+  }
+
+  async function destroyPlayer(player, reason, disconnect = true) {
+    const owned = () => manager.getPlayer(player.guildId) === player;
+    const queueTimer = player.getData('internal_queueempty');
+    if (queueTimer) clearTimeout(queueTimer);
+    player.setData('internal_queueempty', undefined);
+    player.setData('internal_destroystatus', true);
+    if (!disconnect) player.setData('internal_destroywithoutdisconnect', true);
+    const leave = Promise.resolve().then(() => {
+      if (disconnect && owned()) return Player.prototype.disconnect.call(player, true);
+    });
+    const audio = withPlaybackLock(player, async () => {
+      if (!owned()) return [];
+      // Queue storage and the remote DELETE are independent teardown steps.
+      // Keep the old manager entry until both finish, and never launch either
+      // against a replacement created while an earlier audio write awaited.
+      return Promise.allSettled([
+        Promise.resolve().then(() => { if (owned()) return player.queue.utils.destroy(); }),
+        Promise.resolve().then(() => { if (owned()) return player.node.destroyPlayer(player.guildId); }),
+      ]);
+    });
+    let failure;
+    try {
+      // One deadline includes the audio lane and all teardown requests. A hung
+      // gateway/storage/REST request cannot leave a permanently dead player.
+      const results = await within(Promise.allSettled([leave, audio]), requestTimeoutMs, null, timers);
+      failure = [...results, ...(results[1].status === 'fulfilled' ? results[1].value : [])]
+        .find((result) => result.status === 'rejected')?.reason;
+    } catch (error) {
+      failure = error;
+    } finally {
+      if (!finalizedPlayers.has(player)) {
+        finalizedPlayers.add(player);
+        player.connected = false;
+        player.playing = false;
+        player.paused = false;
+        player.voice = {};
+        if (owned()) manager.players.delete(player.guildId);
+        manager.emit('playerDestroy', player, reason);
+      }
+    }
+    if (failure) throw failure;
+    return player;
   }
 
   function invalidate(player, { newTrack = false, retryCurrent = false, preservePassiveVoice = false } = {}) {
@@ -757,9 +816,14 @@ export function createPlaybackRecovery({
 
   function nodeDisconnected(node) {
     const snapshots = [];
+    const idle = [];
     if (node.sessionId) node.options.sessionId = node.sessionId;
     for (const player of manager.players.values()) {
-      if (player.node !== node || !player.queue.current) continue;
+      if (player.node !== node) continue;
+      if (!player.queue.current) {
+        idle.push({ player, epoch: stateFor(player).epoch });
+        continue;
+      }
       const track = player.queue.current;
       const position = Math.max(0, Number(player.lastPosition) || 0);
       const paused = player.paused;
@@ -771,6 +835,7 @@ export function createPlaybackRecovery({
       onRecovering(player, track, { type: 'node' });
     }
     disconnected.set(node.id, snapshots);
+    idleDisconnected.set(node.id, idle);
   }
 
   async function nodeReady(node, payload) {
@@ -779,6 +844,19 @@ export function createPlaybackRecovery({
     // lets its synchronous ready handler run before this REST request.
     await Promise.resolve();
     const snapshots = disconnected.get(node.id) || [];
+    const idle = idleDisconnected.get(node.id) || [];
+    const resetIdleVoice = (remotePlayers = null) => {
+      for (const { player, epoch } of idle) {
+        if (!playerActive(player) || player.node !== node || stateFor(player).epoch !== epoch
+          || player.queue.current) continue;
+        const remote = remotePlayers?.find((item) => item.guildId === player.guildId);
+        if (remote?.state?.connected === true) continue;
+        // An empty local player can outlive a Lavalink process. Its next play
+        // must acquire fresh voice, while any preserved queue remains intact.
+        player.connected = false;
+        player.voice = {};
+      }
+    };
     const failSnapshots = () => {
       for (const { player, track, epoch } of snapshots) {
         const state = stateFor(player);
@@ -796,6 +874,7 @@ export function createPlaybackRecovery({
       return;
     }
     disconnected.delete(node.id);
+    idleDisconnected.delete(node.id);
     if (payload.resumed) {
       let remotePlayers;
       try {
@@ -805,6 +884,7 @@ export function createPlaybackRecovery({
         failSnapshots();
         return;
       }
+      resetIdleVoice(remotePlayers);
       for (const snapshot of snapshots) {
         const { player, track, epoch } = snapshot;
         const state = stateFor(player);
@@ -885,6 +965,7 @@ export function createPlaybackRecovery({
       }
       return;
     }
+    resetIdleVoice();
     for (const snapshot of snapshots) {
       const { player, track, epoch } = snapshot;
       const state = stateFor(player);
@@ -964,7 +1045,7 @@ export function createPlaybackRecovery({
     };
   }
 
-  return { invalidate, handleFailure, handleVoiceClosed, consumeVoiceUpdate, connectVoice, started, beginRequest, acceptsEvent, attachNode,
+  return { invalidate, destroyPlayer, handleFailure, handleVoiceClosed, consumeVoiceUpdate, connectVoice, started, beginRequest, acceptsEvent, attachNode,
     generation: (player) => stateFor(player).epoch,
     nodeDisconnected, nodeReady, isRecovering: (player) => stateFor(player).recovering,
     summary: () => ({ ...counters, recovering: [...(manager?.players?.values() || [])]

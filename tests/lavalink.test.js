@@ -8,7 +8,9 @@ import {
   handleTrackError,
   handleTrackFailure,
   handleVoiceStateUpdate,
+  handlePlayerDestroy,
 } from '../src/lavalink.js';
+import { startPresence } from '../src/utils/presence.js';
 import {
   getControllerRecord,
   resetControllers,
@@ -215,4 +217,39 @@ test('a failed final track displays playback unavailable instead of queue finish
   await sleep(10);
   assert.match(JSON.stringify(channel.lastPayload), /Queue Finished/);
   clearIdleTimer(player.guildId);
+});
+
+test('late teardown cleans the old watcher while keeping replacement presence, voice status and idle deadline', async () => {
+  const old = mockPlayer('replacement-destroy');
+  const replacement = mockPlayer(old.guildId);
+  const client = mockClient(mockChannel());
+  const invalidated = [];
+  const removed = [];
+  const presence = [];
+  const statuses = [];
+  client.user = { setPresence: (payload) => presence.push(payload) };
+  client.rest = { put: async (_route, options) => statuses.push(options.body.status) };
+  client.lavalink = {
+    getPlayer: () => replacement,
+    playbackRecovery: { started: () => {}, invalidate: (player) => invalidated.push(player) },
+    playbackWatchdog: { trackStarted: () => {}, remove: (player) => removed.push(player) },
+  };
+  const stopPresence = startPresence(client);
+  try {
+    await handleTrackStart(client, replacement, track);
+    startIdleTimer(replacement, { ms: 20, reason: 'voice-empty', client });
+    const presenceCount = presence.length;
+    const statusCount = statuses.length;
+    handlePlayerDestroy(client, old);
+    assert.deepEqual(invalidated, [old]);
+    assert.deepEqual(removed, [old]);
+    assert.equal(presence.length, presenceCount);
+    assert.equal(statuses.length, statusCount);
+    assert.equal(getControllerRecord(old.guildId).player, replacement);
+    await sleep(60);
+    assert.equal(replacement.destroyed, 1, 'the old cleanup must not clear the replacement deadline');
+  } finally {
+    clearIdleTimer(replacement.guildId);
+    stopPresence();
+  }
 });

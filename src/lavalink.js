@@ -150,6 +150,20 @@ export async function handleTrackError(player, track, payload, logger = console)
   }
 }
 
+export function handlePlayerDestroy(client, player) {
+  const lavalink = client.lavalink;
+  lavalink.playbackRecovery?.invalidate(player);
+  lavalink.playbackWatchdog?.remove(player);
+  // Remote teardown can finish after a new listening session takes ownership.
+  // Its lifecycle event still cleans up the old watcher, but keeps new controls.
+  const current = lavalink.getPlayer(player.guildId);
+  if (current && current !== player) return;
+  clearIdleTimer(player.guildId);
+  clearTrackPresence(client, player);
+  void clearVoiceStatus(client, player).catch(() => {});
+  void end(client, player, 'Playback session ended.').catch(() => {});
+}
+
 export function initLavalink(client) {
   const lavalink = new LavalinkManager({
     nodes: [
@@ -258,14 +272,7 @@ export function initLavalink(client) {
     void handleTrackError(player, track, payload);
   });
   lavalink.on('queueEnd', (player) => handleQueueEnd(client, player));
-  lavalink.on('playerDestroy', (player) => {
-    recovery.invalidate(player);
-    lavalink.playbackWatchdog.remove(player);
-    clearIdleTimer(player.guildId);
-    clearTrackPresence(client, player);
-    void clearVoiceStatus(client, player).catch(() => {});
-    void end(client, player, 'Playback session ended.').catch(() => {});
-  });
+  lavalink.on('playerDestroy', (player) => handlePlayerDestroy(client, player));
 
   lavalink.nodeManager.on('connect', (node) => console.log(`[Lavalink] node ${node.id} connected`));
   lavalink.nodeManager.on('error', (node) => console.error(`[Lavalink] node ${node.id} connection error.`));

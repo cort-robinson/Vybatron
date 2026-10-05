@@ -160,7 +160,7 @@ export function buildSeekModal(player) {
     .setRequired(true)
     .setMinLength(4)
     .setMaxLength(12)
-    .setValue(formatDuration(player?.position || 0));
+    .setValue(formatDuration(displayPosition(player)));
 
   return new ModalBuilder()
     .setCustomId(`player:v1:seek-submit:${trackIdentity(track)}`)
@@ -168,22 +168,39 @@ export function buildSeekModal(player) {
     .addComponents(new ActionRowBuilder().addComponents(timestamp));
 }
 
+function playbackState(player) {
+  return player?.paused ? 'paused' : player?.playing === false ? 'unavailable' : 'playing';
+}
+
+function displayPosition(player, state = playbackState(player)) {
+  const reported = player?.lastPosition;
+  const fallback = Number.isSafeInteger(reported) && reported >= 0 ? reported : 0;
+  // Lavalink-client's position getter adds elapsed time even after audio stops.
+  if (state !== 'playing' || player?.paused || player?.playing === false) return fallback;
+  const live = player?.position;
+  return Number.isFinite(live) && live >= 0 ? live : fallback;
+}
+
+function remainingCurrentDuration(player, track, state = playbackState(player)) {
+  return remainingTrackDuration({ position: displayPosition(player, state), filterManager: player?.filterManager }, track);
+}
+
 function playbackLine(player, info, state) {
-  const position = formatDuration(player?.position, info.isStream);
+  const position = formatDuration(displayPosition(player, state), info.isStream);
   const duration = formatDuration(info.duration, info.isStream);
   if (!['playing', 'paused'].includes(state)) {
     return state === 'recovering' ? 'Keeping your queue while the audio reconnects.' : `${position} / ${duration}`;
   }
   if (info.isStream) return state === 'paused' ? 'Paused • Live' : 'Live';
   if (state === 'paused') return `Paused at \`${position} / ${duration}\``;
-  const remaining = remainingTrackDuration(player, { info });
+  const remaining = remainingCurrentDuration(player, { info }, state);
   if (player?.repeatMode === 'track') return `\`${position} / ${duration}\` • Track loop on`;
   if (remaining === null) return `\`${position} / ${duration}\``;
   const endsAt = Math.floor((Date.now() + remaining) / 1000);
   return `\`${position} / ${duration}\` • Ends <t:${endsAt}:R>`;
 }
 
-function playerQueuePreview(player) {
+function playerQueuePreview(player, state) {
   const tracks = player?.queue?.tracks || [];
   if (tracks.length === 0) {
     return '**Up next**\nNothing queued — add something with `/play`.';
@@ -195,7 +212,7 @@ function playerQueuePreview(player) {
     const author = safeText(info.author, { fallback: 'Unknown artist', maxLength: 60 });
     return `${index + 1}. ${title} — ${author}`;
   });
-  const remaining = remainingQueueDuration(player);
+  const remaining = remainingQueueDuration(player, { state });
   const summary = [
     `${tracks.length} ${pluralize(tracks.length, 'track')} queued`,
     player?.repeatMode && player.repeatMode !== 'off' ? `Loop: ${player.repeatMode}` : remaining === null ? 'Remaining time unknown' : `${formatDuration(remaining)} remaining`,
@@ -203,13 +220,13 @@ function playerQueuePreview(player) {
   return ['**Up next**', ...preview, `_${summary.join(' • ')}_`].join('\n');
 }
 
-export function remainingQueueDuration(player) {
+export function remainingQueueDuration(player, { state = playbackState(player) } = {}) {
   const current = player?.queue?.current;
   const tracks = player?.queue?.tracks || [];
   if (player?.repeatMode && player.repeatMode !== 'off') return null;
   const rate = playbackRate(player);
   if (!rate) return null;
-  let total = current ? remainingTrackDuration(player) : 0;
+  let total = current ? remainingCurrentDuration(player, current, state) : 0;
   if (total === null) return null;
   for (const queued of tracks) {
     const info = queued?.info;
@@ -220,10 +237,10 @@ export function remainingQueueDuration(player) {
 }
 
 function queueStartDelay(player, index) {
-  if (player?.paused || (player?.repeatMode && player.repeatMode !== 'off')) return null;
+  if (player?.paused || player?.playing === false || (player?.repeatMode && player.repeatMode !== 'off')) return null;
   const rate = playbackRate(player);
   if (!rate) return null;
-  let delay = player?.queue?.current ? remainingTrackDuration(player) : 0;
+  let delay = player?.queue?.current ? remainingCurrentDuration(player, player.queue.current) : 0;
   if (delay === null) return null;
   const tracks = player?.queue?.tracks || [];
   for (let previous = 0; previous < index; previous += 1) {
@@ -257,10 +274,10 @@ export function buildPlayerPayload(player, {
       safeText(info.author, { fallback: 'Unknown artist', maxLength: 160 }),
       playbackLine(player, info, state),
       '',
-      playerQueuePreview(player),
+      playerQueuePreview(player, state),
     ];
     const progress = !info.isStream && ['playing', 'paused'].includes(state)
-      ? progressBar(player?.position, info.duration)
+      ? progressBar(displayPosition(player, state), info.duration)
       : null;
     if (progress) lines.splice(2, 0, `\`${progress}\``);
     if (notice) lines.push('', `> ${safeText(notice, { maxLength: 500 })}`);

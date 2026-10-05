@@ -108,6 +108,13 @@ function fixture(options = {}) {
 // https://github.com/lavalink-devs/Lavalink/blob/4.2.2/LavalinkServer/src/main/java/lavalink/server/util/util.kt
 // https://github.com/lavalink-devs/lavaplayer/blob/master/main/src/main/java/com/sedmelluq/discord/lavaplayer/player/DefaultAudioPlayerManager.java
 const CATALOG_ENCODING = 'QAAAjQIAJVJpY2sgQXN0bGV5IC0gTmV2ZXIgR29ubmEgR2l2ZSBZb3UgVXAADlJpY2tBc3RsZXlWRVZPAAAAAAADPCAAC2RRdzR3OVdnWGNRAAEAK2h0dHBzOi8vd3d3LnlvdXR1YmUuY29tL3dhdGNoP3Y9ZFF3NHc5V2dYY1EAB3lvdXR1YmUAAAAAAAAAAA==';
+// The pinned plugin concatenates client exceptions into its message. These
+// three causes were observed together for the playable production canary.
+// https://github.com/lavalink-devs/youtube-source/blob/2be8e542d3f6f178e048dca565892684c2e40177/common/src/main/java/dev/lavalink/youtube/AllClientsFailedException.java
+const MIXED_CLIENT_EXCEPTION = {
+  message: '(yts.version: 1.19.0) All clients failed to load the item.\n\nClient [TVHTML5] failed: Not success status code: 403\n\nClient [ANDROID_VR] failed: This video requires login.\n\nClient [WEB] failed: No supported audio streams available',
+  severity: 'suspicious', cause: 'dev.lavalink.youtube.AllClientsFailedException',
+};
 
 function atServerPosition(encoded, position) {
   const bytes = Buffer.from(encoded, 'base64');
@@ -289,6 +296,73 @@ test('server-encoded same-identifier events with old or missing attempt tokens s
   assert.equal(f.recovery.summary().staleEvents, 4);
 });
 
+for (const mixedClientFailure of [false, true]) {
+  test(`native natural finish retries the next recording after ${mixedClientFailure ? 'mixed-client login and transport' : 'ordinary source'} failure`, async () => {
+    const queries = [];
+    let f;
+    f = serverEchoFixture({ search: async (_player, query) => {
+      queries.push(query.query);
+      return { tracks: [f.track('2SUwOgmvzK4', { length: 217_000 })] };
+    } });
+    await f.player.queue.add([
+      f.track('jNQXAC9IVRw', { length: 19_000 }),
+      f.track('2SUwOgmvzK4', { length: 217_000 }),
+    ]);
+    await f.player.play();
+    await f.emit({ type: 'TrackStartEvent' });
+    f.remote.position = 19_000;
+    const ended = f.serverWire();
+    f.remote.track = null;
+    await f.emit({ type: 'TrackEndEvent', reason: 'finished' }, ended);
+    await f.emit({ type: 'TrackStartEvent' });
+    // A duplicate end from the previous recording cannot terminate the next.
+    await f.emit({ type: 'TrackEndEvent', reason: 'finished' }, ended);
+    const failed = f.serverWire();
+    f.remote.track = null;
+    await f.emit({ type: 'TrackExceptionEvent', exception: mixedClientFailure ? MIXED_CLIENT_EXCEPTION : {
+      message: 'All clients failed to load the item.', severity: 'suspicious',
+      cause: 'dev.lavalink.youtube.AllClientsFailedException',
+    } }, failed);
+    await f.tasks[0];
+    assert.deepEqual(queries, ['https://www.youtube.com/watch?v=2SUwOgmvzK4']);
+    const retry = f.writes.filter((write) => write.track?.encoded).at(-1);
+    assert.equal(retry.position, 0);
+    assert.equal(f.player.queue.current.info.identifier, '2SUwOgmvzK4');
+    await f.emit({ type: 'TrackStartEvent' });
+    assert.equal(f.recovery.summary().retries, 1);
+    assert.equal(f.recovery.summary().recovered, 1);
+    assert.equal(f.recovery.summary().skipped, 0);
+    assert.equal(f.recovery.summary().staleEvents, 1);
+  });
+}
+
+test('repeated mixed-client failures exhaust their bounded allowance without replay or skip storms', async () => {
+  let searches = 0;
+  let f;
+  f = serverEchoFixture({ search: async () => {
+    searches += 1;
+    return { tracks: [f.track()] };
+  } });
+  await f.start({ upcoming: [] });
+  const firstAttempt = f.serverWire();
+  f.remote.track = null;
+  await f.emit({ type: 'TrackExceptionEvent', exception: MIXED_CLIENT_EXCEPTION }, firstAttempt);
+  await f.tasks[0];
+  await f.emit({ type: 'TrackStartEvent' });
+  const replay = f.serverWire();
+  f.remote.track = null;
+  await f.emit({ type: 'TrackExceptionEvent', exception: MIXED_CLIENT_EXCEPTION }, replay);
+  await f.tasks[1];
+  await f.emit({ type: 'TrackEndEvent', reason: 'loadFailed' }, replay);
+  await f.emit({ type: 'TrackExceptionEvent', exception: MIXED_CLIENT_EXCEPTION }, firstAttempt);
+  assert.equal(searches, 1);
+  assert.equal(f.recovery.summary().retries, 1);
+  assert.equal(f.recovery.summary().skipped, 1);
+  assert.equal(f.recovery.summary().recovering, 0);
+  assert.equal(f.player.queue.current, null);
+  assert.equal(f.writes.filter((write) => write.track?.encoded === null).length, 1);
+});
+
 test('real-client adapter retries the exact identifier without shifting the pending queue', async () => {
   let fresh;
   const f = fixture({ search: async (_player, query, requester) => {
@@ -450,6 +524,170 @@ test('destruction rechecks guild ownership after waiting behind an audio write',
   assert.equal(f.manager.getPlayer('g1'), replacement);
   assert.equal(f.writes.length, 1);
   assert.equal(f.gatewayPackets.length, 0);
+});
+
+test('a native destroy gateway rejection still deletes the owned player and emits one old-player cleanup', async () => {
+  const f = fixture();
+  const events = [];
+  let remoteDeletes = 0;
+  f.manager.on('playerDestroy', (player) => events.push(player));
+  f.manager.options.sendToShard = async () => { throw new Error('Discord gateway unavailable'); };
+  f.node.destroyPlayer = async () => { remoteDeletes += 1; };
+  const destroying = f.player.destroy('queue-empty-disconnect');
+  assert.equal(f.player.destroy('queue-empty-disconnect'), destroying);
+  await assert.rejects(destroying, /gateway unavailable/);
+  assert.equal(f.manager.getPlayer('g1'), undefined);
+  assert.equal(remoteDeletes, 1);
+  assert.deepEqual(events, [f.player]);
+  const replacement = f.manager.createPlayer({ guildId: 'g1', voiceChannelId: 'v2', node: 'main' });
+  assert.notEqual(replacement, f.player);
+});
+
+test('a native remote destroy rejection still emits exactly one old-player cleanup', async () => {
+  const f = fixture();
+  const events = [];
+  f.manager.on('playerDestroy', (player) => events.push(player));
+  f.node.destroyPlayer = async () => { throw new Error('404: Lavalink restarted'); };
+  await assert.rejects(f.player.destroy('queue-empty-disconnect'), /Lavalink restarted/);
+  assert.equal(f.manager.getPlayer('g1'), undefined);
+  assert.deepEqual(f.gatewayPackets.map((packet) => packet.d.channel_id), [null]);
+  assert.deepEqual(events, [f.player]);
+  await f.player.destroy('queue-empty-disconnect');
+  assert.deepEqual(events, [f.player]);
+});
+
+function controlledDeadline() {
+  const pending = new Map();
+  return {
+    timers: {
+      setTimeout: (action) => { const timer = {}; pending.set(timer, action); return timer; },
+      clearTimeout: (timer) => pending.delete(timer),
+    },
+    expire: () => { for (const action of [...pending.values()]) action(); },
+  };
+}
+
+test('a delayed remote destroy has a bounded deadline and never deletes its replacement', async () => {
+  const clock = controlledDeadline();
+  const f = fixture({ timers: clock.timers });
+  const gate = deferred();
+  const entered = deferred();
+  const events = [];
+  f.manager.on('playerDestroy', (player) => events.push(player));
+  f.node.destroyPlayer = async () => { entered.resolve(); await gate.promise; };
+  const destroying = f.player.destroy('queue-empty-disconnect');
+  await entered.promise;
+  f.manager.players.delete('g1');
+  const replacement = f.manager.createPlayer({ guildId: 'g1', voiceChannelId: 'v2', node: 'main' });
+  const track = f.track('Zi_XLOBDo_Y');
+  await replacement.play({ clientTrack: track });
+  clock.expire();
+  await assert.rejects(destroying, /timed out/);
+  assert.equal(f.manager.getPlayer('g1'), replacement);
+  assert.equal(replacement.queue.current, track);
+  assert.deepEqual(events, [f.player]);
+  gate.resolve();
+  await settle();
+  assert.equal(f.manager.getPlayer('g1'), replacement);
+  assert.deepEqual(events, [f.player]);
+});
+
+test('destroy deadline includes a stalled audio lane and fences its late teardown from a replacement', async () => {
+  const clock = controlledDeadline();
+  const gate = deferred();
+  const entered = deferred();
+  let plays = 0;
+  let remoteDeletes = 0;
+  const f = fixture({ timers: clock.timers, request: async (body) => {
+    if (body.track?.encoded && ++plays === 1) { entered.resolve(); await gate.promise; }
+  } });
+  f.node.destroyPlayer = async () => { remoteDeletes += 1; };
+  const playing = f.player.play({ clientTrack: f.track() });
+  await entered.promise;
+  const destroying = f.player.destroy('queue-empty-disconnect');
+  await settle();
+  clock.expire();
+  await assert.rejects(destroying, /timed out/);
+  assert.equal(f.manager.getPlayer('g1'), undefined);
+  assert.deepEqual(f.gatewayPackets.map((packet) => packet.d.channel_id), [null]);
+  const replacement = f.manager.createPlayer({ guildId: 'g1', voiceChannelId: 'v2', node: 'main' });
+  const track = f.track('Zi_XLOBDo_Y');
+  await replacement.play({ clientTrack: track });
+  gate.resolve();
+  await playing;
+  await settle();
+  assert.equal(remoteDeletes, 0);
+  assert.equal(f.manager.getPlayer('g1'), replacement);
+  assert.equal(replacement.queue.current, track);
+});
+
+test('an empty player in a fresh Lavalink session clears stale voice and preserves its pending queue', async () => {
+  const f = fixture();
+  const upcoming = f.track('Zi_XLOBDo_Y');
+  await f.player.queue.add(upcoming);
+  f.recovery.nodeDisconnected(f.node);
+  f.node.sessionId = 'session-2';
+  await f.recovery.nodeReady(f.node, { resumed: false, sessionId: 'session-2' });
+  assert.equal(f.player.connected, false);
+  assert.deepEqual(f.player.voice, {});
+  assert.deepEqual(f.player.queue.tracks, [upcoming]);
+  assert.equal(f.gatewayPackets.length, 0);
+  await f.player.connect();
+  assert.equal(f.gatewayPackets.length, 1);
+  assert.equal(f.writes.at(-1).voice.channelId, 'v1');
+  assert.equal(f.writes.at(-1).voice.sessionId, 'fresh-voice-session');
+});
+
+for (const remoteState of ['missing', 'disconnected', 'connected']) {
+  test(`an empty resumed player reconciles ${remoteState} remote voice without automatic join`, async () => {
+    const f = fixture();
+    f.recovery.nodeDisconnected(f.node);
+    const oldVoice = { ...f.player.voice };
+    f.node.fetchAllPlayers = async () => remoteState === 'missing' ? [] : [{ guildId: 'g1', track: null,
+      state: { connected: remoteState === 'connected', position: 0 } }];
+    await f.recovery.nodeReady(f.node, { resumed: true, sessionId: 'session-1' });
+    assert.equal(f.player.connected, remoteState === 'connected');
+    assert.deepEqual(f.player.voice, remoteState === 'connected' ? oldVoice : {});
+    assert.equal(f.gatewayPackets.length, 0);
+  });
+}
+
+test('late idle nodeReady cannot reset voice after a new play changes its generation', async () => {
+  const f = fixture();
+  const gate = deferred();
+  f.recovery.nodeDisconnected(f.node);
+  f.node.updateSession = async () => { await gate.promise; };
+  f.node.sessionId = 'session-2';
+  const ready = f.recovery.nodeReady(f.node, { resumed: false, sessionId: 'session-2' });
+  await settle();
+  const track = f.track();
+  await f.player.play({ clientTrack: track });
+  const voice = { ...f.player.voice };
+  gate.resolve();
+  await ready;
+  assert.equal(f.player.connected, true);
+  assert.deepEqual(f.player.voice, voice);
+  assert.equal(f.player.queue.current, track);
+});
+
+test('late idle nodeReady cannot reset a different player now owning the same guild', async () => {
+  const f = fixture();
+  const gate = deferred();
+  f.recovery.nodeDisconnected(f.node);
+  f.node.updateSession = async () => { await gate.promise; };
+  f.node.sessionId = 'session-2';
+  const ready = f.recovery.nodeReady(f.node, { resumed: false, sessionId: 'session-2' });
+  await settle();
+  f.manager.players.delete('g1');
+  const replacement = f.manager.createPlayer({ guildId: 'g1', voiceChannelId: 'v2', node: 'main' });
+  replacement.connected = true;
+  replacement.voice = { channelId: 'v2', sessionId: 'new-session', endpoint: 'new.example', token: 'new-test-token' };
+  const voice = { ...replacement.voice };
+  gate.resolve();
+  await ready;
+  assert.equal(f.manager.getPlayer('g1'), replacement);
+  assert.equal(replacement.connected, true);
+  assert.deepEqual(replacement.voice, voice);
 });
 
 test('a stopping player rejects playback methods while stopPlaying and destroy still complete', async () => {

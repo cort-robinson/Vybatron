@@ -24,7 +24,7 @@ export function createPortalPolicy(client, { operatorIds = [] } = {}) {
   const operators = new Set(operatorIds.map(String));
   if ([...operators].some(id => !validId(id))) throw new Error('Invalid trusted portal operator configuration.');
   const pendingReads = new Map();
-  const read = (key, fetch, fresh, urgent) => {
+  const read = async (key, fetch, fresh, urgent) => {
     // Share only overlapping REST requests, never a completed authorization
     // result. Commands deliberately begin new reads after each slow lookup.
     if (fresh) key = Symbol(key);
@@ -61,14 +61,24 @@ export function createPortalPolicy(client, { operatorIds = [] } = {}) {
     if (!validId(guildId) || !client.guilds.cache.has(guildId)) fail(404, 'guild_not_found', 'That server is unavailable.');
     const who = verifiedIdentity || await identity(actorId, { fresh, urgent });
     const server = await read(`guild:${guildId}`, () => client.guilds.fetch({ guild: guildId, force: true }), fresh, urgent);
-    let member = null;
-    try { member = await read(`member:${guildId}:${actorId}`, () => server.members.fetch({ user: actorId, force: true }), fresh, urgent); }
-    catch (error) { if (Number(error?.code) !== 10007) throw error; }
+    const memberRead = read(`member:${guildId}:${actorId}`, () => server.members.fetch({ user: actorId, force: true }), fresh, urgent)
+      .catch(error => { if (Number(error?.code) !== 10007) throw error; return null; });
+    // Independent permission inputs need not form a seven-request waterfall.
+    // Limit each round to two reads so even Stop fits its reserved REST slots.
+    // Start only after the guild refresh: discord.js patches its role cache
+    // from that response, which must precede the authoritative role inventory.
+    const [member, channels] = await Promise.all([
+      memberRead,
+      read(`channels:${guildId}`, () => server.channels.fetch(), fresh, urgent),
+    ]);
     if (!member && !who.maintainer) fail(404, 'guild_not_found', 'That server is unavailable.');
-    const channels = await read(`channels:${guildId}`, () => server.channels.fetch(), fresh, urgent);
     // Member permissions depend on the current role definitions, not merely
     // the member's fresh list of role IDs.
-    const allRoles = await read(`roles:${guildId}`, () => server.roles.fetch(), fresh, urgent);
+    const [allRoles, me] = await Promise.all([
+      read(`roles:${guildId}`, () => server.roles.fetch(), fresh, urgent),
+      read(`botMember:${guildId}`, () => server.members.fetchMe({ force: true }), fresh, urgent),
+    ]);
+    ready();
     // discord.js fetch-all updates roles but does not evict deleted ones. Its
     // member/channel permission getters otherwise retain a removed grant until
     // the gateway deletion arrives, despite the fresh REST role inventory.
@@ -76,7 +86,6 @@ export function createPortalPolicy(client, { operatorIds = [] } = {}) {
     const guildAdmin = Boolean(member && (server.ownerId === actorId || member.permissions?.has(P.ManageGuild)));
     const admin = guildAdmin || who.maintainer;
     const roles = admin ? allRoles : new Map();
-    const me = await read(`botMember:${guildId}`, () => server.members.fetchMe({ force: true }), fresh, urgent);
     return { ...who, guild: server, member, channels, roles, me, guildAdmin, admin };
   };
   return { ready, identity, guild, close() { pendingReads.clear(); } };

@@ -8,6 +8,7 @@ import path from 'node:path';
 import { once } from 'node:events';
 import { createPortalServer, SESSION_COOKIE, OAUTH_COOKIE } from '../src/app.js';
 import { loadConfig, LIMITS } from '../src/config.js';
+import { Transport } from '../src/transport.js';
 
 const actorId = '123456789012345678'; const guildId = '234567890123456789';
 const secret = 'test-only-32-character-secret-abcdef0123456789';
@@ -85,6 +86,7 @@ async function fixture(t, { limits = {}, now, dataDir, production = false, botOr
     if (state.beforeReply) await state.beforeReply(call);
     if (state.delayMs) await delay(state.delayMs);
     if (res.destroyed) return;
+    if (state.bridgeResponse) { state.bridgeResponse(res, call); return; }
     if (state.raw !== null) { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(state.raw); return; }
     if (!state.authorized || state.status) { reply(res, state.status || 403, { error: { code: 'private_failure', message: 'SECRET upstream stack / sensitive path' } }); return; }
     assert.equal(req.headers.authorization, `Bearer ${secret}`);
@@ -460,14 +462,221 @@ test('Encrypted storage corruption fails startup without falling back to plainte
   await assert.rejects(createPortalServer(f.config), /safely opened/);
 });
 
-test('SSE offline failure closes fresh state; disconnect cancels an in-flight poll and releases capacity', { timeout: 5000 }, async t => {
-  const f = await fixture(t); const device = await f.login();
-  const offline = await stream(f.base, device.cookie); t.after(offline.close);
-  await until(() => offline.text.includes('snapshot'));
+test('SSE transient bridge errors invalidate freshness and recover without reconnecting or replaying state', { timeout: 5000 }, async t => {
+  const f = await fixture(t, { limits: { pollRetryMaxMs: 100 } }); const device = await f.login();
+  const live = await stream(f.base, device.cookie); t.after(live.close);
+  await until(() => live.text.includes('snapshot'));
+  const snapshots = () => (live.text.match(/event:snapshot/g) || []).length;
   f.state.status = 503;
-  await until(() => offline.ended); assert.match(offline.text, /unavailable/);
+  await until(() => live.text.includes('event:error'));
+  const before = snapshots(); const calls = f.state.calls.length;
+  await delay(180);
+  assert.equal(live.ended, false, 'A transient bridge error must not terminate EventSource');
+  assert.equal(snapshots(), before, 'Previously authorized state must never be resent during failure');
+  assert.ok(f.state.calls.length - calls <= 4, 'Read recovery must back off instead of amplifying upstream pressure');
+  assert.match(live.text, /heartbeat/);
+  f.state.status = 429;
+  await until(() => live.text.includes('busy'));
+  assert.equal(live.ended, false);
+  f.state.snapshot.revision = 'revision-recovered'; f.state.status = null;
+  await until(() => live.text.includes('revision-recovered'));
+  assert.equal(live.ended, false);
+  assert.equal(f.state.calls.some(call => call.body), false, 'Read recovery must never dispatch a command');
+});
+
+test('SSE retries an initially unavailable bridge without sending an unauthorized snapshot', { timeout: 5000 }, async t => {
+  const f = await fixture(t, { limits: { pollRetryMaxMs: 100 } }); const device = await f.login();
+  f.state.status = 503;
+  const live = await stream(f.base, device.cookie); t.after(live.close);
+  await until(() => live.text.includes('event:error') && live.text.includes('heartbeat'));
+  assert.equal(live.res.statusCode, 200);
+  assert.equal(live.text.includes('event:snapshot'), false);
+  assert.match(live.text, /"status":503/);
+  assert.equal(live.text.includes('SECRET'), false);
+  f.state.status = null; f.state.snapshot.revision = 'first-authorized-state';
+  await until(() => live.text.includes('first-authorized-state'));
+  assert.equal(live.ended, false);
+});
+
+test('SSE invalid upstream responses are terminal before and after fresh state', { timeout: 15_000 }, async t => {
+  const oversized = JSON.stringify({ ...snapshot(), privateDetail: 'SECRET'.repeat(500) });
+  const faults = [
+    { name: 'malformed JSON', body: '{SECRET bad-json' },
+    { name: 'wrong content type', body: JSON.stringify(snapshot()), headers: { 'Content-Type': 'text/plain' } },
+    { name: 'invalid top-level JSON', body: '["SECRET"]' },
+    { name: 'oversized content length', body: oversized, headers: { 'Content-Length': Buffer.byteLength(oversized) } },
+    { name: 'oversized chunked JSON', body: oversized, headers: { 'Transfer-Encoding': 'chunked' } },
+    { name: 'unsupported encoding', body: JSON.stringify(snapshot()), headers: { 'Content-Encoding': 'gzip' } },
+    { name: 'bridge projection limit', status: 503,
+      body: JSON.stringify({ error: { code: 'projection_limit', message: 'SECRET upstream details' } }) },
+    { name: 'missing snapshot revision', body: JSON.stringify({ ...snapshot(), revision: undefined }) },
+  ];
+  for (const fault of faults) for (const later of [false, true]) await t.test(`${fault.name} / ${later ? 'later poll' : 'initial read'}`, async t => {
+    const f = await fixture(t, { limits: { pollMs: 20, pollRetryMaxMs: 80, heartbeatMs: 25, upstreamBytes: 2048 } });
+    const device = await f.login(); let live;
+    if (later) {
+      live = await stream(f.base, device.cookie); t.after(live.close);
+      await until(() => live.text.includes('event:snapshot'));
+    }
+    const before = f.state.calls.length;
+    f.state.bridgeResponse = res => {
+      res.writeHead(fault.status || 200, { 'Content-Type': 'application/json', ...fault.headers });
+      res.end(fault.body);
+    };
+    if (!later) { live = await stream(f.base, device.cookie); t.after(live.close); }
+    // The independent real-HTTP reproducer observed repeated polls within this
+    // window. A rejected payload must instead close and release its stream slot.
+    await delay(230);
+    assert.equal(live.ended, true, 'An invalid upstream response must terminate the stream');
+    assert.equal(live.res.statusCode, later ? 200 : 503);
+    assert.equal(f.state.calls.length, before + 1, 'A terminal response must never schedule another bridge poll');
+    assert.equal((live.text.match(/event:snapshot/g) || []).length, later ? 1 : 0);
+    assert.equal((live.text.match(/event:error/g) || []).length, later ? 1 : 0);
+    const payload = later ? JSON.parse(live.text.match(/event:error\ndata:([^\n]+)/)[1]) : JSON.parse(live.text);
+    assert.equal(payload.error.code, 'unavailable');
+    assert.equal(typeof payload.error.message, 'string');
+    if (later) assert.equal(payload.error.status, 503);
+    assert.equal(live.text.includes('SECRET'), false);
+    assert.equal(live.text.includes('projection_limit'), false, 'Private bridge codes must not reach the browser');
+    assert.equal(live.text.includes('retryable'), false, 'Retry classification is internal only');
+    assert.equal(live.res.headers['cache-control'], 'no-store');
+    assert.equal(f.app.resourceCounts().streams, 0);
+    assert.equal(f.app.resourceCounts().upstream, 0);
+    assert.equal(f.app.resourceCounts().requests, 0);
+    const closed = live.text; await delay(100);
+    assert.equal(live.text, closed, 'A terminal stream must stop its heartbeat timer');
+    assert.equal(f.state.calls.length, before + 1);
+    assert.equal(f.state.calls.some(call => call.body), false);
+  });
+});
+
+test('SSE genuine transport and bridge outages back off and recover on the same initial or established stream', { timeout: 10_000 }, async t => {
+  const faults = [
+    { name: 'connection reset', send: res => res.destroy() },
+    { name: 'upstream deadline', send: () => {} },
+    { name: 'bridge unavailable', send: res => reply(res, 503, { error: { code: 'unavailable', message: 'SECRET bridge details' } }) },
+    { name: 'unknown private code', send: res => reply(res, 503,
+      { error: { code: 'SECRET_projection_limit_other', message: 'SECRET private failure', retryable: false }, retryable: false }) },
+  ];
+  for (const fault of faults) for (const later of [false, true]) await t.test(`${fault.name} / ${later ? 'later poll' : 'initial read'}`, async t => {
+    const pollMs = 40;
+    const f = await fixture(t, { limits: { pollMs, pollRetryMaxMs: 160, heartbeatMs: 25, upstreamMs: 100 } });
+    const device = await f.login(); let live;
+    if (later) {
+      live = await stream(f.base, device.cookie); t.after(live.close);
+      await until(() => live.text.includes('event:snapshot'));
+    }
+    const attempts = [];
+    f.state.bridgeResponse = res => { attempts.push(Date.now()); fault.send(res); };
+    if (!later) { live = await stream(f.base, device.cookie); t.after(live.close); }
+    await until(() => (live.text.match(/event:error/g) || []).length >= 2);
+    assert.equal(live.res.statusCode, 200);
+    assert.equal(live.ended, false, 'A genuine outage must not terminate the EventSource response');
+    assert.equal(attempts.length, 2);
+    assert.ok(attempts[1] - attempts[0] >= 2 * pollMs - 10, 'Retry must use the doubled first backoff, allowing timer precision');
+    assert.equal((live.text.match(/event:snapshot/g) || []).length, later ? 1 : 0);
+    assert.match(live.text, /heartbeat/);
+    assert.match(live.text, /"status":503,"code":"unavailable"/);
+    assert.equal(live.text.includes('SECRET'), false);
+    assert.equal(live.text.includes('retryable'), false);
+    assert.equal(f.app.resourceCounts().streams, 1);
+    f.state.snapshot.revision = 'newly-authorized-after-outage'; f.state.bridgeResponse = null;
+    await until(() => live.text.includes('newly-authorized-after-outage'));
+    assert.equal(live.ended, false, 'Recovery must use the same HTTP stream');
+    assert.equal(f.state.calls.some(call => call.body), false, 'Read retries must never dispatch a write');
+    live.close(); await until(() => f.app.resourceCounts().streams === 0 && f.app.resourceCounts().upstream === 0);
+  });
+});
+
+test('SSE access loss after a transient outage closes immediately without broadcasting old state', { timeout: 7000 }, async t => {
+  for (const status of [401, 403, 404]) await t.test(String(status), async t => {
+    const f = await fixture(t, { limits: { pollRetryMaxMs: 100 } }); const device = await f.login();
+    const live = await stream(f.base, device.cookie); t.after(live.close);
+    await until(() => live.text.includes('snapshot'));
+    f.state.status = 503;
+    await until(() => live.text.includes('"status":503'));
+    const before = live.text.length;
+    f.state.status = status;
+    await until(() => live.ended && f.app.resourceCounts().upstream === 0);
+    assert.match(live.text.slice(before), new RegExp(`"status":${status}`));
+    assert.equal(live.text.slice(before).includes('snapshot'), false);
+    assert.equal(f.app.resourceCounts().streams, 0);
+    const calls = f.state.calls.length; await delay(130); assert.equal(f.state.calls.length, calls);
+    assert.equal((await f.request(`/api/guilds/${guildId}/events`, { headers: { Cookie: device.cookie } })).status, status);
+  });
+});
+
+test('Overlapping device SSE polls share only pending reads; disconnect does not cancel another device or a fresh GET', { timeout: 5000 }, async t => {
+  const f = await fixture(t); const first = await f.login(); const second = await f.login();
+  const a = await stream(f.base, first.cookie); const b = await stream(f.base, second.cookie);
+  t.after(a.close); t.after(b.close);
+  await until(() => a.text.includes('snapshot') && b.text.includes('snapshot'));
+  let release; const held = new Promise(resolve => { release = resolve; }); t.after(() => release());
+  let verifying = 0;
+  f.state.beforeReply = async call => { if (call.path === `/v1/guilds/${guildId}`) { verifying++; await held; } };
+  await until(() => verifying === 1);
+  await delay(90);
+  assert.equal(verifying, 1, 'Overlapping device polls should perform one trusted verification');
+  assert.equal(f.app.resourceCounts().upstream, 1);
+  const fresh = f.request(`/api/guilds/${guildId}`, { headers: { Cookie: second.cookie } }); fresh.catch(() => {});
+  await until(() => verifying === 2);
+  assert.equal(f.app.resourceCounts().upstream, 2, 'A deliberate fresh GET must not join an older SSE verification');
+  a.close(); await until(() => f.app.resourceCounts().streams === 1);
+  assert.equal(f.app.resourceCounts().upstream, 2, 'Disconnecting one subscriber must preserve the other reads');
+  f.state.snapshot.revision = 'device-recovered'; release();
+  assert.equal((await fresh).status, 200);
+  await until(() => b.text.includes('device-recovered'));
+  await until(() => verifying >= 3);
+  assert.equal(a.text.includes('device-recovered'), false);
+  b.close(); await until(() => f.app.resourceCounts().streams === 0 && f.app.resourceCounts().upstream === 0);
+});
+
+test('SSE heartbeats and expiry remain independent of a slow fresh permission read', { timeout: 5000 }, async t => {
+  let now = Date.now();
+  const f = await fixture(t, { now: () => now }); const device = await f.login();
+  const live = await stream(f.base, device.cookie); t.after(live.close);
+  await until(() => live.text.includes('snapshot'));
+  let release; const held = new Promise(resolve => { release = resolve; }); t.after(release);
+  let verifying = false;
+  f.state.beforeReply = async call => { if (call.path === `/v1/guilds/${guildId}`) { verifying = true; await held; } };
+  await until(() => verifying && f.app.resourceCounts().upstream === 1);
+  const before = live.text; const calls = f.state.calls.length;
+  await delay(160);
+  assert.ok((live.text.slice(before.length).match(/heartbeat/g) || []).length >= 3, 'Slow authorization must not stall transport heartbeats');
+  assert.equal(live.text.slice(before.length).includes('snapshot'), false, 'A heartbeat does not authorize state');
+  assert.equal(f.state.calls.length, calls, 'A slow poll must not overlap another poll');
+  now += LIMITS.sessionMs + 1;
+  await until(() => live.ended && f.app.resourceCounts().upstream === 0);
+  assert.match(live.text, /unauthenticated/);
   assert.equal(f.app.resourceCounts().streams, 0);
-  f.state.status = null;
+});
+
+test('Authenticated SSE survives real deadlines and the 30-second HTTP timeout with automatic fresh recovery', { timeout: 45_000 }, async t => {
+  const f = await fixture(t, { limits: { pollMs: LIMITS.pollMs, heartbeatMs: LIMITS.heartbeatMs,
+    pollRetryMaxMs: LIMITS.pollRetryMaxMs } });
+  const device = await f.login(); const live = await stream(f.base, device.cookie); t.after(live.close);
+  await until(() => live.text.includes('snapshot'));
+  let slow = false;
+  f.state.beforeReply = async call => {
+    if (call.path === `/v1/guilds/${guildId}` && !slow) { slow = true; await delay(LIMITS.upstreamMs + 1000); }
+  };
+  await until(() => live.text.includes('event:error'), 16_000);
+  assert.match(live.text, /"status":503/);
+  assert.equal(live.ended, false);
+  const before = live.text.length;
+  f.state.snapshot.revision = 'authorized-after-timeout';
+  await until(() => live.text.slice(before).includes('authorized-after-timeout'), 9000);
+  await delay(16_000);
+  assert.equal(live.ended, false, 'One authenticated HTTP stream must stay open beyond 30 seconds');
+  assert.ok((live.text.match(/heartbeat/g) || []).length >= 3);
+  assert.ok((live.text.match(/authorized-after-timeout/g) || []).length >= 5);
+  assert.equal(f.state.calls.some(call => call.body), false);
+  assert.equal(f.app.resourceCounts().streams, 1);
+  live.close(); await until(() => f.app.resourceCounts().streams === 0 && f.app.resourceCounts().upstream === 0);
+});
+
+test('SSE disconnect cancels an in-flight poll and releases capacity', { timeout: 5000 }, async t => {
+  const f = await fixture(t); const device = await f.login();
   const cancelled = await stream(f.base, device.cookie); t.after(cancelled.close);
   await until(() => cancelled.text.includes('snapshot'));
   f.state.delayMs = 200;
@@ -476,6 +685,51 @@ test('SSE offline failure closes fresh state; disconnect cancels an in-flight po
   await until(() => f.app.resourceCounts().upstream === 0 && f.app.resourceCounts().streams === 0);
   await until(() => f.state.disconnected >= 1);
   const count = f.state.calls.length; await delay(250); assert.equal(f.state.calls.length, count);
+});
+
+test('Shared read transport isolates trusted actors and guilds and never retains completed policy results', { timeout: 5000 }, async t => {
+  const f = await fixture(t); const transport = new Transport(f.config, LIMITS); t.after(() => transport.close());
+  let release; const held = new Promise(resolve => { release = resolve; }); t.after(() => release());
+  f.state.beforeReply = async () => { await held; };
+  const reads = [
+    transport.bridge(`/v1/guilds/${guildId}`, actorId, { shareRead: true }),
+    transport.bridge(`/v1/guilds/${guildId}`, actorId, { shareRead: true }),
+    transport.bridge(`/v1/guilds/${guildId}`, '456789012345678901', { shareRead: true }),
+    transport.bridge('/v1/guilds/567890123456789012', actorId, { shareRead: true }),
+  ];
+  const completed = Promise.all(reads); completed.catch(() => {});
+  await until(() => f.state.calls.length === 3);
+  assert.equal(transport.active, 3);
+  assert.equal(f.state.calls.filter(call => call.params.get('actorId') === actorId).length, 2);
+  release(); await completed;
+  assert.equal(transport.sharedReads.size, 0);
+  f.state.status = 403;
+  await assert.rejects(transport.bridge(`/v1/guilds/${guildId}`, actorId, { shareRead: true }), error => error.status === 403);
+  assert.equal(f.state.calls.length, 4, 'Completed authorization must not be reused after permissions change');
+});
+
+test('Shared read transport cancels after its last subscriber leaves and keeps the original bounded deadline', { timeout: 5000 }, async t => {
+  const f = await fixture(t); const transport = new Transport(f.config, { ...LIMITS, upstreamMs: 300 }); t.after(() => transport.close());
+  let release; const held = new Promise(resolve => { release = resolve; }); t.after(() => release());
+  f.state.beforeReply = async () => { await held; };
+  const a = new AbortController(); const b = new AbortController();
+  const first = transport.bridge(`/v1/guilds/${guildId}`, actorId, { shareRead: true, signal: a.signal });
+  const second = transport.bridge(`/v1/guilds/${guildId}`, actorId, { shareRead: true, signal: b.signal });
+  first.catch(() => {}); second.catch(() => {});
+  await until(() => f.state.calls.length === 1);
+  a.abort(); await assert.rejects(first, error => error.status === 503);
+  assert.equal(transport.active, 1);
+  b.abort(); await assert.rejects(second, error => error.status === 503);
+  await until(() => transport.active === 0 && transport.sharedReads.size === 0 && f.state.disconnected >= 1);
+  const original = transport.bridge(`/v1/guilds/${guildId}`, actorId, { shareRead: true }); original.catch(() => {});
+  await until(() => f.state.calls.length === 2);
+  await delay(200);
+  const joinedAt = Date.now();
+  const late = transport.bridge(`/v1/guilds/${guildId}`, actorId, { shareRead: true }); late.catch(() => {});
+  await Promise.all([assert.rejects(original, error => error.status === 503), assert.rejects(late, error => error.status === 503)]);
+  assert.ok(Date.now() - joinedAt < 250, 'A late subscriber must not reset the original 300ms deadline');
+  assert.equal(f.state.calls.length, 2);
+  assert.equal(transport.active, 0); assert.equal(transport.sharedReads.size, 0);
 });
 
 test('An expired session during upstream authorization cannot return protected data', { timeout: 5000 }, async t => {

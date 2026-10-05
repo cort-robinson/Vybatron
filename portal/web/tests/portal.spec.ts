@@ -39,6 +39,7 @@ test('one player transforms, stays across navigation, and sends scoped core comm
   await page.getByRole('button', { name: 'Open player', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Evening Light' })).toHaveCount(1);
   await page.getByRole('button', { name: 'Resume playback', exact: true }).click();
+  await expect(page.getByRole('slider', { name: 'Playback position' })).toBeEnabled();
   await page.getByRole('slider', { name: 'Playback position' }).focus(); await page.keyboard.press('Home');
   await expect.poll(() => fixture.commands.find(c => c.command === 'seek')?.options?.timestamp).toBe('00:00:00');
   await page.getByRole('button', { name: 'My Music', exact: true }).click();
@@ -141,14 +142,16 @@ test('a public import may exceed a short read deadline without aborting or repla
   expect(fixture.commands).toHaveLength(1);
 });
 
-test('a GET started before a disconnect cannot enable writes after the stream fails', async ({ page }) => {
+test('a GET started before going offline cannot enable writes after transport loss', async ({ page }) => {
   const fixture = await mockPortal(page); await page.goto('/');
   await expect(page.getByRole('button', { name: 'Pause playback' })).toBeEnabled();
   const reads = fixture.requests.filter(path => path === '/api/guilds/testing').length;
   fixture.delaySnapshot(500);
   await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
   await expect.poll(() => fixture.requests.filter(path => path === '/api/guilds/testing').length).toBeGreaterThan(reads);
-  await streamAction(page, 'disconnect');
+  // A refresh now retires its old stream before reading; going offline must
+  // still invalidate the GET even when there is no active EventSource to fail.
+  await page.evaluate(() => window.dispatchEvent(new Event('offline')));
   await page.waitForTimeout(600);
   await expect(page.getByRole('button', { name: 'Pause playback' })).toBeDisabled();
   expect(fixture.commands).toHaveLength(0);

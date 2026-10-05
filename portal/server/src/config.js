@@ -11,7 +11,7 @@ export const LIMITS = Object.freeze({
   authFileBytes: 4 * 1024 * 1024, staticBytes: 16 * 1024 * 1024,
   urlBytes: 4096, headerBytes: 16 * 1024,
   requestMs: 10_000, upstreamMs: 10_000, commandMs: 90_000,
-  pollMs: 3000, heartbeatMs: 10_000, drainMs: 5000,
+  pollMs: 3000, pollRetryMaxMs: 30_000, heartbeatMs: 10_000, drainMs: 5000,
   streams: 32, streamsPerSession: 2, streamLifetimeMs: 30 * 60_000,
   sessionMs: 7 * 24 * 60 * 60_000, oauthMs: 10 * 60_000,
 });

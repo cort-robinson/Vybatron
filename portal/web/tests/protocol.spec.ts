@@ -35,10 +35,11 @@ test('real HTTP EventSource disconnect reacquires a snapshot and never replays a
     await page.getByRole('button', { name: 'Add music', exact: true }).click(); await page.getByRole('searchbox', { name: 'Music search' }).fill('native SSE input stays here');
     server.disconnectAndHold();
     await expect(page.getByRole('button', { name: 'Add to queue', exact: true })).toBeDisabled();
-    await expect.poll(() => server.requests.filter(path => path.endsWith('/events')).length).toBeGreaterThan(1);
+    await expect.poll(() => server.requests.filter(path => path === '/api/guilds/testing').length).toBeGreaterThan(1);
     expect(server.commands).toHaveLength(0);
     server.releaseFreshSnapshot();
     await expect(page.getByRole('button', { name: 'Add to queue', exact: true })).toBeEnabled();
+    await expect.poll(() => server.requests.filter(path => path.endsWith('/events')).length).toBeGreaterThan(1);
     await expect(page.getByRole('searchbox', { name: 'Music search' })).toHaveValue('native SSE input stays here');
     expect(server.commands).toHaveLength(0);
     await page.getByRole('button', { name: 'Add to queue', exact: true }).click();

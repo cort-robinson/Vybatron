@@ -76,7 +76,7 @@ export async function mockPortal(page: Page, options: { signedOut?: boolean; bas
     Object.defineProperty(window, 'EventSource', { value: FakeEventSource });
     (window as unknown as { portalTest: { emit: (data: unknown) => void; disconnect: () => void; reconnect: () => void } }).portalTest = {
       emit: data => streams.filter(s => !s.closed).forEach(s => s.listeners.get('snapshot')?.forEach(callback => callback(new MessageEvent('snapshot', { data: JSON.stringify(data) })))),
-      disconnect: () => streams.filter(s => !s.closed).forEach(s => s.onerror?.()), reconnect: () => streams.filter(s => !s.closed).forEach(s => s.onopen?.()),
+      disconnect: () => streams.filter(s => !s.closed).forEach(s => s.onerror?.()), reconnect: () => window.dispatchEvent(new Event('online')),
     };
   });
   await page.route('**/test-art/*.png', async route => {

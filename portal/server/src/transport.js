@@ -12,9 +12,22 @@ const safeErrors = {
   503: ['unavailable', 'The bot or audio service is unavailable. Refresh before making another change.'],
 };
 
+// Keep rejected response payloads distinct from socket/deadline outages without
+// exposing private upstream fields or changing the public safe error contract.
+class InvalidUpstreamResponse extends HttpError {
+  constructor() {
+    const safe = unavailable();
+    super(safe.status, safe.code, safe.message);
+  }
+}
+
+export const isRetryableReadError = error => error instanceof HttpError &&
+  !(error instanceof InvalidUpstreamResponse) && [429, 503].includes(error.status);
+
 export class Transport {
   constructor(config, limits) {
     this.config = config; this.limits = limits; this.active = 0; this.ordinary = 0; this.stops = 0;
+    this.sharedReads = new Map();
     // One slot remains available to Stop even when every ordinary slot is busy.
     // Tiny nonproduction test pools retain one ordinary slot as well.
     this.stopCapacity = Math.min(limits.stopUpstream, Math.max(0, limits.upstream - 1));
@@ -38,7 +51,9 @@ export class Transport {
           agent: secure ? this.httpsAgent : this.httpAgent, signal, maxHeaderSize: this.limits.headerBytes,
         }, response => {
           let size = 0; const chunks = [];
-          const fail = () => { response.destroy(); req.destroy(); reject(unavailable()); };
+          // Settle the terminal validation error before destroying the socket:
+          // the resulting transport error must not replace its classification.
+          const fail = () => { reject(new InvalidUpstreamResponse()); response.destroy(); req.destroy(); };
           const length = Number(response.headers['content-length']);
           if (length > this.limits.upstreamBytes || response.headers['content-encoding'] ||
               !/^application\/json(?:\s*;.*)?$/i.test(response.headers['content-type'] || '')) { fail(); return; }
@@ -49,7 +64,7 @@ export class Transport {
               const data = JSON.parse(Buffer.concat(chunks).toString('utf8'));
               if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error();
               resolve({ status: response.statusCode, data });
-            } catch { reject(unavailable()); }
+            } catch { reject(new InvalidUpstreamResponse()); }
           });
         });
         const timer = setTimeout(() => req.destroy(new Error('Upstream timeout')), timeout); timer.unref();
@@ -60,17 +75,56 @@ export class Transport {
     } finally { this.active--; if (stop && this.stopCapacity > 0) this.stops--; else this.ordinary--; }
   }
 
-  async bridge(endpoint, actorId, { query = {}, command, signal } = {}) {
+  sharedRead(url, options, signal) {
+    if (signal?.aborted) return Promise.reject(unavailable());
+    const key = url.href;
+    let pending = this.sharedReads.get(key);
+    if (!pending) {
+      const controller = new AbortController();
+      pending = { controller, subscribers: new Set(), settled: false, promise: null };
+      this.sharedReads.set(key, pending);
+      pending.promise = this.request(url, { ...options, signal: controller.signal }).finally(() => {
+        pending.settled = true;
+        if (this.sharedReads.get(key) === pending) this.sharedReads.delete(key);
+      });
+    }
+    // Share only an overlapping SSE read for the identical trusted actor/guild.
+    // Successful permission decisions are never cached. Ordinary GETs stay
+    // independent so a post-command refresh cannot join a pre-command read.
+    return new Promise((resolve, reject) => {
+      const subscriber = {}; pending.subscribers.add(subscriber);
+      let finished = false;
+      const finish = (error, value) => {
+        if (finished) return; finished = true;
+        signal?.removeEventListener('abort', onAbort); pending.subscribers.delete(subscriber);
+        if (!pending.settled && pending.subscribers.size === 0) {
+          if (this.sharedReads.get(key) === pending) this.sharedReads.delete(key);
+          pending.controller.abort();
+        }
+        if (error) reject(error); else resolve(value);
+      };
+      const onAbort = () => finish(unavailable());
+      signal?.addEventListener('abort', onAbort, { once: true });
+      pending.promise.then(value => finish(null, value), error => finish(error));
+      if (signal?.aborted) onAbort();
+    });
+  }
+
+  async bridge(endpoint, actorId, { query = {}, command, signal, shareRead = false } = {}) {
     const url = new URL(endpoint, this.config.botUrl);
     if (actorId && !command) url.searchParams.set('actorId', actorId);
     for (const [key, value] of Object.entries(query)) url.searchParams.set(key, value);
-    const result = await this.request(url, {
+    const options = {
       headers: { Authorization: `Bearer ${this.config.bridgeToken}`, ...(command && { 'Content-Type': 'application/json' }) },
       method: command ? 'POST' : 'GET', body: command ? JSON.stringify({ actorId, ...command }) : undefined,
-      signal, timeout: command ? this.limits.commandMs : this.limits.upstreamMs,
+      timeout: command ? this.limits.commandMs : this.limits.upstreamMs,
       stop: command?.command === 'stop',
-    });
+    };
+    const result = shareRead && !command ? await this.sharedRead(url, options, signal) : await this.request(url, { ...options, signal });
     if (result.status !== 200) {
+      // Only this exact private bridge code is a terminal projection failure.
+      // All other upstream codes/messages remain ignored and sanitized by status.
+      if (result.status === 503 && result.data.error?.code === 'projection_limit') throw new InvalidUpstreamResponse();
       const [code, message] = safeErrors[result.status] || safeErrors[503];
       throw new HttpError(safeErrors[result.status] ? result.status : 503, code, message);
     }
@@ -94,5 +148,8 @@ export class Transport {
     return user.data.id;
   }
 
-  close() { this.httpAgent.destroy(); this.httpsAgent.destroy(); }
+  close() {
+    for (const pending of this.sharedReads.values()) pending.controller.abort();
+    this.sharedReads.clear(); this.httpAgent.destroy(); this.httpsAgent.destroy();
+  }
 }

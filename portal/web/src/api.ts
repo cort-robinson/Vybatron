@@ -1,7 +1,7 @@
 import type { Bootstrap, GuildSnapshot, Library, Track, Command, CommandResult, Diagnostics, Activity } from './types';
 
 export class ApiError extends Error {
-  constructor(public status: number, public code: string, message: string) { super(message); this.name = 'ApiError'; }
+  constructor(public status: number, public code: string, message: string, public retryAfterMs = 0) { super(message); this.name = 'ApiError'; }
 }
 
 async function request<T>(path: string, init: RequestInit = {}, timeoutMs = 20_000): Promise<T> {
@@ -15,8 +15,11 @@ async function request<T>(path: string, init: RequestInit = {}, timeoutMs = 20_0
   }
   const body = await response.json().catch(() => null);
   if (!response.ok) {
+    const retryAfter = response.headers.get('Retry-After');
+    const delay = retryAfter === null ? 0 : /^\d+$/.test(retryAfter) ? Number(retryAfter) * 1000 : Date.parse(retryAfter) - Date.now();
     throw new ApiError(response.status, body?.error?.code || 'request_failed',
-      typeof body?.error?.message === 'string' ? body.error.message : 'This request could not be completed. Refresh and try again.');
+      typeof body?.error?.message === 'string' ? body.error.message : 'This request could not be completed. Refresh and try again.',
+      Number.isFinite(delay) ? Math.max(0, Math.min(delay, 60_000)) : 0);
   }
   if (!body || typeof body !== 'object') throw new ApiError(503, 'invalid_response', 'Live state is unavailable. Refresh and try again.');
   return body as T;

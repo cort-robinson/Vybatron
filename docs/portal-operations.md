@@ -224,7 +224,35 @@ two authenticated devices and actual Discord playback before declaring listening
 acceptance. Bot Testing's portal music text channel is configured as `general`;
 the recovery alert channel was retained separately.
 
-Remaining owner acceptance: real Discord sign-in on Windows and phone, synchronized
+The owner's first authenticated listening check reached playback and Pause, but
+reported recurring unavailable errors, connection loss and unsynchronized state.
+The pilot has not passed live acceptance. A read-only private-bridge probe then
+reproduced a 503 during repeated fresh permission checks alongside two successful
+state reads. Host capacity and audio health stayed normal. Recovery and state
+ordering corrections are under verification; no audio service was changed for
+this investigation. A portal-only restart has preserved the real encrypted login
+record and bot/audio processes since the owner's sign-in. This differs from the
+earlier reboots, which had no stored device logins.
+
+The synchronization correction uses bounded parallel permission reads, fresh
+pending-only state sharing, independent stream heartbeats and transient read
+backoff. The browser keeps an open stream through temporary error frames,
+disables controls while stale, and reconciles overlapping command replies with
+a read started after completion. Hard permission failures clear protected data;
+malformed or oversized upstream payloads terminate their streams. A compiled
+two-browser integration now exercises initial read failure, slow Pause, transient
+bridge errors on both streams, phone offline/online recovery, and hidden-channel
+redaction through the real OAuth/API/adapter boundaries. External Discord/audio
+responses are fixtures in this test; it does not establish live acceptance.
+
+Local synchronization verification passed 392 core and 71 API tests. The broad
+browser run passed 52 of 54; both remaining cases passed in targeted runs after
+correcting keyboard-test sequencing and separating colliding trace output.
+The two earlier joined browser integrations and the new two-client regression
+also pass. Exact-commit CI must run all browser cases and integrations together
+before replacing the pilot; cumulative local runs do not substitute for that gate.
+
+Remaining owner acceptance: reliable sign-in on Windows and phone, synchronized
 portal controls, audible pause/resume/seek/Warm, queue advancement, device-login
 persistence and saved-session restoration. Physical PWA installation is also
 distinct from automated browser installability. Record these observations without

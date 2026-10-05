@@ -39,6 +39,10 @@ Discord settles, preventing stalled reads multiplying on every poll. The pool
 holds at most 128 underlying reads plus two reserved urgent slots. Four concurrent
 same-account snapshots make seven reads rather than 28 when they overlap; spaced
 polls or different actors still fetch their own current account/member state.
+Member/channel and role/bot-member reads run in bounded pairs after the guild
+refresh, avoiding seven sequential response waits while fitting Stop's two
+reserved underlying-read slots. All inputs settle and gateway readiness is
+checked again before permissions are evaluated; deadlines are unchanged.
 Fresh role inventories evict deleted roles from discord.js's cache before its
 member/channel permission getters run. An outside-guild maintainer receives
 settings and diagnostics, without a bot-permission channel-list bypass.

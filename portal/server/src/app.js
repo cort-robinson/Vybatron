@@ -3,7 +3,7 @@ import path from 'node:path';
 import { promises as fs, constants as fsConstants } from 'node:fs';
 import { LIMITS, isLoopback } from './config.js';
 import { SessionStore, randomToken, tokenHash } from './store.js';
-import { Transport } from './transport.js';
+import { Transport, isRetryableReadError } from './transport.js';
 import { validateCommand } from './commands.js';
 import { HttpError, RateLimiter, busy, invalid, unauthorized, unavailable, cookie, setCookie,
   equal, sameOrigin, securityHeaders, readBody, json, sendError } from './security.js';
@@ -112,64 +112,105 @@ export async function createPortalServer(config, testOptions = {}) {
   async function events(req, res, guildId, token, session, signal) {
     if (streams.size >= limits.streams || [...streams].filter(stream => stream.sessionKey === session.key).length >= limits.streamsPerSession) throw busy();
     const record = { sessionKey: session.key, close: null }; streams.add(record);
-    let pollTimer; let drainTimer; let ended = false; let unblock;
-    const began = now(); let lastHeartbeat = now();
+    let pollTimer; let heartbeatTimer; let drainTimer; let drainWait; let ended = false; let writing = false; let unblock;
+    const began = now(); let failures = 0;
+    const pollController = new AbortController();
+    const pollSignal = AbortSignal.any([signal, pollController.signal]);
     const close = () => {
       if (ended) return;
-      ended = true; clearTimeout(pollTimer); clearTimeout(drainTimer); streams.delete(record);
+      ended = true; clearTimeout(pollTimer); clearTimeout(heartbeatTimer); clearTimeout(drainTimer); streams.delete(record);
+      pollController.abort();
       unblock?.(); if (!res.writableEnded) res.end();
     };
     record.close = close;
     res.once('close', close);
-    async function write(frame) {
+    async function write(frame, protectedState = false) {
+      if (writing && !(await drainWait)) return false;
       if (ended || res.destroyed || signal.aborted) return false;
-      if (res.write(frame)) return true;
-      return await new Promise(resolve => {
-        let settled = false;
-        const finish = success => {
-          if (settled) return; settled = true; clearTimeout(drainTimer); res.off('drain', onDrain); unblock = null; resolve(success);
-        };
-        const onDrain = () => finish(true); unblock = () => finish(false);
-        res.once('drain', onDrain);
-        drainTimer = setTimeout(() => { res.destroy(); close(); finish(false); }, limits.drainMs); drainTimer.unref();
-      });
+      if (protectedState && !active()) return false;
+      writing = true;
+      try {
+        if (res.write(frame)) return true;
+        drainWait = new Promise(resolve => {
+          let settled = false;
+          const finish = success => {
+            if (settled) return; settled = true; clearTimeout(drainTimer); res.off('drain', onDrain); unblock = null; resolve(success);
+          };
+          const onDrain = () => finish(true); unblock = () => finish(false);
+          res.once('drain', onDrain);
+          drainTimer = setTimeout(() => { res.destroy(); close(); finish(false); }, limits.drainMs); drainTimer.unref();
+        });
+        return await drainWait;
+      } finally { writing = false; drainWait = null; }
     }
-    const fail = error => {
-      if (!ended && !res.destroyed) {
-        // A closed stream clears stale state in the client; no command is replayed.
-        const safe = error instanceof HttpError ? error : unavailable();
-        res.end(`event:error\ndata:${JSON.stringify({ error: { code: safe.code, message: safe.message } })}\n\n`);
-      }
-      close();
+    const errorFrame = error => {
+      const safe = error instanceof HttpError ? error : unavailable();
+      return `event:error\ndata:${JSON.stringify({ error: { status: safe.status, code: safe.code, message: safe.message } })}\n\n`;
+    };
+    const fail = async error => {
+      try { if (!writing) await write(errorFrame(error)); } finally { close(); }
+    };
+    const active = () => {
+      if (ended || signal.aborted) return false;
+      if (!store.get(token)) throw unauthorized();
+      if (closing || now() - began >= limits.streamLifetimeMs) { close(); return false; }
+      return true;
+    };
+    const schedule = () => {
+      if (ended) return;
+      const wait = Math.min(limits.pollRetryMaxMs, limits.pollMs * 2 ** Math.min(failures, 10));
+      pollTimer = setTimeout(tick, Math.max(limits.pollMs, wait)); pollTimer.unref();
+    };
+    const readFailure = async error => {
+      if (!active()) return;
+      // A read error invalidates the client's freshness, but transient bridge
+      // failures must not create reconnect/probe storms. No snapshot is retained
+      // or resent: every recovery attempt performs fresh trusted policy checks.
+      if (isRetryableReadError(error)) {
+        failures++;
+        if (await write(errorFrame(error))) schedule();
+      } else await fail(error);
+    };
+    const heartbeat = async () => {
+      try {
+        if (!active()) return;
+        // Comments contain no protected state and must keep flowing while Discord
+        // verification is slow. Skip a blocked writer instead of buffering more.
+        if (!writing && !(await write(': heartbeat\n\n'))) return;
+        if (!ended) { heartbeatTimer = setTimeout(heartbeat, limits.heartbeatMs); heartbeatTimer.unref(); }
+      } catch (error) { await fail(error); }
     };
     const tick = async () => {
       try {
-        if (!store.get(token)) throw unauthorized();
-        if (closing || now() - began >= limits.streamLifetimeMs) { close(); return; }
+        if (!active()) return;
         // The bridge performs fresh Discord policy evaluation on every poll,
         // even if the returned revision has not changed.
-        const snapshot = await transport.bridge(`/v1/guilds/${guildId}`, session.actorId, { signal });
-        if (ended || !store.get(token)) { close(); return; }
-        if (!(await write(snapshotFrame(snapshot, guildId, limits)))) return;
-        if (now() - lastHeartbeat >= limits.heartbeatMs) {
-          if (!(await write(': heartbeat\n\n'))) return;
-          lastHeartbeat = now();
-        }
-        if (!ended) { pollTimer = setTimeout(tick, limits.pollMs); pollTimer.unref(); }
-      } catch (error) { fail(error); }
+        let snapshot;
+        try { snapshot = await transport.bridge(`/v1/guilds/${guildId}`, session.actorId, { signal: pollSignal, shareRead: true }); }
+        catch (error) { await readFailure(error); return; }
+        if (!active()) return;
+        if (!(await write(snapshotFrame(snapshot, guildId, limits), true))) return;
+        failures = 0; schedule();
+      } catch (error) { await fail(error); }
     };
     try {
-      const initial = await transport.bridge(`/v1/guilds/${guildId}`, session.actorId, { signal });
-      if (ended) return;
-      if (!store.get(token)) throw unauthorized();
-      const frame = snapshotFrame(initial, guildId, limits);
+      let initial; let initialError;
+      try { initial = await transport.bridge(`/v1/guilds/${guildId}`, session.actorId, { signal: pollSignal, shareRead: true }); }
+      catch (error) {
+        if (!isRetryableReadError(error)) throw error;
+        initialError = error;
+      }
+      if (!active()) return;
+      const frame = initialError ? errorFrame(initialError) : snapshotFrame(initial, guildId, limits);
       res.writeHead(200, { 'Content-Type': 'text/event-stream; charset=utf-8', 'X-Accel-Buffering': 'no', Connection: 'keep-alive' });
       req.socket.setTimeout(0);
-      if (await write(`retry: 5000\n\n: connected\n\n${frame}`)) {
-        pollTimer = setTimeout(tick, limits.pollMs); pollTimer.unref();
+      if (await write(`retry: 5000\n\n: connected\n\n${frame}`, !initialError)) {
+        failures = initialError ? 1 : 0; schedule();
+        heartbeatTimer = setTimeout(heartbeat, limits.heartbeatMs); heartbeatTimer.unref();
       }
     } catch (error) {
-      clearTimeout(pollTimer); clearTimeout(drainTimer); streams.delete(record); ended = true;
+      clearTimeout(pollTimer); clearTimeout(heartbeatTimer); clearTimeout(drainTimer); streams.delete(record); ended = true;
+      pollController.abort();
       res.off('close', close); throw error;
     }
   }

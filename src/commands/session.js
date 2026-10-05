@@ -1,5 +1,5 @@
 import { MessageFlags, SlashCommandBuilder } from 'discord.js';
-import { requireUserVoice, hasDJAccess, recheckEnqueueRequest } from '../utils/guards.js';
+import { requireUserVoice, hasDJAccess, recheckEnqueueRequest, requireSessionVisibility } from '../utils/guards.js';
 import { savedSession } from '../utils/sessions.js';
 import { enqueueTracks, getOrCreatePlayer, resolveReferences } from '../utils/enqueue.js';
 import { collectionPayload } from '../utils/library-actions.js';
@@ -16,18 +16,19 @@ export async function execute(interaction) {
   const library = interaction.client.library;
   const saved = savedSession(library, interaction.guildId);
   if (!saved) return interaction.reply(ephemeralText('No recent listening session is saved. Start one with /play.'));
+  if (!await requireSessionVisibility(interaction, saved)) return;
   if (action === 'show') return interaction.reply(collectionPayload('Saved listening session', saved.tracks, 1, 'Saved for 72 hours · /session resume'));
   if (!hasDJAccess(interaction)) return interaction.reply(ephemeralText('The server’s DJ role or Manage Server permission is required to manage this session.'));
   const channel = await requireUserVoice(interaction, { checkBotAccess: true }); if (!channel) return;
   if (channel.id !== saved.voiceChannelId) return interaction.reply(ephemeralText('Join the voice channel where this session was saved, then try again.'));
   if (action === 'discard') {
-    await library.updateGuild(interaction.guildId, guild => { guild.session = null; });
+    await library.updateGuild(interaction.guildId, async guild => { await interaction.portalRecheck?.(); guild.session = null; });
     return interaction.reply(ephemeralText('Discarded the saved listening session. Your favorites and mixes stay saved.'));
   }
   const existing = interaction.client.lavalink.getPlayer(interaction.guildId);
   if (existing?.queue.current || existing?.queue.tracks.length) return interaction.reply(ephemeralText('A listening session is already active. Stop it before restoring a saved one.'));
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-  const { player, created } = getOrCreatePlayer(interaction, channel);
+  const { player, created } = getOrCreatePlayer(interaction, channel, { textChannelId: saved.textChannelId });
   let added = false;
   try {
     const { tracks, missing } = await resolveReferences(player, saved.tracks, interaction.user, { limit: 501 });
@@ -36,6 +37,7 @@ export async function execute(interaction) {
     // Current + 500 upcoming tracks fit the same live queue limit.
     const first = tracks.shift();
     const exactFirst = first.info?.sourceName === saved.tracks[0].sourceName && first.info?.identifier === saved.tracks[0].identifier;
+    interaction.portalMutationStarted?.();
     await enqueueTracks(interaction.client, player, tracks, { fair: false }); added = true;
     if (!await recheckEnqueueRequest(interaction, player, channel, { checkDJ: true })) return;
     if (!player.connected) await player.connect();

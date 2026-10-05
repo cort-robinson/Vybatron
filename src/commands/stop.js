@@ -31,5 +31,6 @@ export async function execute(interaction) {
   } finally {
     await player.destroy();
   }
+  await interaction.client.library?.updateGuild?.(interaction.guildId, guild => { guild.session = null; });
   return interaction.reply(ephemeralText(confirmation));
 }

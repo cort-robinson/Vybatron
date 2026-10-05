@@ -1,0 +1,73 @@
+# Optional private portal overlay. Start only after provisioning .env.portal.
+# The existing audio services/images/network namespace remain unchanged.
+services:
+  bot:
+    environment:
+      PORTAL_BRIDGE_HOST: 0.0.0.0
+      PORTAL_BRIDGE_PORT: "3010"
+      PORTAL_BRIDGE_TOKEN: ${PORTAL_BRIDGE_TOKEN:-}
+    networks:
+      - vybertron
+      - portal-bridge
+
+  portal:
+    profiles: [portal]
+    build:
+      context: .
+      dockerfile: portal/Dockerfile
+    image: vybertron-portal:${VYBERTRON_RELEASE:-local}
+    container_name: vybertron-portal
+    restart: unless-stopped
+    init: true
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "2"
+    mem_limit: 192m
+    memswap_limit: 256m
+    cpus: "0.50"
+    pids_limit: 64
+    stop_grace_period: 15s
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    environment:
+      NODE_ENV: production
+      NODE_OPTIONS: --max-old-space-size=112
+      PORTAL_HOST: 0.0.0.0
+      PORTAL_PORT: "3001"
+      PORTAL_WEB_DIST: /app/portal/web/dist
+      PORTAL_DATA_DIR: /app/data
+      PORTAL_BOT_URL: http://bot:3010
+      PORTAL_BRIDGE_TOKEN: ${PORTAL_BRIDGE_TOKEN:-}
+      PORTAL_ORIGIN: ${PORTAL_ORIGIN:-}
+      DISCORD_CLIENT_ID: ${CLIENT_ID:-}
+      DISCORD_CLIENT_SECRET: ${DISCORD_CLIENT_SECRET:-}
+      PORTAL_SESSION_SECRET: ${PORTAL_SESSION_SECRET:-}
+    ports:
+      - "127.0.0.1:3001:3001"
+    volumes:
+      - portal-data:/app/data
+    networks:
+      - portal-bridge
+      - portal-egress
+    depends_on:
+      bot:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/health',{signal:AbortSignal.timeout(4000)}).then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+networks:
+  portal-bridge:
+    internal: true
+  portal-egress:
+
+volumes:
+  portal-data:

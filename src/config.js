@@ -22,6 +22,12 @@ export function readConfig(environment = process.env) {
     dataDir: environment.VYBERTRON_DATA_DIR ?? resolve('data'),
     healthPort: integer(environment.VYBERTRON_HEALTH_PORT, 3000),
     shutdownTimeoutMs: integer(environment.VYBERTRON_SHUTDOWN_TIMEOUT_MS, 10_000),
+    portalBridge: {
+      token: environment.PORTAL_BRIDGE_TOKEN || null,
+      host: environment.PORTAL_BRIDGE_HOST || '127.0.0.1',
+      port: integer(environment.PORTAL_BRIDGE_PORT, 3010),
+      operatorIds: (environment.PORTAL_OPERATOR_IDS || '').split(',').map(id => id.trim()).filter(Boolean),
+    },
     lavalink: {
       host: environment.LAVALINK_HOST ?? 'localhost',
       port: integer(environment.LAVALINK_PORT, 2333),
@@ -57,5 +63,11 @@ export function assertConfig(cfg = config) {
   if (cfg.shutdownTimeoutMs !== undefined) boundedInteger(cfg.shutdownTimeoutMs, 'VYBERTRON_SHUTDOWN_TIMEOUT_MS', 1000, 25000);
   if (cfg.dataDir !== undefined && (typeof cfg.dataDir !== 'string' || !isAbsolute(cfg.dataDir) || /[\r\n\u0000]/.test(cfg.dataDir))) {
     throw new Error('Invalid VYBERTRON_DATA_DIR in environment');
+  }
+  if (cfg.portalBridge?.token) {
+    if (!/^[^\s\u0000]{32,512}$/.test(cfg.portalBridge.token)) throw new Error('Invalid PORTAL_BRIDGE_TOKEN in environment');
+    boundedInteger(cfg.portalBridge.port, 'PORTAL_BRIDGE_PORT', 1, 65535);
+    if (!isIP(cfg.portalBridge.host)) throw new Error('Invalid PORTAL_BRIDGE_HOST in environment');
+    if (cfg.portalBridge.operatorIds.some(id => !/^\d{1,22}$/.test(id))) throw new Error('Invalid PORTAL_OPERATOR_IDS in environment');
   }
 }

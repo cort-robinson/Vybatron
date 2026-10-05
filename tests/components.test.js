@@ -326,17 +326,17 @@ test('favorite integration saves for a non-DJ listener after an early component 
   p.queue.current.info.sourceName = 'youtube';
   p.queue.current.info.uri = 'https://www.youtube.com/watch?v=dQw4w9WgXcQ';
   const i = interaction(`player:v2:favorite:${trackIdentity(p.queue.current)}`, p);
-  const guild = { favorites: {} };
+  const favorites = [];
   i.client.library = {
     settings: () => ({ djRoleId: 'dj-role' }),
-    async updateGuild(guildId, mutate) { return mutate(guild); },
+    async updateFavorites(userId, mutate) { return mutate(favorites); },
   };
   i.member.roles = { cache: new Map() };
   i.isMessageComponent = () => true;
   i.isModalSubmit = () => false;
   await guardedMutation(i, handleMessageComponent, { playback: false });
-  assert.equal(guild.favorites['listener-id'].length, 1);
-  assert.equal(guild.favorites['listener-id'][0].uri, 'https://www.youtube.com/watch?v=dQw4w9WgXcQ');
+  assert.equal(favorites.length, 1);
+  assert.equal(favorites[0].uri, 'https://www.youtube.com/watch?v=dQw4w9WgXcQ');
   assert.deepEqual(i.calls.map(([name]) => name), ['deferUpdate', 'followUp']);
   assert.match(i.calls.at(-1)[1].content, /Saved/);
 

@@ -1,4 +1,12 @@
 node_modules
+**/node_modules
+**/dist
+**/.impeccable
+**/test-results
+**/playwright-report
+**/*.tsbuildinfo
+portal/web/tests
+portal/integration
 .env
 .env.*
 .git

@@ -65,6 +65,8 @@ function clearQueueIdleTimer(player) {
 }
 
 export async function handleTrackStart(client, player, track) {
+  // Public references only. A history disk failure must never interrupt audio.
+  void client.library?.recordHistory?.(player, track || player.queue?.current)?.catch(() => console.error('[Library] Could not save playback history.'));
   client.lavalink?.playbackRecovery?.started(player);
   client.lavalink?.playbackWatchdog?.trackStarted(player);
   playbackFailures.delete(player);

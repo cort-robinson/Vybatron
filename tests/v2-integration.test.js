@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
+import { PermissionsBitField, PermissionFlagsBits as P } from 'discord.js';
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -54,6 +55,7 @@ function environment(library, { existing = true, current = null, search } = {}) 
   manager.players = new Map();
   manager.getPlayer = guildId => manager.players.get(guildId);
   const client = { library, lavalink: manager, channels: { cache: new Map() } };
+  for (const id of ['300', '400']) client.channels.cache.set(id, { id, guildId: '100', permissionsFor: () => new PermissionsBitField([P.ViewChannel]) });
   const calls = [];
   function createPlayer(options = {}) {
     const data = new Map();
@@ -111,7 +113,7 @@ function environment(library, { existing = true, current = null, search } = {}) 
 function interaction(client, commandName, { action, query = 'song and artist', name = 'late night' } = {}) {
   const responses = [];
   return {
-    client, commandName, guildId: '100', channelId: '400', deferred: false, replied: false,
+    client, commandName, guildId: '100', guild: { id: '100', channels: client.channels }, channelId: '400', deferred: false, replied: false,
     user: { id: '200', username: 'Listener' },
     member: { voice: { channel: { id: '300', joinable: true, speakable: true } }, roles: { cache: new Map([['500', {}]]) } },
     memberPermissions: { has: () => false }, responses,
@@ -271,8 +273,8 @@ test('SDK loader prefixes never reach search through slash commands or autocompl
 
 test('invalid durable reference and session fields fail startup without overwriting the persisted file', async t => {
   const { library, filePath } = await libraryFixture(t);
+  await library.updateFavorites('200', list => { list.push(trackReference(track())); });
   await library.updateGuild('100', guild => {
-    guild.favorites['200'] = [trackReference(track())];
     guild.mixes['late night'] = { ownerId: '200', tracks: [trackReference(track())], savedAt: Date.now() };
     guild.session = savedCheckpoint();
   });
@@ -290,7 +292,7 @@ test('invalid durable reference and session fields fail startup without overwrit
     for (const [label, mutate] of referenceChanges) await t.test(`${collection}: ${label}`, async () => {
       const invalid = structuredClone(clean);
       const guild = invalid.guilds['100'];
-      const ref = collection === 'favorites' ? guild.favorites['200'][0]
+      const ref = collection === 'favorites' ? invalid.favorites['200'][0]
         : collection === 'mixes' ? guild.mixes['late night'].tracks[0] : guild.session.tracks[0];
       mutate(ref);
       const serialized = JSON.stringify(invalid);

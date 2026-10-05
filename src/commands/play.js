@@ -48,6 +48,7 @@ export async function execute(interaction) {
     const previousQueueSize = player.queue.tracks.length;
     const firstPosition = previousQueueSize + 1;
     const fairQueue = interaction.client.library?.settings(interaction.guildId).fairQueue;
+    interaction.portalMutationStarted?.();
     let acknowledgement;
 
     if (result.loadType === 'playlist') {

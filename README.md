@@ -7,6 +7,7 @@ A shared soundtrack for Discord, with a player that stays out of the way and an 
 - **Stream recovery:** fresh track resolution, bounded retries, stale-event protection, source circuit breakers, and a watchdog that checks real server-reported progress.
 - **Voice recovery:** complete gateway handshakes in either event order, resumable audio sessions, and fresh Discord voice credentials when a session cannot resume.
 - **Your music:** personal favorites, shared server mixes, recent history and replay, and explicit session restore after a restart.
+- **Web portal:** Discord sign-in, a live shared queue, an expanding artwork player, private favorites and server management on desktop or phone. Audio continues in Discord.
 - **Listen together:** optional fair queue, majority vote skip, a DJ role, and server volume defaults.
 - **Make it sound right:** Original, Bass, Warm, Clarity, Nightcore, Slow, and Mono presets. Each preset replaces previous effects.
 - **Keep discovering:** opt-in artist radio adds related recordings only after the human-requested queue runs out.
@@ -33,19 +34,19 @@ Start with `/help`. Join a voice channel and use `/play` with a song and artist,
 | Command | Purpose |
 | --- | --- |
 | `/play`, `/playnext` | Add music or request the next track |
-| `/queue`, `/remove`, `/move` | Browse and edit upcoming tracks |
+| `/queue`, `/remove`, `/move`, `/clear` | Browse and edit upcoming tracks; Clear keeps the current song playing |
 | `/skip`, `/skipto`, `/voteskip` | Skip, jump, or vote with a strict majority of current human listeners |
 | `/pause`, `/resume`, `/seek`, `/stop` | Transport controls; Stop clears and disconnects |
 | `/volume`, `/loop`, `/shuffle`, `/nowplaying` | Volume, repetition, queue order, and player details |
 | `/filter` | Inspect or select an audio preset |
-| `/favorite add/list/play/remove/clear` | Personal favorites within this server; Clear requires confirmation |
+| `/favorite add/list/play/remove/clear` | Global private favorites across supported servers; Clear requires confirmation |
 | `/mix save/list/load/delete` | Save up to 100 tracks in a shared mix; owner or server manager can change it |
 | `/history`, `/replay` | Browse recent tracks and queue one to replay next |
 | `/radio on/off` | Enable or disable artist discovery for the current session |
 | `/session show/resume/discard` | Preview or explicitly restore a checkpoint kept for 72 hours |
-| `/settings show/volume/fairqueue/djrole/reset` | Server defaults; requires Manage Server |
+| `/settings show/volume/fairqueue/djrole/musicchannel/reset` | Server defaults and portal controller channel; requires server owner or Manage Server |
 
-Controls require the bot's voice channel and honor a configured DJ role. Listeners can still add music, save personal favorites, and vote to skip. Voice access is checked again when a long import finishes. Favorites hold 100 tracks per listener per server, shared mixes hold 100 tracks each with 25 mixes per server, and the upcoming queue holds 500 tracks.
+Controls require the bot's voice channel and honor a configured DJ role. Listeners can still add music, save personal favorites, and vote to skip. Voice access is checked again when a long import finishes. Favorites hold 1,000 tracks per account, shared mixes hold 100 tracks each with 25 mixes per server, and the upcoming queue holds 500 tracks. Migrated favorite overflow is retained and returns to the active shelf as space opens. Played history retains the latest 100 tracks per server for up to 30 days, with original channel visibility enforced.
 
 The bot disconnects after five minutes with an empty queue or an empty voice channel. It never automatically rejoins a saved voice session at startup; `/session resume` requires joining the saved channel. An intentional Stop discards that session checkpoint. Favorites and mixes survive Stop and container rebuilds.
 
@@ -88,6 +89,31 @@ For native development, publish the audio port on the **warp** service in a loca
 Compose mounts `bot-data` at `/app/data`. The library contains public catalog references and server/user IDs needed for ownership; it never saves audio, encoded tracks, cookies, or bot/provider tokens. Sources are freshly resolved when loading saved music. Failed writes leave the previous library intact, and invalid persisted data stops startup instead of silently replacing it.
 
 Back up `bot-data` before moving the VPS. Normal rebuilds preserve it; deleting the volume removes favorites, mixes, settings, and checkpoints. Native mode uses `data/library.json`; set an absolute `VYBERTRON_DATA_DIR` to change it.
+
+## Web portal
+
+The optional portal uses the existing player and music store. Server members can
+browse permitted sessions and use their allowed music controls. Server owners,
+Manage Server members and the verified bot maintainer can manage configuration;
+playback still follows voice and DJ rules. Sign-in lasts seven days per device.
+
+The queue view has one persistent player that expands into an artwork view.
+Artwork colors and subtle aurora motion set the atmosphere; motion can be reduced
+or disabled. The installable PWA supports desktop and phone, retains typed search
+input when disconnected, and waits for fresh state before enabling controls.
+
+Read the [portal operations runbook](docs/portal-operations.md) for private
+provisioning, free HTTPS hosting, exact-source deployment and rollback. The
+portal bridge stays inside Docker; only the bounded auth/API service is exposed.
+Never put the OAuth secret or internal bridge token in the web build. Library
+migration creates an exact private v1 backup before replacing the data file.
+
+For local development, install dependencies in the root, `portal/server` and
+`portal/web`. Provision private environment values from `.env.portal.example`,
+run the API with `node portal/server/src/index.js`, and use `npm run portal:dev`.
+The development proxy origin must match `PORTAL_ORIGIN`. Verify with
+`npm run portal:build`, `npm run portal:test`, `npm --prefix portal/web test` and
+`npm run portal:integration` (Playwright Chromium required).
 
 ## Recovery and releases
 

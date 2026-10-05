@@ -1,5 +1,6 @@
 import { MessageFlags, SlashCommandBuilder } from 'discord.js';
 import { buildHistoryPayload } from '../utils/history.js';
+import { requireSessionVisibility } from '../utils/guards.js';
 
 export const data = new SlashCommandBuilder()
   .setName('history')
@@ -7,5 +8,6 @@ export const data = new SlashCommandBuilder()
 
 export async function execute(interaction) {
   const player = interaction.client.lavalink?.getPlayer(interaction.guildId);
+  if (!await requireSessionVisibility(interaction, player)) return;
   return interaction.reply({ ...buildHistoryPayload(player, 0, interaction.user.id), flags: MessageFlags.Ephemeral });
 }

@@ -211,12 +211,20 @@ export function usePortal() {
     };
     completeCommandRef.current = async (next, version, loss) => {
       if (!valid()) return;
-      const unambiguous = fresh.current && Date.now() - verifiedAt.current < freshnessMs && version === stateVersion.current && loss === lossVersion.current;
+      const stillFresh = fresh.current && Date.now() - verifiedAt.current < freshnessMs && loss === lossVersion.current;
+      const unambiguous = stillFresh && version === stateVersion.current;
+      const alreadyVerified = stillFresh && !offline && JSON.stringify(next) === JSON.stringify(current.current);
       closeStream(); invalidateRead();
       // A pre-mutation SSE frame must not hide a pause result. Conversely, a
       // delayed command reply must not replace a later Discord/Stop update.
       // Revisions are hashes, so overlap requires a read begun after the reply.
-      if (unambiguous && !offline) {
+      if (alreadyVerified) {
+        // A newer authorized frame already supplies exactly this result, including
+        // actor capabilities. Keep its freshness/position timestamps; an older
+        // equal reply must not extend the authorization lease. Hash equality
+        // alone would miss permission, listener and position changes.
+        openStream();
+      } else if (unambiguous && !offline) {
         try { accept(next); openStream(); } catch (error) { failure(error); }
       } else await refresh();
     };

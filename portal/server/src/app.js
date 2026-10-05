@@ -119,9 +119,9 @@ export async function createPortalServer(config, testOptions = {}) {
 
   async function events(req, res, guildId, token, session, signal) {
     if (streams.size >= limits.streams || [...streams].filter(stream => stream.sessionKey === session.key).length >= limits.streamsPerSession) throw busy();
-    const record = { sessionKey: session.key, close: null }; streams.add(record);
+    const record = { sessionKey: session.key, guildId, close: null, wake: null }; streams.add(record);
     let pollTimer; let heartbeatTimer; let drainTimer; let drainWait; let ended = false; let writing = false; let unblock;
-    const began = now(); let failures = 0;
+    const began = now(); let failures = 0; let reading = true; let pendingWake = false;
     const pollController = new AbortController();
     const pollSignal = AbortSignal.any([signal, pollController.signal]);
     const close = () => {
@@ -167,7 +167,16 @@ export async function createPortalServer(config, testOptions = {}) {
     const schedule = () => {
       if (ended) return;
       const wait = Math.min(limits.pollRetryMaxMs, limits.pollMs * 2 ** Math.min(failures, 10));
-      pollTimer = setTimeout(tick, Math.max(limits.pollMs, wait)); pollTimer.unref();
+      clearTimeout(pollTimer);
+      pollTimer = setTimeout(tick, pendingWake && !failures ? 0 : Math.max(limits.pollMs, wait)); pollTimer.unref();
+    };
+    record.wake = () => {
+      if (ended || pendingWake) return;
+      // One bounded notification per stream. A read consumes it only when it
+      // starts, so commands completed during that read require another read.
+      pendingWake = true;
+      if (!reading && !failures) schedule();
+      // A retry timer is never reset/shortened by commands during backoff.
     };
     const readFailure = async error => {
       if (!active()) return;
@@ -176,7 +185,7 @@ export async function createPortalServer(config, testOptions = {}) {
       // or resent: every recovery attempt performs fresh trusted policy checks.
       if (isRetryableReadError(error)) {
         failures++;
-        if (await write(errorFrame(error))) schedule();
+        await write(errorFrame(error));
       } else await fail(error);
     };
     const heartbeat = async () => {
@@ -189,6 +198,8 @@ export async function createPortalServer(config, testOptions = {}) {
       } catch (error) { await fail(error); }
     };
     const tick = async () => {
+      if (reading || ended) return;
+      reading = true; pendingWake = false;
       try {
         if (!active()) return;
         // The bridge performs fresh Discord policy evaluation on every poll,
@@ -198,8 +209,9 @@ export async function createPortalServer(config, testOptions = {}) {
         catch (error) { await readFailure(error); return; }
         if (!active()) return;
         if (!(await write(snapshotFrame(snapshot, guildId, limits), true))) return;
-        failures = 0; schedule();
+        failures = 0;
       } catch (error) { await fail(error); }
+      finally { reading = false; schedule(); }
     };
     try {
       let initial; let initialError;
@@ -213,14 +225,14 @@ export async function createPortalServer(config, testOptions = {}) {
       res.writeHead(200, { 'Content-Type': 'text/event-stream; charset=utf-8', 'X-Accel-Buffering': 'no', Connection: 'keep-alive' });
       req.socket.setTimeout(0);
       if (await write(`retry: 5000\n\n: connected\n\n${frame}`, !initialError)) {
-        failures = initialError ? 1 : 0; schedule();
+        failures = initialError ? 1 : 0;
         heartbeatTimer = setTimeout(heartbeat, limits.heartbeatMs); heartbeatTimer.unref();
       }
     } catch (error) {
       clearTimeout(pollTimer); clearTimeout(heartbeatTimer); clearTimeout(drainTimer); streams.delete(record); ended = true;
       pollController.abort();
       res.off('close', close); throw error;
-    }
+    } finally { reading = false; schedule(); }
   }
 
   const server = http.createServer({ maxHeaderSize: limits.headerBytes }, async (req, res) => {
@@ -279,6 +291,10 @@ export async function createPortalServer(config, testOptions = {}) {
         if (!store.get(token)) throw unauthorized();
         if (result.ok !== true || typeof result.message !== 'string' || result.message.length > 2000) throw unavailable();
         snapshotFrame(result.snapshot, guildId, limits);
+        transport.fenceSharedReads(`/v1/guilds/${guildId}`);
+        // Wake only existing same-guild streams; each uses its own trusted actor
+        // and fresh bridge read. Never distribute the command actor's snapshot.
+        for (const stream of streams) if (stream.guildId === guildId) stream.wake();
         json(res, 200, { ok: true, message: result.message, snapshot: result.snapshot }); return;
       }
       admitOrdinary();

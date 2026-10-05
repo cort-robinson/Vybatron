@@ -4,6 +4,44 @@ import { startHttpFixture } from './http-fixture';
 type Fixture = Awaited<ReturnType<typeof startHttpFixture>>;
 const snapshotPath = '/api/guilds/testing';
 
+test('an exact command result already verified by SSE avoids another snapshot GET', async ({ page }) => {
+  const server = await startHttpFixture();
+  try {
+    await connected(page, server);
+    const reads = server.snapshotReads.length;
+    server.holdCommandReplies();
+    await page.getByRole('button', { name: 'Pause playback' }).click();
+    await expect.poll(() => server.heldCommands.size).toBe(1);
+    server.broadcast();
+    await expect(page.getByRole('button', { name: 'Resume playback' })).toBeDisabled();
+    server.releaseCommandReplies();
+    await expect(page.getByRole('button', { name: 'Resume playback' })).toBeEnabled();
+    expect(server.snapshotReads).toHaveLength(reads);
+    expect(server.commands).toHaveLength(1);
+    await expect.poll(() => server.streams.size).toBe(1);
+  } finally { await page.close(); await server.close(); }
+});
+
+test('same revision with changed permissions cannot use the exact-result shortcut', async ({ page }) => {
+  const server = await startHttpFixture();
+  try {
+    await connected(page, server);
+    const reads = server.snapshotReads.length;
+    server.holdCommandReplies();
+    await page.getByRole('button', { name: 'Pause playback' }).click();
+    await expect.poll(() => server.heldCommands.size).toBe(1);
+    server.state.snapshot.session.canControl = false;
+    server.state.snapshot.session.reason = 'Playback controls require the DJ role.';
+    server.broadcast();
+    await expect(page.getByRole('button', { name: 'Resume playback' })).toBeDisabled();
+    server.releaseCommandReplies();
+    await expect.poll(() => server.snapshotReads.length).toBe(reads + 1);
+    await expect.poll(() => server.streams.size).toBe(1);
+    await expect(page.getByRole('button', { name: 'Resume playback' })).toBeDisabled();
+    expect(server.commands).toHaveLength(1);
+  } finally { await page.close(); await server.close(); }
+});
+
 async function connected(page: Page, server: Fixture) {
   await page.goto(server.origin);
   await expect(page.getByRole('button', { name: 'Pause playback' })).toBeEnabled();

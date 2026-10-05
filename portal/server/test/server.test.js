@@ -91,7 +91,9 @@ async function fixture(t, { limits = {}, now, dataDir, production = false, botOr
     if (!state.authorized || state.status) { reply(res, state.status || 403, { error: { code: 'private_failure', message: 'SECRET upstream stack / sensitive path' } }); return; }
     assert.equal(req.headers.authorization, `Bearer ${secret}`);
     if (url.pathname === '/health') reply(res, 200, { ready: true });
-    else if (url.pathname === '/v1/bootstrap') reply(res, 200, bootstrap());
+    else if (url.pathname === '/v1/bootstrap') {
+      const data = bootstrap(); data.viewer.id = url.searchParams.get('actorId'); reply(res, 200, data);
+    }
     else if (url.pathname.endsWith('/commands')) reply(res, 200, { ok: true, message: 'Updated.', snapshot: state.snapshot });
     else if (url.pathname.endsWith('/configuration')) reply(res, 200, { guildId, channels: [{ id: '456789012345678901', name: 'Music', type: 'text' }], roles: [] });
     else if (url.pathname.endsWith('/library')) reply(res, 200, { favorites: [], mixes: [], history: [] });
@@ -134,9 +136,9 @@ async function fixture(t, { limits = {}, now, dataDir, production = false, botOr
   return { state, config, begin, login, restart, request: (...args) => request(base, ...args), get base() { return base; }, get app() { return app; } };
 }
 
-async function stream(base, sessionCookie, extra = {}) {
+async function stream(base, sessionCookie, extra = {}, streamGuildId = guildId) {
   return await new Promise((resolve, reject) => {
-    const req = http.get(`${base}/api/guilds/${guildId}/events`, { headers: { Cookie: sessionCookie, ...extra }, agent: false }, res => {
+    const req = http.get(`${base}/api/guilds/${streamGuildId}/events`, { headers: { Cookie: sessionCookie, ...extra }, agent: false }, res => {
       const handle = { req, res, text: '', ended: false, close: () => { res.destroy(); req.destroy(); } };
       res.setEncoding('utf8'); res.on('data', data => { handle.text += data; });
       res.on('end', () => { handle.ended = true; }); res.on('close', () => { handle.ended = true; });
@@ -159,6 +161,163 @@ function partialCommand(f, device, body = { command: 'stop' }) {
   });
   return { req, completed, finish: () => req.end(payload.slice(1)) };
 }
+
+const sendCommand = (f, device, command = { command: 'pause' }) => f.request(`/api/guilds/${guildId}/commands`, {
+  method: 'POST', headers: { Cookie: device.cookie, Origin: origin, 'X-CSRF-Token': device.csrf,
+    'Content-Type': 'application/json' }, body: JSON.stringify(command),
+});
+const streamSnapshots = live => [...live.text.matchAll(/event:snapshot\ndata:(.*)\n\n/g)].map(match => JSON.parse(match[1]));
+
+test('Command wake updates a second device promptly with fresh per-actor reads and isolates other guilds', { timeout: 5000 }, async t => {
+  const f = await fixture(t, { limits: { pollMs: 10_000 } }); const acting = await f.login();
+  const otherActor = '456789012345678901'; const otherGuild = '567890123456789012';
+  f.state.identity = otherActor; const viewing = await f.login();
+  let revision = 'before-command';
+  f.state.bridgeResponse = (res, call) => {
+    const data = snapshot(); data.guild.id = call.path.split('/')[3]; data.revision = revision;
+    const actor = call.body?.actorId || call.params.get('actorId');
+    data.guild.admin = actor === actorId; data.session.canControl = actor === actorId;
+    data.settings = actor === actorId ? data.settings : null;
+    if (call.body) { revision = 'after-command'; data.revision = 'command-actor-only'; reply(res, 200, { ok: true, message: 'Updated.', snapshot: data }); }
+    else reply(res, 200, data);
+  };
+  const a = await stream(f.base, acting.cookie); const b = await stream(f.base, viewing.cookie);
+  const unrelated = await stream(f.base, viewing.cookie, {}, otherGuild);
+  for (const live of [a, b, unrelated]) t.after(live.close);
+  await until(() => [a, b, unrelated].every(live => streamSnapshots(live).length === 1));
+  const before = f.state.calls.length; const began = Date.now();
+  assert.equal((await sendCommand(f, acting)).status, 200);
+  await until(() => [a, b].every(live => streamSnapshots(live).at(-1).revision === 'after-command'), 1000);
+  assert.ok(Date.now() - began < 1000, 'Update must not wait for the 10-second poll timer');
+  const reads = f.state.calls.slice(before).filter(call => !call.body);
+  assert.deepEqual(reads.map(call => call.params.get('actorId')).sort(), [actorId, otherActor].sort());
+  assert.ok(reads.every(call => call.path === `/v1/guilds/${guildId}`));
+  assert.equal(streamSnapshots(b).at(-1).guild.admin, false);
+  assert.equal(streamSnapshots(b).at(-1).session.canControl, false);
+  assert.equal(streamSnapshots(b).at(-1).settings, null);
+  assert.ok([a, b].every(live => !live.text.includes('command-actor-only')));
+  await delay(100); assert.equal(streamSnapshots(unrelated).length, 1);
+  assert.equal(f.state.calls.slice(before).filter(call => call.body).length, 1);
+});
+
+test('Command wakes coalesce during an in-flight stale read and serialize a required fresh follow-up', { timeout: 5000 }, async t => {
+  const f = await fixture(t, { limits: { pollMs: 10_000 } }); const device = await f.login();
+  const live = await stream(f.base, device.cookie); t.after(live.close);
+  await until(() => streamSnapshots(live).length === 1);
+  let release; const held = new Promise(resolve => { release = resolve; }); t.after(release);
+  let revision = 0; let reads = 0; let activeReads = 0; let maxReads = 0;
+  f.state.beforeReply = async call => {
+    if (call.body) { revision++; return; }
+    call.revision = revision; reads++; activeReads++; maxReads = Math.max(maxReads, activeReads);
+    if (reads === 1) await held;
+    activeReads--;
+  };
+  f.state.bridgeResponse = (res, call) => {
+    const data = snapshot(); data.revision = `read-${call.revision ?? revision}`;
+    reply(res, 200, call.body ? { ok: true, message: 'Updated.', snapshot: data } : data);
+  };
+  assert.equal((await sendCommand(f, device)).status, 200);
+  await until(() => reads === 1);
+  const results = await Promise.all(Array.from({ length: 5 }, () => sendCommand(f, device)));
+  assert.ok(results.every(result => result.status === 200));
+  await delay(100); assert.equal(reads, 1, 'Commands must not start parallel reads');
+  assert.equal(streamSnapshots(live).length, 1, 'Command responses must not be used as SSE snapshots');
+  release(); await until(() => live.text.includes('read-6'));
+  assert.deepEqual(streamSnapshots(live).slice(1).map(data => data.revision), ['read-1', 'read-6']);
+  await delay(100); assert.equal(reads, 2, 'Five in-flight notifications need only one follow-up');
+  assert.equal(maxReads, 1); assert.equal(revision, 6, 'Each authorized command executes once');
+});
+
+test('Commands during initial SSE authorization preserve the wake and fence older shared reads', { timeout: 5000 }, async t => {
+  const f = await fixture(t, { limits: { pollMs: 10_000 } });
+  const first = await f.login(); const second = await f.login();
+  let release; const held = new Promise(resolve => { release = resolve; }); t.after(release);
+  let reads = 0; let changed = false;
+  f.state.beforeReply = async call => {
+    if (call.body) { changed = true; return; }
+    call.revision = changed ? 'fresh-after-command' : 'stale-before-command'; reads++;
+    if (reads === 1) await held;
+  };
+  f.state.bridgeResponse = (res, call) => {
+    const data = snapshot(); data.revision = call.revision || 'command-only';
+    reply(res, 200, call.body ? { ok: true, message: 'Updated.', snapshot: data } : data);
+  };
+  const opening = stream(f.base, first.cookie); opening.catch(() => {});
+  await until(() => reads === 1);
+  assert.equal((await sendCommand(f, second)).status, 200);
+  // A new same-actor stream must not join the still-pending pre-command read.
+  const b = await stream(f.base, second.cookie); t.after(b.close);
+  await until(() => b.text.includes('fresh-after-command'));
+  assert.equal(reads, 2); assert.equal(b.text.includes('stale-before-command'), false);
+  release(); const a = await opening; t.after(a.close);
+  await until(() => a.text.includes('fresh-after-command'));
+  assert.deepEqual(streamSnapshots(a).map(data => data.revision), ['stale-before-command', 'fresh-after-command']);
+  assert.equal(reads, 3);
+});
+
+test('Command-triggered reads preserve transient backoff, heartbeats and terminal permission loss without replay', { timeout: 5000 }, async t => {
+  const f = await fixture(t, { limits: { pollMs: 200, pollRetryMaxMs: 800, heartbeatMs: 25 } });
+  const device = await f.login(); const live = await stream(f.base, device.cookie); t.after(live.close);
+  await until(() => streamSnapshots(live).length === 1);
+  let readStatus = 503; let reads = 0;
+  f.state.bridgeResponse = (res, call) => {
+    if (call.body) reply(res, 200, { ok: true, message: 'Updated.', snapshot: snapshot() });
+    else { reads++; reply(res, readStatus, { error: { code: 'private_failure', message: 'SECRET' } }); }
+  };
+  assert.equal((await sendCommand(f, device)).status, 200);
+  await until(() => live.text.includes('"status":503'));
+  const before = live.text.length;
+  for (let i = 0; i < 5; i++) assert.equal((await sendCommand(f, device)).status, 200);
+  await delay(160);
+  assert.equal(reads, 1, 'Successful commands must not bypass the 400ms retry delay');
+  assert.ok((live.text.slice(before).match(/heartbeat/g) || []).length >= 3);
+  assert.equal(streamSnapshots(live).length, 1, 'Neither cached state nor acting snapshots may be replayed');
+  readStatus = 403;
+  await until(() => live.ended);
+  assert.equal(reads, 2); assert.match(live.text, /"status":403/);
+  assert.equal(live.text.includes('SECRET'), false);
+  assert.equal(f.app.resourceCounts().streams, 0);
+  const calls = f.state.calls.length; await delay(250); assert.equal(f.state.calls.length, calls);
+  assert.equal(f.state.calls.filter(call => call.body).length, 6, 'No command may replay during recovery');
+});
+
+test('Failed, invalid and uncertain command results never wake SSE or replay writes', { timeout: 5000 }, async t => {
+  const f = await fixture(t, { limits: { pollMs: 10_000, commandMs: 100 } }); const device = await f.login();
+  const live = await stream(f.base, device.cookie); t.after(live.close);
+  await until(() => streamSnapshots(live).length === 1);
+  const before = f.state.calls.length;
+  for (const [status, data] of [
+    [409, { error: { code: 'private_failure' } }],
+    [200, { ok: false, message: 'Rejected.', snapshot: snapshot() }],
+    [200, { ok: true, message: 'Invalid snapshot.', snapshot: { ...snapshot(), guild: { id: 'other' } } }],
+  ]) {
+    f.state.bridgeResponse = res => reply(res, status, data);
+    assert.equal((await sendCommand(f, device)).status, status === 409 ? 409 : 503);
+  }
+  f.state.beforeReply = async () => { await delay(200); };
+  assert.equal((await sendCommand(f, device)).status, 503);
+  await delay(250);
+  assert.equal(f.state.calls.length - before, 4, 'Only four explicit writes may reach the bridge');
+  assert.ok(f.state.calls.slice(before).every(call => call.body));
+  assert.equal(streamSnapshots(live).length, 1);
+});
+
+test('Session revocation cancels a command-triggered read before it returns protected state', { timeout: 5000 }, async t => {
+  const f = await fixture(t, { limits: { pollMs: 10_000 } }); const acting = await f.login(); const viewing = await f.login();
+  const live = await stream(f.base, viewing.cookie); t.after(live.close);
+  await until(() => streamSnapshots(live).length === 1);
+  let release; const held = new Promise(resolve => { release = resolve; }); t.after(release);
+  let reading = false;
+  f.state.beforeReply = async call => { if (!call.body) { reading = true; await held; } };
+  assert.equal((await sendCommand(f, acting)).status, 200);
+  await until(() => reading);
+  assert.equal((await f.request('/auth/logout', { method: 'POST', headers: {
+    Cookie: viewing.cookie, Origin: origin, 'X-CSRF-Token': viewing.csrf } })).status, 200);
+  await until(() => live.ended && f.app.resourceCounts().upstream === 0);
+  f.state.snapshot.revision = 'protected-after-logout'; release(); await delay(100);
+  assert.equal(streamSnapshots(live).length, 1); assert.equal(live.text.includes('protected-after-logout'), false);
+  assert.equal(f.app.resourceCounts().streams, 0);
+});
 
 test('OAuth uses exact callback, state-bound browser cookie, minimal scope, and secure seven-day sessions', { timeout: 5000 }, async t => {
   const f = await fixture(t); const device = await f.login();

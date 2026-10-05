@@ -110,6 +110,17 @@ export class Transport {
     });
   }
 
+  fenceSharedReads(endpoint) {
+    const target = new URL(endpoint, this.config.botUrl);
+    // Existing subscribers finish normally, but a post-command verification
+    // must not join authorization/state captured before that command completed.
+    // This retains no snapshot or permission result and does not cancel readers.
+    for (const key of this.sharedReads.keys()) {
+      const url = new URL(key);
+      if (url.origin === target.origin && url.pathname === target.pathname) this.sharedReads.delete(key);
+    }
+  }
+
   async bridge(endpoint, actorId, { query = {}, command, signal, shareRead = false } = {}) {
     const url = new URL(endpoint, this.config.botUrl);
     if (actorId && !command) url.searchParams.set('actorId', actorId);

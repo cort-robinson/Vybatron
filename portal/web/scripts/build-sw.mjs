@@ -1,14 +1,18 @@
 import { createHash } from 'node:crypto';
 import { readdir, readFile, writeFile } from 'node:fs/promises';
-import { join, relative } from 'node:path';
+import { extname, join, relative } from 'node:path';
 
 const root = new URL('../dist/', import.meta.url);
 const files = [];
+// Match the real portal static server's supported extensions. Public provenance
+// and other metadata are copied by Vite, but a 404 would abort the entire install.
+const staticExtensions = new Set(['.html', '.js', '.css', '.json', '.webmanifest',
+  '.svg', '.png', '.jpg', '.jpeg', '.webp', '.avif', '.ico', '.woff', '.woff2']);
 async function collect(directory) {
   for (const entry of await readdir(directory, { withFileTypes: true })) {
     const path = join(directory, entry.name);
     if (entry.isDirectory()) await collect(path);
-    else if (entry.name !== 'sw.js') files.push(path);
+    else if (entry.name !== 'sw.js' && staticExtensions.has(extname(path).toLowerCase())) files.push(path);
   }
 }
 const { fileURLToPath } = await import('node:url');

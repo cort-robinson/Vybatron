@@ -10,6 +10,7 @@ export default defineConfig(({ mode }) => {
       host: '127.0.0.1',
       proxy: { '/api': { target }, '/auth': { target }, '/health': { target } },
     },
-    build: { sourcemap: false, target: 'es2022' },
+    // The portal CSP permits self-hosted fonts only, including small subsets.
+    build: { sourcemap: false, target: 'es2022', assetsInlineLimit: 0 },
   };
 });

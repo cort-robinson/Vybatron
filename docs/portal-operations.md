@@ -146,4 +146,23 @@ layout and accessibility checks pass locally. Selected-item tokens bind favorite
 play/removal, history Replay and mix deletion to the displayed item; a conflict
 requires fresh library state and deliberate retry. Live deployment and physical
 listening remain acceptance gates.
+The first CI-passing pilot (`d1240e935a55c82c1f1d8eb4296ece2a2d7597e5`)
+was deployed while idle. Real HTTPS, public rendering, private-route denial,
+exact OAuth redirect/cookie flags, verified maintainer identity and all 26 command
+schemas passed. Public production-browser verification found a PWA installation
+and font-policy gap, so the pilot was rolled back before listening acceptance.
+Live rollback restored the original music file hash and 25-command catalog,
+selected the exact previous bot image, retained newer data privately, and kept
+the original audio container identities and writable music volume. The previous
+bot is ready. Both installed-source canaries also decoded through `FINISHED`
+after rollback: 946 and 10,866 Opus frames, with expected complete durations.
+This isolated probe opened no Discord voice session. A corrected PWA candidate
+must pass CI and live installation before reopening the pilot.
+The correction now passes the compiled production-client integration through
+the real static/API server: all 17 shell URLs and six self-hosted font subsets
+load under the existing CSP, desktop/phone workers control the page, and the
+shell reloads offline without caching authenticated reads or replaying writes.
+Both browser integrations and the 34 functional/protocol checks pass locally;
+public HTTPS and physical-phone installation remain separate checks.
+
 This document is a runbook, not a claim that the portal has passed live acceptance.

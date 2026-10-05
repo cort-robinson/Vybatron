@@ -192,3 +192,68 @@ Changed verification: `web/tests/fixtures.ts`, `http-fixture.ts`, `portal.spec.t
 `protocol.spec.ts`, and new `selection.spec.ts`. Documentation: `web/README.md`
 and this QA record. No other agent-owned source was edited, and no commit or live
 write was made.
+
+## Production PWA and font correction (2026-10-04)
+
+The reported public-browser failures matched the built source: Vite inlined the
+2,552-byte Manrope Cyrillic-extension subset as a `data:font/woff2` URL, blocked
+by the portal's `font-src 'self'` CSP. The generated worker also precached
+`/icons/PROVENANCE.md`, although the actual portal static handler rejects Markdown
+with 404. That response aborts the worker's atomic `cache.addAll` installation;
+extending the controller timeout would not fix it.
+
+`web/vite.config.ts` now disables asset inlining, preserving the same fonts while
+serving every subset from the portal origin. `web/scripts/build-sw.mjs` includes
+only the real static handler's supported extensions. Provenance remains in the
+source/public directory but does not enter the precache. The CSP, component code,
+styles, tokens, artwork, capabilities, and update/no-replay behavior are unchanged.
+
+New `integration/pwa-browser.test.js` serves the compiled production web through
+the actual `createPortalServer` static/OAuth/API handlers on a secure-context HTTP
+loopback origin, using the existing nonproduction server configuration. Only
+external Discord/Lavalink boundaries are faked; there is no Vite/static mock,
+fixture authentication, production bundle fixture, or new runtime flag. The test
+uses bundled Chromium under `CI` and installed Chrome locally, with bounded
+timeouts and browser/server/bridge/storage cleanup.
+
+Fresh desktop and phone contexts prove application-driven registration,
+activation, scope, and control by the generated worker. Every one of the 17
+precache URLs returns 200 through the real static handler, and the resulting
+cache contains exactly those shell URLs. All six Manrope subsets load under the
+unchanged CSP, including explicit extended-Cyrillic/Latin/Greek/Vietnamese samples.
+Online rendering has no unexpected console/request errors (the signed-out API
+401 and Chrome's verified bodyless-HEAD cancellation are expected), no page
+errors, no CSP violations, and zero horizontal overflow. The standalone manifest
+has valid same-origin PNGs with the declared 192/512 and maskable dimensions.
+
+The controlled production page also completes actual OAuth, writes a favorite
+through the authoritative bot adapter, and reads the resulting nonempty private
+library. API/auth responses, including OAuth redirects, are `no-store`; these
+reads, the command POST, and logout never alter the shell cache. HEAD of cached
+HTML still reaches the server. Logout denies bootstrap and library access while
+the fake Discord player continues. Both viewports reload the cached HTML/JS/CSS/
+font shell offline; API, favorites, auth, health, HEAD, and POST probes require
+the network, and restoring connectivity does not replay the offline write.
+
+Verification completed:
+
+- `npm --prefix portal/web run build`: passed; static shell
+  `vybertron-shell-6ee85f27a58d83dc`, 17 files, all six self-hosted WOFF2 subsets.
+- Installed-Chrome functional/protocol/selection suite: 34/34 passed (1.7 minutes).
+- Root `npm run portal:integration`: 2/2 passed, including the existing actual
+  OAuth/Vite-proxy test and the new production PWA/static/CSP/privacy integration.
+- `git diff --check`: passed.
+
+The actual built sign-in page was inspected at 1488 x 1056 and 393 x 852.
+Captures are `web/.impeccable/review/production-pwa-desktop.png` and
+`production-pwa-phone.png`, outside production assets. No new design direction
+or broad visual rescoring was performed. The previously closed four-viewport/axe
+review remains the visual record.
+
+Changed files this round: `web/vite.config.ts`, `web/scripts/build-sw.mjs`, new
+`integration/pwa-browser.test.js`, and this QA record. No server/bot/ops/CI/contract
+source was edited, and no commit, live write, or credential lookup was made.
+This is local production-bundle evidence; root still owns exact-head CI/image
+publication/deployment, the subsequent public HTTPS browser check, rollback, live
+OAuth/listening acceptance, and physical-phone installation. The unavailable
+Android SDK and previously unsupported T3 preview were not retried.

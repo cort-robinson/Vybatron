@@ -1,5 +1,6 @@
 // Compiled production web -> real portal static/OAuth/API server -> bot adapter.
-// Only external Discord/Lavalink boundaries are faked; no Vite or static mocks.
+// Only external Discord/Lavalink and synthetic artwork boundaries are faked;
+// no Vite, application API, or static mocks.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
@@ -36,6 +37,13 @@ test('production PWA installs under real CSP, serves an offline shell, and never
   const bot = await portalFixture(t);
   // These synthetic Discord users have no avatar, so verification needs no CDN.
   for (const user of bot.users.values()) user.displayAvatarURL = () => null;
+  // The real bot projection derives YouTube artwork from these fake track IDs.
+  // Fulfill only their exact HTTPS image URLs, preserving public track identity
+  // and allowing every other resource error to reach the existing assertions.
+  const artworkUrls = new Set(['abcdefghijk', 'lmnopqrstuv', '01234567890']
+    .map(id => `https://i.ytimg.com/vi/${id}/hqdefault.jpg`));
+  const artworkPng = await sharp({ create: { width: 1, height: 1, channels: 4,
+    background: { r: 0, g: 200, b: 255, alpha: 1 } } }).png().toBuffer();
   const origin = `http://127.0.0.1:${await freePort()}`;
   let app; let browser;
   const discord = http.createServer(async (req, res) => {
@@ -93,11 +101,27 @@ test('production PWA installs under real CSP, serves an offline shell, and never
   const expectedPaths = [...files].sort();
   await mkdir(artifacts, { recursive: true });
   browser = await chromium.launch({ channel: process.env.CI ? undefined : 'chrome' });
+  t.diagnostic(`${process.env.CI ? 'Bundled Chromium' : 'Installed Chrome'} ${browser.version()}`);
 
   for (const [name, width, height] of [['desktop', 1488, 1056], ['phone', 393, 852]]) {
     const context = await browser.newContext({ viewport: { width, height }, reducedMotion: 'reduce', serviceWorkers: 'allow' });
     try {
       const page = await context.newPage();
+      const artworkRequests = new Set();
+      // Playwright route() enables interception for all requests, which changes
+      // OAuth redirect reporting on a worker-controlled page. Exact CDP patterns
+      // keep every application/static/auth request on its untouched network path.
+      const artworkSession = await context.newCDPSession(page);
+      artworkSession.on('Fetch.requestPaused', async event => {
+        assert.ok(artworkUrls.has(event.request.url));
+        assert.equal(event.request.method, 'GET');
+        assert.equal(event.resourceType, 'Image');
+        artworkRequests.add(event.request.url);
+        await artworkSession.send('Fetch.fulfillRequest', { requestId: event.requestId, responseCode: 200,
+          responseHeaders: [{ name: 'Content-Type', value: 'image/png' }], body: artworkPng.toString('base64') });
+      });
+      await artworkSession.send('Fetch.enable', { patterns: [...artworkUrls].map(urlPattern =>
+        ({ urlPattern, resourceType: 'Image', requestStage: 'Request' })) });
       page.setDefaultTimeout(8_000);
       page.setDefaultNavigationTimeout(10_000);
       const errors = []; const pageErrors = []; const failures = []; const privateResponses = [];
@@ -106,14 +130,14 @@ test('production PWA installs under real CSP, serves an offline shell, and never
       page.on('response', response => {
         const url = new URL(response.url());
         if (url.origin === origin && /^\/(api|auth)(\/|$)/.test(url.pathname)) {
-          privateResponses.push({ path: url.pathname, cacheControl: response.headers()['cache-control'] });
+          privateResponses.push({ path: url.pathname, status: response.status(), cacheControl: response.headers()['cache-control'] });
         }
       });
       page.on('console', message => {
         if (message.type() !== 'error' || !online) return;
         const resource = new URL(message.location().url || origin, origin).pathname;
         if (/\/api(?:\/|$)/.test(resource) && /status of 401\b/.test(message.text())) return;
-        errors.push(message.text());
+        errors.push({ resource: (message.location().url || '').split('?')[0], message: message.text() });
       });
       page.on('requestfailed', request => {
         const resource = new URL(request.url()).pathname;
@@ -173,7 +197,11 @@ test('production PWA installs under real CSP, serves an offline shell, and never
         const authStarts = count('GET', '/auth/discord');
         await page.getByRole('link', { name: /Continue with Discord/ }).click();
         await page.getByRole('button', { name: 'Pause playback' }).waitFor();
+        await page.evaluate(() => Promise.allSettled([...document.images].map(image => image.decode())));
+        assert.deepEqual([...artworkRequests].sort(), [...artworkUrls].sort());
         assert.equal(count('GET', '/auth/discord'), authStarts + 1);
+        assert.ok(privateResponses.some(response => response.path === '/auth/discord/callback' &&
+          response.status === 302 && response.cacheControl === 'no-store'), 'OAuth callback must remain an actual no-store redirect');
         const privateReads = ['/api/bootstrap', '/api/guilds/100', '/api/guilds/100/library'];
         const read = resource => page.evaluate(async resource => {
           const response = await fetch(resource);
@@ -212,7 +240,7 @@ test('production PWA installs under real CSP, serves an offline shell, and never
       }
       assert.deepEqual(errors, []); assert.deepEqual(failures, []); assert.deepEqual(pageErrors, []);
       assert.ok(privateResponses.length > 0 && privateResponses.every(response => response.cacheControl === 'no-store'),
-        'All API/auth responses, including real OAuth redirects and favorites, must be no-store');
+        'All API/auth responses, including real OAuth redirects and favorites, must be no-store: ' + JSON.stringify(privateResponses));
       assert.deepEqual(await page.evaluate(() => window.__pwaCspViolations), []);
 
       const commandsBeforeOffline = count('POST', '/api/guilds/100/commands');

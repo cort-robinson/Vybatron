@@ -164,5 +164,12 @@ load under the existing CSP, desktop/phone workers control the page, and the
 shell reloads offline without caching authenticated reads or replaying writes.
 Both browser integrations and the 34 functional/protocol checks pass locally;
 public HTTPS and physical-phone installation remain separate checks.
+The reboot preflight found that the live recovery timer still loaded the older
+checkout's monitor, which lacked the reviewed deployment-journal and idle guards.
+Only that script was replaced with the CI-passing reviewed version; its hash and
+effective timer entry point were checked, and the prior script was retained
+privately. Automatic recovery is durably paused during this release window and
+must resume after the idle reboot and decoding checks. Audio configuration,
+containers, images and resource ceilings were retained.
 
 This document is a runbook, not a claim that the portal has passed live acceptance.

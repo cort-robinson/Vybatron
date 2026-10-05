@@ -5,7 +5,7 @@ import { parseSeekTimestamp } from '../utils/operations.js';
 import { validatePlaybackQuery } from '../utils/query.js';
 import { mixKey } from '../utils/library-actions.js';
 import { fail, PortalError } from './errors.js';
-import { requirePlayback, visible, visibleSession, writable } from './policy.js';
+import { requirePlayback, visible, visibleHistory, visibleSession, writable } from './policy.js';
 import { snapshotProjection } from './projection.js';
 import { assertFavoriteSelection, assertHistorySelection, assertMixSelection } from './selections.js';
 
@@ -83,7 +83,7 @@ function assertCommandSelection(client, context, command) {
     assertFavoriteSelection(client.library.favorites(context.user.id)[command.values.index - 1], command.expectedTrackId);
   }
   if (command.command === 'replay') {
-    const history = client.library.readGuild(context.guild.id).history.filter(item => visible(context, context.channels.get(item.voiceChannelId)));
+    const history = client.library.readGuild(context.guild.id).history.filter(item => visibleHistory(context, item));
     assertHistorySelection(history[(command.values.position || 1) - 1], command.expectedHistoryId);
   }
   if (command.command === 'mix' && command.subcommand === 'delete') {
@@ -104,7 +104,7 @@ function commandAccess(client, context, command, { checkState = true } = {}) {
     if (['queue', 'nowplaying', 'history'].includes(name) && !visibleSession(context, client.lavalink?.getPlayer(context.guild.id))) fail(403, 'hidden_channel', 'The listening channel is not visible to you.');
     if (name === 'session') {
       const saved = savedSession(client.library, context.guild.id);
-      if (saved && (!visible(context, context.channels.get(saved.voiceChannelId)) || !visible(context, context.channels.get(saved.textChannelId)))) fail(403, 'hidden_channel', 'The saved listening channel is not visible to you.');
+      if (saved && !visibleSession(context, saved)) fail(403, 'hidden_channel', 'The saved listening channel is not visible to you.');
     }
     return;
   }
@@ -152,7 +152,9 @@ function safeReply(payload) {
 
 export async function executePortalCommand(client, policy, revisions, commandMap, guildId, body) {
   const command = validateCommand(body, commandMap);
-  const freshContext = () => policy.guild(body.actorId, guildId, undefined, { fresh: true, urgent: command.command === 'stop' });
+  const freshContext = () => policy.guild(body.actorId, guildId, undefined, { fresh: true, urgent: command.command === 'stop',
+    channelScope: ['history', 'replay'].includes(command.command) ? 'history' : 'session',
+    channelIds: command.command === 'settings' && command.subcommand === 'musicchannel' && command.values.channel ? [command.values.channel] : [] });
   let context = await freshContext();
   // Dynamic indices and source state are checked in preflight after the revision
   // fence inside the guild lane. A vanished old position is a stale intent, not
@@ -162,13 +164,15 @@ export async function executePortalCommand(client, policy, revisions, commandMap
   let started = false;
   let mutationStarted = false;
   let baseline = null;
+  const source = client.lavalink?.getPlayer(guildId);
+  const replySourceIds = source ? [source.voiceChannelId, source.textChannelId] : [];
   const assertRevision = () => {
     if (!mutationStarted && baseline && baseline !== revisions.revision(guildId)) fail(409, 'stale_revision', 'The session changed. Refresh before trying again.');
   };
   const interaction = {
     client, guildId, commandName: command.command, user: context.user, guild: context.guild, member: context.member, memberPermissions: context.member?.permissions,
     channelId: null, portalAdmin: command.command === 'settings' && context.maintainer, deferred: false, replied: false,
-    get portalHistory() { return client.library.readGuild(guildId).history.filter(item => visible(context, context.channels.get(item.voiceChannelId))); },
+    get portalHistory() { return client.library.readGuild(guildId).history.filter(item => visibleHistory(context, item)); },
     options: {
       getSubcommand: () => command.subcommand || null,
       getString: key => command.values[key] ?? null, getInteger: key => command.values[key] ?? null, getBoolean: key => command.values[key] ?? null,
@@ -197,19 +201,29 @@ export async function executePortalCommand(client, policy, revisions, commandMap
         if (command.command === 'settings') { if (!context.admin) fail(403, 'admin_required', 'Manage Server permission is required.'); }
         else requirePlayback(context, client, { dj: !addition && command.command !== 'voteskip', sourceOnly: (command.command === 'favorite' && command.subcommand === 'add') || (command.command === 'mix' && command.subcommand === 'save'), allowIdle: addition || command.command === 'playnext' });
       } else commandAccess(client, context, command);
-      this.guild = context.guild; this.member = context.member; this.memberPermissions = context.member?.permissions; this.user = context.user;
-      this.portalAdmin = command.command === 'settings' && context.maintainer;
+      applyContext();
       assertRevision();
     },
   };
+  const applyContext = () => {
+    // Native handlers use guild.channels.cache and member.voice.channel. Supply
+    // a request-local view backed only by this stage's individually fetched
+    // channels; never let a delayed gateway overwrite grant native access.
+    interaction.guild = Object.create(context.guild, { channels: { value: {
+      cache: context.channels, fetch: id => context.fetchChannel(id),
+    } } });
+    interaction.member = context.member;
+    interaction.memberPermissions = context.member?.permissions; interaction.user = context.user;
+    interaction.portalAdmin = command.command === 'settings' && context.maintainer;
+  };
+  applyContext();
   const preflight = async () => {
     context = await freshContext();
     const current = revisions.revision(guildId);
     if (command.command !== 'stop' && body.expectedRevision && body.expectedRevision !== current) fail(409, 'stale_revision', 'The session changed. Refresh before trying again.');
     commandAccess(client, context, command);
     baseline = body.expectedRevision && command.command !== 'stop' ? current : null;
-    interaction.guild = context.guild; interaction.member = context.member; interaction.user = context.user; interaction.memberPermissions = context.member?.permissions;
-    interaction.portalAdmin = command.command === 'settings' && context.maintainer;
+    applyContext();
     const player = client.lavalink?.getPlayer(guildId);
     interaction.channelId = player?.textChannelId || client.library.settings(guildId).musicTextChannelId;
     started = true;
@@ -221,5 +235,17 @@ export async function executePortalCommand(client, policy, revisions, commandMap
   if (command.policy.readOnly) { await preflight(); await commandMap.get(command.command).execute(interaction); }
   else await guardedMutation(interaction, commandMap.get(command.command).execute, { ...command.policy, beforeMutation: preflight });
   context = await freshContext();
+  // Captured embeds predate this final authority check. Neutral acknowledgments
+  // avoid leaking queue/history names (including individually revoked history
+  // sources) and never reexecute a mutation to regenerate its reply.
+  const neutralRead = ['queue', 'nowplaying', 'history', 'replay'].includes(command.command)
+    || (command.command === 'session' && command.policy.readOnly);
+  const hiddenReplySource = !visibleSession(context, client.lavalink?.getPlayer(guildId))
+    || replySourceIds.some(id => !visible(context, context.channels.get(id)));
+  // Every mix action can capture guild library names/counts, including a
+  // completed save/load/delete. An idle nonmember maintainer still has config
+  // access, but no guild-library access. Do not replay its handler for new text.
+  const hiddenGuildLibrary = command.command === 'mix' && !context.member;
+  if (neutralRead || hiddenGuildLibrary || (command.command !== 'help' && hiddenReplySource) || (command.command === 'settings' && !context.admin)) message = 'Request completed.';
   return { ok: true, message, snapshot: snapshotProjection(client, context, revisions.revision(guildId)) };
 }

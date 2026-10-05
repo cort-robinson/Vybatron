@@ -284,7 +284,10 @@ test('library, shared mixes, history, settings, schema forms, activity and diagn
   expect(fixture.commands.at(-1)).toMatchObject({ command: 'mix', subcommand: 'save', options: { name: 'After hours', replace: false } });
   await page.getByRole('tab', { name: 'History' }).click(); await page.getByRole('button', { name: 'Replay Afterglow' }).click();
   await expect.poll(() => fixture.commands.at(-1)?.command).toBe('replay'); expect(fixture.commands.at(-1)?.options).toEqual({ index: 1 });
-  await page.getByRole('button', { name: 'Server', exact: true }).click(); await page.getByLabel('Music text channel').selectOption('lounge');
+  await page.getByRole('button', { name: 'Server', exact: true }).click();
+  const musicChannel = page.getByRole('combobox', { name: 'Music text channel', exact: true });
+  await expect(musicChannel).toBeVisible(); // Discovery now loads when Settings opens.
+  await musicChannel.selectOption('lounge');
   await page.getByLabel('Music text channel').locator('..').getByRole('button', { name: 'Save', exact: true }).click();
   await expect.poll(() => fixture.commands.at(-1)?.subcommand).toBe('musicchannel');
   await page.getByRole('tab', { name: 'More controls' }).click(); await page.getByLabel('Command', { exact: true }).selectOption('seek');

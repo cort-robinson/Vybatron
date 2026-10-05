@@ -4,6 +4,8 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { PermissionsBitField, PermissionFlagsBits as P } from 'discord.js';
 import { portalFixture, deferred } from './portal-fixtures.js';
 import { createPortalPolicy, requirePlayback } from '../src/portal/policy.js';
+import { trackReference } from '../src/utils/library.js';
+import { track } from './fixtures.js';
 
 function delayedDiscord(f, latencyMs) {
   for (const [target, method] of [
@@ -19,11 +21,15 @@ function delayedDiscord(f, latencyMs) {
 test('authenticated snapshots and library stay within the real portal transport deadline when every Discord route is slow', { timeout: 35_000 }, async t => {
   const f = await portalFixture(t, { owner: { id: '202' } });
   f.player.paused = true; f.player.playing = false;
+  await f.library.updateGuild('100', guild => { guild.session = { voiceChannelId: '301', textChannelId: '401', savedAt: Date.now(),
+    position: 12000, paused: true, volume: 70, repeatMode: 'off', tracks: [trackReference(track())] }; });
   let revision;
   // Every route responds inside its five-second authority deadline, but the
-  // old seven-step waterfall exceeds the portal's ten-second read deadline.
+  // Full identity plus guild/member-role/bot/individual-channel stages take
+  // six rounds (9.6 seconds); the old seven-step waterfall exceeds ten seconds.
   delayedDiscord(f, 1600);
   for (let round = 0; round < 3; round++) {
+    const startedAt = performance.now();
     const results = await Promise.allSettled([
       f.request('', { actor: '202', signal: AbortSignal.timeout(10_000) }),
       f.request('/library', { actor: '202', signal: AbortSignal.timeout(10_000) }),
@@ -31,6 +37,7 @@ test('authenticated snapshots and library stay within the real portal transport 
     ]);
     assert.ok(results.every(result => result.status === 'fulfilled'), 'Discord verification exceeded the portal ten-second read deadline');
     const responses = results.map(result => result.value);
+    t.diagnostic(`read round ${round + 1}: ${Math.round(performance.now() - startedAt)} ms with four distinct individual channel IDs`);
     assert.ok(responses.every(response => response.status === 200));
     assert.ok(responses[0].body.session.current);
     assert.equal(responses[0].body.session.status, 'paused');
@@ -50,6 +57,10 @@ test('overlapping slow authorization waits for current channel and role results 
   const f = await portalFixture(t);
   const release = deferred(); const started = deferred();
   const fetchRoles = f.guild.roles.fetch.bind(f.guild.roles);
+  const fetchMember = f.guild.members.fetch.bind(f.guild.members);
+  // Revoke before the fresh membership response settles; later cache patches
+  // cannot rewrite an already captured response in this stage.
+  f.guild.members.fetch = async (...args) => { await release.promise; return fetchMember(...args); };
   f.guild.roles.fetch = async () => { started.resolve(); await release.promise; return fetchRoles(); };
   t.after(() => release.resolve());
   f.members.get('201').permissions = new PermissionsBitField([P.ManageGuild]);
@@ -84,6 +95,14 @@ test('a delayed bot permission check cannot configure a text channel that became
 
 test('fresh playback verification retains reserved Stop capacity while ordinary Discord requests are stalled', { timeout: 5000 }, async t => {
   const f = await portalFixture(t); const release = deferred();
+  await f.library.updateGuild('100', guild => { guild.session = { voiceChannelId: '301', textChannelId: '401', savedAt: Date.now(),
+    position: 0, paused: true, volume: 70, repeatMode: 'off', tracks: [trackReference(track())] }; });
+  let channelsActive = 0, channelsMaximum = 0;
+  const fetchChannel = f.guild.channels.fetch.bind(f.guild.channels);
+  f.guild.channels.fetch = async (...args) => {
+    channelsActive++; channelsMaximum = Math.max(channelsMaximum, channelsActive);
+    try { await delay(10); return await fetchChannel(...args); } finally { channelsActive--; }
+  };
   const fetchUser = f.client.users.fetch.bind(f.client.users);
   f.client.users.fetch = async id => {
     if (Number(id) >= 1000) { await release.promise; return { id, bot: false }; }
@@ -96,6 +115,7 @@ test('fresh playback verification retains reserved Stop capacity while ordinary 
   const context = await policy.guild('200', '100', undefined, { fresh: true, urgent: true });
   requirePlayback(context, f.client);
   assert.equal(context.member.id, '200');
+  assert.equal(context.channels.size, 4); assert.equal(channelsMaximum, 2, 'Stop uses only its two reserved admissions for channel work');
   assert.deepEqual(f.calls, []);
   release.resolve(); await Promise.all(ordinary);
 });
@@ -126,14 +146,14 @@ test('a command queued behind a rate-limited channel read checks new visibility 
   const f = await portalFixture(t); const started = deferred(); const queued = deferred(); const release = deferred();
   const previousChannels = new Map([...f.channels].map(([id, channel]) => [id, { ...channel, hidden: new Set(channel.hidden) }]));
   let tail = Promise.resolve(); let calls = 0;
-  f.guild.channels.fetch = () => {
+  f.guild.channels.fetch = id => {
     const call = ++calls;
     if (call === 2) queued.resolve();
     // Discord serializes requests for an exhausted route bucket. The first
     // response represents permissions before the owner revokes visibility.
     const read = tail.then(async () => {
-      if (call === 1) { started.resolve(); await release.promise; return previousChannels; }
-      return f.channels;
+      if (call === 1) { started.resolve(); await release.promise; return previousChannels.get(id); }
+      return f.channels.get(id);
     });
     tail = read.catch(() => {});
     return read;

@@ -1,4 +1,4 @@
-import type { Bootstrap, GuildSnapshot, Library, Track, Command, CommandResult, Diagnostics, Activity } from './types';
+import type { Bootstrap, GuildSnapshot, Library, Track, Command, CommandResult, Configuration, Diagnostics, Activity } from './types';
 
 export class ApiError extends Error {
   constructor(public status: number, public code: string, message: string, public retryAfterMs = 0) { super(message); this.name = 'ApiError'; }
@@ -29,6 +29,13 @@ const guildPath = (id: string) => `/api/guilds/${encodeURIComponent(id)}`;
 export const api = {
   bootstrap: (signal?: AbortSignal) => request<Bootstrap>('/api/bootstrap', { signal }),
   snapshot: (id: string, signal?: AbortSignal) => request<GuildSnapshot>(guildPath(id), { signal }),
+  configuration: async (id: string, signal?: AbortSignal): Promise<Configuration> => {
+    const data = await request<Configuration>(`${guildPath(id)}/configuration`, { signal });
+    if (data.guildId !== id || !Array.isArray(data.channels) || data.channels.length > 500 || !Array.isArray(data.roles) || data.roles.length > 250) {
+      throw new ApiError(503, 'invalid_response', 'Channel and role options are unavailable. Try refreshing them.');
+    }
+    return data;
+  },
   library: (id: string, signal?: AbortSignal) => request<Library>(`${guildPath(id)}/library`, { signal }),
   search: (id: string, query: string, signal?: AbortSignal) => request<{ tracks: Track[]; notice: string | null }>(`${guildPath(id)}/search?query=${encodeURIComponent(query)}`, { signal }),
   command: (id: string, csrfToken: string, command: Command, signal?: AbortSignal) => request<CommandResult>(`${guildPath(id)}/commands`, {

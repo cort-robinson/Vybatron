@@ -72,7 +72,8 @@ runtime objects and credential-bearing data. Maintain existing command meanings.
 If session channel is not visible, expose an idle/empty projection and a safe
 reason; do not reveal restricted channel ids/name/tracks/listeners/checkpoint.
 Settings/channels/roles include only authorized fields; settings null for basic
-members. Revision changes on queue/current identity and relevant state changes,
+members. Snapshot channels are the relevant, freshly verified session channels;
+the complete settings catalog is discovered separately on demand. Revision changes on queue/current identity and relevant state changes,
 not continuously on time interpolation. Compare revision INSIDE the mutation
 lane for queue conflicts; web queue edits must not race a Discord edit/track end.
 
@@ -85,6 +86,16 @@ original channel visibility. Lists are bounded by approved retention/limits.
 
 `Diagnostics = { botReady:boolean, audioReady:boolean, uptimeSeconds:number,
   recoveryState:string, lastError:string|null }`
+
+`Configuration = { guildId:string, channels:{id:string,name:string,type:'voice'|'text'}[],
+  roles:{id:string,name:string}[] }`
+
+Configuration discovery is admin-only, includes only currently visible channels,
+and retains the 500-channel/250-role bounds. Fetch once when opening server settings,
+switching guilds, or explicitly refreshing options; never on each live snapshot.
+Configuration choices do not authorize a mutation. See
+[`portal-channel-read-contract.md`](portal-channel-read-contract.md) for channel
+scopes, fresh individual reads, input preservation, and revocation fences.
 
 `Activity = { items:{id:string,at:number,actor:{id,displayName},action:string,
   detail:string}[] }` (admin-only, 24h, bounded, successful queue/settings only).
@@ -99,6 +110,7 @@ original channel visibility. Lists are bounded by approved retention/limits.
 - POST `/auth/logout`: same-origin + CSRF checked, destroy this device session.
 - GET `/api/bootstrap` -> Bootstrap. Signed-out: 401 JSON error.
 - GET `/api/guilds/:guildId` -> GuildSnapshot.
+- GET `/api/guilds/:guildId/configuration` -> Configuration (admin only).
 - GET `/api/guilds/:guildId/library` -> Library.
 - GET `/api/guilds/:guildId/search?query=...` -> `{tracks:Track[],notice:string|null}`.
 - POST `/api/guilds/:guildId/commands` -> command result below.
@@ -181,6 +193,7 @@ browser access or CORS. Portal sets the trusted session's actorId itself.
 
 - GET `/v1/bootstrap?actorId=...` -> Bootstrap WITHOUT csrfToken (portal adds it).
 - GET `/v1/guilds/:guildId?actorId=...` -> GuildSnapshot.
+- GET `/v1/guilds/:guildId/configuration?actorId=...` -> Configuration (admin only).
 - GET `/v1/guilds/:guildId/library?actorId=...` -> Library.
 - GET `/v1/guilds/:guildId/search?actorId=...&query=...` -> search response.
 - POST `/v1/guilds/:guildId/commands` body `{actorId,...validated command body}`.

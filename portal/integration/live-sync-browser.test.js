@@ -29,6 +29,16 @@ test('two real clients recover transient authorization reads and synchronize slo
     if (Date.now() < unavailableUntil) { rejectedPolicyReads++; throw new Error('Synthetic Discord network outage'); }
   } });
   for (const user of bot.users.values()) user.displayAvatarURL = () => null;
+  let channelListReads = 0; let individualChannelReads = 0;
+  const channelFetch = bot.guild.channels.fetch.bind(bot.guild.channels);
+  bot.guild.channels.fetch = async (id, options) => {
+    if (!id) {
+      channelListReads++;
+      throw new Error('Synthetic exhausted server-wide channel-list bucket');
+    }
+    individualChannelReads++;
+    return channelFetch(id, options);
+  };
   const pause = bot.player.pause.bind(bot.player);
   bot.player.pause = async () => { await delay(800); return pause(); };
   let app; let browser; let failFirstSnapshot = true;
@@ -134,6 +144,8 @@ test('two real clients recover transient authorization reads and synchronize slo
     await expect(page.getByRole('button', { name: 'Resume playback' })).toBeDisabled();
   }));
   assert.ok(rejectedPolicyReads >= 2, 'Real authority failures must actually reach the integration boundary');
+  assert.equal(channelListReads, 0, 'Login, live streams, library and controls must not depend on the server-wide channel-list bucket');
+  assert.ok(individualChannelReads > 10, 'The real bridge must continuously authorize relevant channels with fresh individual reads');
   assert.deepEqual(errors, []);
   assert.ok(count('GET', '/api/guilds/100/events') < 25, 'Recovery must be bounded rather than a reconnect storm');
 });

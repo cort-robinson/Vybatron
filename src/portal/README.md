@@ -37,15 +37,66 @@ always start separate fresh reads, including their post-lookup checks. Underlyin
 reads retain their admission slot after an individual caller times out, until
 Discord settles, preventing stalled reads multiplying on every poll. The pool
 holds at most 128 underlying reads plus two reserved urgent slots. Four concurrent
-same-account snapshots make seven reads rather than 28 when they overlap; spaced
-polls or different actors still fetch their own current account/member state.
-Member/channel and role/bot-member reads run in bounded pairs after the guild
-refresh, avoiding seven sequential response waits while fitting Stop's two
-reserved underlying-read slots. All inputs settle and gateway readiness is
-checked again before permissions are evaluated; deadlines are unchanged.
+same-account snapshots share each relevant individual channel and authority
+input while they overlap; spaced polls or different actors still fetch their
+own current account/member state. Member/role reads run together after the guild
+refresh, followed by bot membership and bounded individual channel reads. All
+inputs settle and gateway readiness is checked again before permissions are
+evaluated; deadlines and the 128+2 admission cap are unchanged.
 Fresh role inventories evict deleted roles from discord.js's cache before its
-member/channel permission getters run. An outside-guild maintainer receives
+member/channel permission getters run. Permission inputs are detached as each
+fresh response settles, before other member/role/bot/channel awaits: guild owner,
+actor and bot role IDs, complete role definitions and channel overwrites. The
+stage-local guild/member/role/channel views retain discord.js's actual permission
+getters and overwrite precedence. Delayed shared-cache patches cannot change
+that stage's authority; every following stage still fetches again. Native
+joinable/speakable and bot writability use the same fetched bot member, including
+its timeout. The native settings member read returns that stage's bot view;
+native rechecks and the durable settings transaction each refresh all inputs.
+An outside-guild maintainer receives
 settings and diagnostics, without a bot-permission channel-list bypass.
+
+The additive [channel-read contract](../../docs/portal-channel-read-contract.md)
+separates complete discovery from authorization. `session` (the default) reads
+only current player voice/text, actor voice, saved voice/text and configured
+music text IDs. `history` adds up to 100 persisted history source IDs for library,
+history and replay. Each musicchannel settings stage also includes its validated
+new target ID. `none` is used only by the directory and read-only admin activity
+or diagnostics; it never projects music. Only explicit admin
+`GET /v1/guilds/:guildId/configuration?actorId=...` performs a fresh list read,
+after fresh admin authorization. It returns `{guildId,channels,roles}` with the
+same visible text/voice filter and 500-channel/250-role projection bounds.
+Snapshot channels are the relevant verified subset, not a discovery catalog.
+
+Individual reads use `guild.channels.fetch(id, {force:true})`, immediately
+detaching overwrite objects and permission bitfields in `authority.js`.
+Version 14's `cache:false`
+can return an existing unpatched object even after a REST response, so it cannot
+provide fresh permission data. The normal forced refresh is necessary; no later
+request or command stage authorizes from its completed cache result. Native
+handlers receive a request-local guild/member view using only that stage's
+verified channels, including fresh bot join/speak access. Deleted, inaccessible,
+foreign and mismatched channels are absent and fail closed.
+
+Ordinary individual channel reads share a global four-read pool and are
+submitted in batches of at most four. Four permits the common four-distinct-ID
+case to complete in one channel round; two would require another network wait.
+Stop has a separate two-read pool, submits at most two at once and starts channel
+work only after bot-member verification, preserving its two reserved admissions
+even when 128 ordinary reads are stalled. Timed-out reads retain their network
+and admission slots until actual settlement. These pools do not preempt Discord's
+own REST FIFO/global limits. No Discord rate bucket is hardcoded or bypassed.
+
+Queue, now-playing, history, replay and readonly saved-session replies use neutral
+acknowledgments with the final fresh snapshot. Other protected music reply text
+is suppressed when final authority hides its session/source. Every mix action's
+captured reply also requires final guild membership, even in an idle guild whose
+verified maintainer retains configuration access. Private favorites remain scoped
+to the actor. This prevents earlier
+captured embeds from disclosing names after current or history-source revocation;
+no mutation is rerun. Public help and visible-session native errors retain their
+useful text. Application ownership is still verified fresh at every required
+stage, with no new owner/operator lifetime or completed identity cache.
 
 Commands reuse the existing handlers and exactly one `guardedMutation` lane.
 Revision comparison runs inside that lane after a fresh access check. Slow

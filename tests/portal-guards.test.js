@@ -158,7 +158,7 @@ test('mix source visibility is checked again at the actual durable write after a
   assert.match(interaction.replies[0].content, /not visible/); assert.equal(interaction.replies.length, 1);
 });
 
-test('four overlapping HTTP snapshots coalesce seven fresh Discord reads without retaining permission or owner results', async t => {
+test('four overlapping HTTP snapshots coalesce fresh individual Discord reads without retaining permission or owner results', async t => {
   const f = await portalFixture(t); const counts = {};
   for (const [key, target, name] of [['user', f.client.users, 'fetch'], ['application', f.client.application, 'fetch'], ['guild', f.client.guilds, 'fetch'], ['member', f.guild.members, 'fetch'], ['channels', f.guild.channels, 'fetch'], ['roles', f.guild.roles, 'fetch'], ['me', f.guild.members, 'fetchMe']]) {
     const original = target[name].bind(target);
@@ -166,10 +166,11 @@ test('four overlapping HTTP snapshots coalesce seven fresh Discord reads without
   }
   const snapshots = await Promise.all(Array.from({ length: 4 }, () => f.request()));
   assert.ok(snapshots.every(response => response.status === 200));
-  assert.deepEqual(counts, { user: 1, application: 1, guild: 1, member: 1, channels: 1, roles: 1, me: 1 });
+  assert.deepEqual(counts, { user: 1, application: 1, guild: 1, member: 1, channels: 2, roles: 1, me: 1 });
+  assert.ok(f.channelReads.every(read => read.id && read.force === true && read.cache !== false));
   f.channels.get('400').hidden.add('200');
   assert.equal((await f.request()).body.session.current, null);
-  assert.equal(counts.channels, 2); assert.equal(counts.roles, 2);
+  assert.equal(counts.channels, 4); assert.equal(counts.roles, 2);
   assert.equal((await f.request('/diagnostics', { actor: '900' })).status, 200);
   f.client.application.fetch = async () => ({ owner: f.users.get('901') });
   assert.equal((await f.request('/diagnostics', { actor: '900' })).status, 404);
@@ -200,7 +201,7 @@ test('fresh role inventory removes a deleted cached role from real Discord membe
   guild.channels.cache.set('300', new VoiceChannel(guild, { id: '300', name: 'Restricted voice', permission_overwrites: [] }, discord));
   guild.channels.cache.set('400', new TextChannel(guild, { id: '400', name: 'Restricted music', permission_overwrites: [] }, discord));
   guild.members.fetch = async () => member; guild.members.fetchMe = async () => f.me;
-  guild.channels.fetch = async () => guild.channels.cache;
+  guild.channels.fetch = async (id, options) => { assert.equal(options.force, true); return guild.channels.cache.get(id); };
   guild.roles.fetch = async () => new Collection([['100', guild.roles.cache.get('100')]]);
   f.client.guilds.cache.set('100', guild); f.client.guilds.fetch = async () => guild;
   const snapshot = (await f.request()).body;

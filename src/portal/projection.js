@@ -7,7 +7,7 @@ import { radioState } from '../utils/radio.js';
 import { isPlaybackRecovering } from '../playback-recovery.js';
 import { getControllerRecord } from '../utils/player-controller.js';
 import { seekRevision } from '../utils/operations.js';
-import { djAccess, visible, visibleSession, writable, TEXT_TYPES, VOICE_TYPES } from './policy.js';
+import { actorVoiceId, djAccess, visible, visibleHistory, visibleSession, writable, TEXT_TYPES, VOICE_TYPES } from './policy.js';
 import { publicTrackId, mixVersion } from './selections.js';
 
 export function safeImage(value) {
@@ -77,15 +77,20 @@ export function createRevisions(client) {
 }
 
 const channelProjection = channel => channel ? { id: channel.id, name: plainText(channel.name, { maxLength: 100 }) } : null;
+export function configurationProjection(context) {
+  return { guildId: context.guild.id,
+    channels: context.admin ? [...context.channels.values()].filter(channel => channel && visible(context, channel) && (TEXT_TYPES.has(channel.type) || VOICE_TYPES.has(channel.type))).slice(0, 500).map(channel => ({ ...channelProjection(channel), type: VOICE_TYPES.has(channel.type) ? 'voice' : 'text' })) : [],
+    roles: context.admin ? [...context.roles.values()].slice(0, 250).map(role => ({ id: role.id, name: plainText(role.name, { maxLength: 100 }) })) : [] };
+}
 export function snapshotProjection(client, context, revision) {
   const id = context.guild.id;
   const player = client.lavalink?.getPlayer(id);
   const allowed = visibleSession(context, player);
   const saved = savedSession(client.library, id);
-  const savedVisible = saved && visible(context, context.channels.get(saved.voiceChannelId)) && visible(context, context.channels.get(saved.textChannelId));
+  const savedVisible = saved && visibleSession(context, saved);
   const settings = client.library.settings(id);
-  const voice = context.member?.voice?.channel;
-  const sameVoice = Boolean(context.member && voice && visible(context, context.channels.get(voice.id)) && (!player?.voiceChannelId || player.voiceChannelId === voice.id));
+  const voice = context.channels.get(actorVoiceId(context.member));
+  const sameVoice = Boolean(context.member && voice && VOICE_TYPES.has(voice.type) && visible(context, voice) && (!player?.voiceChannelId || player.voiceChannelId === voice.id));
   const botVoiceAccess = voice && voice.joinable !== false && voice.speakable !== false;
   const musicChannel = context.channels.get(settings.musicTextChannelId);
   const canAdd = Boolean(allowed && sameVoice && botVoiceAccess && (player || (writable(context, musicChannel) && visible(context, musicChannel))));
@@ -96,7 +101,7 @@ export function snapshotProjection(client, context, revision) {
   const status = !allowed || !player ? 'idle' : recovering ? 'recovering' : controllerState === 'unavailable' || player.node?.connected === false ? 'unavailable' : !current ? 'idle' : player.paused ? 'paused' : 'playing';
   const listeners = allowed ? [...(context.channels.get(player?.voiceChannelId)?.members?.values() || [])].filter(member => !member.user.bot).slice(0, 100).map(member => actorProjection({ ...member.user, id: member.id, displayName: member.displayName, avatarUrl: member.user.displayAvatarURL?.() })).filter(Boolean) : [];
   const reason = !allowed ? 'The listening channel is not visible to you.' : !context.member ? 'Join this server to control playback.' : !sameVoice ? 'Join the listening voice channel to control playback.' : !player && !canAdd ? 'An administrator must configure a visible music text channel.' : !djAccess(context, client) ? 'Playback controls require the DJ role.' : null;
-  const channels = context.admin ? [...context.channels.values()].filter(channel => channel && visible(context, channel) && (TEXT_TYPES.has(channel.type) || VOICE_TYPES.has(channel.type))).slice(0, 500).map(channel => ({ ...channelProjection(channel), type: VOICE_TYPES.has(channel.type) ? 'voice' : 'text' })) : [];
+  const configuration = configurationProjection(context);
   return { guild: guildProjection(context), revision,
     session: { status, voiceChannel: allowed ? channelProjection(context.channels.get(player?.voiceChannelId)) : null, textChannel: allowed ? channelProjection(context.channels.get(player?.textChannelId)) : null,
       current: current ? trackProjection(current) : null, queue: allowed ? (player?.queue?.tracks || []).slice(0, LIBRARY_LIMITS.queue).map(trackProjection) : [],
@@ -109,7 +114,7 @@ export function snapshotProjection(client, context, revision) {
       trackCount: savedVisible ? saved.tracks.length : 0, voiceChannel: savedVisible ? channelProjection(context.channels.get(saved.voiceChannelId)) : null,
       canResume: Boolean(savedVisible && voice?.id === saved.voiceChannelId && botVoiceAccess && writable(context, context.channels.get(saved.textChannelId)) && djAccess(context, client) && !(player?.queue?.current || player?.queue?.tracks?.length)) },
     settings: context.admin ? { volume: boundedNumber(settings.volume, 100, 100), fairQueue: Boolean(settings.fairQueue), djRoleId: settings.djRoleId || null, musicTextChannelId: settings.musicTextChannelId || null } : null,
-    channels, roles: context.admin ? [...context.roles.values()].slice(0, 250).map(role => ({ id: role.id, name: plainText(role.name, { maxLength: 100 }) })) : [] };
+    channels: configuration.channels, roles: configuration.roles };
 }
 
 export function activityProjection(client, guildId) {
@@ -122,5 +127,5 @@ export function libraryProjection(client, context) {
   const guild = client.library.readGuild(context.guild.id);
   return { favorites: client.library.favorites(context.user.id).slice(0, LIBRARY_LIMITS.favorites).map(trackProjection),
     mixes: context.member ? Object.entries(guild.mixes).slice(0, LIBRARY_LIMITS.mixes).map(([name, mix]) => ({ id: name, name, ownerId: mix.ownerId, version: mixVersion(mix), tracks: mix.tracks.map(trackProjection), canEdit: mix.ownerId === context.user.id || context.guildAdmin })) : [],
-    history: guild.history.filter(item => visible(context, context.channels.get(item.voiceChannelId))).map(item => ({ id: item.id, playedAt: item.playedAt, voiceChannel: channelProjection(context.channels.get(item.voiceChannelId)), track: trackProjection(item.track) })) };
+    history: guild.history.filter(item => visibleHistory(context, item)).map(item => ({ id: item.id, playedAt: item.playedAt, voiceChannel: channelProjection(context.channels.get(item.voiceChannelId)), track: trackProjection(item.track) })) };
 }

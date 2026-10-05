@@ -3,6 +3,7 @@ export interface Viewer {
 }
 export interface Guild { id: string; name: string; iconUrl: string | null; admin: boolean }
 export interface Channel { id: string; name: string; type: 'voice' | 'text' }
+export interface Configuration { guildId: string; channels: Channel[]; roles: { id: string; name: string }[] }
 export interface Track {
   id: string; title: string; author: string; uri: string | null; source: string;
   durationMs: number; artworkUrl: string | null; isStream: boolean;

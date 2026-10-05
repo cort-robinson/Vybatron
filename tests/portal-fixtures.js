@@ -20,7 +20,8 @@ export async function portalFixture(t, options = {}) {
   let memberFetches = 0;
   for (const id of ['200', '201', '202']) members.set(id, { id, user: users.get(id), permissions: new PermissionsBitField(id === '201' ? [P.ManageGuild] : []), displayName: `Member ${id}`, roles: { cache: new Map() }, voice: { channel: null } });
   const channel = (id, type, name) => ({ id, guildId: guild.id, type, name, hidden: new Set(), joinable: true, speakable: true, botWritable: true,
-    permissionsFor(member) { return new PermissionsBitField(this.hidden.has(member?.id) ? [] : member === me ? this.botWritable ? [P.ViewChannel, P.SendMessages, P.EmbedLinks, P.Connect, P.Speak] : [P.ViewChannel] : [P.ViewChannel]); },
+    _clone() { return cloneChannel(this); },
+    permissionsFor(member) { return new PermissionsBitField(this.hidden.has(member?.id) ? [] : member?.id === me.id ? this.botWritable ? [P.ViewChannel, P.SendMessages, P.EmbedLinks, P.Connect, P.Speak] : [P.ViewChannel] : [P.ViewChannel]); },
     get members() { return new Map([...members].filter(([, member]) => member.voice.channel?.id === id)); },
   });
   channels.set('300', channel('300', ChannelType.GuildVoice, 'General'));
@@ -28,11 +29,27 @@ export async function portalFixture(t, options = {}) {
   channels.set('400', channel('400', ChannelType.GuildText, 'music'));
   channels.set('401', channel('401', ChannelType.GuildText, 'alternate music'));
   const roles = new Map([['500', { id: '500', name: 'DJ' }]]);
-  guild.channels = { cache: channels, async fetch(id) { return id ? channels.get(id) : channels; } };
-  guild.roles = { async fetch() { return roles; } };
+  const channelReads = [];
+  const channelCache = new Map(channels);
+  const cloneChannel = channel => channel && { ...channel, hidden: new Set(channel.hidden) };
+  guild.channels = { cache: channelCache, async fetch(id, fetchOptions = {}) {
+    channelReads.push({ id, ...fetchOptions });
+    if (options.channelFetch) await options.channelFetch(id, fetchOptions);
+    if (id && !fetchOptions.force && channelCache.has(id)) return channelCache.get(id);
+    if (id) {
+      const value = cloneChannel(channels.get(id));
+      if (!value) throw Object.assign(new Error('Unknown channel'), { code: 10003 });
+      if (fetchOptions.cache !== false) channelCache.set(id, value);
+      return value;
+    }
+    return new Map([...channels].map(([key, channel]) => {
+      const value = cloneChannel(channel); if (fetchOptions.cache !== false) channelCache.set(key, value); return [key, value];
+    }));
+  } };
+  guild.roles = { cache: new Map(roles), async fetch() { for (const [id, role] of roles) this.cache.set(id, role); return new Map(roles); } };
   guild.members = { async fetch({ user }) { memberFetches++; if (options.memberFetch) await options.memberFetch(user); const member = members.get(user); if (!member) throw Object.assign(new Error('Unknown member'), { code: 10007 }); return member; }, async fetchMe() { return me; } };
   client.guilds = { cache: new Map([['100', guild]]), async fetch() { return guild; } };
-  client.channels = { cache: channels };
+  client.channels = { cache: channelCache };
   client.users = { async fetch(id) { return users.get(id); } };
   client.application = { async fetch() { return { owner: options.owner || users.get('900') }; } };
   client.runtimeState = { draining: false, startedAt: Date.now() };
@@ -76,5 +93,5 @@ export async function portalFixture(t, options = {}) {
   };
   const command = (body, options) => request('/v1/guilds/100/commands', { body, ...options });
   t.after(async () => { await bridge.close(); await library.close(); await fs.rm(dir, { recursive: true, force: true }); });
-  return { client, manager, library, player, members, channels, roles, users, me, node, guild, calls, bridge, origin, request, command, token, dir, get memberFetches() { return memberFetches; } };
+  return { client, manager, library, player, members, channels, channelCache, channelReads, roles, users, me, node, guild, calls, bridge, origin, request, command, token, dir, get memberFetches() { return memberFetches; } };
 }

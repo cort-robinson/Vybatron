@@ -179,7 +179,7 @@ privately. Automatic recovery was durably paused during deployment and reboot
 verification, then resumed after both complete decoding canaries passed.
 Audio configuration, container identities, images and resource ceilings were retained.
 
-## Deployed portal candidate
+## Original live portal pilot
 
 On 2026-10-05, both required CI jobs passed for
 `cbc2547a707662dbb8e25e7187dc30d45b62a4c6`. The release driver deployed that clean
@@ -251,6 +251,60 @@ correcting keyboard-test sequencing and separating colliding trace output.
 The two earlier joined browser integrations and the new two-client regression
 also pass. Exact-commit CI must run all browser cases and integrations together
 before replacing the pilot; cumulative local runs do not substitute for that gate.
+
+## Live synchronization correction and remaining channel pressure
+
+Both required CI jobs passed for `874b46b3d3e6e4c5b54e148e43a3ecaca2a1eaa7`,
+including all 54 browser cases in one run and all three joined browser integrations.
+The guarded release driver deployed its clean source and prebuilt images while
+idle. The bot image is
+`sha256:11a08e5023300e3d4f92410ea514b9484f19899b92b743dca202a60b2c1a1bee`;
+the portal image is
+`sha256:7f3767c25bc120a913528b3e2ba990e597244d98a2fe01b4ce1254d78be49ee1`.
+Both deployment journals completed. The private release audit verified unchanged
+music files, both persistent volumes, the real encrypted device-login record,
+and the original audio container IDs, images, PIDs and shared network namespace.
+Actual public HTTPS desktop/phone rendering, OAuth entry, private-route denial,
+PWA shell/font loading and offline/network-only behavior passed again.
+
+A repeated read-only live probe still failed the third native Queue request with
+bridge503 while two concurrent snapshots succeeded. Discord's actual response
+headers showed a server-wide channel-list bucket of ten reads per sixty seconds;
+fresh individual voice/text channel GETs had much greater capacity. These are
+observed service limits, not application constants. The fresh policy was fetching
+the complete list at every snapshot and command boundary, so browser recovery
+alone could not resolve its request demand.
+
+The next correction separates fresh individual authorization of relevant session
+and history channels from explicit admin-only configuration discovery. Its scope,
+response contract and browser lifecycle are documented in
+[`portal-channel-read-contract.md`](portal-channel-read-contract.md).
+Preserve fresh permissions, bounded reads, command selection/revision guards,
+Stop reservations and no mutation replay. Run exact-source CI and the same live
+probe before asking the owner to repeat listening acceptance.
+
+The channel correction now uses pending-only individual reads for ordinary
+session/history authorization. Complete channel discovery runs only when an
+administrator opens Settings or deliberately refreshes its options. Discovery
+failure retains typed channel/role IDs and does not authorize a write. Each
+permission stage detaches fresh owner, member-role, role-permission and overwrite
+inputs immediately when its REST response settles; native discord.js methods use
+those same inputs. Final guild mix replies also respect membership loss, including
+idle maintainer requests. Gateway voice movement remains live during these checks.
+
+Local verification on the integrated correction passed one full run of each
+suite: 434 bot tests, 74 API tests, 63 desktop/phone browser cases and three joined
+browser integrations. The joined two-client case continuously fetches individual
+channels while every full channel-list call is configured to fail, and verifies
+slow controls, temporary outages, offline recovery and permission redaction.
+External Discord/audio replies in these tests are synthetic. Independent review,
+exact-source CI, guarded deployment and repeated live probes still determine
+release readiness; these local results do not establish owner listening acceptance.
+An independent closure review reproduced the original mutable-cache permission
+grant and idle-maintainer mix reply cases against installed discord.js structures.
+Both are closed; 43 focused regressions and three supplemental synthetic probes
+passed, with no remaining source blocker found. Deployment and live acceptance
+remain separate gates.
 
 Remaining owner acceptance: reliable sign-in on Windows and phone, synchronized
 portal controls, audible pause/resume/seek/Warm, queue advancement, device-login

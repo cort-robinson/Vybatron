@@ -93,6 +93,7 @@ async function fixture(t, { limits = {}, now, dataDir, production = false, botOr
     if (url.pathname === '/health') reply(res, 200, { ready: true });
     else if (url.pathname === '/v1/bootstrap') reply(res, 200, bootstrap());
     else if (url.pathname.endsWith('/commands')) reply(res, 200, { ok: true, message: 'Updated.', snapshot: state.snapshot });
+    else if (url.pathname.endsWith('/configuration')) reply(res, 200, { guildId, channels: [{ id: '456789012345678901', name: 'Music', type: 'text' }], roles: [] });
     else if (url.pathname.endsWith('/library')) reply(res, 200, { favorites: [], mixes: [], history: [] });
     else if (url.pathname.endsWith('/search')) reply(res, 200, { tracks: [], notice: null });
     else if (url.pathname.endsWith('/diagnostics')) reply(res, 200, { botReady: true, audioReady: true, uptimeSeconds: 10, recoveryState: 'ready', lastError: null });
@@ -250,18 +251,70 @@ test('Mutations require exact origin and CSRF; browser actors and authority fiel
 
 test('Actual HTTP routes forward exact contract shapes, bounded search and fresh permissions', { timeout: 5000 }, async t => {
   const f = await fixture(t); const device = await f.login(); const headers = { Cookie: device.cookie };
-  for (const resource of ['', '/library', '/search?query=rain%20mix', '/diagnostics', '/activity']) {
+  for (const resource of ['', '/configuration', '/library', '/search?query=rain%20mix', '/diagnostics', '/activity']) {
     const response = await f.request(`/api/guilds/${guildId}${resource}`, { headers });
     assert.equal(response.status, 200); assert.equal(response.headers['cache-control'], 'no-store');
     assert.equal(f.state.calls.at(-1).params.get('actorId'), actorId);
   }
   assert.equal((await f.request(`/api/guilds/${guildId}/search?query=a&query=b`, { headers })).status, 400);
   const before = f.state.calls.length; f.state.authorized = false;
-  for (const resource of ['', '/library', '/diagnostics', '/activity']) {
+  for (const resource of ['', '/configuration', '/library', '/diagnostics', '/activity']) {
     const denied = await f.request(`/api/guilds/${guildId}${resource}`, { headers });
     assert.equal(denied.status, 403); assert.equal(denied.text.includes('SECRET'), false);
   }
-  assert.equal(f.state.calls.length, before + 4);
+  assert.equal(f.state.calls.length, before + 5);
+});
+
+test('Configuration discovery derives identity from the device session and never accepts client authority', { timeout: 5000 }, async t => {
+  const f = await fixture(t); const route = `/api/guilds/${guildId}/configuration`;
+  const anonymousCalls = f.state.calls.length;
+  assert.equal((await f.request(route)).status, 401); assert.equal(f.state.calls.length, anonymousCalls);
+  const device = await f.login(); const headers = { Cookie: device.cookie };
+  const before = f.state.calls.length;
+  for (const query of ['actorId=999', 'admin=true', 'scope=configuration', 'guildId=999']) {
+    assert.equal((await f.request(`${route}?${query}`, { headers })).status, 400);
+  }
+  assert.equal(f.state.calls.length, before);
+  const response = await f.request(route, { headers });
+  assert.equal(response.status, 200); assert.equal(response.headers['cache-control'], 'no-store');
+  assert.deepEqual(response.json(), { guildId, channels: [{ id: '456789012345678901', name: 'Music', type: 'text' }], roles: [] });
+  const call = f.state.calls.at(-1);
+  assert.equal(call.path, `/v1/guilds/${guildId}/configuration`); assert.deepEqual([...call.params], [['actorId', actorId]]);
+  assert.equal(call.body, null); assert.equal(call.authorization, `Bearer ${secret}`);
+  f.state.authorized = false;
+  const revoked = await f.request(route, { headers });
+  assert.equal(revoked.status, 403); assert.equal(revoked.text.includes('SECRET'), false); assert.equal(revoked.text.includes('Music'), false);
+  assert.equal(f.state.calls.length, before + 2, 'Discovery must freshly authorize every read');
+});
+
+test('Logout during configuration discovery prevents the pending catalog from reaching the browser', { timeout: 5000 }, async t => {
+  const f = await fixture(t); const device = await f.login(); let release; let entered = false;
+  f.state.beforeReply = async call => {
+    if (call.path.endsWith('/configuration')) { entered = true; await new Promise(resolve => { release = resolve; }); }
+  };
+  t.after(() => release?.());
+  const pending = f.request(`/api/guilds/${guildId}/configuration`, { headers: { Cookie: device.cookie } });
+  await until(() => entered);
+  const logout = await f.request('/auth/logout', { method: 'POST', headers: { Cookie: device.cookie, Origin: origin, 'X-CSRF-Token': device.csrf } });
+  assert.equal(logout.status, 200); release();
+  const response = await pending; assert.equal(response.status, 401);
+  assert.equal(response.text.includes('channels'), false); assert.equal(response.text.includes('Music'), false);
+});
+
+test('Configuration transport rejects cross-guild, malformed and oversized catalogs without exposing their contents', { timeout: 5000 }, async t => {
+  const f = await fixture(t); const device = await f.login(); const route = `/api/guilds/${guildId}/configuration`;
+  const validChannel = { id: '456789012345678901', name: 'SECRET channel', type: 'text' };
+  for (const data of [
+    { guildId: '999', channels: [validChannel], roles: [] },
+    { guildId, channels: [{ ...validChannel, id: 123 }], roles: [] },
+    { guildId, channels: [{ ...validChannel, type: 'category' }], roles: [] },
+    { guildId, channels: Array.from({ length: 501 }, () => validChannel), roles: [] },
+    { guildId, channels: [], roles: Array.from({ length: 251 }, () => ({ id: '1', name: 'SECRET role' })) },
+  ]) {
+    f.state.bridgeResponse = res => reply(res, 200, data);
+    const response = await f.request(route, { headers: { Cookie: device.cookie } });
+    assert.equal(response.status, 503); assert.equal(response.text.includes('SECRET'), false);
+  }
 });
 
 test('Command whitelist, revision conflicts, size/type bounds, and offline writes are fail-closed without replay', { timeout: 5000 }, async t => {

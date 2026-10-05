@@ -41,6 +41,14 @@ function snapshotFrame(snapshot, guildId, limits) {
   return `event:snapshot\ndata:${data}\n\n`;
 }
 
+function configurationData(data, guildId) {
+  const item = value => value && typeof value.id === 'string' && /^\d{1,20}$/.test(value.id) && typeof value.name === 'string';
+  if (data?.guildId !== guildId || !Array.isArray(data.channels) || data.channels.length > 500 ||
+    !Array.isArray(data.roles) || data.roles.length > 250 ||
+    !data.channels.every(value => item(value) && ['voice', 'text'].includes(value.type)) || !data.roles.every(item)) throw unavailable();
+  return data;
+}
+
 // Test endpoints/timing overrides can only be supplied by a loopback nonproduction
 // caller; the production entrypoint has no fixture/test authentication mechanism.
 export async function createPortalServer(config, testOptions = {}) {
@@ -343,7 +351,7 @@ export async function createPortalServer(config, testOptions = {}) {
           json(res, 200, { viewer: bootstrap.viewer, guilds: bootstrap.guilds, filters: bootstrap.filters,
             commands: bootstrap.commands, csrfToken: session.csrfToken }); return;
         }
-        const match = /^\/api\/guilds\/(\d{1,20})(?:\/(library|search|commands|diagnostics|activity|events))?$/.exec(pathname);
+        const match = /^\/api\/guilds\/(\d{1,20})(?:\/(configuration|library|search|commands|diagnostics|activity|events))?$/.exec(pathname);
         if (!match) throw notFound();
         const [, guildId, resource] = match;
         queryOnly(url, resource === 'search' ? ['query'] : []);
@@ -359,6 +367,7 @@ export async function createPortalServer(config, testOptions = {}) {
         const data = await transport.bridge(endpoint, session.actorId, { query, signal: controller.signal });
         if (!store.get(token)) throw unauthorized();
         if (!resource) snapshotFrame(data, guildId, limits);
+        if (resource === 'configuration') configurationData(data, guildId);
         json(res, 200, data); return;
       }
       if (!['GET', 'HEAD'].includes(req.method)) throw notFound();

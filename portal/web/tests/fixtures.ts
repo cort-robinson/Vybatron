@@ -1,6 +1,6 @@
 // Explicit loopback browser-test fixtures. Not imported by src or emitted in production.
 import type { Page } from '@playwright/test';
-import type { Activity, Bootstrap, Command, Diagnostics, GuildSnapshot, Library, Track } from '../src/types';
+import type { Activity, Bootstrap, Command, Configuration, Diagnostics, GuildSnapshot, Library, Track } from '../src/types';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 
@@ -17,8 +17,9 @@ export function fixtureState() {
     guild: { id: 'testing', name: 'Bot Testing', iconUrl: null, admin: true }, revision: 'revision-1',
     session: { status: 'playing', voiceChannel: { id: 'voice', name: 'General' }, textChannel: { id: 'text', name: 'General' }, current, queue: tracks, positionMs: 107_000, durationMs: 237_000, volume: 75, filter: 'warm', repeat: 'off', radio: false, fairQueue: false, listeners: people, canAdd: true, canControl: true, canVote: true, reason: null },
     savedSession: { exists: false, savedAt: null, positionMs: 0, paused: false, trackCount: 0, voiceChannel: null, canResume: false },
-    settings: { volume: 100, fairQueue: false, djRoleId: null, musicTextChannelId: 'text' }, channels: [{ id: 'voice', name: 'General', type: 'voice' }, { id: 'text', name: 'General', type: 'text' }, { id: 'lounge', name: 'music-lounge', type: 'text' }], roles: [{ id: 'dj', name: 'DJs' }],
+    settings: { volume: 100, fairQueue: false, djRoleId: null, musicTextChannelId: 'text' }, channels: [{ id: 'voice', name: 'General', type: 'voice' }, { id: 'text', name: 'General', type: 'text' }], roles: [{ id: 'dj', name: 'DJs' }],
   };
+  const configuration: Configuration = { guildId: snapshot.guild.id, channels: [...structuredClone(snapshot.channels), { id: 'lounge', name: 'music-lounge', type: 'text' }], roles: structuredClone(snapshot.roles) };
   const bootstrap: Bootstrap = { viewer: { id: 'alex', username: 'alex', displayName: 'Alex', avatarUrl: art('alex'), maintainer: false }, guilds: [snapshot.guild], csrfToken: 'local-test-csrf', filters: [{ id: 'off', label: 'Original', description: 'Unfiltered playback' }, { id: 'warm', label: 'Warm', description: 'A softer, warm sound' }], commands: [
     { name: 'play', description: 'Add a song or public playlist', options: [{ name: 'query', type: 3, required: true, max_length: 200 }] },
     { name: 'playnext', description: 'Play a song next', options: [{ name: 'query', type: 3, required: true, max_length: 200 }] },
@@ -33,7 +34,7 @@ export function fixtureState() {
   const library: Library = { favorites: [tracks[0], current], mixes: [{ id: 'night-shift', name: 'Night shift', ownerId: 'alex', version: 'a'.repeat(32), canEdit: true, tracks: [current, ...tracks] }], history: [{ id: 'history-1', playedAt: 1_791_147_600_000, voiceChannel: { id: 'voice', name: 'General' }, track: tracks[3] }] };
   const diagnostics: Diagnostics = { botReady: true, audioReady: true, uptimeSeconds: 28_800, recoveryState: 'Healthy', lastError: null };
   const activity: Activity = { items: [{ id: 'activity-1', at: 1_791_147_600_000, actor: { id: 'jordan', displayName: 'Jordan' }, action: 'Added a song', detail: 'Night Drive joined the shared queue.' }] };
-  return { snapshot, bootstrap, library, diagnostics, activity };
+  return { snapshot, configuration, bootstrap, library, diagnostics, activity };
 }
 // Model the selected-item HTTP contract independently of the browser's capture logic.
 export function selectedCommandError(library: Library, command: Command) {
@@ -55,6 +56,7 @@ export async function mockPortal(page: Page, options: { signedOut?: boolean; bas
   if (options.outsideVoice) { state.snapshot.session.canAdd = false; state.snapshot.session.canControl = false; state.snapshot.session.canVote = false; state.snapshot.session.reason = 'Join General to add music or use playback controls.'; }
   if (options.maintainerOutsideGuild) {
     state.bootstrap.viewer.maintainer = true; state.snapshot.channels = []; state.snapshot.roles = [];
+    state.configuration.channels = []; state.configuration.roles = [];
     state.snapshot.settings = { volume: 100, fairQueue: false, musicTextChannelId: '123456789012345678', djRoleId: '223456789012345678' };
     Object.assign(state.snapshot.session, { status: 'idle', current: null, queue: [], listeners: [], voiceChannel: null, textChannel: null, canAdd: false, canControl: false, canVote: false, reason: 'Join this server to control playback.' });
   }
@@ -88,6 +90,10 @@ export async function mockPortal(page: Page, options: { signedOut?: boolean; bas
     const path = new URL(route.request().url()).pathname; requests.push(path);
     if (signedOut) { await route.fulfill({ status: 401, json: { error: { code: 'unauthenticated', message: 'Sign in with Discord.' } } }); return; }
     if (path.endsWith('/bootstrap')) await route.fulfill(reply(state.bootstrap));
+    else if (path.endsWith('/configuration')) {
+      if (!state.snapshot.guild.admin) await route.fulfill({ status: 403, json: { error: { code: 'forbidden', message: 'Manage Server permission is required for channel and role options.' } } });
+      else await route.fulfill(reply(state.configuration));
+    }
     else if (path.endsWith('/library')) { if (libraryFailure) await route.fulfill({ status: 503, json: { error: { code: 'unavailable', message: 'The music library is temporarily unavailable.' } } }); else { const response = reply(state.library); const delay = libraryDelay; if (delay) await new Promise(resolve => setTimeout(resolve, delay)); await route.fulfill(response); } }
     else if (path.endsWith('/search')) await route.fulfill(reply({ tracks: [track('midnight-city', 'Midnight City', 'M83', 244_000, 'night')], notice: 'Local browser-test search results.' }));
     else if (path.endsWith('/diagnostics')) await route.fulfill(reply(state.diagnostics));

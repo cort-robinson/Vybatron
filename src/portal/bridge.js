@@ -6,7 +6,7 @@ import { searchMusic } from '../utils/search.js';
 import { validatePlaybackQuery } from '../utils/query.js';
 import { withTimeout } from '../utils/enqueue.js';
 import { createPortalPolicy } from './policy.js';
-import { FILTERS, actorProjection, guildProjection, trackProjection, snapshotProjection, libraryProjection, activityProjection, createRevisions } from './projection.js';
+import { FILTERS, actorProjection, guildProjection, trackProjection, snapshotProjection, libraryProjection, activityProjection, configurationProjection, createRevisions } from './projection.js';
 import { publicCommands, executePortalCommand } from './commands.js';
 import { fail, safeError } from './errors.js';
 
@@ -88,23 +88,25 @@ export function startPortalBridge(client, {
           const ids = [...client.guilds.cache.keys()].slice(0, 1000);
           for (let start = 0; start < ids.length; start += 4) {
             const results = await Promise.all(ids.slice(start, start + 4).map(async id => {
-              try { return guildProjection(await policy.guild(actorId, id, who)); }
+              try { return guildProjection(await policy.guild(actorId, id, who, { channelScope: 'none' })); }
               catch (error) { if (error?.status === 404) return null; throw error; }
             }));
             guilds.push(...results.filter(Boolean));
           }
           return json(response, 200, { viewer: { id: who.user.id, username: who.user.username.slice(0, 80), displayName: actorProjection(who.user).displayName, avatarUrl: actorProjection(who.user).avatarUrl, maintainer: who.maintainer }, guilds, filters: FILTERS, commands: publicCommands(commandMap) }, maxResponseBytes);
         }
-        const match = url.pathname.match(/^\/v1\/guilds\/(\d{1,22})(?:\/(library|search|commands|diagnostics|activity))?$/);
+        const match = url.pathname.match(/^\/v1\/guilds\/(\d{1,22})(?:\/(library|search|commands|diagnostics|activity|configuration))?$/);
         if (!match) fail(404, 'not_found', 'That bridge endpoint does not exist.');
         const [, guildId, resource] = match;
         if (resource === 'commands' && request.method === 'POST') return json(response, 200, await executePortalCommand(client, policy, revisions, commandMap, guildId, body), maxResponseBytes);
         if (request.method !== 'GET' || resource === 'commands') fail(400, 'invalid_method', 'That request method is unsupported.');
         const actorId = url.searchParams.get('actorId');
-        const context = await policy.guild(actorId, guildId);
+        const channelScope = resource === 'library' ? 'history' : resource === 'configuration' ? 'configuration' : ['activity', 'diagnostics'].includes(resource) ? 'none' : 'session';
+        const context = await policy.guild(actorId, guildId, undefined, { channelScope });
         let result;
         if (!resource) result = snapshotProjection(client, context, revisions.revision(guildId));
         if (resource === 'library') result = libraryProjection(client, context);
+        if (resource === 'configuration') result = configurationProjection(context);
         if (resource === 'activity' || resource === 'diagnostics') {
           if (!context.admin) fail(403, 'admin_required', 'Manage Server permission is required.');
           if (resource === 'activity') result = activityProjection(client, guildId);

@@ -49,3 +49,11 @@ desktop/phone Stop/Clear confirmation cases. Expanded dialogs explicitly restore
 pointer input: Cancel/Close makes no mutation, and confirmation submits once with
 the original queue revision. The exact release commit must also pass the full
 117-case browser suite and other required CI checks before deployment.
+
+The first repair CI run passed all 117 UI browser cases, 434 core tests and 74
+API/auth tests. A separate compiled-browser integration assertion still expected
+the compact empty-state text to be a heading. It now checks the scoped text and
+empty-player button, retaining disabled-control assertions after real channel
+permission revocation. The complete two-client transient-outage/offline/revocation
+scenario passed locally after that correction. The corrected release still
+requires its own full CI gate.

@@ -140,7 +140,9 @@ test('two real clients recover transient authorization reads and synchronize slo
   // failures retain the last known display. This exercises the real policy.
   bot.channels.get('300').hidden.add('200');
   await Promise.all(pages.map(async page => {
-    await expect(page.getByRole('heading', { name: 'Your next good vibe' })).toBeVisible();
+    const player = page.getByTestId('player');
+    await expect(player.getByRole('button', { name: 'Open player details', exact: true })).toBeVisible();
+    await expect(player.getByText('Your next good vibe', { exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Resume playback' })).toBeDisabled();
   }));
   assert.ok(rejectedPolicyReads >= 2, 'Real authority failures must actually reach the integration boundary');

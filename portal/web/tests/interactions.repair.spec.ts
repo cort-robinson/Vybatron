@@ -186,18 +186,20 @@ test('queue pagination clamps a shorter queue and a compact queue renders only f
   expect(fixture.commands[0]).toEqual({ command: 'favorite', subcommand: 'add', options: { position: 16 }, expectedRevision: 'shorter-queue' });
 });
 
-test('phone queue keeps readable metadata and separate forty-four pixel targets at 390 and 320 widths', async ({ page }) => {
+test('phone queue keeps readable metadata, one forty-four pixel row menu, and favorites inside it at 390 and 320 widths', async ({ page }) => {
   const fixture = await mockPortal(page);
   fixture.state.snapshot.session.queue[0].title = 'A very long live performance title with guests and a bonus encore that keeps going';
   await page.goto('/');
   const row = page.locator('.queue .track-row').first();
   for (const width of [390, 320]) {
     await page.setViewportSize({ width, height: 844 });
-    const heart = await row.locator('.favorite').boundingBox(); const menu = await row.locator('.row-menu > button').boundingBox();
-    expect(heart).not.toBeNull(); expect(menu).not.toBeNull();
-    expect(heart!.width).toBeGreaterThanOrEqual(44); expect(heart!.height).toBeGreaterThanOrEqual(44);
+    await expect(row.locator('> .favorite')).toBeHidden();
+    const menu = await row.locator('.row-menu > button').boundingBox();
+    expect(menu).not.toBeNull();
     expect(menu!.width).toBeGreaterThanOrEqual(44); expect(menu!.height).toBeGreaterThanOrEqual(44);
-    expect(menu!.x).toBeGreaterThanOrEqual(heart!.x + heart!.width);
+    await row.locator('.row-menu > button').click();
+    await expect(row.locator('.menu-panel').getByRole('button', { name: /favorite/i })).toBeVisible();
+    await page.keyboard.press('Escape');
     expect(await row.locator('.track-text strong').evaluate(el => parseFloat(getComputedStyle(el).fontSize))).toBeGreaterThanOrEqual(16);
     expect(await row.locator('.track-text > span').evaluate(el => parseFloat(getComputedStyle(el).fontSize))).toBeGreaterThanOrEqual(14);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);

@@ -93,8 +93,11 @@ readout. Queue column labels are the only small uppercase text. Minimums are unc
 ## Layout
 
 Geometry is unchanged from the October 5 repair: fixed sidebar, 114px topbar, 154px
-persistent player on desktop; top server header, 64px bottom navigation, and 108px compact
-player at 1023px and below. The expanded sleeve keeps its 52:48 artwork and Up Next grid.
+persistent player on desktop. At 1023px and below: one 72px server header (waveform mark,
+server picker, a single status line with voice room and listeners, and the Add music button),
+a 72px compact player whose progress is a passive hairline, and 64px bottom navigation. The
+page title stays for assistive technology only. Voice room and listeners appear once, in the
+server header (plus the desktop listener avatars). The expanded sleeve keeps its 52:48 artwork and Up Next grid.
 The cover and its spectrum share one container-query size (`--cover`), so the display
 strip always matches the cover width. Short landscape phones hide the sleeve spectrum.
 
@@ -145,7 +148,7 @@ ground with a strong line and a deep shadow.
 
 The player has one identity, one timeline, and one transport in either composition. Current favorite sits beside the title when visible. Seek is disabled for streams, absent/zero duration, recovery/unavailable state, or lack of control permission. Paused transport uses amber. Controls and selected filter mirror the API snapshot; elapsed playback display interpolates only while playing with live state.
 
-Upcoming rows exclude the current track. Drag reorder captures guild and revision; row menus offer Move up/down and removals. Queue favorite saves use a one-based position and snapshot revision, separate from voice-bound playback controls. The compact expanded queue moves its favorite into the row menu. Player More exposes Clear upcoming queue with confirmation that the current song, position, and playback state continue; Stop separately confirms clearing playback and discarding the checkpoint.
+Upcoming rows exclude the current track. Drag reorder captures guild and revision; row menus offer Move up/down and removals. Queue favorite saves use a one-based position and snapshot revision, separate from voice-bound playback controls. The compact expanded queue and the phone queue move the favorite into the row menu. Player More exposes Clear upcoming queue with confirmation that the current song, position, and playback state continue; Stop separately confirms clearing playback and discarding the checkpoint.
 
 ### Permission, connection, and recovery states
 

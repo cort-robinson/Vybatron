@@ -8,10 +8,6 @@
   gap: 10px;
 }
 
-.queue .queue-footnote {
-  font-size: 14px;
-}
-
 @media (min-width: 1024px) and (max-width: 1330px) {
   .queue.queue-compact .track-row { grid-template-columns: 22px minmax(0, 1fr) 44px 44px; gap: 8px; }
 }
@@ -30,9 +26,9 @@
   }
 
   .queue .track-row {
-    grid-template-columns: 22px minmax(0, 1fr) 44px 44px;
+    grid-template-columns: 22px minmax(0, 1fr) 44px;
     gap: 6px;
-    min-height: 92px;
+    min-height: 64px;
   }
 
   .queue.queue-compact .track-row {
@@ -49,7 +45,7 @@
 
   .queue .artwork {
     width: 44px;
-    height: 48px;
+    height: 44px;
   }
 
   .queue .track-text strong {

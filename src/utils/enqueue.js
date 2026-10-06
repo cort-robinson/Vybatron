@@ -43,7 +43,7 @@ export async function enqueueTracks(client, player, tracks, { next = false, fair
   return incoming.length;
 }
 
-export function getOrCreatePlayer(interaction, channel) {
+export function getOrCreatePlayer(interaction, channel, { textChannelId = interaction.channelId } = {}) {
   const lavalink = interaction.client.lavalink;
   const existing = lavalink.getPlayer(interaction.guildId);
   if (existing?.getData?.('vybertron.stopping') === true) throw new Error('The listening session is stopping. Try /play again in a moment.');
@@ -52,11 +52,14 @@ export function getOrCreatePlayer(interaction, channel) {
     throw new Error('No available Lavalink nodes. The audio service is reconnecting.');
   }
   if (existing) return { player: existing, created: false };
+  interaction.portalAssertRevision?.();
   const volume = interaction.client.library?.settings(interaction.guildId).volume ?? 100;
-  return { created: true, player: lavalink.createPlayer({
-    guildId: interaction.guildId, voiceChannelId: channel.id, textChannelId: interaction.channelId,
+  const player = lavalink.createPlayer({
+    guildId: interaction.guildId, voiceChannelId: channel.id, textChannelId,
     selfDeaf: true, volume,
-  }) };
+  });
+  interaction.portalPlayerCreated?.(player);
+  return { created: true, player };
 }
 
 export async function resolveReferences(player, references, requester, { limit = LIBRARY_LIMITS.mixTracks, timeoutMs = 10_000, totalTimeoutMs = 60_000 } = {}) {

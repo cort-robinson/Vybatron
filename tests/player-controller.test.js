@@ -9,7 +9,9 @@ import {
   refresh,
   resetControllers,
   showStatus,
+  requestControllerEnd,
 } from '../src/utils/player-controller.js';
+import { getPresentationDiagnostics, submitPresentationWrite } from '../src/utils/presentation-updates.js';
 
 function track(id = 'one') {
   return { info: { title: id, author: 'Artist', identifier: id, uri: `https://example.com/${id}` } };
@@ -108,7 +110,7 @@ test('concurrent first-track writes create one controller', async () => {
   const update = refresh(f.client, p);
   await Promise.all([create, update]);
   assert.equal(f.sends, 1);
-  assert.equal(f.edits, 1);
+  assert.equal(f.edits, 0, 'overlapping initial intents share the latest render');
   assert.equal(getControllerRecord('concurrent').messageId, 'message-1');
 });
 
@@ -141,6 +143,52 @@ test('ending edits the existing message and removes the session registry', async
   await end(f.client, p, 'Stopped by a listener.');
   assert.equal(f.edits, 1);
   assert.equal(getControllerRecord('ended'), null);
+});
+
+test('rejected terminal admission cleans owned metadata synchronously while saturated writers retain fences', async () => {
+  const f = fixture(); const p = player('saturated-terminal');
+  await createOrUpdate(f.client, p);
+  const gate = deferred();
+  const held = Array.from({ length: 256 }, (_, i) => submitPresentationWrite(`saturation:${i}`, () => gate.promise));
+  try {
+    await new Promise(resolve => setImmediate(resolve));
+    const before = getPresentationDiagnostics();
+    assert.equal(before.records, 256); assert.equal(before.ordinary, 4); assert.equal(before.terminal, 0);
+    const ending = requestControllerEnd(f.client, p);
+    assert.equal(getControllerRecord(p.guildId), null, 'cleanup cannot depend on a dropped terminal operation');
+    assert.equal(await ending, null);
+    assert.deepEqual(getPresentationDiagnostics(), { ...before, drops: before.drops + 1 });
+    assert.equal(await createOrUpdate(f.client, p), null, 'synchronous retirement fences late starts');
+    assert.equal(f.edits, 0, 'cosmetic terminal admission is best effort at capacity');
+  } finally {
+    gate.resolve(); await Promise.all(held);
+  }
+  assert.equal(getPresentationDiagnostics().records, 0);
+  assert.equal(getControllerRecord(p.guildId), null);
+});
+
+test('bounded native controller callers await actual settlement and preserve message results', async t => {
+  for (const [name, call] of [
+    ['createOrUpdate', (f, p) => createOrUpdate(f.client, p)],
+    ['refresh', (f, p) => refresh(f.client, p)],
+    ['showStatus', (f, p) => showStatus(f.client, p, 'recovering', 'Reconnecting.')],
+    ['end', (f, p) => end(f.client, p)],
+  ]) await t.test(name, async () => {
+    const f = fixture(); const p = player(`await-${name}`);
+    await createOrUpdate(f.client, p);
+    const message = f.messages.get('message-1');
+    const gate = deferred(); const entered = deferred();
+    message.edit = async () => { entered.resolve(); await gate.promise; return message; };
+    let settled = false;
+    const operation = call(f, p).then(result => { settled = true; return result; });
+    try {
+      await entered.promise; await new Promise(resolve => setImmediate(resolve));
+      assert.equal(settled, false);
+      assert.ok(getControllerRecord(p.guildId), 'terminal metadata remains until an admitted operation settles');
+    } finally { gate.resolve(); }
+    assert.equal(await operation, message);
+    assert.equal(getControllerRecord(p.guildId) === null, name === 'end');
+  });
 });
 
 test('refresh preserves recovery and only a started track restores active controls', async () => {
@@ -312,4 +360,103 @@ test('a native edit failing after Stop cannot fall back to sending a fresh activ
   await ending;
   assert.equal(f.sends, 1);
   assert.equal(getControllerRecord(f.player.guildId), null);
+});
+
+test('a held edit coalesces a refresh burst into one latest paused track render', async () => {
+  const f = fixture(); const p = player('burst');
+  await createOrUpdate(f.client, p);
+  const gate = deferred(); const entered = deferred();
+  const message = f.messages.get('message-1'); const edit = message.edit;
+  let calls = 0;
+  message.edit = async payload => { if (++calls === 1) { entered.resolve(); await gate.promise; } return edit(payload); };
+  const first = refresh(f.client, p); await entered.promise;
+  const pending = Array.from({ length: 12 }, () => refresh(f.client, p));
+  p.paused = true; p.queue.current = track('Latest song');
+  assert.equal(calls, 1);
+  gate.resolve(); await Promise.all([first, ...pending]);
+  assert.equal(calls, 2);
+  assert.equal(f.payloads.at(-1).embeds[0].data.title, 'Latest song');
+  assert.equal(f.payloads.at(-1).embeds[0].data.author.name, 'Paused');
+});
+
+test('payload derives current recovery state after held lookup', async () => {
+  const f = fixture(); const p = player('latest-after-lookup');
+  await createOrUpdate(f.client, p);
+  const gate = deferred(); const entered = deferred(); let calls = 0;
+  f.channel.messages.fetch = async id => { if (++calls === 1) { entered.resolve(); await gate.promise; } return f.messages.get(id); };
+  const updating = refresh(f.client, p); await entered.promise;
+  const recovering = showStatus(f.client, p, 'unavailable', 'Audio unavailable.');
+  p.queue.current = null;
+  gate.resolve(); await Promise.all([updating, recovering]);
+  assert.ok(f.payloads.slice(1).every(payload => payload.embeds[0].data.author.name === 'Playback Unavailable'));
+  assert.equal(f.payloads.at(-1).embeds[0].data.title, 'one', 'unavailable keeps the last-track fallback');
+});
+
+test('a submitted old edit settles before terminal controls and never gets a late active follow-up', async () => {
+  const f = nativeFixture('submitted-stop');
+  await createOrUpdate(f.client, f.player);
+  const gate = deferred(); const entered = deferred();
+  const message = f.messages.get('message-1'); const edit = message.edit;
+  let calls = 0;
+  message.edit = async payload => { if (++calls === 1) { entered.resolve(); await gate.promise; } return edit(payload); };
+  const updating = refresh(f.client, f.player); await entered.promise;
+  f.player.setData('vybertron.stopping', true);
+  const ending = end(f.client, f.player);
+  assert.equal(await refresh(f.client, f.player), null);
+  assert.equal(calls, 1);
+  gate.resolve(); await Promise.all([updating, ending]);
+  assert.equal(calls, 2); assertEndedControls(f.payloads.at(-1));
+});
+
+test('same-channel replacement adopts a submitted old send after settlement', async () => {
+  const f = nativeFixture('submitted-send');
+  const gate = deferred(); const entered = deferred();
+  const send = f.channel.send;
+  f.channel.send = async payload => { entered.resolve(); await gate.promise; return send(payload); };
+  const creating = createOrUpdate(f.client, f.player); await entered.promise;
+  f.manager.deletePlayer(f.player.guildId);
+  const replacement = f.createNative('Replacement after send');
+  const replacing = createOrUpdate(f.client, replacement);
+  const ending = end(f.client, f.player);
+  gate.resolve(); await Promise.all([creating, replacing, ending]);
+  assert.equal(f.sends, 1); assert.equal(f.edits, 1);
+  assert.equal(getControllerRecord(replacement.guildId).player, replacement);
+  assert.equal(f.payloads.at(-1).embeds[0].data.title, 'Replacement after send');
+});
+
+test('different-channel replacement retires the old controller after its held lookup and owns the new render', async () => {
+  const f = nativeFixture('replacement-other-channel');
+  await createOrUpdate(f.client, f.player);
+  const gate = deferred(); const entered = deferred(); let reads = 0;
+  f.channel.messages.fetch = async id => { if (++reads === 1) { entered.resolve(); await gate.promise; } return f.messages.get(id); };
+  const updating = refresh(f.client, f.player); await entered.promise;
+  f.player.setData('vybertron.stopping', true);
+  const ending = end(f.client, f.player);
+  f.manager.deletePlayer(f.player.guildId);
+  const current = f.createNative('New channel song'); current.textChannelId = 'other-channel';
+  f.client.channels.cache.set('other-channel', { messages: f.channel.messages, send: f.channel.send });
+  const replacing = createOrUpdate(f.client, current);
+  gate.resolve(); await Promise.all([updating, ending, replacing]);
+  assert.equal(f.sends, 2); assert.equal(f.edits, 1);
+  assertEndedControls(f.payloads[1]);
+  assert.equal(f.payloads.at(-1).embeds[0].data.title, 'New channel song');
+  assert.equal(getControllerRecord(current.guildId).player, current);
+  assert.equal(getControllerRecord(current.guildId).previous, null);
+});
+
+test('a held terminal edit cannot delete a same-channel replacement that follows it', async () => {
+  const f = nativeFixture('terminal-replacement');
+  await createOrUpdate(f.client, f.player);
+  const gate = deferred(); const entered = deferred(); let writes = 0;
+  const message = f.messages.get('message-1'); const edit = message.edit;
+  message.edit = async payload => { if (++writes === 1) { entered.resolve(); await gate.promise; } return edit(payload); };
+  const ending = end(f.client, f.player); await entered.promise;
+  f.manager.deletePlayer(f.player.guildId);
+  const current = f.createNative('After terminal');
+  const replacing = createOrUpdate(f.client, current);
+  assert.equal(writes, 1);
+  gate.resolve(); await Promise.all([ending, replacing]);
+  assert.equal(writes, 2);
+  assert.equal(getControllerRecord(current.guildId).player, current);
+  assert.equal(f.payloads.at(-1).embeds[0].data.title, 'After terminal');
 });

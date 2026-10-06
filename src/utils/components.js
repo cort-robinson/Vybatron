@@ -9,10 +9,11 @@ import {
   textPayload,
 } from './messages.js';
 import {
-  end,
+  requestControllerEnd,
   getControllerRecord,
   getMessageLink,
   refresh,
+  requestControllerRefresh,
 } from './player-controller.js';
 import {
   nextLoopMode,
@@ -28,6 +29,7 @@ import { clearVoiceStatus, updateVoiceStatus } from './voice-status.js';
 import { buildHelpPayload } from './help.js';
 import { buildHistoryPayload, historySessionKey, replayHistoryTrack } from './history.js';
 import { cancelGuildMutations } from './requests.js';
+import { retirePresentationPlayer } from './presentation-updates.js';
 
 async function disableStaleComponents(interaction) {
   await interaction.message?.edit?.({ components: [] }).catch(() => {});
@@ -84,7 +86,7 @@ async function handlePlayerComponent(interaction, action, expectedIdentity = nul
 
   if (action === 'refresh') {
     await interaction.deferUpdate();
-    await refresh(interaction.client, player);
+    requestControllerRefresh(interaction.client, player);
     return null;
   }
 
@@ -159,6 +161,7 @@ async function handlePlayerComponent(interaction, action, expectedIdentity = nul
   if (action === 'stop-confirm') {
     cancelGuildMutations(interaction.guildId);
     controlledPlayer.setData?.('vybertron.stopping', true);
+    retirePresentationPlayer(controlledPlayer);
     const cleared = controlledPlayer.queue.tracks.length;
     const username = safeText(interaction.user?.globalName || interaction.user?.username, {
       fallback: 'a listener',
@@ -167,8 +170,8 @@ async function handlePlayerComponent(interaction, action, expectedIdentity = nul
     try {
       await controlledPlayer.stopPlaying?.(true, false);
       await interaction.update({ content: 'Stopping playback…', components: [] });
-      await clearVoiceStatus(interaction.client, controlledPlayer);
-      await end(interaction.client, controlledPlayer, `Stopped by ${username}.`);
+      clearVoiceStatus(interaction.client, controlledPlayer);
+      requestControllerEnd(interaction.client, controlledPlayer, `Stopped by ${username}.`);
     } finally {
       await controlledPlayer.destroy();
     }

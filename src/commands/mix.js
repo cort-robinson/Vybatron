@@ -1,5 +1,5 @@
 import { EmbedBuilder, MessageFlags, SlashCommandBuilder } from 'discord.js';
-import { requireControl, requireUserVoice } from '../utils/guards.js';
+import { requireLibrarySource, requireUserVoice } from '../utils/guards.js';
 import { LIBRARY_LIMITS, trackReference } from '../utils/library.js';
 import { loadCollection, mayEditMix, mixKey } from '../utils/library-actions.js';
 import { COLORS, ephemeralText } from '../utils/messages.js';
@@ -23,23 +23,33 @@ export async function execute(interaction) {
   const key = mixKey(interaction.options.getString('name'));
   const existing = Object.hasOwn(mixes, key) ? mixes[key] : null;
   if (action === 'save') {
-    const player = await requireControl(interaction, { checkDJ: false }); if (!player) return;
+    const player = await requireLibrarySource(interaction); if (!player) return;
     if (!mayEditMix(interaction, existing)) return interaction.reply(ephemeralText('That mix belongs to another listener. Choose a new name.'));
     if (existing && !interaction.options.getBoolean('replace')) return interaction.reply(ephemeralText('That mix already exists. Set replace to true to update your saved mix.'));
     const raw = [player.queue.current, ...player.queue.tracks].filter(Boolean);
     if (raw.length > LIBRARY_LIMITS.mixTracks) return interaction.reply(ephemeralText(`A mix holds at most ${LIBRARY_LIMITS.mixTracks} tracks. Trim this queue first.`));
     const tracks = raw.map(trackReference).filter(Boolean);
     if (!tracks.length) return interaction.reply(ephemeralText('Add a playable song before saving a mix.'));
-    await library.updateGuild(interaction.guildId, guild => {
+    const stored = await library.updateGuild(interaction.guildId, async guild => {
+      const fresh = await requireLibrarySource(interaction);
+      if (!fresh) return false;
+      const live = [fresh.queue.current, ...fresh.queue.tracks].filter(Boolean);
+      if (fresh !== player || live.length !== raw.length || live.some((track, index) => track !== raw[index])) throw new Error('Your mix changed. Refresh before saving it.');
       if (!existing && Object.keys(guild.mixes).length >= LIBRARY_LIMITS.mixes) throw new Error(`This server can save ${LIBRARY_LIMITS.mixes} mixes. Remove an unused mix first.`);
       guild.mixes[key] = { ownerId: existing?.ownerId || interaction.user.id, tracks, savedAt: Date.now() };
+      return true;
     });
+    if (!stored) return;
     return interaction.reply(ephemeralText(`Saved **${safeText(key)}** with ${tracks.length} tracks.${raw.length !== tracks.length ? ' Tracks without public catalog links were left out.' : ''}`));
   }
   if (!existing) return interaction.reply(ephemeralText('That mix does not exist. Browse saved names with /mix list.'));
   if (action === 'delete') {
     if (!mayEditMix(interaction, existing)) return interaction.reply(ephemeralText('Only the mix owner or a server manager can delete it.'));
-    await library.updateGuild(interaction.guildId, guild => { delete guild.mixes[key]; });
+    await library.updateGuild(interaction.guildId, async guild => {
+      await interaction.portalRecheck?.();
+      interaction.portalAssertMix?.(guild.mixes[key]);
+      delete guild.mixes[key];
+    });
     return interaction.reply(ephemeralText(`Deleted **${safeText(key)}**.`));
   }
   const channel = await requireUserVoice(interaction, { checkBotAccess: true }); if (!channel) return;

@@ -70,6 +70,7 @@ export function installRuntime(client, {
           await new Promise((resolve) => setTimeout(resolve, 20));
         }
         const tasks = [
+          ['portal_close_failed', () => client.portalBridge?.close?.()],
           ['library_close_failed', () => client.library?.close?.()],
           ['presence_close_failed', stopPresence],
           ['voice_close_failed', async () => {

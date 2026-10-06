@@ -59,3 +59,58 @@ jobs:
           CLIENT_ID: ci-placeholder
           LAVALINK_PASSWORD: ci-placeholder
           SPOTIFY_SP_DC: ""
+
+  portal:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            portal/server/package-lock.json
+            portal/web/package-lock.json
+      - name: Install portal dependencies
+        run: |
+          npm ci
+          npm --prefix portal/server ci
+          npm --prefix portal/web ci
+      - name: Test portal authentication and API
+        run: npm run portal:test
+      - name: Build portal web client
+        run: npm run portal:build
+      - name: Install browser for portal verification
+        working-directory: portal/web
+        run: npx playwright install --with-deps chromium
+      - name: Verify portal desktop, phone and accessibility
+        working-directory: portal/web
+        run: npm test
+      - name: Verify browser OAuth through proxy and authoritative bot adapter
+        run: npm run portal:integration
+      - name: Audit portal runtime dependencies
+        run: |
+          npm --prefix portal/server audit --omit=dev --audit-level=high
+          npm --prefix portal/web audit --omit=dev --audit-level=high
+      - name: Build isolated portal image
+        run: docker build -f portal/Dockerfile -t vybertron-portal:ci .
+      - name: Verify encrypted login persistence across bounded containers
+        run: |
+          for phase in create reopen; do
+            docker run --rm -i --read-only --memory=192m --memory-swap=256m --cpus=0.5 --pids-limit=64 \
+              --tmpfs /tmp:rw,noexec,nosuid,size=16m -v vybertron-ci-portal-auth:/app/data \
+              -e NODE_OPTIONS=--max-old-space-size=112 -e PORTAL_CI_PHASE=$phase \
+              vybertron-portal:ci node --input-type=module < portal/integration/container-auth.mjs
+          done
+      - name: Validate private portal overlay
+        run: docker compose -f docker-compose.yml -f docker-compose.portal.yml --profile portal config --quiet
+        env:
+          DISCORD_BOT_TOKEN: ci-placeholder
+          CLIENT_ID: ci-placeholder
+          LAVALINK_PASSWORD: ci-placeholder
+          PORTAL_ORIGIN: https://vybertron.example.ts.net
+          DISCORD_CLIENT_SECRET: ci-placeholder
+          PORTAL_BRIDGE_TOKEN: ci-placeholder
+          PORTAL_SESSION_SECRET: ci-placeholder

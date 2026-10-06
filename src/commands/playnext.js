@@ -48,6 +48,7 @@ export async function execute(interaction) {
     if (!await recheckEnqueueRequest(interaction, player, channel, { checkDJ: true })) return;
     const track = result.tracks[0];
     const starting = !player.playing && !player.paused && !player.queue.current;
+    interaction.portalMutationStarted?.();
     await enqueueTracks(interaction.client, player, track, { next: true }); added = true;
     if (!await recheckEnqueueRequest(interaction, player, channel, { checkDJ: true })) return;
     if (!player.connected) await player.connect();

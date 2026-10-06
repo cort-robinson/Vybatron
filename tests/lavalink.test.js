@@ -11,12 +11,21 @@ import {
   handlePlayerDestroy,
 } from '../src/lavalink.js';
 import { startPresence } from '../src/utils/presence.js';
+import { presentationWritePending } from '../src/utils/presentation-updates.js';
 import {
   getControllerRecord,
   resetControllers,
 } from '../src/utils/player-controller.js';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+async function drainPresentation(guildId) {
+  const deadline = Date.now() + 1000;
+  while (presentationWritePending(`controller:${guildId}`) || presentationWritePending(`voice:${guildId}`)) {
+    assert.ok(Date.now() < deadline, 'scheduled presentation did not drain');
+    await sleep(1);
+  }
+}
 
 function mockPlayer(guildId = 'g1') {
   let destroyed = 0;
@@ -123,11 +132,13 @@ test('V10: first trackStart sends once and later starts edit the controller', as
   const client = mockClient(channel);
   const player = mockPlayer('a1');
   await handleTrackStart(client, player, track);
+  await drainPresentation(player.guildId);
   assert.equal(channel.sends, 1);
 
   const nextTrack = { info: { title: 'Next', uri: 'https://youtu.be/y' } };
   player.queue.current = nextTrack;
   await handleTrackStart(client, player, nextTrack);
+  await drainPresentation(player.guildId);
   assert.equal(channel.sends, 1);
   assert.equal(channel.edits, 1);
 });

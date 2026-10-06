@@ -1,0 +1,17 @@
+# Portal latency correction
+
+User accepted clear playback and synchronization on the deployed 90025b6 UI, but reported several-second latency. Standard service tier and high effort only; no Fast or Max. Target reduce avoidable sync waiting without relaxing fresh Discord authorization, channel/voice/DJ checks, revision/selected-item guards, Stop reservations or no-write-replay.
+
+Live baseline: 18/18 read-only checks passed, snapshots 786-1903 ms, native Queue 3191-6134 ms. Current SSE waits 3000 ms after each completed read. Command request is independently authorized and returns a protected actor-specific snapshot. Never broadcast that snapshot to another actor/session.
+
+First scoped implementation: wake already-open same-guild SSE streams immediately after a successfully validated command result, using each stream's own session-derived actor and a new trusted policy read. Coalesce notifications during in-flight read; ensure a read begun before a command's completion cannot consume its wakeup. No parallel ticks, bypass of transient backoff, client-controlled wake endpoint, persistent authorization cache, unbounded buffers or mutations. Maintain periodic polling for Discord-originated changes and revocation. Terminal access errors close; heartbeat stays independent. Failed/uncertain commands must not replay and need existing recovery.
+
+Backend ownership portal/server only; root owns docs, client integration, CI and guarded deployment. Read-only parallel review examines client/authoritative bot latency sources and proposes safe next corrections. Children must not commit, deploy, access VPS or secrets, touch audio services or edit other scopes.
+
+## Integrated behavior and verification
+
+The client can avoid an additional snapshot GET when an independently authorized live frame already matches the complete command result, including capabilities, listeners and position. This requires the current guild/generation, an unexpired freshness lease and an unchanged connection-loss fence. It retires earlier stream/read work and retains the live frame's freshness/position timestamps. A matching revision alone is insufficient; differing state still requires the existing post-reply read. No optimistic permission update or write replay is introduced.
+
+The two-device compiled integration runs the actual OAuth/API/bot adapter with external Discord/audio fixtures and a 60-second polling interval. The old deployed server failed the two-second observer-update limit; the correction passed with 13 ms from server reply to the other browser updating in the final integrated run (42 ms in an earlier run). This isolates the removed polling wait; it is not a production network or physical-device latency measurement. Fresh Discord authorization still contributes real latency.
+
+All 80 API/auth tests passed, including cross-actor/guild isolation, coalesced in-flight wakes, stale shared-read fencing, unchanged retry backoff, failed/uncertain command behavior and logout cancellation. The server's independent security review found no blocker. All four compiled OAuth, live-sync, latency and production PWA integrations passed after the client build. Browser ordering checks cover delayed replies, later Discord state, stale GETs, offline/revoked access and equal-revision permission changes. Release still requires exact-head CI and the guarded idle deployment, with original audio services and persistent data preserved.

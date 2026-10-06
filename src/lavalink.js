@@ -1,11 +1,11 @@
 import { LavalinkManager } from 'lavalink-client';
 import { config } from './config.js';
 import {
-  createOrUpdate,
-  end,
-  refresh,
+  requestControllerUpdate,
+  requestControllerEnd,
+  requestControllerRefresh,
   setNotice,
-  showStatus,
+  requestControllerStatus,
 } from './utils/player-controller.js';
 import { plainText } from './utils/presentation.js';
 import { clearTrackPresence, updateTrackPresence } from './utils/presence.js';
@@ -18,6 +18,7 @@ import {
   isPlaybackRecovering,
 } from './playback-recovery.js';
 import { createPlaybackWatchdog } from './playback-watchdog.js';
+import { retirePresentationPlayer } from './utils/presentation-updates.js';
 
 export const IDLE_MS = 5 * 60 * 1000;
 
@@ -32,6 +33,7 @@ export function startIdleTimer(player, options = IDLE_MS) {
   clearIdleTimer(player.guildId);
   const timer = setTimeout(() => {
     idleTimers.delete(player.guildId);
+    retirePresentationPlayer(player);
     const message = reason === 'voice-empty'
       ? 'Disconnected after the voice channel stayed empty for five minutes.'
       : reason === 'audio-unavailable'
@@ -39,8 +41,8 @@ export function startIdleTimer(player, options = IDLE_MS) {
         : 'Disconnected after five minutes with an empty queue.';
     void (async () => {
       try {
-        if (client) await clearVoiceStatus(client, player);
-        if (client) await end(client, player, message);
+        if (client) clearVoiceStatus(client, player);
+        if (client) requestControllerEnd(client, player, message);
       } catch {
         // A controller edit must never prevent the idle disconnect.
       } finally {
@@ -65,15 +67,15 @@ function clearQueueIdleTimer(player) {
 }
 
 export async function handleTrackStart(client, player, track) {
+  // Public references only. A history disk failure must never interrupt audio.
+  void client.library?.recordHistory?.(player, track || player.queue?.current)?.catch(() => console.error('[Library] Could not save playback history.'));
   client.lavalink?.playbackRecovery?.started(player);
   client.lavalink?.playbackWatchdog?.trackStarted(player);
   playbackFailures.delete(player);
   clearQueueIdleTimer(player);
   updateTrackPresence(client, player, track);
-  await Promise.allSettled([
-    createOrUpdate(client, player, { state: player.paused ? 'paused' : 'playing', track }),
-    updateVoiceStatus(client, player),
-  ]);
+  requestControllerUpdate(client, player, { state: player.paused ? 'paused' : 'playing', track });
+  updateVoiceStatus(client, player);
 }
 
 export function handleQueueEnd(clientOrPlayer, maybePlayer) {
@@ -82,8 +84,8 @@ export function handleQueueEnd(clientOrPlayer, maybePlayer) {
   if (isPlaybackRecovering(player) || player.queue?.current) return;
   if (client) {
     clearTrackPresence(client, player);
-    void clearVoiceStatus(client, player).catch(() => {});
-    void showStatus(
+    clearVoiceStatus(client, player);
+    requestControllerStatus(
       client,
       player,
       playbackFailures.has(player) ? 'unavailable' : 'queue-finished',
@@ -92,7 +94,7 @@ export function handleQueueEnd(clientOrPlayer, maybePlayer) {
           ? 'The audio source is temporarily unavailable. Your remaining queue is safe; use /play to retry when it recovers.'
           : 'The audio source rejected playback after recovery. Try /play again, or choose another result.'
         : 'No tracks remain. Add something within five minutes to keep this session open.'
-    ).catch(() => {});
+    );
   }
   if (!idleTimers.has(player.guildId)) {
     startIdleTimer(player, { client, reason: player.queue?.tracks?.length ? 'audio-unavailable' : 'queue-empty' });
@@ -106,14 +108,14 @@ export function handleVoiceStateUpdate(client, oldState) {
   if (!channel) return;
   const humans = channel.members.filter((m) => !m.user.bot);
   if (humans.size === 0) {
-    void showStatus(
+    requestControllerStatus(
       client,
       player,
       isPlaybackRecovering(player) ? 'recovering'
         : player.queue?.current ? player.paused ? 'paused' : 'playing'
           : playbackFailures.has(player) ? 'unavailable' : 'queue-finished',
       'The voice channel is empty. Disconnecting in five minutes unless someone returns.'
-    ).catch(() => {});
+    );
     if (idleTimers.get(player.guildId)?.reason !== 'voice-empty') {
       startIdleTimer(player, { client, reason: 'voice-empty' });
     }
@@ -122,7 +124,7 @@ export function handleVoiceStateUpdate(client, oldState) {
     if (!player.queue?.current && !isPlaybackRecovering(player) && !idleTimers.has(player.guildId)) {
       handleQueueEnd(client, player);
     }
-    void refresh(client, player).catch(() => {});
+    requestControllerRefresh(client, player);
   }
 }
 
@@ -160,8 +162,8 @@ export function handlePlayerDestroy(client, player) {
   if (current && current !== player) return;
   clearIdleTimer(player.guildId);
   clearTrackPresence(client, player);
-  void clearVoiceStatus(client, player).catch(() => {});
-  void end(client, player, 'Playback session ended.').catch(() => {});
+  clearVoiceStatus(client, player);
+  requestControllerEnd(client, player, 'Playback session ended.');
 }
 
 export function initLavalink(client) {
@@ -203,27 +205,27 @@ export function initLavalink(client) {
     onRecovering: (player, _track, details) => {
       clearQueueIdleTimer(player);
       clearTrackPresence(client, player);
-      void showStatus(client, player, 'recovering', details.type === 'node'
+      requestControllerStatus(client, player, 'recovering', details.type === 'node'
         ? 'Reconnecting to the audio service. Your queue and playback position are safe.'
         : details.type === 'voice'
           ? 'Reconnecting to Discord voice. Keeping your queue and track position.'
-        : 'Reconnecting the audio stream. Keeping your queue and track position.').catch(() => {});
+        : 'Reconnecting the audio stream. Keeping your queue and track position.');
     },
     onFailed: (player, track, details) => {
       handleTrackFailure(player, track, { skipped: !details.transport });
       if (details.transport) {
         clearTrackPresence(client, player);
-        void showStatus(client, player, 'unavailable',
+        requestControllerStatus(client, player, 'unavailable',
           details.voice
             ? 'Discord voice could not reconnect. Your queue is preserved; try /play again or restore it with /session.'
-            : 'The audio service could not recover. Your queue is safe; try /play again.').catch(() => {});
+            : 'The audio service could not recover. Your queue is safe; try /play again.');
       }
     },
     onResumed: (player) => {
       lavalink.playbackWatchdog.touch(player);
       updateTrackPresence(client, player);
-      void createOrUpdate(client, player, { state: player.paused ? 'paused' : 'playing' }).catch(() => {});
-      void updateVoiceStatus(client, player).catch(() => {});
+      requestControllerUpdate(client, player, { state: player.paused ? 'paused' : 'playing' });
+      updateVoiceStatus(client, player);
     },
   });
   lavalink.playbackRecovery = recovery;

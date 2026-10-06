@@ -6,6 +6,7 @@ import { startPresence } from './utils/presence.js';
 import { startHealthServer } from './health.js';
 import { installRuntime, logEvent } from './runtime.js';
 import { initializeLibrary } from './utils/library.js';
+import { startPortalBridge } from './portal/index.js';
 
 assertConfig();
 
@@ -34,6 +35,9 @@ client.once('clientReady', () => {
 async function init() {
   await initializeLibrary(client);
   await loadCommands(client);
+  // A bind failure is isolated inside the optional bridge; it never becomes a
+  // fatal audio initialization or runtime failure.
+  if (config.portalBridge.token) client.portalBridge = startPortalBridge(client, config.portalBridge);
   if (client.runtimeState.draining) return;
   await client.login(config.token);
 }

@@ -3,3 +3,8 @@ node_modules
 __pycache__/
 data/
 .artifacts/
+dist/
+.env.portal
+.env.*
+!.env.portal.example
+!.env.example

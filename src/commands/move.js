@@ -2,7 +2,8 @@ import { SlashCommandBuilder } from 'discord.js';
 import { requireControl } from '../utils/guards.js';
 import { ephemeralText } from '../utils/messages.js';
 import { moveQueuedTrack } from '../utils/operations.js';
-import { refresh, withControllerLink } from '../utils/player-controller.js';
+import { withControllerLink } from '../utils/player-controller.js';
+import { directControlPresentation } from '../utils/presentation-updates.js';
 import { safeText } from '../utils/presentation.js';
 
 export const data = new SlashCommandBuilder()
@@ -26,7 +27,7 @@ export async function execute(interaction) {
     return interaction.reply(ephemeralText('That track is already in that position.'));
   }
   const track = await moveQueuedTrack(player, from, to);
-  await refresh(interaction.client, player);
+  await directControlPresentation(interaction, player);
   return interaction.reply(ephemeralText(withControllerLink(
     `Moved **${safeText(track.info?.title, { maxLength: 140 })}** from ${from} to ${to}.`,
     interaction,

@@ -1,10 +1,11 @@
 import { SlashCommandBuilder } from 'discord.js';
 import { requireControl } from '../utils/guards.js';
 import { ephemeralText } from '../utils/messages.js';
-import { end, withControllerLink } from '../utils/player-controller.js';
+import { requestControllerEnd, withControllerLink } from '../utils/player-controller.js';
 import { plainText } from '../utils/presentation.js';
 import { clearVoiceStatus } from '../utils/voice-status.js';
 import { cancelGuildMutations } from '../utils/requests.js';
+import { retirePresentationPlayer } from '../utils/presentation-updates.js';
 
 export const data = new SlashCommandBuilder()
   .setName('stop')
@@ -15,6 +16,7 @@ export async function execute(interaction) {
   if (!player) return;
   cancelGuildMutations(interaction.guildId);
   player.setData?.('vybertron.stopping', true);
+  retirePresentationPlayer(player);
 
   const cleared = player.queue.tracks.length;
   const username = plainText(interaction.user?.globalName || interaction.user?.username, {
@@ -26,10 +28,12 @@ export async function execute(interaction) {
   );
   try {
     await player.stopPlaying?.(true, false);
-    await clearVoiceStatus(interaction.client, player);
-    await end(interaction.client, player, `Stopped by ${username}.`);
+    // These owned, bounded writers settle independently of physical shutdown.
+    clearVoiceStatus(interaction.client, player);
+    requestControllerEnd(interaction.client, player, `Stopped by ${username}.`);
   } finally {
     await player.destroy();
   }
+  await interaction.client.library?.updateGuild?.(interaction.guildId, guild => { guild.session = null; });
   return interaction.reply(ephemeralText(confirmation));
 }

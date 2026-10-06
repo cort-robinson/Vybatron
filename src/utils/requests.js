@@ -1,5 +1,6 @@
 import { MessageFlags } from 'discord.js';
 import { acquirePlaybackRequest } from './maintenance.js';
+import { trackReference } from './library.js';
 
 const mutations = new Map();
 const MAX_PENDING = 12;
@@ -58,14 +59,44 @@ export function deferredInteraction(interaction) {
   });
 }
 
-export async function guardedMutation(interaction, operation, { playback = false, urgent = false } = {}) {
+export function commandMutationPolicy(name, action) {
+  const readOnly = ['queue', 'nowplaying', 'help', 'history'].includes(name)
+    || (['favorite', 'mix', 'session', 'settings'].includes(name) && ['list', 'show'].includes(action));
+  const libraryOnly = (['favorite', 'mix'].includes(name) && !['play', 'load'].includes(action)) || name === 'settings';
+  return { readOnly, playback: !libraryOnly, urgent: name === 'stop' || (name === 'radio' && action === 'off') };
+}
+
+function activityState(interaction) {
+  if (!interaction.client.library?.recordActivity || interaction.commandName === 'favorite' || interaction.customId?.includes('favorite')) return null;
+  const name = interaction.commandName;
+  const action = interaction.options?.getSubcommand?.(false);
+  const queueEdit = ['play', 'playnext', 'clear', 'remove', 'move', 'shuffle', 'skip', 'skipto', 'stop', 'replay', 'voteskip'].includes(name)
+    || (name === 'mix' && action === 'load') || (name === 'session' && ['resume', 'discard'].includes(action))
+    || /^(?:queue:.*:jump:|history:.*:replay:|player:v1:(?:skip|shuffle|stop-confirm)$)/.test(interaction.customId || '');
+  if (name !== 'settings' && !queueEdit) return null;
+  const player = interaction.client.lavalink?.getPlayer(interaction.guildId);
+  return JSON.stringify(name === 'settings' ? interaction.client.library.settings(interaction.guildId)
+    : [Boolean(player), [player?.queue?.current, ...(player?.queue?.tracks || [])].map(trackReference), interaction.client.library.readGuild(interaction.guildId).session?.tracks]);
+}
+
+export async function guardedMutation(interaction, operation, { playback = false, urgent = false, beforeMutation } = {}) {
   const release = playback ? acquirePlaybackRequest(interaction.client) : null;
   if (playback && !release) {
+    if (interaction.portalUnavailable) return interaction.portalUnavailable();
     return interaction.reply({ content: 'Vybertron is briefly updating its playback service. Try again in a minute.', flags: MessageFlags.Ephemeral });
   }
   try {
     await acknowledgeMutation(interaction);
-    const run = () => operation(deferredInteraction(interaction));
+    const run = async () => {
+      await beforeMutation?.(interaction);
+      const before = activityState(interaction);
+      const result = await operation(deferredInteraction(interaction));
+      if (before !== null && before !== activityState(interaction)) {
+        await interaction.client.library.recordActivity(interaction.guildId, interaction.user, interaction.commandName === 'settings' ? 'settings' : 'queue')
+          .catch(() => console.error('[Library] Could not save actor activity.'));
+      }
+      return result;
+    };
     // Stop must stay responsive even while a catalog import is still loading.
     // Enqueue paths recheck the player identity and stopping flag after lookup.
     return await (urgent ? run() : withGuildMutation(interaction.guildId, run));

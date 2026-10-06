@@ -2,7 +2,9 @@ import { MessageFlags, SlashCommandBuilder } from 'discord.js';
 import { requireControl } from '../utils/guards.js';
 import { applyAudioPreset, AUDIO_PRESETS, getAudioPreset } from '../utils/filters.js';
 import { ephemeralText, textPayload } from '../utils/messages.js';
-import { refresh, withControllerLink } from '../utils/player-controller.js';
+import { withControllerLink } from '../utils/player-controller.js';
+import { directControlPresentation } from '../utils/presentation-updates.js';
+import { commandTimingSpan } from '../portal/timing.js';
 
 export const data = new SlashCommandBuilder()
   .setName('filter')
@@ -24,9 +26,9 @@ export async function execute(interaction) {
   const player = await requireControl(interaction);
   if (!player) return null;
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-  const result = await applyAudioPreset(player, key);
+  const result = await commandTimingSpan('playback', () => applyAudioPreset(player, key));
   if (result.error) return interaction.editReply(textPayload(result.error));
-  await refresh(interaction.client, player);
+  await directControlPresentation(interaction, player);
   const message = key === 'off'
     ? 'Restored the original sound and cleared every effect and EQ band.'
     : `${result.preset.label} on. ${result.preset.description} This affects everyone in the voice channel. Use /filter preset:Original to reset.`;

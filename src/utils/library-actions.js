@@ -1,5 +1,5 @@
 import { EmbedBuilder, MessageFlags } from 'discord.js';
-import { requireControl, recheckEnqueueRequest, canManageMusic } from './guards.js';
+import { requireLibrarySource, recheckEnqueueRequest, canManageMusic } from './guards.js';
 import { LIBRARY_LIMITS, trackReference } from './library.js';
 import { COLORS, ephemeralText, textPayload } from './messages.js';
 import { safeText, trackIdentity, NO_MENTIONS } from './presentation.js';
@@ -17,21 +17,31 @@ export function collectionPayload(title, tracks, page = 1, footer = '') {
   };
 }
 
-export async function addCurrentFavorite(interaction, expectedIdentity = null) {
-  const player = await requireControl(interaction, { checkDJ: false });
+export async function addCurrentFavorite(interaction, expectedIdentity = null, position = null) {
+  const player = await requireLibrarySource(interaction, { queued: position !== null });
   if (!player) return null;
-  const current = player.queue.current;
+  const current = position === null ? player.queue.current : player.queue.tracks[position - 1];
+  if (position !== null && (!Number.isSafeInteger(position) || position < 1 || position > player.queue.tracks.length)) {
+    return interaction.reply(ephemeralText('Choose an existing upcoming queue position.'));
+  }
   if (!current || (expectedIdentity && trackIdentity(current) !== expectedIdentity)) {
     return interaction.reply(ephemeralText('The track changed. Favorite the song on the current player.'));
   }
   const reference = trackReference(current);
   if (!reference) return interaction.reply(ephemeralText('This source does not provide a public track link that can be saved.'));
-  const result = await interaction.client.library.updateGuild(interaction.guildId, guild => {
-    const list = guild.favorites[interaction.user.id] ||= [];
+  const result = await interaction.client.library.updateFavorites(interaction.user.id, async list => {
+    // Global saves can wait behind another guild. Track-end and Stop do not
+    // wait for this guild's ordinary request lane.
+    const fresh = await requireLibrarySource(interaction, { queued: position !== null });
+    if (!fresh) return null;
+    if (fresh !== player || (position === null ? fresh.queue.current : fresh.queue.tracks[position - 1]) !== current) {
+      throw new Error('Your favorites changed. Refresh before saving a track.');
+    }
     if (list.some(t => t.uri === reference.uri)) return false;
-    if (list.length >= LIBRARY_LIMITS.favorites) throw new Error(`Your favorites hold at most ${LIBRARY_LIMITS.favorites} tracks. Remove one first.`);
+    if (list.length >= LIBRARY_LIMITS.favorites || interaction.client.library.favoriteOverflowCount?.(interaction.user.id)) throw new Error(`Your favorites hold at most ${LIBRARY_LIMITS.favorites} tracks. Remove one first.`);
     list.push(reference); return true;
   });
+  if (result === null) return null;
   return interaction.reply(ephemeralText(result ? `Saved **${safeText(reference.title, { maxLength: 140 })}** to your favorites. Find it with /favorite list.` : 'This song is already in your favorites.'));
 }
 
@@ -50,6 +60,7 @@ export async function loadCollection(interaction, channel, references, label) {
     const { tracks, missing } = await resolveReferences(player, references, interaction.user);
     if (!tracks.length) return interaction.editReply(textPayload('These saved tracks are currently unavailable. Try /play with a fresh result.'));
     if (!await recheckEnqueueRequest(interaction, player, channel)) return;
+    interaction.portalMutationStarted?.();
     await enqueueTracks(interaction.client, player, tracks); added = true;
     if (!await recheckEnqueueRequest(interaction, player, channel)) return;
     if (!player.connected) await player.connect();

@@ -8,7 +8,11 @@
     "start": "node src/index.js",
     "deploy:commands:guild": "node deploy-commands.js guild",
     "deploy:commands:global": "node deploy-commands.js",
-    "test": "node --test"
+    "test": "node --test tests/*.test.js",
+    "portal:build": "npm --prefix portal/web run build",
+    "portal:test": "npm --prefix portal/server test",
+    "portal:integration": "node --test portal/integration/*.test.js",
+    "portal:dev": "npm --prefix portal/web run dev"
   },
   "repository": {
     "type": "git",

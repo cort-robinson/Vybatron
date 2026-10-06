@@ -16,13 +16,12 @@ async function fixture(t, options = {}) {
 
 test('concurrent library writes survive reopening without losing a listener’s favorites', async t => {
   const { library, filePath } = await fixture(t);
-  await Promise.all(Array.from({ length: 30 }, (_, i) => library.updateGuild('100', guild => {
-    const list = guild.favorites['200'] ||= [];
+  await Promise.all(Array.from({ length: 30 }, (_, i) => library.updateFavorites('200', list => {
     list.push(trackReference(track(String(i).padStart(11, '0'))));
   })));
   const reopened = await new MusicLibrary(filePath).open();
-  assert.equal(reopened.readGuild('100').favorites['200'].length, 30);
-  assert.equal(reopened.readGuild('101').favorites['200'], undefined);
+  assert.equal(reopened.favorites('200').length, 30);
+  assert.equal(reopened.favorites('201').length, 0);
   assert.deepEqual(library.document, reopened.document);
   const saved = await fs.readFile(filePath, 'utf8');
   assert.doesNotMatch(saved, /never-save|encoded-|requester|userData/);
@@ -58,9 +57,9 @@ test('library snapshots contain public catalog references only and isolate retur
   assert.equal(catalogUrl('https://youtu.be/abcdefghijk?si=tracking'), 'https://www.youtube.com/watch?v=abcdefghijk');
   assert.equal(catalogUrl('https://www.youtube.com/shorts/abcdefghijk'), 'https://www.youtube.com/watch?v=abcdefghijk');
   for (const url of ['http://youtube.com/watch?v=abcdefghijk', 'https://localhost/audio', 'https://user:secret@youtube.com/watch?v=abcdefghijk', 'https://evil.youtube.com/watch?v=abcdefghijk', 'https://youtube.com:4430/watch?v=abcdefghijk', 'file:///private.mp3']) assert.equal(catalogUrl(url), null);
-  await library.updateGuild('100', guild => { guild.favorites['200'] = [trackReference(track())]; });
-  const copy = library.readGuild('100'); copy.favorites['200'].length = 0;
-  assert.equal(library.readGuild('100').favorites['200'].length, 1);
+  await library.updateFavorites('200', list => { list.push(trackReference(track())); });
+  const copy = library.favorites('200'); copy.length = 0;
+  assert.equal(library.favorites('200').length, 1);
 });
 
 test('checkpoints use reported progress, persist pause/queue state and expire after 72 hours', async t => {

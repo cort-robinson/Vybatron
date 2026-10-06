@@ -1,0 +1,84 @@
+.queue .row-menu > .icon-button {
+  width: 44px;
+  height: 44px;
+}
+
+.queue.queue-compact .track-row {
+  grid-template-columns: 24px minmax(0, 1fr) 96px 44px 44px;
+  gap: 10px;
+}
+
+.queue .queue-footnote {
+  font-size: 14px;
+}
+
+@media (min-width: 1024px) and (max-width: 1330px) {
+  .queue.queue-compact .track-row { grid-template-columns: 22px minmax(0, 1fr) 44px 44px; gap: 8px; }
+}
+
+@media (max-width: 960px) {
+  .queue .section-heading,
+  .queue .heading-line {
+    flex-wrap: wrap;
+    gap: 8px 14px;
+  }
+
+  .queue .count,
+  .queue .pill {
+    font-size: 14px;
+    white-space: normal;
+  }
+
+  .queue .track-row {
+    grid-template-columns: 22px minmax(0, 1fr) 44px 44px;
+    gap: 6px;
+    min-height: 92px;
+  }
+
+  .queue.queue-compact .track-row {
+    grid-template-columns: 22px minmax(0, 1fr) 44px;
+  }
+
+  .queue .track-index {
+    font-size: 14px;
+  }
+
+  .queue .track-main {
+    gap: 10px;
+  }
+
+  .queue .artwork {
+    width: 44px;
+    height: 48px;
+  }
+
+  .queue .track-text strong {
+    font-size: 16px;
+    line-height: 1.4;
+    white-space: normal;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    overflow-wrap: anywhere;
+  }
+
+  .queue .track-text > span {
+    font-size: 14px;
+    line-height: 1.5;
+  }
+
+  .queue .track-row > .favorite {
+    width: 44px;
+    height: 44px;
+  }
+
+  .queue .menu-panel {
+    max-width: min(280px, calc(100vw - 40px));
+  }
+
+  .queue .menu-panel button,
+  .queue .menu-panel p,
+  .queue .menu-panel small {
+    font-size: 14px;
+  }
+}

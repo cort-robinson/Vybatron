@@ -10,6 +10,7 @@ FORM: album-reactive receiver; spectrum and lighting are decorative and generate
 @property --glow-1 { syntax: '<color>'; inherits: true; initial-value: #1d5a5e; }
 @property --glow-2 { syntax: '<color>'; inherits: true; initial-value: #3d2c6b; }
 @property --glow-3 { syntax: '<color>'; inherits: true; initial-value: #1c2c55; }
+@property --tabs-fade { syntax: '<length>'; inherits: false; initial-value: 0px; }
 :root {
   font-family: 'Archivo Variable', sans-serif;
   color: var(--text);
@@ -443,6 +444,8 @@ picture.artwork { display: block; overflow: hidden; }
 .dialog { color: var(--text); background: color-mix(in oklab, var(--ground), white 5%); border: 1px solid var(--line-strong); border-radius: 22px; max-width: min(800px, calc(100vw - 32px)); width: 800px; padding: 26px 30px; box-shadow: var(--shadow-dialog); max-height: calc(100dvh - 50px); pointer-events: auto; }
 .dialog[open] { animation: dialog-in 260ms var(--ease-out); }
 @keyframes dialog-in { from { opacity: 0; transform: translateY(10px) scale(.985); } }
+@keyframes sheet-in { from { opacity: 0; transform: translateY(16px); } }
+@keyframes tabs-fade { from { --tabs-fade: 40px; } to { --tabs-fade: 0px; } }
 .dialog::backdrop { background: var(--overlay); backdrop-filter: blur(10px); }
 .dialog-heading { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin-bottom: 10px; }
 .dialog-heading h2 { font-size: 25px; }
@@ -656,7 +659,12 @@ picture.artwork { display: block; overflow: hidden; }
   .connection-banner span:not(.spinner) { font-size: 14px; line-height: 1.4; }
   .connection-banner .text-button { padding: 8px; font-size: 14px; }
   .player-open .connection-banner { position: fixed; left: 0; right: 0; top: var(--mobile-header); z-index: 45; }
-  .tabs { gap: 24px; margin-bottom: 24px; overflow-x: auto; }
+  .tabs { gap: 24px; margin-bottom: 24px; overflow-x: auto; scrollbar-width: none; }
+  .tabs::-webkit-scrollbar { display: none; }
+  /* Overflowing tabs fade at the trailing edge until scrolled to the end. */
+  @supports (animation-timeline: scroll()) {
+    .tabs { mask-image: linear-gradient(to right, #000 calc(100% - var(--tabs-fade)), transparent); animation: tabs-fade linear both; animation-timeline: scroll(self inline); }
+  }
   .tabs button { font-size: 16px; gap: 6px; white-space: nowrap; }
   .tabs button > span { font-size: 14px; }
   .library-track-list > li, .history-list > li { gap: 12px; min-height: 88px; }
@@ -700,7 +708,7 @@ picture.artwork { display: block; overflow: hidden; }
   .import-actions > span { width: 100%; font-size: 14px; }
   .import-actions .text-button { font-size: 14px; }
   .result-list > li { gap: 10px; }
-  .result-list .artwork { width: 44px; height: 46px; }
+  .result-list .artwork { width: 44px; height: 44px; }
   .result-length { display: none; }
   .result-list .track-text strong { font-size: 16px; }
   .result-list .track-text > span { font-size: 14px; }
@@ -720,6 +728,14 @@ picture.artwork { display: block; overflow: hidden; }
 }
 @media (max-width: 600px) {
   :root { --connection-notice: 112px; }
+  /* Search becomes a top-anchored sheet: the field stays put above the keyboard and results never re-center. */
+  .search-dialog { width: 100%; max-width: none; height: 100dvh; max-height: none; margin: 0; border: 0; border-radius: 0; padding: calc(8px + env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) calc(16px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); box-shadow: none; overscroll-behavior: contain; }
+  .search-dialog[open] { animation: sheet-in 240ms var(--ease-out); }
+  .search-dialog .dialog-heading { margin-bottom: 8px; }
+  .search-dialog .search-form { position: sticky; top: 0; z-index: 1; margin-inline: -16px; padding: 8px 16px; background: color-mix(in oklab, var(--ground), white 5%); }
+  .search-results .section-heading { margin-top: 16px; }
+  /* Compact deck: title and artist only; the source shows in the expanded player. */
+  .compact-track-meta .metadata-dot, .compact-track-meta .track-source { display: none; }
   /* The waveform mark carries the brand; the wordmark yields its width to the server name. */
   .sidebar { gap: 10px; }
   .sidebar > .brand span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }

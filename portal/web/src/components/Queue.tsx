@@ -31,7 +31,7 @@ export function Queue({ portal, compact = false, onAdd }: { portal: Portal; comp
     else await run({ command: 'favorite', subcommand: 'add', options: { position }, expectedRevision: snapshot?.revision }, 'library');
   };
   return <section className={`queue ${compact ? 'queue-compact' : ''}`} aria-label="Shared queue">
-    <div className="section-heading"><div className="heading-line"><h2>Up Next</h2><span className="count">{queue.length} {queue.length === 1 ? 'song' : 'songs'}{queue.length ? ` · ${totalTime(duration)}${queue.some(t => t.isStream) ? ' + live' : ''}` : ''}</span></div>
+    <div className="section-heading"><div className="heading-line"><h2>Up Next</h2>{queue.length > 0 && <span className="count">{queue.length} {queue.length === 1 ? 'song' : 'songs'}{queue.length ? ` · ${totalTime(duration)}${queue.some(t => t.isStream) ? ' + live' : ''}` : ''}</span>}</div>
       {!compact && snapshot?.session.fairQueue && <span className="pill"><ListNumbersIcon size={16} />Taking turns</span>}
     </div>
     {!queue.length ? <Empty title="Nothing queued yet" description={snapshot?.session.current ? 'The next song is up to you. Add a track or let artist radio keep things going.' : 'Search for a song or drop a public music link. Everyone listens together in Discord.'}

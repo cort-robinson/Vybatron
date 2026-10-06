@@ -60,6 +60,13 @@ export function App() {
     navigationState.current = { surface, expanded };
     if (previous.surface !== surface) document.getElementById('main-content')?.focus();
   }, [surface, expanded]);
+  // Confirmations clear themselves; errors stay until dismissed.
+  const dismissNotice = useRef(portal.dismissNotice); dismissNotice.current = portal.dismissNotice;
+  useEffect(() => {
+    if (!portal.notice || portal.notice.kind === 'error') return;
+    const timer = setTimeout(() => dismissNotice.current(), 4500);
+    return () => clearTimeout(timer);
+  }, [portal.notice]);
   const setAmbient = (value: AmbientMode) => { changeAmbient(value); try { localStorage.setItem('vybertron.ambient', value); } catch { /* Optional, non-sensitive preference. */ } };
   const navigate = (value: Surface) => { setSurface(value); setExpanded(false); };
   const openSearch = () => setSearchOpen(true);

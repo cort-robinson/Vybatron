@@ -127,6 +127,12 @@ hover lifts while keeping color changes and the static pending mark.
 
 ## Components
 
+Confirmation toasts clear themselves after 4.5s; error toasts stay until dismissed. Toasts
+sit above the compact player, and under the topbar/header while the sleeve is open, so they
+never cover the current identity. With no current song the player shows an empty sleeve tile
+rather than the bundled cover, and empty states use an accent-tinted icon tile. The expanded
+title, heart, artist and context are centered as one unit beneath the cover.
+
 Buttons are 12px-radius; primary uses accent with dark ink. The filter control and pills are
 full-round. Inputs use a faint white field and a 1px line that brightens on hover and turns
 accent on focus. Navigation selection is a soft fill with an accent icon and a short accent

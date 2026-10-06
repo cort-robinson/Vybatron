@@ -18,6 +18,8 @@ export function Artwork({ track, className = '', large = false }: { track: Track
   const source = publicUrl(track?.artworkUrl);
   const [failedSource, setFailedSource] = useState<string | undefined>();
   const alt = large && track ? `Artwork for ${track.title}` : '';
+  // No current song: an honest empty sleeve rather than a photo that reads as a track.
+  if (!track) return <span className={`artwork artwork-empty ${className}`}><MusicNotesIcon size={large ? 56 : 24} aria-hidden="true" /></span>;
   if (!source || source === failedSource) return <FallbackCover className={`artwork ${className}`} alt={alt} large={large} />;
   return <img className={`artwork ${className}`} src={source} alt={alt}
     loading={large ? 'eager' : 'lazy'} decoding="async" onError={() => setFailedSource(source)} />;
@@ -27,7 +29,7 @@ export function Avatar({ url, name, className = '' }: { url?: string | null; nam
   return <span className={`avatar ${className}`} title={name}><UserIcon size={20} aria-hidden="true" />{src && <img src={src} alt="" referrerPolicy="no-referrer" onError={event => { event.currentTarget.style.display = 'none'; }} />}</span>;
 }
 export function Empty({ title, description, action, icon }: { title: string; description: string; action?: ReactNode; icon?: ReactNode }) {
-  return <div className="empty-state"><div className="empty-art"><div style={{ position: 'absolute', inset: 0 }}><FallbackCover /></div>{icon || <MusicNotesIcon size={30} />}</div><h2>{title}</h2><p>{description}</p>{action}</div>;
+  return <div className="empty-state"><div className="empty-art">{icon || <MusicNotesIcon size={30} />}</div><h2>{title}</h2><p>{description}</p>{action}</div>;
 }
 export function ErrorState({ message, retry }: { message: string; retry?: () => void }) {
   return <div className="inline-error" role="alert"><WarningCircleIcon size={24} /><div><strong>Couldn’t load this view</strong><p>{message}</p></div>{retry && <button className="button secondary" onClick={retry}><ArrowClockwiseIcon />Try again</button>}</div>;

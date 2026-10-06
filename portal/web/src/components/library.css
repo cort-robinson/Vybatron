@@ -1,5 +1,7 @@
 .library-view { min-width: 0; }
-.library-view .section-heading { flex-wrap: wrap; }
+.library-view .section-heading { flex-wrap: nowrap; align-items: flex-start; }
+.library-view .section-heading > div { min-width: 0; flex: 1; }
+.library-view .section-heading > button { flex-shrink: 0; }
 .library-view .section-description,
 .library-note { color: var(--muted); font-size: 14px; line-height: 1.65; }
 .library-note { margin-top: 15px; max-width: 70ch; }

@@ -565,6 +565,8 @@ picture.artwork { display: block; overflow: hidden; }
   .topbar-actions { display: none; }
   .mobile-add { display: inline-grid; place-items: center; flex-shrink: 0; width: 44px; height: 44px; border-radius: 12px; background: var(--accent); color: var(--primary-ink); }
   .mobile-add:hover:not(:disabled) { background: var(--primary-hover); }
+  .mobile-add.blocked { background: var(--secondary); color: var(--text-soft); }
+  .mobile-add.blocked:hover:not(:disabled) { background: var(--secondary-hover); }
   .guild-card { border: 0; background: none; padding: 0; }
   .guild-card:hover { border-color: transparent; }
   .guild-listeners { display: inline; }
@@ -712,9 +714,11 @@ picture.artwork { display: block; overflow: hidden; }
   .result-length { display: none; }
   .result-list .track-text strong { font-size: 16px; }
   .result-list .track-text > span { font-size: 14px; }
-  .add-result { padding: 8px 10px; }
+  .add-result { padding: 8px 10px; min-width: 44px; justify-content: center; }
   .add-result span { display: none; }
   .toast { left: 12px; right: 12px; top: auto; bottom: calc(var(--player) + var(--nav) + 10px); max-width: none; padding-left: 14px; gap: 8px; }
+  /* A pending-confirmation pill floats above the compact deck; toasts clear it. */
+  .app-shell:has(.collapsed .player-confirmation:not(:empty)) .toast { bottom: calc(var(--player) + var(--nav) + 56px); }
   .player-open .toast { top: calc(var(--mobile-header) + 8px); bottom: auto; left: 12px; right: 12px; }
   .toast > span { font-size: 14px; }
   .auth-page > .brand { font-size: 25px; }

@@ -97,6 +97,6 @@ test('transient disconnect retains search results and typed input while disablin
   await streamAction(page, 'disconnect');
   await expect(page.getByText('Midnight City', { exact: true })).toBeVisible();
   await expect(page.getByRole('searchbox', { name: 'Music search' })).toHaveValue('a song draft');
-  await expect(page.getByRole('button', { name: 'Add', exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Add Midnight City to queue', exact: true })).toBeDisabled();
   expect(fixture.commands).toEqual([]);
 });

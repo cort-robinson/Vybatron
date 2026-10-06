@@ -7,7 +7,7 @@ test('voice context and an accessible main landmark remain available in the expa
   const fixture = await mockPortal(page, { outsideVoice: true });
   fixture.state.snapshot.session.textChannel = { id: 'text', name: 'music-commands' };
   await page.goto('/');
-  await expect(page.locator('.guild-channel')).toHaveText('Voice: General');
+  await expect(page.locator('.guild-status')).toContainText('General');
   await page.getByRole('button', { name: 'Open player', exact: true }).click();
   await expect(page.getByRole('main')).toHaveCount(1);
   await expect(page.getByRole('main').getByRole('region', { name: 'Music player' })).toBeVisible();

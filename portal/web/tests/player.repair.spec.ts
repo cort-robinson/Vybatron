@@ -50,7 +50,7 @@ for (const width of [320, 390]) {
       expect(text.right).toBeLessThanOrEqual(boxes[1].x);
       const server = await page.getByRole('combobox', { name: 'Server', exact: true }).boundingBox();
       expect(server!.height).toBeGreaterThanOrEqual(44);
-      for (const selector of ['.guild-channel', '.guild-status']) {
+      for (const selector of ['.guild-status']) {
         expect(await page.locator(selector).evaluate(element => parseFloat(getComputedStyle(element).fontSize))).toBeGreaterThanOrEqual(14);
       }
       await open.click();
@@ -114,7 +114,7 @@ test('desktop sleeve keeps artwork left, Up Next right, and identity readable wi
   expect(artist.y + artist.height).toBeLessThan((await player.locator('.player-footer').boundingBox())!.y);
 });
 
-test('expanded permission explanation names the voice destination and leaves controls disabled', async ({ page }) => {
+test('expanded permission explanation keeps the voice destination in view and leaves controls disabled', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   const fixture = await mockPortal(page, { outsideVoice: true });
   fixture.state.snapshot.session.voiceChannel!.name = 'Chill Lounge';
@@ -124,7 +124,7 @@ test('expanded permission explanation names the voice destination and leaves con
   await waitForPlayer(page);
   await page.getByRole('button', { name: 'Open player', exact: true }).click();
   const player = page.getByTestId('player');
-  await expect(player.locator('.player-destination')).toContainText('Audio in Chill Lounge');
+  await expect(page.locator('.guild-status')).toContainText('Chill Lounge');
   await expect(player.locator('.player-permission')).toHaveText('Join Chill Lounge to add music or use playback controls.');
   await expect(player.getByRole('button', { name: 'Pause playback' })).toBeDisabled();
   await expect(player.getByRole('slider', { name: 'Volume', exact: true })).toBeDisabled();

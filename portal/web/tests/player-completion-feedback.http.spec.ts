@@ -187,9 +187,12 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 320, height: 568 
         const feedback = await bounds(confirmation(page), page);
         const button = await bounds(action(page, false), page);
         expect(button.width).toBeGreaterThanOrEqual(44); expect(button.height).toBeGreaterThanOrEqual(44);
-        const seek = await bounds(player(page).getByRole('slider', { name: 'Playback position' }), page);
-        expect(seek.width).toBeGreaterThanOrEqual(44); expect(seek.height).toBeGreaterThanOrEqual(44);
-        expect(seek.x + seek.width).toBeLessThanOrEqual(feedback.x + 1);
+        // The compact phone deck shows passive progress; seeking lives in the expanded player.
+        if (expanded || viewport.width >= 1024) {
+          const seek = await bounds(player(page).getByRole('slider', { name: 'Playback position' }), page);
+          expect(seek.width).toBeGreaterThanOrEqual(44); expect(seek.height).toBeGreaterThanOrEqual(44);
+          expect(seek.x + seek.width).toBeLessThanOrEqual(feedback.x + 1);
+        }
         expect(feedback.y + feedback.height <= button.y + 1 || button.y + button.height <= feedback.y + 1).toBe(true);
         if (viewport.width < 1024) {
           const nav = (await page.locator('.navigation').boundingBox())!;

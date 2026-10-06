@@ -65,7 +65,7 @@ export function Queue({ portal, compact = false, onAdd }: { portal: Portal; comp
                 <button disabled={!controllable} onClick={() => { close(); void change('skipto', { position: index + 1 }); }}><PlayIcon />Play now</button>
                 <button disabled={!controllable || index === 0} onClick={() => { close(); void change('move', { from: index + 1, to: index }); }}><ArrowUpIcon />Move up</button>
                 <button disabled={!controllable || index === queue.length - 1} onClick={() => { close(); void change('move', { from: index + 1, to: index + 2 }); }}><ArrowDownIcon />Move down</button>
-                {compact && <button disabled={!editable || !library} onClick={() => { close(); void favorite(track, index + 1); }}><HeartIcon weight={isFavorite ? 'fill' : 'regular'} />{isFavorite ? 'Remove favorite' : 'Save to favorites'}</button>}
+                {<button className="menu-favorite" disabled={!editable || !library} onClick={() => { close(); void favorite(track, index + 1); }}><HeartIcon weight={isFavorite ? 'fill' : 'regular'} />{isFavorite ? 'Remove favorite' : 'Save to favorites'}</button>}
                 <button className="danger-text" disabled={!controllable} onClick={() => { close(); void change('remove', { position: index + 1 }); }}><TrashIcon />Remove from queue</button>
                 {!controllable && <small>{portal.blockedReason}</small>}
               </>}
@@ -74,7 +74,6 @@ export function Queue({ portal, compact = false, onAdd }: { portal: Portal; comp
         })}
       </ol>
       <Pagination page={currentPage} total={queue.length} pageSize={pageSize} onPageChange={changePage} label={compact ? 'Expanded queue pages' : 'Queue pages'} />
-      {!compact && <p className="queue-footnote">Save a song to My Music with its heart.</p>}
     </>}
   </section>;
 }

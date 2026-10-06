@@ -84,12 +84,11 @@ export function LibraryView({ portal, active = true }: { portal: Portal; active?
       }} onClick={() => setTab(section)}>{section === 'favorites' ? 'Favorites' : section === 'mixes' ? 'Shared mixes' : 'History'}{library && <span>{library[section].length.toLocaleString()}</span>}</button>)}
   </div>
   {libraryError ? <ErrorState message={libraryError} retry={() => void portal.refreshLibrary()} /> : !library ? <Loading label="Loading your music…" /> : <section role="tabpanel" id={`panel-${tab}`} aria-labelledby={`tab-${tab}`}>
-    <div className="section-heading"><div><h2>{tab === 'favorites' ? 'Favorites' : tab === 'mixes' ? 'Shared mixes' : 'Listening history'}</h2>
+    <div className="section-heading"><div><h2 className="sr-only">{tab === 'favorites' ? 'Favorites' : tab === 'mixes' ? 'Shared mixes' : 'Listening history'}</h2>
       <p className="section-description">{tab === 'favorites' ? 'Your private songs, across every server.' : tab === 'mixes' ? `Saved for ${snapshot?.guild.name || 'this server'}. Up to 100 songs per mix.` : 'The latest 100 songs, kept for 30 days. Only sessions you can see appear here.'}</p></div>
-      {tab === 'favorites' && library.favorites.length > 0 && <button type="button" className="text-button danger-text" disabled={!editable} onClick={() => setConfirm({ kind: 'favorites' })}>Clear favorites</button>}
       {tab === 'history' && <IconButton label="Refresh listening history" onClick={() => void portal.refreshLibrary()}><ArrowClockwiseIcon size={21} /></IconButton>}
     </div>
-    <div className="library-search"><label htmlFor={`library-search-${tab}`}>Search {label}</label><div className="library-search-controls">
+    <div className="library-search"><label className="sr-only" htmlFor={`library-search-${tab}`}>Search {label}</label><div className="library-search-controls">
       <input ref={searchRef} id={`library-search-${tab}`} type="search" dir="auto" value={queries[tab]} maxLength={200} placeholder={tab === 'mixes' ? 'Mix name, song, or artist' : tab === 'history' ? 'Song, artist, source, or voice channel' : 'Song, artist, or source'} onChange={event => setQuery(event.target.value)} />
       {queries[tab] && <button type="button" className="text-button" onClick={clearSearch}>Clear search</button>}
     </div></div>
@@ -100,6 +99,7 @@ export function LibraryView({ portal, active = true }: { portal: Portal; active?
         <IconButton className="favorite active" label={`Remove favorite ${track.title}`} disabled={!editable} onClick={() => void run({ command: 'favorite', subcommand: 'remove', options: { index: index + 1 }, expectedTrackId: track.id }, 'library')}><HeartIcon size={23} weight="fill" /></IconButton>
       </li>)}</ul>}
       <Pagination label="favorites" page={currentPage} total={favorites.length} pageSize={pageSize} onPageChange={page => setPages(previous => ({ ...previous, favorites: page }))} />
+      {library.favorites.length > 0 && <button type="button" className="text-button danger-text library-clear" disabled={!editable} onClick={() => setConfirm({ kind: 'favorites' })}>Clear favorites</button>}
       {library.favorites.length >= 1000 && <p className="library-note">Your shelf is full. Remove a favorite to make room for another song.</p>}
       {!addable && <p className="library-note">{portal.blockedReason}</p>}
     </>}

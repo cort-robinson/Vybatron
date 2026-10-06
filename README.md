@@ -48,7 +48,7 @@ Start with `/help`. Join a voice channel and use `/play` with a song and artist,
 
 Controls require the bot's voice channel and honor a configured DJ role. Listeners can still add music, save personal favorites, and vote to skip. Voice access is checked again when a long import finishes. Favorites hold 1,000 tracks per account, shared mixes hold 100 tracks each with 25 mixes per server, and the upcoming queue holds 500 tracks. Migrated favorite overflow is retained and returns to the active shelf as space opens. Played history retains the latest 100 tracks per server for up to 30 days, with original channel visibility enforced.
 
-The bot disconnects after five minutes with an empty queue or an empty voice channel. It never automatically rejoins a saved voice session at startup; `/session resume` requires joining the saved channel. An intentional Stop discards that session checkpoint. Favorites and mixes survive Stop and container rebuilds.
+The bot leaves after five minutes with an empty queue, or one minute after the last listener leaves its voice channel. It never automatically rejoins a saved voice session at startup; `/session resume` requires joining the saved channel. An intentional Stop discards that session checkpoint. Favorites and mixes survive Stop and container rebuilds.
 
 ## Setup
 

@@ -175,3 +175,28 @@ test('short offline sleeve keeps transport visible and reduced motion leaves int
   await visibleBounds(resume, page);
   await expect(page.getByTestId('player').locator('.player-permission')).toContainText('Reconnect for fresh state');
 });
+
+test('phone sleeve centers the empty cover icon and rings the whole filter pill', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await mockPortal(page, { saved: true });
+  await page.goto('/');
+  await waitForPlayer(page);
+  const player = page.getByTestId('player');
+  await player.getByRole('button', { name: 'Open player', exact: true }).click();
+  const cover = player.locator('.sleeve-artwork > .artwork-empty');
+  const [coverBox, iconBox] = await Promise.all([visibleBounds(cover, page), visibleBounds(cover.locator('svg'), page)]);
+  expect(Math.abs((iconBox.x + iconBox.width / 2) - (coverBox.x + coverBox.width / 2))).toBeLessThanOrEqual(1);
+  expect(Math.abs((iconBox.y + iconBox.height / 2) - (coverBox.y + coverBox.height / 2))).toBeLessThanOrEqual(1);
+  const filter = player.getByRole('combobox', { name: 'Audio filter', exact: true });
+  await filter.focus();
+  await page.keyboard.press('Shift+Tab');
+  await page.keyboard.press('Tab');
+  const ring = await filter.evaluate(select => {
+    const pill = select.parentElement!;
+    const a = select.getBoundingClientRect(); const b = pill.getBoundingClientRect();
+    return { select: [a.left, a.top, a.right, a.bottom], pill: [b.left, b.top, b.right, b.bottom].map((v, i) => v + (i < 2 ? 1 : -1)), pillOutline: getComputedStyle(pill).outlineStyle, selectOutline: getComputedStyle(select).outlineStyle };
+  });
+  ring.select.forEach((value, i) => expect(Math.abs(value - ring.pill[i])).toBeLessThanOrEqual(1));
+  expect(ring.pillOutline).toBe('solid');
+  expect(ring.selectOutline).toBe('none');
+});

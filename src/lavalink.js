@@ -21,21 +21,23 @@ import { createPlaybackWatchdog } from './playback-watchdog.js';
 import { retirePresentationPlayer } from './utils/presentation-updates.js';
 
 export const IDLE_MS = 5 * 60 * 1000;
+// A short grace covers a listener's reconnect blip without holding an empty room open.
+export const VOICE_EMPTY_MS = 60 * 1000;
 
 const idleTimers = new Map();
 const playbackFailures = new WeakMap();
 
 export function startIdleTimer(player, options = IDLE_MS) {
   const settings = typeof options === 'number' ? { ms: options } : options;
-  const ms = settings.ms ?? IDLE_MS;
   const reason = settings.reason || 'queue-empty';
+  const ms = settings.ms ?? (reason === 'voice-empty' ? VOICE_EMPTY_MS : IDLE_MS);
   const client = settings.client || null;
   clearIdleTimer(player.guildId);
   const timer = setTimeout(() => {
     idleTimers.delete(player.guildId);
     retirePresentationPlayer(player);
     const message = reason === 'voice-empty'
-      ? 'Disconnected after the voice channel stayed empty for five minutes.'
+      ? 'Left the voice channel because everyone else left.'
       : reason === 'audio-unavailable'
         ? 'Disconnected after five minutes without playable audio. Use /session resume to recover your saved queue.'
         : 'Disconnected after five minutes with an empty queue.';
@@ -101,10 +103,11 @@ export function handleQueueEnd(clientOrPlayer, maybePlayer) {
   }
 }
 
-export function handleVoiceStateUpdate(client, oldState) {
+export function handleVoiceStateUpdate(client, oldState, channelId) {
   const player = client.lavalink?.getPlayer(oldState.guild.id);
-  if (!player || !player.voiceChannelId) return;
-  const channel = oldState.guild.channels.cache.get(player.voiceChannelId);
+  const voiceChannelId = channelId || player?.voiceChannelId;
+  if (!player || !voiceChannelId) return;
+  const channel = oldState.guild.channels.cache.get(voiceChannelId);
   if (!channel) return;
   const humans = channel.members.filter((m) => !m.user.bot);
   if (humans.size === 0) {
@@ -114,7 +117,7 @@ export function handleVoiceStateUpdate(client, oldState) {
       isPlaybackRecovering(player) ? 'recovering'
         : player.queue?.current ? player.paused ? 'paused' : 'playing'
           : playbackFailures.has(player) ? 'unavailable' : 'queue-finished',
-      'The voice channel is empty. Disconnecting in five minutes unless someone returns.'
+      'Everyone left the voice channel. Leaving in one minute unless someone returns.'
     );
     if (idleTimers.get(player.guildId)?.reason !== 'voice-empty') {
       startIdleTimer(player, { client, reason: 'voice-empty' });
@@ -272,6 +275,11 @@ export function initLavalink(client) {
   lavalink.on('trackStuck', (player, track, payload) => {
     recordPlaybackFailure(client, track);
     void handleTrackError(player, track, payload);
+  });
+  // Being moved into an empty channel has no listener event of its own.
+  lavalink.on('playerMove', (player, _from, to) => {
+    const guild = client.guilds.cache.get(player.guildId);
+    if (guild) handleVoiceStateUpdate(client, { guild }, to);
   });
   lavalink.on('queueEnd', (player) => handleQueueEnd(client, player));
   lavalink.on('playerDestroy', (player) => handlePlayerDestroy(client, player));

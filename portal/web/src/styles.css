@@ -83,7 +83,8 @@ input, select { font-size: 16px; color: var(--text); background: var(--field); b
 input:hover:not(:disabled), select:hover:not(:disabled) { border-color: rgb(255 255 255 / .24); }
 input::placeholder { color: var(--muted); opacity: 1; }
 input:disabled, select:disabled { opacity: .65; }
-input[type='search']::-webkit-search-cancel-button { cursor: pointer; }
+input[type='search']::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none; width: 18px; height: 18px; background: var(--muted); -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 256 256'%3E%3Cpath d='M200 56 56 200M200 200 56 56' stroke='black' stroke-width='20' stroke-linecap='round'/%3E%3C/svg%3E") center / contain no-repeat; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 256 256'%3E%3Cpath d='M200 56 56 200M200 200 56 56' stroke='black' stroke-width='20' stroke-linecap='round'/%3E%3C/svg%3E") center / contain no-repeat; cursor: pointer; }
+input[type='search']::-webkit-search-cancel-button:hover { background: var(--text); }
 select { appearance: auto; }
 select option { background: var(--surface); color: var(--text); }
 a { color: var(--accent); text-underline-offset: 4px; }
@@ -454,6 +455,9 @@ picture.artwork { display: block; overflow: hidden; }
 .search-form { display: flex; gap: 12px; }
 .search-field { display: flex; align-items: center; gap: 12px; padding: 0 14px; border: 1px solid var(--field-line); background: var(--field); border-radius: 12px; flex: 1; min-width: 0; color: var(--muted); transition: border-color 160ms; }
 .search-field:focus-within { border-color: color-mix(in oklab, var(--accent) 70%, transparent); }
+/* One focus ring on the whole field, not a second one inset around the bare input. */
+.search-field:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 3px; }
+.search-field input:focus-visible { outline: none; }
 .search-field input { background: none; padding: 13px 0; border: none; width: 100%; outline-offset: 4px; font-size: 16px; min-width: 0; }
 .import-actions { display: flex; align-items: center; gap: 7px; margin: 15px 0 21px; }
 .import-actions > span { font-size: 14px; color: var(--muted); display: flex; align-items: center; gap: 7px; margin-right: auto; }

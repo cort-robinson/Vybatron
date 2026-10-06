@@ -182,7 +182,6 @@ svg { flex-shrink: 0; }
 .portal-main { margin-left: var(--sidebar); }
 .topbar { height: var(--topbar); display: flex; align-items: center; justify-content: space-between; gap: 26px; padding: 22px 24px 22px 37px; border-bottom: 1px solid var(--line-soft); }
 .page-title { min-width: 180px; }
-.page-title p { color: var(--muted); font-size: 15px; margin-top: 6px; }
 .topbar-actions { display: flex; align-items: center; gap: 14px; }
 .header-search { display: flex; align-items: center; gap: 12px; padding: 0 16px; height: 52px; min-height: 44px; width: clamp(240px, 31vw, 451px); background: var(--field); border: 1px solid var(--field-line); border-radius: 12px; color: var(--muted); text-align: left; font-size: 16px; transition: border-color 160ms, background-color 160ms; }
 .header-search span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -572,7 +571,6 @@ picture.artwork { display: block; overflow: hidden; }
   .guild-listeners { display: inline; }
   .page-title { min-width: 0; }
   h1 { font-size: 26px; }
-  .page-title p { font-size: 14px; line-height: 1.4; margin-top: 4px; }
   .header-search { display: none; }
   .topbar-actions { gap: 0; flex-shrink: 0; }
   .topbar .button { min-height: 44px; font-size: 16px; padding: 10px 12px; gap: 6px; }

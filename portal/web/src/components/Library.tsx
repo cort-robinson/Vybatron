@@ -85,11 +85,11 @@ export function LibraryView({ portal, active = true }: { portal: Portal; active?
   </div>
   {libraryError ? <ErrorState message={libraryError} retry={() => void portal.refreshLibrary()} /> : !library ? <Loading label="Loading your music…" /> : <section role="tabpanel" id={`panel-${tab}`} aria-labelledby={`tab-${tab}`}>
     <div className="section-heading"><div><h2 className="sr-only">{tab === 'favorites' ? 'Favorites' : tab === 'mixes' ? 'Shared mixes' : 'Listening history'}</h2>
-      <p className="section-description">{tab === 'favorites' ? 'Your private songs, across every server.' : tab === 'mixes' ? `Saved for ${snapshot?.guild.name || 'this server'}. Up to 100 songs per mix.` : 'The latest 100 songs, kept for 30 days. Only sessions you can see appear here.'}</p></div>
+      <p className="section-description">{tab === 'favorites' ? 'Your private songs, across every server.' : tab === 'mixes' ? `Saved for ${snapshot?.guild.name || 'this server'}. Up to 100 songs per mix.` : 'The latest 100 songs from the past 30 days, from sessions you can see.'}</p></div>
       {tab === 'history' && <IconButton label="Refresh listening history" onClick={() => void portal.refreshLibrary()}><ArrowClockwiseIcon size={21} /></IconButton>}
     </div>
     <div className="library-search"><label className="sr-only" htmlFor={`library-search-${tab}`}>Search {label}</label><div className="library-search-controls">
-      <input ref={searchRef} id={`library-search-${tab}`} type="search" dir="auto" value={queries[tab]} maxLength={200} placeholder={tab === 'mixes' ? 'Mix name, song, or artist' : tab === 'history' ? 'Song, artist, source, or voice channel' : 'Song, artist, or source'} onChange={event => setQuery(event.target.value)} />
+      <input ref={searchRef} id={`library-search-${tab}`} type="search" dir="auto" value={queries[tab]} maxLength={200} placeholder={`Search ${label}`} onChange={event => setQuery(event.target.value)} />
       {queries[tab] && <button type="button" className="text-button" onClick={clearSearch}>Clear search</button>}
     </div></div>
     {tab === 'favorites' && <>

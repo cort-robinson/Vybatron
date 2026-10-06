@@ -243,7 +243,7 @@ export function usePortal() {
             }
           } catch { /* Malformed frames require an independent policy read. */ }
         }
-        pauseConnection('Live updates disconnected. Controls will return after fresh state arrives.');
+        pauseConnection('Discord keeps playing. Controls return once you’re reconnected.');
         // EventSource hides HTTP status. One backoff-controlled policy GET both
         // detects revocation and supplies the state needed to recover controls.
         scheduleRecovery();

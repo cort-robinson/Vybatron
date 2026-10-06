@@ -99,7 +99,6 @@ export function Player({ portal, expanded, setExpanded, onAdd, accent, animate }
         {sourceUrl && <a href={sourceUrl} target="_blank" rel="noreferrer" onClick={close}><ArrowSquareOutIcon />Open original track</a>}
         <button className="danger-text" disabled={!controllable || !session?.queue.length} onClick={() => { close(); setConfirmClear(true); }}><TrashIcon />Clear upcoming queue</button>
         <button className="danger-text" disabled={!can('control') || !track} onClick={() => { close(); setConfirmStop(true); }}><StopIcon />Stop and discard session</button>
-        <small>Audio plays only in Discord.</small>
       </>}
     </ActionPopover>
   </div>;

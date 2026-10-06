@@ -34,7 +34,7 @@ export function Queue({ portal, compact = false, onAdd }: { portal: Portal; comp
     <div className="section-heading"><div className="heading-line"><h2>Up Next</h2>{queue.length > 0 && <span className="count">{queue.length} {queue.length === 1 ? 'song' : 'songs'}{queue.length ? ` · ${totalTime(duration)}${queue.some(t => t.isStream) ? ' + live' : ''}` : ''}</span>}</div>
       {!compact && snapshot?.session.fairQueue && <span className="pill"><ListNumbersIcon size={16} />Taking turns</span>}
     </div>
-    {!queue.length ? <Empty title="Nothing queued yet" description={snapshot?.session.current ? 'The next song is up to you. Add a track or let artist radio keep things going.' : 'Search for a song or drop a public music link. Everyone listens together in Discord.'}
+    {!queue.length ? <Empty title="Nothing queued yet" description={snapshot?.session.current ? 'The next song is up to you. Add a track or let artist radio keep things going.' : snapshot?.savedSession.exists ? 'Resume your saved session above, or add a song to start fresh.' : 'Search for a song or drop a public music link. Everyone listens together in Discord.'}
       action={<button className="button primary" disabled={!can('add')} title={!can('add') ? portal.blockedReason : undefined} onClick={onAdd}><PlusIcon size={19} />Add music</button>} /> : <>
       {!compact && <div className="queue-columns" aria-hidden="true"><span>#</span><span /><span>Song</span><span>Added by</span><span>Length</span><span /><span /></div>}
       <ol className="track-list" start={startIndex + 1}>

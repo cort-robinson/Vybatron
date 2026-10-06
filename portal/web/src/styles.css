@@ -344,11 +344,14 @@ picture.artwork { display: block; overflow: hidden; }
 .player-extras { display: flex; align-items: center; gap: 12px; min-width: 0; }
 .collapsed .player-extras { grid-column: 3; grid-row: 2; }
 .volume-control { display: flex; align-items: center; gap: 10px; color: var(--text-soft); width: 128px; min-width: 0; }
-.filter-control { display: flex; align-items: center; gap: 8px; position: relative; border: 1px solid var(--line-strong); background: rgb(255 255 255 / .04); border-radius: 999px; padding: 0 12px; min-height: 44px; width: 126px; flex-shrink: 0; transition: border-color 160ms; }
+.filter-control { display: flex; align-items: center; position: relative; border: 1px solid var(--line-strong); background: rgb(255 255 255 / .04); border-radius: 999px; min-height: 44px; width: 126px; flex-shrink: 0; transition: border-color 160ms; }
 .filter-control:hover { border-color: rgb(255 255 255 / .26); }
-.filter-control select { appearance: none; background: transparent; padding: 0 16px 0 0; border: none; min-height: 44px; font-size: 16px; width: 100%; min-width: 0; }
+/* The select spans the whole pill so its hit area and focus ring match the visible control. */
+.filter-control select { appearance: none; position: absolute; inset: 0; background: transparent; padding: 0 30px 0 29px; border: none; border-radius: inherit; min-height: 0; height: 100%; font-size: 16px; width: 100%; min-width: 0; }
+.filter-control:has(select:focus-visible) { outline: 2px solid var(--accent); outline-offset: 3px; }
+.filter-control select:focus-visible { outline: none; }
 .filter-control > svg { position: absolute; right: 10px; pointer-events: none; }
-.filter-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); flex-shrink: 0; }
+.filter-dot { position: absolute; left: 12px; width: 9px; height: 9px; border-radius: 50%; background: var(--accent); pointer-events: none; }
 .filter-control.warm .filter-dot { background: var(--amber); }
 .player-more { position: relative; flex-shrink: 0; }
 .player-more > .menu-panel { top: auto; bottom: 54px; width: 288px; max-height: min(390px, calc(100dvh - 120px)); overflow-y: auto; animation-name: menu-up; }
@@ -368,6 +371,7 @@ picture.artwork { display: block; overflow: hidden; }
 .sleeve-main { min-width: 0; min-height: 0; height: 100%; display: grid; grid-template-rows: minmax(0, 1fr) auto auto; gap: 16px; justify-items: center; }
 .sleeve-artwork { --spectrum: 52px; --cover: min(100cqw, 100cqh - var(--spectrum) - 12px); container-type: size; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; width: 100%; height: 100%; min-height: 0; min-width: 0; }
 .sleeve-artwork > .artwork { display: block; width: var(--cover); height: var(--cover); aspect-ratio: 1; object-fit: cover; border-radius: 18px; box-shadow: var(--shadow-sleeve); }
+.sleeve-artwork > .artwork-empty { display: grid; place-items: center; }
 .sleeve-spectrum { width: var(--cover); height: var(--spectrum); flex-shrink: 0; }
 .sleeve-queue { align-self: start; max-height: 100%; min-width: 0; min-height: 0; overflow-y: auto; padding: 18px 16px 18px; background: color-mix(in oklab, var(--ground) 62%, transparent); backdrop-filter: var(--chrome-blur); -webkit-backdrop-filter: var(--chrome-blur); border: 1px solid var(--line); border-radius: 20px; }
 .sleeve-queue .section-heading { padding-inline: 8px; }

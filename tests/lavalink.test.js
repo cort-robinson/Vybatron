@@ -174,6 +174,26 @@ test('repeated unrelated voice events do not restart the empty-channel deadline'
   assert.equal(player.destroyed, 1);
 });
 
+test('the bot leaves one minute after being moved into an empty voice channel', (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const player = mockPlayer('empty-channel-move');
+  const client = mockClient(mockChannel());
+  client.lavalink = { getPlayer: () => player };
+  const guild = { id: player.guildId, channels: { cache: new Map([
+    ['v1', { members: { filter: () => ({ size: 1 }) } }],
+    ['v2', { members: { filter: () => ({ size: 0 }) } }],
+  ]) } };
+  try {
+    handleVoiceStateUpdate(client, { guild }, 'v2');
+    t.mock.timers.tick(59_000);
+    assert.equal(player.destroyed, 0);
+    t.mock.timers.tick(1_000);
+    assert.equal(player.destroyed, 1);
+  } finally {
+    clearIdleTimer(player.guildId);
+  }
+});
+
 test('a listener joining an empty queue does not cancel queue-idle disconnect', async () => {
   const player = mockPlayer('queue-empty-join');
   player.queue.current = null;

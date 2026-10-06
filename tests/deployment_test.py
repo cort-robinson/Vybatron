@@ -30,6 +30,8 @@ class FakeHost:
 
     def run(self, args, **kwargs):
         self.calls.append(args)
+        if args[:2] == ['docker', 'ps']:
+            return 'vybertron-portal' if getattr(self, 'portal', False) else ''
         if args[:3] == ['git', 'rev-parse', 'HEAD']:
             return self.head
         if args[:3] == ['git', 'reset', '--hard']:
@@ -104,6 +106,14 @@ class DeploymentTests(unittest.TestCase):
         self.assertEqual(audio_up[0][-3:], ['warp', 'yt-cipher', 'lavalink'])
         self.assertIn('--pull', audio_up[0])
         self.assertIn('never', audio_up[0])
+
+    def test_portal_hosts_refuse_the_bot_only_release_before_any_change(self):
+        self.host.portal = True
+        with self.assertRaisesRegex(d.DeploymentError, 'portal_overlay_requires_portal_driver'):
+            self.deployer.deploy(NEW)
+        self.assertEqual(self.host.head, OLD)
+        self.assertFalse(any(args[:2] in (['git', 'fetch'], ['git', 'reset'], ['docker', 'build'], ['docker', 'compose']) for args in self.host.calls))
+        self.assertFalse(self.deployer.journal_path.exists())
 
     def test_out_of_order_ci_and_busy_queues_do_not_touch_git_or_running_services(self):
         self.host.stale = True

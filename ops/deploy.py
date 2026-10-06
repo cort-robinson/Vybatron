@@ -223,6 +223,11 @@ class Deployer:
     def deploy(self, target):
         if not isinstance(target, str) or not SHA.fullmatch(target):
             raise DeploymentError('invalid_deployment_sha')
+        # This bot-only path composes docker-compose.yml alone. With the portal
+        # overlay installed it would recreate the bot without its bridge
+        # environment and network, so portal hosts release with portal_deploy.py.
+        if self.command(['docker', 'ps', '--all', '--filter', 'name=^/vybertron-portal$', '--format', '{{.Names}}']):
+            raise DeploymentError('portal_overlay_requires_portal_driver')
         existing = read(self.journal_path)
         if existing and existing.get('phase') not in ['complete', 'rolled_back']:
             raise DeploymentError('incomplete_deployment_requires_rollback')

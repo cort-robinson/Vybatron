@@ -6,6 +6,9 @@ on:
     types: [completed]
     branches: [main]
 
+permissions:
+  contents: read
+
 jobs:
   deploy:
     # Dormant until the repo variable DEPLOY_ENABLED is set to "true"
@@ -13,6 +16,9 @@ jobs:
     # Also requires secrets: VPS_HOST, VPS_USER, VPS_SSH_KEY.
     if: >
       github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.head_repository.full_name == github.repository &&
       vars.DEPLOY_ENABLED == 'true'
     runs-on: ubuntu-latest
     concurrency:
@@ -25,37 +31,25 @@ jobs:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
-          command_timeout: 25m
+          command_timeout: 45m
           script: |
             set -euo pipefail
             cd ~/Vybertron
-            exec 9>/run/lock/vybertron-maintenance.lock
-            flock -w 600 9
-            # Refuse to discard an interrupted update's live configuration.
-            if [ -f ops/recovery.py ]; then python3 ops/recovery.py restore-pin; fi
-            OLD_HEAD=$(git rev-parse HEAD)
-            OLD_AUDIO_CONFIG=$(sha256sum lavalink/application.yml | cut -d ' ' -f1)
-            git fetch origin main
-            git reset --hard origin/main
-            # Preserve an automatically tested pin across unrelated deployments.
-            python3 ops/recovery.py restore-pin
-            docker compose pull
-            docker compose up -d --build
-            # Bind-mounted files don't change the Compose hash.
-            if ! git diff --quiet "$OLD_HEAD" HEAD -- warp/ docker-compose.yml; then
-              # These services share WARP's network namespace. Recreate them
-              # together, then reconnect the bot after Lavalink is healthy.
-              docker compose up -d --force-recreate warp yt-cipher lavalink
-              docker compose up -d --wait lavalink
-              docker compose restart bot
-            elif [ "$OLD_AUDIO_CONFIG" != "$(sha256sum lavalink/application.yml | cut -d ' ' -f1)" ]; then
-              docker compose up -d --force-recreate lavalink
-              docker compose up -d --wait lavalink
-              docker compose restart bot
-            fi
+            TARGET_SHA='${{ github.event.workflow_run.head_sha }}'
+            [[ "$TARGET_SHA" =~ ^[a-f0-9]{40}$ ]]
+            git fetch --no-tags origin main
+            git cat-file -e "${TARGET_SHA}^{commit}"
+            git merge-base --is-ancestor "$TARGET_SHA" origin/main
+            # Keep the exact tested driver outside Git so rollback remains
+            # available even when the previous commit predates this script.
+            install -d -m 700 /var/lib/vybertron-recovery
+            git show "${TARGET_SHA}:ops/deploy.py" > /var/lib/vybertron-recovery/deploy-driver.py.tmp
+            chmod 600 /var/lib/vybertron-recovery/deploy-driver.py.tmp
+            mv /var/lib/vybertron-recovery/deploy-driver.py.tmp /var/lib/vybertron-recovery/deploy-driver.py
+            python3 /var/lib/vybertron-recovery/deploy-driver.py deploy "$TARGET_SHA" --repo "$PWD"
             if [ -f /var/lib/vybertron-recovery/settings.json ]; then
               install -m 644 ops/vybertron-recovery.service ops/vybertron-recovery.timer /etc/systemd/system/
               systemctl daemon-reload
               systemctl enable --now vybertron-recovery.timer
             fi
-            docker image prune -f
+            # Previous images and private journals are retained for rollback.

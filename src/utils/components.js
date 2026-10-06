@@ -9,10 +9,11 @@ import {
   textPayload,
 } from './messages.js';
 import {
-  end,
+  requestControllerEnd,
   getControllerRecord,
   getMessageLink,
   refresh,
+  requestControllerRefresh,
 } from './player-controller.js';
 import {
   nextLoopMode,
@@ -25,14 +26,19 @@ import {
 import { formatDuration, safeText, trackIdentity } from './presentation.js';
 import { updateTrackPresence } from './presence.js';
 import { clearVoiceStatus, updateVoiceStatus } from './voice-status.js';
+import { buildHelpPayload } from './help.js';
+import { buildHistoryPayload, historySessionKey, replayHistoryTrack } from './history.js';
+import { cancelGuildMutations } from './requests.js';
+import { retirePresentationPlayer } from './presentation-updates.js';
 
 async function disableStaleComponents(interaction) {
   await interaction.message?.edit?.({ components: [] }).catch(() => {});
 }
 
 async function rejectEndedSession(interaction) {
+  await interaction.reply(ephemeralText('This playback session has ended. Add something with /play.'));
   await disableStaleComponents(interaction);
-  return interaction.reply(ephemeralText('This playback session has ended. Add something with /play.'));
+  return null;
 }
 
 function isEphemeralMessage(message) {
@@ -44,17 +50,18 @@ function isEphemeralMessage(message) {
 }
 
 async function rejectOrphanedController(interaction) {
-  await disableStaleComponents(interaction);
   const link = getMessageLink(interaction.guildId);
   const guidance = link
     ? ` Open player: ${link}`
     : ' Start a new session with /play.';
-  return interaction.reply(ephemeralText(
+  await interaction.reply(ephemeralText(
     `This controller is no longer active.${guidance}`
   ));
+  await disableStaleComponents(interaction);
+  return null;
 }
 
-async function handlePlayerComponent(interaction, action) {
+async function handlePlayerComponent(interaction, action, expectedIdentity = null) {
   const messageId = interaction.message?.id;
   if (messageId && !isEphemeralMessage(interaction.message)) {
     const record = getControllerRecord(interaction.guildId);
@@ -79,12 +86,26 @@ async function handlePlayerComponent(interaction, action) {
 
   if (action === 'refresh') {
     await interaction.deferUpdate();
-    await refresh(interaction.client, player);
+    requestControllerRefresh(interaction.client, player);
     return null;
   }
 
-  const controlledPlayer = await requireControl(interaction);
+  const controlledPlayer = await requireControl(interaction, { checkDJ: action !== 'favorite' });
   if (!controlledPlayer) return null;
+
+  if (getControllerRecord(interaction.guildId)?.state === 'recovering'
+    && !['skip', 'stop', 'stop-confirm'].includes(action)) {
+    return interaction.reply(ephemeralText('Audio is reconnecting. You can skip this track or stop playback while it recovers.'));
+  }
+
+  if (action === 'favorite') {
+    const track = controlledPlayer.queue.current;
+    if (!track || trackIdentity(track) !== expectedIdentity) {
+      return interaction.reply(ephemeralText('The track changed; refresh the player before saving a favorite.'));
+    }
+    const { addCurrentFavorite } = await import('./library-actions.js');
+    return addCurrentFavorite(interaction, expectedIdentity);
+  }
 
   if (action === 'seek') {
     const track = controlledPlayer.queue.current;
@@ -138,15 +159,19 @@ async function handlePlayerComponent(interaction, action) {
   }
 
   if (action === 'stop-confirm') {
+    cancelGuildMutations(interaction.guildId);
+    controlledPlayer.setData?.('vybertron.stopping', true);
+    retirePresentationPlayer(controlledPlayer);
     const cleared = controlledPlayer.queue.tracks.length;
     const username = safeText(interaction.user?.globalName || interaction.user?.username, {
       fallback: 'a listener',
       maxLength: 80,
     });
-    await interaction.update({ content: 'Stopping playback…', components: [] });
     try {
-      await clearVoiceStatus(interaction.client, controlledPlayer);
-      await end(interaction.client, controlledPlayer, `Stopped by ${username}.`);
+      await controlledPlayer.stopPlaying?.(true, false);
+      await interaction.update({ content: 'Stopping playback…', components: [] });
+      clearVoiceStatus(interaction.client, controlledPlayer);
+      requestControllerEnd(interaction.client, controlledPlayer, `Stopped by ${username}.`);
     } finally {
       await controlledPlayer.destroy();
     }
@@ -194,10 +219,53 @@ async function handleQueueJump(interaction, page, ownerId = 'any') {
   return null;
 }
 
+async function handleHistoryComponent(interaction, action, ownerId, session, page) {
+  if (ownerId !== 'any' && interaction.user?.id !== ownerId) {
+    return interaction.reply(ephemeralText('Only the person who opened this history can use it.'));
+  }
+  const existingPlayer = interaction.client.lavalink?.getPlayer(interaction.guildId);
+  if (!existingPlayer || historySessionKey(existingPlayer) !== session) {
+    await interaction.update({ ...buildHistoryPayload(null), components: [] });
+    return interaction.followUp(ephemeralText('This playback session has ended. Open /history for the current session.'));
+  }
+  if (action !== 'replay') return interaction.update(buildHistoryPayload(existingPlayer, page, ownerId));
+
+  const player = await requireControl(interaction);
+  if (!player) return null;
+  const [positionText, identity] = String(interaction.values?.[0] || '').split(':');
+  if (!/^\d+$/.test(positionText) || !/^[a-f0-9]{12}$/.test(identity || '')) {
+    return interaction.reply(ephemeralText('Choose a recent track from /history.'));
+  }
+  await interaction.deferUpdate();
+  const result = await replayHistoryTrack(player, Number(positionText), identity);
+  await interaction.editReply(buildHistoryPayload(player, page, ownerId));
+  if (result.error) return interaction.followUp(ephemeralText(result.error));
+  await refresh(interaction.client, player);
+  return interaction.followUp(ephemeralText(
+    `${result.started ? 'Replaying' : 'Queued'} ${safeText(result.track.info.title, { maxLength: 180 })}${result.started ? '.' : ' to replay next.'}`
+  ));
+}
+
 export async function handleMessageComponent(interaction) {
   const customId = interaction.customId || '';
   const playerMatch = /^player:v1:(toggle|skip|shuffle|loop|seek|queue|refresh|stop|stop-confirm|stop-cancel)$/.exec(customId);
   if (playerMatch) return handlePlayerComponent(interaction, playerMatch[1]);
+
+  const favoriteMatch = /^player:v2:favorite:([a-f0-9]{12})$/.exec(customId);
+  if (favoriteMatch && interaction.isButton()) return handlePlayerComponent(interaction, 'favorite', favoriteMatch[1]);
+
+  const helpMatch = /^help:v2:topic:([^:]+)$/.exec(customId);
+  if (helpMatch && interaction.isStringSelectMenu()) {
+    if (helpMatch[1] !== 'any' && interaction.user?.id !== helpMatch[1]) {
+      return interaction.reply(ephemeralText('Only the person who opened this help can change topics.'));
+    }
+    return interaction.update(buildHelpPayload(interaction.client, interaction.values?.[0], helpMatch[1]));
+  }
+
+  const historyMatch = /^history:v2:(page|refresh|replay):([^:]+):([a-f0-9]{12}):(\d+)(?::(?:previous|next))?$/.exec(customId);
+  if (historyMatch && (historyMatch[1] === 'replay' ? interaction.isStringSelectMenu() : interaction.isButton())) {
+    return handleHistoryComponent(interaction, historyMatch[1], historyMatch[2], historyMatch[3], Number(historyMatch[4]));
+  }
 
   const pageMatch = /^queue:v1:(?:page|refresh):(\d+)(?::(?:previous|next))?$/.exec(customId);
   if (pageMatch && interaction.isButton()) {
@@ -236,6 +304,9 @@ export async function handleModalSubmit(interaction) {
 
   const player = await requireControl(interaction);
   if (!player) return null;
+  if (getControllerRecord(interaction.guildId)?.state === 'recovering') {
+    return interaction.reply(ephemeralText('Audio is reconnecting. Open Seek again after playback resumes.'));
+  }
   const track = player.queue.current;
   if (!track || trackIdentity(track) !== match[1]) {
     return interaction.reply(ephemeralText('The track changed; open Seek again.'));

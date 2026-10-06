@@ -1,11 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { LavalinkManager } from 'lavalink-client';
 import {
   buildPlayerPayload,
   buildQueuePayload,
+  buildSeekModal,
   clampQueuePage,
   COLORS,
   QUEUE_PAGE_SIZE,
+  remainingQueueDuration,
 } from '../src/utils/messages.js';
 import { trackIdentity } from '../src/utils/presentation.js';
 
@@ -50,7 +53,7 @@ test('player payload uses semantic status, timestamp, and native controls', () =
   assert.equal(playing.components.length, 2);
   assert.deepEqual(
     playing.components[0].components.map((component) => component.data.label),
-    ['Pause', 'Skip', 'View queue', 'Stop']
+    ['Pause', 'Skip', 'View queue', 'Stop', 'Favorite']
   );
   assert.deepEqual(
     playing.components[1].components.map((component) => component.data.label),
@@ -111,3 +114,135 @@ for (const size of [0, 1, 10, 11, 25, 26, 250]) {
     }
   });
 }
+
+function nativePlayer() {
+  const manager = new LavalinkManager({
+    nodes: [{ id: 'test', host: 'localhost', port: 2333, authorization: 'test-password' }],
+    client: { id: '123' }, sendToShard: () => {},
+  });
+  const node = manager.nodeManager.nodes.get('test');
+  node.socket = { readyState: 1 };
+  const player = manager.createPlayer({ guildId: '100', voiceChannelId: '300', textChannelId: '400', node: 'test' });
+  player.queue.current = { ...makeTrack(0), info: { ...makeTrack(0).info, duration: 217_000 } };
+  player.lastPosition = 0;
+  player.lastPositionChange = Date.now() - 19_000;
+  return player;
+}
+
+test('ETA accounts for audio speed and hides guesses for unknown duration, loops, and paused queues', () => {
+  const player = makePlayer(2);
+  player.filterManager = { data: { timescale: { speed: 2, rate: 1 } } };
+  assert.equal(remainingQueueDuration(player), (45_000 + 60_001 + 60_002) / 2);
+  let json = buildQueuePayload(player).embeds[0].toJSON();
+  assert.match(json.description, /in ~0:22/);
+  assert.match(json.description, /in ~0:52/);
+  assert.match(buildPlayerPayload(player).embeds[0].data.description, /25%/);
+  player.paused = true;
+  json = buildQueuePayload(player).embeds[0].toJSON();
+  assert.doesNotMatch(json.description, /in ~/);
+  assert.match(json.footer.text, /Paused/);
+  player.paused = false;
+  player.queue.tracks[0].info.duration = undefined;
+  assert.equal(remainingQueueDuration(player), null);
+  json = buildQueuePayload(player).embeds[0].toJSON();
+  assert.match(json.footer.text, /Unknown remaining/);
+  assert.equal((json.description.match(/in ~/g) || []).length, 1);
+  player.repeatMode = 'track';
+  assert.equal(remainingQueueDuration(player), null);
+  assert.doesNotMatch(buildPlayerPayload(player).embeds[0].data.description, /Ends <t:/);
+  assert.match(buildPlayerPayload(player).embeds[0].data.description, /Track loop on/);
+  assert.doesNotMatch(buildQueuePayload(player).embeds[0].data.description, /in ~/);
+});
+
+test('arbitrary external titles remain valid Discord payloads with Unicode and mention limits', () => {
+  const player = makePlayer(10);
+  for (const track of [player.queue.current, ...player.queue.tracks]) {
+    track.info.title = `**@everyone**${'🎵'.repeat(400)}`;
+    track.info.author = `${'🎸'.repeat(400)}@here`;
+    track.requester.username = '😀'.repeat(400);
+  }
+  const playerPayload = buildPlayerPayload(player);
+  const queuePayload = buildQueuePayload(player);
+  assert.ok(playerPayload.embeds[0].data.title.length <= 256);
+  assert.ok(playerPayload.embeds[0].data.title.includes('@\u200b'));
+  assert.ok(playerPayload.embeds[0].data.description.length <= 4096);
+  assert.ok(queuePayload.embeds[0].data.description.length <= 4096);
+  assert.ok(queuePayload.components[1].components[0].options.every((option) => option.data.label.length <= 100));
+  assert.doesNotThrow(() => JSON.stringify(playerPayload));
+  assert.doesNotThrow(() => JSON.stringify(queuePayload));
+});
+
+test('overlong or credential-bearing track URLs cannot break or leak through player links', () => {
+  const player = makePlayer(0);
+  player.queue.current.info.uri = `https://example.com/${'a'.repeat(600)}`;
+  let payload = buildPlayerPayload(player);
+  assert.equal(payload.components[1].components.some((button) => button.data.url), false);
+  player.queue.current.info.uri = 'https://user:password@example.com/track';
+  payload = buildPlayerPayload(player);
+  assert.equal(payload.embeds[0].data.url, undefined);
+  assert.equal(payload.components[1].components.some((button) => button.data.url), false);
+});
+
+test('unavailable native playback freezes at its reported zero despite an advancing position getter', () => {
+  const player = nativePlayer();
+  player.playing = false;
+  assert.ok(player.position >= 19_000, 'the pinned SDK extrapolates even with playback stopped');
+  const first = buildPlayerPayload(player, { state: 'unavailable' }).embeds[0].data.description;
+  assert.match(first, /0:00 \/ 3:37/);
+  assert.doesNotMatch(first, /0:19|Ends <t:/);
+  player.lastPositionChange = Date.now() - 99_000;
+  assert.equal(buildPlayerPayload(player, { state: 'unavailable' }).embeds[0].data.description, first);
+  assert.equal(buildQueuePayload(player).embeds[0].data.footer.text, '0 upcoming \u2022 3:37 remaining');
+});
+
+test('a paused native restore keeps 1:47 progress, queue remaining time and seek prefill after wall-clock time passes', () => {
+  const player = nativePlayer();
+  player.lastPosition = 107_420;
+  player.paused = true;
+  player.playing = false;
+  player.queue.tracks.push(makeTrack(1));
+  assert.ok(player.position >= 126_420);
+  const first = buildPlayerPayload(player).embeds[0].data.description;
+  assert.match(first, /Paused at `1:47 \/ 3:37`/);
+  assert.match(first, /50%/);
+  assert.match(first, /2:49 remaining/);
+  const queue = buildQueuePayload(player).embeds[0].data;
+  assert.match(queue.footer.text, /2:49 remaining.*Paused/);
+  assert.doesNotMatch(queue.description, /in ~/);
+  assert.equal(buildSeekModal(player).components[0].components[0].data.value, '1:47');
+  player.lastPositionChange = Date.now() - 99_000;
+  assert.equal(buildPlayerPayload(player).embeds[0].data.description, first);
+  assert.equal(buildQueuePayload(player).embeds[0].data.footer.text, queue.footer.text);
+});
+
+test('recovery keeps queue remaining duration fixed while normal native playback retains live progress', () => {
+  const player = nativePlayer();
+  player.playing = true;
+  player.queue.tracks.push(makeTrack(1));
+  const recovering = buildPlayerPayload(player, { state: 'recovering' }).embeds[0].data.description;
+  assert.match(recovering, /4:37 remaining/);
+  assert.doesNotMatch(recovering, /Ends <t:/);
+  player.lastPositionChange = Date.now() - 99_000;
+  assert.equal(buildPlayerPayload(player, { state: 'recovering' }).embeds[0].data.description, recovering);
+  player.lastPositionChange = Date.now() - 19_000;
+  const playing = buildPlayerPayload(player).embeds[0].data.description;
+  assert.match(playing, /0:19 \/ 3:37/);
+  assert.match(playing, /9%/);
+  assert.match(playing, /Ends <t:/);
+});
+
+test('unavailable and paused presentation reject invalid reported positions without consulting the live getter', () => {
+  for (const reported of [undefined, -1, Infinity, NaN, '107420', Number.MAX_SAFE_INTEGER + 1]) {
+    const player = makePlayer(1);
+    player.lastPosition = reported;
+    Object.defineProperty(player, 'position', { get() { assert.fail('inactive audio must not read extrapolated position'); } });
+    const unavailable = buildPlayerPayload(player, { state: 'unavailable' }).embeds[0].data.description;
+    assert.match(unavailable, /0:00 \/ 1:00/);
+    const paused = buildPlayerPayload(player, { state: 'paused' }).embeds[0].data.description;
+    assert.match(paused, /Paused at `0:00 \/ 1:00`/);
+    assert.match(paused, /0%/);
+    player.playing = false;
+    const queue = buildQueuePayload(player).embeds[0].data;
+    assert.doesNotMatch(queue.description, /in ~/);
+  }
+});

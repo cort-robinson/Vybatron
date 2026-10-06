@@ -1,0 +1,38 @@
+[
+  {
+    "name": "desktop",
+    "width": 1488,
+    "height": 1056,
+    "density": 1,
+    "errors": [],
+    "playerOverflow": false,
+    "violations": []
+  },
+  {
+    "name": "mobile",
+    "width": 426,
+    "height": 928,
+    "density": 2,
+    "errors": [],
+    "playerOverflow": false,
+    "violations": []
+  },
+  {
+    "name": "phone-small",
+    "width": 393,
+    "height": 852,
+    "density": 1,
+    "errors": [],
+    "playerOverflow": false,
+    "violations": []
+  },
+  {
+    "name": "tablet",
+    "width": 820,
+    "height": 1180,
+    "density": 1,
+    "errors": [],
+    "playerOverflow": false,
+    "violations": []
+  }
+]

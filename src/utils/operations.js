@@ -47,6 +47,9 @@ export function parseSeekTimestamp(value) {
   return Number.isSafeInteger(totalSeconds) ? totalSeconds * 1000 : null;
 }
 
+const seekVersions = new WeakMap();
+export function seekRevision(player) { return seekVersions.get(player) || 0; }
+
 export async function seekToTimestamp(player, timestamp) {
   const track = player?.queue?.current;
   if (!track) return { error: 'Nothing is playing.' };
@@ -65,6 +68,7 @@ export async function seekToTimestamp(player, timestamp) {
   }
 
   await player.seek(position);
+  seekVersions.set(player, seekRevision(player) + 1);
   return { position, track };
 }
 

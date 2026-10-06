@@ -177,6 +177,66 @@ class RecoveryTests(unittest.TestCase):
         self.cycle()
         self.assertFalse(self.calls('recover'))
 
+    def test_unknown_player_count_still_requires_an_idle_queue_and_maintenance_gate(self):
+        self.backend.kind, self.backend.playing, self.backend.idle = 'namespace', None, False
+        self.cycle()
+        self.cycle()
+        self.assertFalse(self.calls('recover'))
+        self.backend.idle, self.backend.gate = True, False
+        self.cycle()
+        self.assertFalse(self.calls('recover'))
+        self.backend.gate = True
+        self.cycle()
+        self.assertEqual(self.calls('recover'), [('recover', 'namespace')])
+        self.assertEqual(len(self.calls('end')), 1)
+
+    def test_an_interrupted_deployment_blocks_monitor_recovery_and_source_updates(self):
+        r.save_json(self.backend.directory / 'deployment.json', {'phase': 'releasing'})
+        self.backend.available, self.backend.kind = [NEW], 'network'
+        self.cycle()
+        self.cycle()
+        self.assertEqual(self.coordinator.state['status'], 'pending_deployment')
+        self.assertFalse(self.calls('recover'))
+        self.assertFalse(self.calls('candidates'))
+        self.assertFalse(self.calls('deploy'))
+
+    def test_testing_one_live_failure_does_not_acknowledge_a_different_video(self):
+        self.backend.failures = [
+            {'id': 'first-event', 'at': self.clock * 1000, 'identifier': 'jNQXAC9IVRw'},
+            {'id': 'last-event', 'at': self.clock * 1000, 'identifier': 'RYnFIRc0k6E'}]
+        self.cycle()
+        self.assertEqual(self.coordinator.state['handled_failures'], ['last-event'])
+
+    def test_probe_schema_filters_private_fields_and_rejects_false_success(self):
+        value = {'ok': True, 'searchOk': True, 'private': 'signed-url',
+                 'tracks': [{'ok': True, 'category': 'audio', 'frames': 300, 'private': 'token'}]}
+        clean = r.probe_result(value)
+        self.assertNotIn('private', clean)
+        self.assertNotIn('private', clean['tracks'][0])
+        value['tracks'][0]['ok'] = False
+        with self.assertRaisesRegex(r.RecoveryError, 'invalid_probe_response'):
+            r.probe_result(value)
+
+    def test_invalid_monitor_settings_cannot_enable_unintended_updates_or_alerts(self):
+        for settings in [{'auto_update': 'false'}, {'discord_guild_id': 'private'},
+                         {'discord_guild_id': '123456789012345678', 'discord_channel_id': 'private'}]:
+            with self.assertRaises(r.RecoveryError):
+                r.validate_settings(settings)
+        self.assertEqual(r.validate_settings({'auto_update': False}), {'auto_update': False})
+
+    def test_alert_delivery_is_bounded_and_failed_delivery_preserves_the_outbox(self):
+        sent = []
+        self.backend.notify = lambda event: sent.append(event) or False
+        for index in range(r.MAX_OUTBOX + 5):
+            self.coordinator.event('Operational event ' + str(index))
+        self.assertEqual(len(self.coordinator.state['outbox']), r.MAX_OUTBOX)
+        r.deliver_alerts(self.coordinator)
+        self.assertEqual(len(sent), 1)
+        self.assertEqual(len(self.coordinator.state['outbox']), r.MAX_OUTBOX)
+        self.backend.notify = lambda event: sent.append(event) or True
+        r.deliver_alerts(self.coordinator)
+        self.assertEqual(len(self.coordinator.state['outbox']), r.MAX_OUTBOX - r.MAX_ALERTS_PER_RUN)
+
     def test_recovery_must_pass_audio_and_alerts_are_deduplicated(self):
         self.backend.kind = 'network'
         self.cycle()

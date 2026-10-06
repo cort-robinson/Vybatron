@@ -4,10 +4,10 @@ server:
 
 lavalink:
   plugins:
-    # Snapshot pin: restores TV OAuth playback after YouTube rejected the old
-    # client identity (#233), and fixes truncated itag 18 streams (#235).
-    # Jar verified per SPEC V11; decoded a complete track before deploying.
-    - dependency: "dev.lavalink.youtube:youtube-plugin:f45bbb7aebfcbc1c553769e04af6cd43afa8b7c3"
+    # Tested production snapshot, promoted from the automatic recovery override.
+    # Published jar SHA-256: b062effdda6abeaa46913dfd1b5d5600120b65f239ce88f30948c7213a3ca1c0
+    # Two complete tracks decoded through FINISHED on Lavalink 4.2.2 (2026-10-04).
+    - dependency: "dev.lavalink.youtube:youtube-plugin:2be8e542d3f6f178e048dca565892684c2e40177"
       repository: "https://maven.lavalink.dev/snapshots"
       snapshot: true
     # Snapshot pin: 4.8.3 release has a broken Spotify anonymous-token scraper

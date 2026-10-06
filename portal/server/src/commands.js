@@ -1,0 +1,74 @@
+import { invalid } from './security.js';
+
+const string = max => value => typeof value === 'string' && value.length > 0 && value.length <= max && !/[\0-\x1f\x7f]/.test(value);
+const integer = (min, max) => value => Number.isInteger(value) && value >= min && value <= max;
+const boolean = value => typeof value === 'boolean';
+const snowflake = value => typeof value === 'string' && /^\d{1,20}$/.test(value);
+const choice = values => value => values.includes(value);
+const opt = validate => ({ validate });
+const required = validate => ({ validate, required: true });
+const position = required(integer(1, 500));
+const name = required(string(40));
+const selectionFields = {
+  expectedTrackId: value => typeof value === 'string' && /^[a-f0-9]{24}$/.test(value),
+  expectedHistoryId: string(40),
+  expectedMixVersion: value => typeof value === 'string' && /^[a-f0-9]{32}$/.test(value),
+};
+const selectionFor = {
+  'favorite/play': 'expectedTrackId', 'favorite/remove': 'expectedTrackId',
+  replay: 'expectedHistoryId', 'mix/delete': 'expectedMixVersion',
+};
+// Match the bot's 4..12-character slash field and parseSeekTimestamp grammar.
+const timestamp = value => {
+  if (!string(12)(value) || value.length < 4) return false;
+  const parts = value.trim().split(':');
+  if (parts.length < 2 || parts.length > 3 || parts.some(part => !/^\d+$/.test(part))) return false;
+  return Number(parts.at(-1)) <= 59 && (parts.length === 2 || Number(parts.at(-2)) <= 59);
+};
+
+// Contract option names deliberately differ from some legacy slash schemas.
+// The bot adapter translates skipto(position) and replay(index) at its boundary.
+const schemas = {
+  play: { query: required(string(200)) }, playnext: { query: required(string(200)) },
+  pause: {}, resume: {}, seek: { timestamp: required(timestamp) }, skip: {},
+  skipto: { position }, stop: {}, clear: {}, remove: { position }, move: { from: position, to: position },
+  shuffle: {}, loop: { mode: required(choice(['off', 'track', 'queue'])) },
+  volume: { level: required(integer(0, 100)) }, filter: { preset: required(string(40)) }, voteskip: {},
+  'radio/on': {}, 'radio/off': {}, replay: { index: required(integer(1, 100)) },
+  'session/resume': {}, 'session/discard': {}, 'session/show': {},
+  'favorite/add': { position: opt(integer(1, 500)) }, 'favorite/list': { page: opt(integer(1, 1000)) },
+  'favorite/play': { index: required(integer(1, Number.MAX_SAFE_INTEGER)) }, 'favorite/remove': { index: required(integer(1, Number.MAX_SAFE_INTEGER)) },
+  'favorite/clear': { confirm: required(boolean) },
+  'mix/save': { name, replace: opt(boolean) }, 'mix/list': {}, 'mix/load': { name }, 'mix/delete': { name },
+  'settings/show': {}, 'settings/volume': { value: required(integer(0, 100)) },
+  'settings/fairqueue': { enabled: required(boolean) }, 'settings/djrole': { role: opt(value => value === null || snowflake(value)) },
+  'settings/reset': {}, 'settings/musicchannel': { channel: required(snowflake) },
+  queue: {}, nowplaying: {}, history: {}, help: { topic: opt(string(40)) },
+};
+
+export function validateCommand(body) {
+  if (!body || typeof body !== 'object' || Array.isArray(body) ||
+      Object.keys(body).some(key => !['command', 'subcommand', 'options', 'expectedRevision', ...Object.keys(selectionFields)].includes(key)) ||
+      typeof body.command !== 'string' || !/^[a-z]+$/.test(body.command) ||
+      (body.subcommand !== undefined && (typeof body.subcommand !== 'string' || !/^[a-z]+$/.test(body.subcommand))) ||
+      (body.expectedRevision !== undefined && !string(256)(body.expectedRevision))) throw invalid();
+  const key = body.subcommand ? `${body.command}/${body.subcommand}` : body.command;
+  if (!Object.hasOwn(schemas, key)) throw invalid();
+  const selection = selectionFor[key];
+  for (const [field, valid] of Object.entries(selectionFields)) {
+    if (Object.hasOwn(body, field) && (field !== selection || !valid(body[field]))) throw invalid();
+  }
+  if (selection && !Object.hasOwn(body, selection)) throw invalid();
+  const schema = schemas[key]; const options = body.options ?? {};
+  if (body.options === null || typeof options !== 'object' || Array.isArray(options) || Object.keys(options).length > 8) throw invalid();
+  for (const [option, value] of Object.entries(options)) {
+    if (!Object.hasOwn(schema, option) || !schema[option].validate(value)) throw invalid();
+  }
+  for (const [option, rule] of Object.entries(schema)) if (rule.required && !Object.hasOwn(options, option)) throw invalid();
+  const conflicting = ['clear', 'remove', 'move', 'shuffle', 'skip', 'skipto', 'seek', 'playnext', 'replay',
+    'mix/save', 'favorite/add', 'session/resume', 'session/discard'].includes(key);
+  if (conflicting && body.expectedRevision === undefined) throw invalid();
+  return { command: body.command, ...(body.subcommand && { subcommand: body.subcommand }),
+    options, ...(body.expectedRevision !== undefined && { expectedRevision: body.expectedRevision }),
+    ...(selection && { [selection]: body[selection] }) };
+}

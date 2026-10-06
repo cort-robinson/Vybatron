@@ -1,7 +1,9 @@
 import { SlashCommandBuilder } from 'discord.js';
 import { requireControl } from '../utils/guards.js';
 import { ephemeralText } from '../utils/messages.js';
-import { refresh, withControllerLink } from '../utils/player-controller.js';
+import { withControllerLink } from '../utils/player-controller.js';
+import { directControlPresentation } from '../utils/presentation-updates.js';
+import { commandTimingSpan } from '../portal/timing.js';
 
 export const data = new SlashCommandBuilder()
   .setName('volume')
@@ -20,8 +22,8 @@ export async function execute(interaction) {
   if (!player) return;
 
   const level = interaction.options.getInteger('level');
-  await player.setVolume(level);
-  await refresh(interaction.client, player);
+  await commandTimingSpan('playback', () => player.setVolume(level));
+  await directControlPresentation(interaction, player);
   return interaction.reply(ephemeralText(withControllerLink(
     level === 0 ? 'Muted.' : `Volume set to ${level}%.`,
     interaction,

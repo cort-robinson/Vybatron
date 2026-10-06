@@ -3,6 +3,9 @@ import assert from 'node:assert/strict';
 import { handleMessageComponent, handleModalSubmit } from '../src/utils/components.js';
 import { createOrUpdate, resetControllers } from '../src/utils/player-controller.js';
 import { trackIdentity } from '../src/utils/presentation.js';
+import { historySessionKey } from '../src/utils/history.js';
+import { showStatus } from '../src/utils/player-controller.js';
+import { guardedMutation } from '../src/utils/requests.js';
 
 function track(index) {
   return {
@@ -208,9 +211,9 @@ test('owned queue pagination rejects other users', async () => {
 test('stale player controls disable themselves and explain the ended session', async () => {
   const stale = interaction('player:v1:toggle', null);
   await handleMessageComponent(stale);
-  assert.deepEqual(stale.calls.map(([name]) => name), ['message.edit', 'reply']);
-  assert.deepEqual(stale.calls[0][1].components, []);
-  assert.match(stale.calls[1][1].content, /session has ended/i);
+  assert.deepEqual(stale.calls.map(([name]) => name), ['reply', 'message.edit']);
+  assert.deepEqual(stale.calls[1][1].components, []);
+  assert.match(stale.calls[0][1].content, /session has ended/i);
 });
 
 test('an orphaned public controller cannot control the active session', async () => {
@@ -227,8 +230,8 @@ test('an orphaned public controller cannot control the active session', async ()
   await handleMessageComponent(stale);
 
   assert.equal(p.pauseCalls, 0);
-  assert.deepEqual(stale.calls.map(([name]) => name), ['message.edit', 'reply']);
-  assert.match(stale.calls[1][1].content, /no longer active/i);
+  assert.deepEqual(stale.calls.map(([name]) => name), ['reply', 'message.edit']);
+  assert.match(stale.calls[0][1].content, /no longer active/i);
 
   const active = interaction('player:v1:toggle', p);
   active.message.id = 'active-controller';
@@ -249,4 +252,111 @@ test('queue jumps reject stale identities and accept a current selection', async
   await handleMessageComponent(current);
   assert.deepEqual(p.skipCalls, [2]);
   assert.deepEqual(current.calls.map(([name]) => name), ['deferUpdate', 'editReply']);
+});
+
+test('history replay is owner-bound, session-bound, voice-guarded, and stale-safe', async () => {
+  const p = player();
+  p.queue.previous = [track(3), track(4)];
+  p.playing = true;
+  p.queue.add = async (track, position) => { p.queue.tracks.splice(position, 0, track); };
+  const session = historySessionKey(p);
+  const customId = `history:v2:replay:listener-id:${session}:0`;
+  const value = `1:${trackIdentity(p.queue.previous[0])}`;
+  function selection({ voice = 'voice', selected = value } = {}) {
+    const result = interaction(customId, p, { voice, values: [selected] });
+    result.isStringSelectMenu = () => true;
+    result.isButton = () => false;
+    return result;
+  }
+  const wrongVoice = selection({ voice: 'other' });
+  await handleMessageComponent(wrongVoice);
+  assert.equal(p.queue.tracks.length, 2);
+  assert.match(wrongVoice.calls[0][1].content, /voice channel/);
+
+  const otherOwner = selection();
+  otherOwner.user.id = 'another-listener';
+  await handleMessageComponent(otherOwner);
+  assert.match(otherOwner.calls[0][1].content, /Only the person/);
+
+  const stale = selection({ selected: '1:000000000000' });
+  await handleMessageComponent(stale);
+  assert.equal(p.queue.tracks.length, 2);
+  assert.deepEqual(stale.calls.map(([name]) => name), ['deferUpdate', 'editReply', 'followUp']);
+  assert.match(stale.calls.at(-1)[1].content, /History changed/);
+
+  const allowed = selection();
+  await handleMessageComponent(allowed);
+  assert.equal(p.queue.tracks.length, 3);
+  assert.equal(p.queue.tracks[0].info.title, 'Track 3');
+  assert.match(allowed.calls.at(-1)[1].content, /replay next/);
+
+  const oldSession = selection();
+  oldSession.client.lavalink.getPlayer = () => player();
+  await handleMessageComponent(oldSession);
+  assert.deepEqual(oldSession.calls.map(([name]) => name), ['update', 'followUp']);
+  assert.match(oldSession.calls.at(-1)[1].content, /session has ended/);
+});
+
+test('help navigation stays private to its owner without requiring voice access', async () => {
+  const allowed = interaction('help:v2:topic:listener-id', null, { voice: null, values: ['sources'] });
+  allowed.isStringSelectMenu = () => true;
+  allowed.isButton = () => false;
+  await handleMessageComponent(allowed);
+  assert.equal(allowed.calls[0][0], 'update');
+  assert.match(allowed.calls[0][1].embeds[0].data.title, /Sources/);
+  const denied = interaction('help:v2:topic:owner', null, { values: ['library'] });
+  denied.isStringSelectMenu = () => true;
+  await handleMessageComponent(denied);
+  assert.match(denied.calls[0][1].content, /Only the person/);
+});
+
+test('favorite buttons reject changed tracks and listeners outside the bot voice channel', async () => {
+  const p = player();
+  const validId = `player:v2:favorite:${trackIdentity(p.queue.current)}`;
+  const denied = interaction(validId, p, { voice: 'other' });
+  await handleMessageComponent(denied);
+  assert.match(denied.calls[0][1].content, /voice channel/);
+  const stale = interaction('player:v2:favorite:000000000000', p);
+  await handleMessageComponent(stale);
+  assert.match(stale.calls[0][1].content, /track changed/);
+});
+
+test('favorite integration saves for a non-DJ listener after an early component acknowledgement', async () => {
+  const p = player();
+  p.queue.current.info.sourceName = 'youtube';
+  p.queue.current.info.uri = 'https://www.youtube.com/watch?v=dQw4w9WgXcQ';
+  const i = interaction(`player:v2:favorite:${trackIdentity(p.queue.current)}`, p);
+  const favorites = [];
+  i.client.library = {
+    settings: () => ({ djRoleId: 'dj-role' }),
+    async updateFavorites(userId, mutate) { return mutate(favorites); },
+  };
+  i.member.roles = { cache: new Map() };
+  i.isMessageComponent = () => true;
+  i.isModalSubmit = () => false;
+  await guardedMutation(i, handleMessageComponent, { playback: false });
+  assert.equal(favorites.length, 1);
+  assert.equal(favorites[0].uri, 'https://www.youtube.com/watch?v=dQw4w9WgXcQ');
+  assert.deepEqual(i.calls.map(([name]) => name), ['deferUpdate', 'followUp']);
+  assert.match(i.calls.at(-1)[1].content, /Saved/);
+
+  const control = interaction('player:v1:toggle', p);
+  control.client.library = i.client.library;
+  control.member.roles = i.member.roles;
+  await handleMessageComponent(control);
+  assert.equal(p.pauseCalls, 0);
+  assert.match(control.calls[0][1].content, /DJ role/);
+});
+
+test('recovery also rejects stale transport and seek submissions at the handler boundary', async () => {
+  const p = player();
+  const i = interaction('player:v1:toggle', p);
+  await showStatus(i.client, p, 'recovering', 'Reconnecting.');
+  await handleMessageComponent(i);
+  assert.equal(p.pauseCalls, 0);
+  assert.match(i.calls[0][1].content, /reconnecting/);
+  const modal = interaction(`player:v1:seek-submit:${trackIdentity(p.queue.current)}`, p);
+  await handleModalSubmit(modal);
+  assert.equal(p.seekCalls.length, 0);
+  assert.match(modal.calls[0][1].content, /reconnecting/);
 });

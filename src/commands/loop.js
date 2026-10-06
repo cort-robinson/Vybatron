@@ -2,7 +2,8 @@ import { SlashCommandBuilder } from 'discord.js';
 import { requireControl } from '../utils/guards.js';
 import { ephemeralText } from '../utils/messages.js';
 import { setLoopMode } from '../utils/operations.js';
-import { refresh, withControllerLink } from '../utils/player-controller.js';
+import { withControllerLink } from '../utils/player-controller.js';
+import { directControlPresentation } from '../utils/presentation-updates.js';
 
 export const data = new SlashCommandBuilder()
   .setName('loop')
@@ -22,7 +23,7 @@ export async function execute(interaction) {
   if (!player) return;
   const mode = interaction.options.getString('mode');
   await setLoopMode(player, mode);
-  await refresh(interaction.client, player);
+  await directControlPresentation(interaction, player);
   return interaction.reply(ephemeralText(withControllerLink(
     `Loop mode set to **${mode}**.`, interaction, player
   )));

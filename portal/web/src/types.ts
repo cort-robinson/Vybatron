@@ -1,0 +1,62 @@
+export interface Viewer {
+  id: string; username: string; displayName: string; avatarUrl: string | null; maintainer: boolean;
+}
+export interface Guild { id: string; name: string; iconUrl: string | null; admin: boolean }
+export interface Channel { id: string; name: string; type: 'voice' | 'text' }
+export interface Configuration { guildId: string; channels: Channel[]; roles: { id: string; name: string }[] }
+export interface Track {
+  id: string; title: string; author: string; uri: string | null; source: string;
+  durationMs: number; artworkUrl: string | null; isStream: boolean;
+  requestedBy: { id: string; displayName: string; avatarUrl: string | null } | null;
+}
+export interface CommandOption {
+  name: string; description?: string; type: number; required?: boolean;
+  choices?: { name: string; value: string | number }[]; options?: CommandOption[];
+  min_value?: number; max_value?: number; min_length?: number; max_length?: number;
+}
+export interface CommandSchema { name: string; description?: string; options?: CommandOption[] }
+export interface Bootstrap {
+  viewer: Viewer; guilds: Guild[]; csrfToken: string;
+  filters: { id: string; label: string; description: string }[];
+  commands: CommandSchema[];
+}
+// Transport reconciliation only; never authority or a mutation revision.
+export interface SnapshotOrdering { instanceId: string; sequence: number }
+export interface GuildSnapshot {
+  guild: Guild; revision: string;
+  ordering?: SnapshotOrdering;
+  session: {
+    status: 'idle' | 'playing' | 'paused' | 'recovering' | 'unavailable';
+    voiceChannel: { id: string; name: string } | null; textChannel: { id: string; name: string } | null;
+    current: Track | null; queue: Track[]; positionMs: number; durationMs: number;
+    volume: number; filter: string; repeat: 'off' | 'track' | 'queue';
+    radio: boolean; fairQueue: boolean;
+    listeners: { id: string; displayName: string; avatarUrl: string | null }[];
+    canAdd: boolean; canControl: boolean; canVote: boolean; reason: string | null;
+  };
+  savedSession: {
+    exists: boolean; savedAt: number | null; positionMs: number; paused: boolean;
+    trackCount: number; voiceChannel: { id: string; name: string } | null; canResume: boolean;
+  };
+  settings: { volume: number; fairQueue: boolean; djRoleId: string | null; musicTextChannelId: string | null } | null;
+  channels: Channel[]; roles: { id: string; name: string }[];
+}
+export interface Library {
+  favorites: Track[];
+  mixes: { id: string; name: string; ownerId: string; version: string; tracks: Track[]; canEdit: boolean }[];
+  history: { id: string; playedAt: number; voiceChannel: { id: string; name: string } | null; track: Track }[];
+}
+export interface Diagnostics {
+  botReady: boolean; audioReady: boolean; uptimeSeconds: number; recoveryState: string; lastError: string | null;
+}
+export interface Activity {
+  items: { id: string; at: number; actor: { id: string; displayName: string }; action: string; detail: string }[];
+}
+export interface Command {
+  command: string; subcommand?: string; options?: Record<string, string | number | boolean | null>; expectedRevision?: string;
+  expectedTrackId?: string; expectedHistoryId?: string; expectedMixVersion?: string;
+}
+export interface CommandResult { ok: true; message: string; snapshot: GuildSnapshot }
+export type Connection = 'connecting' | 'refreshing' | 'live' | 'offline';
+export type Capability = 'add' | 'control' | 'vote' | 'library' | 'admin' | 'resume';
+export type Surface = 'session' | 'music' | 'server';

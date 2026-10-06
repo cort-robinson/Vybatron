@@ -1,3 +1,9 @@
+x-logging: &bounded-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   # Gives only the audio stack a clean egress IP. The bot and VPS host keep
   # their normal network path, so Discord control traffic and SSH are isolated
@@ -6,6 +12,8 @@ services:
     image: caomingjun/warp@sha256:7b2df2f0d589bdcd3d93c28ccc08cf04d54c81f193682dd1b6da82d7b39e4bb6
     container_name: vybertron-warp
     restart: unless-stopped
+    logging: *bounded-logging
+    pids_limit: 128
     entrypoint: ["/bin/bash", "/opt/warp/supervise.sh"]
     # Normally about 100 MiB. Bound daemon growth before it exhausts the VPS.
     mem_limit: 384m
@@ -31,18 +39,28 @@ services:
   # script; youtube-source's built-in Java extractor can no longer keep up
   # with YouTube's cipher churn ("must find sig function").
   yt-cipher:
-    image: ghcr.io/kikkia/yt-cipher:master
+    image: ghcr.io/kikkia/yt-cipher@sha256:4c5ec381ff57336cfc24822d2b526a5ad7cd0171f61065a1bbc87bb736842449
     container_name: vybertron-yt-cipher
     restart: unless-stopped
+    logging: *bounded-logging
+    mem_limit: 512m
+    memswap_limit: 768m
+    pids_limit: 256
     network_mode: service:warp
     depends_on:
       warp:
         condition: service_healthy
 
   lavalink:
-    image: ghcr.io/lavalink-devs/lavalink:4
+    # Lavalink 4.2.2, verified with the production DAVE voice stack.
+    image: ghcr.io/lavalink-devs/lavalink@sha256:87ae53e60dc147c9dddb28e126ce503a26bc8d1477ed8d99543614677882afff
     container_name: vybertron-lavalink
     restart: unless-stopped
+    logging: *bounded-logging
+    mem_limit: 768m
+    memswap_limit: 896m
+    pids_limit: 256
+    stop_grace_period: 30s
     network_mode: service:warp
     depends_on:
       warp:
@@ -52,15 +70,15 @@ services:
     environment:
       # Keep YouTube API and signed media requests on WARP's stable IPv4 egress.
       - _JAVA_OPTIONS=-Xmx512M -Djava.net.preferIPv4Stack=true
-      - LAVALINK_SERVER_PASSWORD=${LAVALINK_PASSWORD}
-      - SPOTIFY_SP_DC=${SPOTIFY_SP_DC}
-      - YOUTUBE_REFRESH_TOKEN=${YOUTUBE_REFRESH_TOKEN}
+      - LAVALINK_SERVER_PASSWORD=${LAVALINK_PASSWORD:?LAVALINK_PASSWORD is required}
+      - SPOTIFY_SP_DC=${SPOTIFY_SP_DC:-}
+      - YOUTUBE_REFRESH_TOKEN=${YOUTUBE_REFRESH_TOKEN:-}
       - POT_TOKEN=${POT_TOKEN:-}
       - POT_VISITOR_DATA=${POT_VISITOR_DATA:-}
     volumes:
       - ./lavalink/application.yml:/opt/Lavalink/application.yml:ro
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "--header", "Authorization: ${LAVALINK_PASSWORD}", "http://localhost:2333/version"]
+      test: ["CMD-SHELL", "wget -q --spider --header \"Authorization: $${LAVALINK_SERVER_PASSWORD}\" http://localhost:2333/version"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -68,18 +86,34 @@ services:
 
   bot:
     build: .
+    image: vybertron-bot:${VYBERTRON_RELEASE:-local}
     container_name: vybertron-bot
     restart: unless-stopped
+    init: true
+    logging: *bounded-logging
+    mem_limit: 256m
+    memswap_limit: 384m
+    pids_limit: 128
+    stop_grace_period: 30s
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=32m
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
     depends_on:
       lavalink:
         condition: service_healthy
     environment:
       - NODE_ENV=production
-      - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN}
-      - CLIENT_ID=${CLIENT_ID}
+      - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN:?DISCORD_BOT_TOKEN is required}
+      - CLIENT_ID=${CLIENT_ID:?CLIENT_ID is required}
+      - NODE_OPTIONS=--max-old-space-size=160
+      - VYBERTRON_DATA_DIR=/app/data
       - LAVALINK_HOST=lavalink
       - LAVALINK_PORT=2333
-      - LAVALINK_PASSWORD=${LAVALINK_PASSWORD}
+      - LAVALINK_PASSWORD=${LAVALINK_PASSWORD:?LAVALINK_PASSWORD is required}
+    volumes:
+      - bot-data:/app/data
     networks:
       - vybertron
     healthcheck:
@@ -94,3 +128,4 @@ networks:
 
 volumes:
   warp-data:
+  bot-data:

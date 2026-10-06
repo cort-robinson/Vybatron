@@ -8,7 +8,11 @@
     "start": "node src/index.js",
     "deploy:commands:guild": "node deploy-commands.js guild",
     "deploy:commands:global": "node deploy-commands.js",
-    "test": "node --test"
+    "test": "node --test tests/*.test.js",
+    "portal:build": "npm --prefix portal/web run build",
+    "portal:test": "npm --prefix portal/server test",
+    "portal:integration": "node --test portal/integration/*.test.js",
+    "portal:dev": "npm --prefix portal/web run dev"
   },
   "repository": {
     "type": "git",
@@ -22,11 +26,11 @@
   },
   "homepage": "https://github.com/cort-robinson/Vybertron#readme",
   "dependencies": {
-    "discord.js": "^14.15.3",
-    "dotenv": "^16.4.5",
-    "lavalink-client": "^2.4.0"
+    "discord.js": "14.27.0",
+    "dotenv": "16.6.1",
+    "lavalink-client": "2.10.3"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=22.12.0"
   }
 }

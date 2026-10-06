@@ -122,8 +122,15 @@ class PortalDeployer(Deployer):
         return {name: self.verify_image('vybertron-' + name + ':sha-' + target, target)
                 for name in ('bot', 'portal')}
 
-    def commands(self, guild_id):
-        script = "const r=await fetch('https://discord.com/api/v10/applications/'+process.env.CLIENT_ID+'/guilds/" + guild_id + "/commands',{headers:{Authorization:'Bot '+process.env.DISCORD_BOT_TOKEN},signal:AbortSignal.timeout(10000)});if(!r.ok)process.exit(1);console.log(JSON.stringify(await r.json()));"
+    @staticmethod
+    def command_route(guild_id=None):
+        # Global commands when no guild is given; GUILD guards the interpolated ID.
+        if guild_id is not None and not GUILD.fullmatch(guild_id):
+            raise DeploymentError('portal_invalid_release_inputs')
+        return "'https://discord.com/api/v10/applications/'+process.env.CLIENT_ID+'" + ('/guilds/' + guild_id if guild_id else '') + "/commands'"
+
+    def commands(self, guild_id=None):
+        script = "const r=await fetch(" + self.command_route(guild_id) + ",{headers:{Authorization:'Bot '+process.env.DISCORD_BOT_TOKEN},signal:AbortSignal.timeout(10000)});if(!r.ok)process.exit(1);console.log(JSON.stringify(await r.json()));"
         body = json.loads(self.command(['docker', 'exec', '-i', 'vybertron-bot',
             'node', '--input-type=module'], data=script, timeout=20))
         if not isinstance(body, list) or len(body) > 100:
@@ -237,13 +244,20 @@ class PortalDeployer(Deployer):
             raise DeploymentError('portal_data_restore_inventory_mismatch')
         return quarantine_name
 
-    def restore_commands(self, journal):
-        body = read(self.directory / journal['commands_backup']).get('commands')
-        if not isinstance(body, list):
-            raise DeploymentError('portal_command_backup_unavailable')
-        script = "const commands=" + json.dumps(body) + ";const r=await fetch('https://discord.com/api/v10/applications/'+process.env.CLIENT_ID+'/guilds/" + journal['guild_id'] + "/commands',{method:'PUT',headers:{Authorization:'Bot '+process.env.DISCORD_BOT_TOKEN,'Content-Type':'application/json'},body:JSON.stringify(commands),signal:AbortSignal.timeout(15000)});if(!r.ok)process.exit(1);"
+    def put_commands(self, body, images, guild_id=None):
+        script = "const commands=" + json.dumps(body) + ";const r=await fetch(" + self.command_route(guild_id) + ",{method:'PUT',headers:{Authorization:'Bot '+process.env.DISCORD_BOT_TOKEN,'Content-Type':'application/json'},body:JSON.stringify(commands),signal:AbortSignal.timeout(15000)});if(!r.ok)process.exit(1);"
         self.compose(['run', '-T', '--rm', '--no-deps', '--pull', 'never', 'bot',
-            'node', '--input-type=module'], journal['previous_images'], data=script)
+            'node', '--input-type=module'], images, data=script)
+
+    def restore_commands(self, journal):
+        # Version-1 backups hold only the guild catalog; version 2 adds global.
+        backup = read(self.directory / journal['commands_backup'])
+        guild_body, global_body = backup.get('commands'), backup.get('global')
+        if not isinstance(guild_body, list) or ('global' in backup and not isinstance(global_body, list)):
+            raise DeploymentError('portal_command_backup_unavailable')
+        if isinstance(global_body, list):
+            self.put_commands(global_body, journal['previous_images'])
+        self.put_commands(guild_body, journal['previous_images'], journal['guild_id'])
 
     def verify_running(self, selected, journal):
         if self.audio_ids() != journal['audio_ids'] or self.bot_volume() != journal['volume']:
@@ -271,7 +285,10 @@ class PortalDeployer(Deployer):
                 write(self.directory / ('portal-previous-deployment-' + target + '.json'), json.dumps(old_journal))
             transaction = target + '-' + str(time.time_ns())
             catalog = 'portal-commands-' + transaction + '.json'
-            write(self.directory / catalog, json.dumps({'commands': self.commands(guild_id)}))
+            # Back up both catalogs: releases register globally and clear the
+            # test guild's legacy guild-scoped copy, so neither shows twice.
+            write(self.directory / catalog, json.dumps({'version': 2, 'commands': self.commands(guild_id),
+                                                        'global': self.commands()}))
             journal = {'kind': 'portal', 'phase': 'prepared', 'target_sha': target,
                 'transaction_id': transaction,
                 'repo': str(self.repo), 'guild_id': guild_id, 'previous_images': images,
@@ -293,7 +310,8 @@ class PortalDeployer(Deployer):
             self.save(journal)
             journal['commands_attempted'] = True; self.save(journal)
             self.compose(['run', '-T', '--rm', '--no-deps', '--pull', 'never',
-                '-e', 'GUILD_ID=' + guild_id, 'bot', 'node', 'deploy-commands.js', 'guild'], selected)
+                'bot', 'node', 'deploy-commands.js', 'global'], selected)
+            self.put_commands([], selected, guild_id)
             journal['data_may_have_changed'] = True; self.save(journal)
             self.start_bot(selected)
             self.compose(['up', '-d', '--no-deps', '--no-build', '--pull', 'never',

@@ -363,3 +363,29 @@ authority 297–568 ms (previously 805–954 ms on `5b9b6a3`), readiness for mut
 302–592 ms, and total command time mostly 652–1,000 ms (previously 1,911–2,269 ms).
 Two outliers near 1.44 s came from a single slow Discord read or filter application.
 The owner reported Pause/Resume "feels way better" on phone and desktop.
+
+## Automatic main releases
+
+`.github/workflows/deploy.yml` releases successful `main` pushes when the repository
+variable `DEPLOY_ENABLED` is `true` and `PORTAL_GUILD_ID` names the test guild. It
+reads the running bot's revision label and does nothing when that release already
+includes the commit. It stops before staging when the running release is not an
+ancestor, or when `docker-compose.yml`, `lavalink/`, `warp/` or the playback probe
+changed: the portal driver never recreates audio, so those releases need an operator.
+
+Otherwise it builds both images on the GitHub runner (never on the 2 GiB VPS),
+transfers them with a `git archive` of the exact commit, installs that commit's
+`ops/portal_deploy.py` and `ops/deploy.py` as the private drivers (keeping the
+previous pair as `*.previous`), and runs the same idle-guarded portal driver used for
+manual releases. A busy or paused session fails the job without changing services;
+re-run it once the session is idle. The job then checks both containers carry the
+target revision and report healthy.
+
+The portal driver registers commands globally and clears the test guild's
+guild-scoped copy, so nothing appears twice. Each transaction backs up both catalogs
+(`version: 2`) and rollback restores both; older guild-only backups still restore.
+`ops/deploy.py` keeps the bot-only release for hosts without the portal and refuses
+with `portal_overlay_requires_portal_driver` wherever a portal container exists.
+
+Automatic recovery is unaffected: it restarts the existing bot container (keeping
+its portal environment and network) or recreates only audio services.

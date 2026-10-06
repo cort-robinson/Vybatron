@@ -171,13 +171,42 @@ class PortalReleasePolicyTests(unittest.TestCase):
         failed = self.state / journal['failed_data_backup'] / 'library.json'
         self.assertEqual(json.loads(failed.read_text())['new'], 'saved')
         self.assertFalse('portal' in self.harness.containers)
-        restored_catalog = [s for s in self.harness.scripts if "method:'PUT'" in s]
-        self.assertEqual(len(restored_catalog), 1)
-        self.assertIn('"name": "play"', restored_catalog[0])
+        puts = [s for s in self.harness.scripts if "method:'PUT'" in s]
+        # Release cleared the test guild copy, then rollback restored the global
+        # catalog followed by the guild catalog from the version-2 backup.
+        self.assertEqual(len(puts), 3)
+        self.assertTrue(puts[0].startswith('const commands=[];') and '/guilds/' in puts[0])
+        self.assertNotIn('/guilds/', puts[1]); self.assertIn('"name": "play"', puts[1])
+        self.assertIn('/guilds/', puts[2]); self.assertIn('"name": "play"', puts[2])
         for args in self.mutations():
             self.assertNotIn('warp', args)
             self.assertNotIn('lavalink', args)
             self.assertNotIn('yt-cipher', args)
+
+    def test_release_registers_global_commands_and_clears_the_guild_copy(self):
+        self.assertEqual(self.deploy(), 'deployed')
+        runs = [args for args in self.harness.calls if args[:2] == ['docker', 'compose'] and 'deploy-commands.js' in args]
+        self.assertEqual(len(runs), 1)
+        self.assertEqual(runs[0][-1], 'global')
+        self.assertFalse(any(arg.startswith('GUILD_ID=') for arg in runs[0]))
+        puts = [s for s in self.harness.scripts if "method:'PUT'" in s]
+        self.assertEqual(len(puts), 1)
+        self.assertTrue(puts[0].startswith('const commands=[];') and '/guilds/' in puts[0])
+        journal = module.read(self.state / 'portal-deployment.json')
+        backup = module.read(self.state / journal['commands_backup'])
+        self.assertEqual(backup['version'], 2)
+        self.assertEqual([c['name'] for c in backup['global']], ['play'])
+        self.assertEqual([c['name'] for c in backup['commands']], ['play'])
+
+    def test_version_one_command_backup_restores_only_the_guild_catalog(self):
+        self.deploy()
+        journal = module.read(self.state / 'portal-deployment.json')
+        module.write(self.state / journal['commands_backup'], json.dumps({'commands': [{'name': 'play', 'description': 'Play music', 'type': 1}]}))
+        self.harness.scripts.clear()
+        self.deployer.restore_commands(journal)
+        puts = [s for s in self.harness.scripts if "method:'PUT'" in s]
+        self.assertEqual(len(puts), 1)
+        self.assertIn('/guilds/', puts[0])
 
     def test_rollback_rechecks_idle_before_stopping_new_player(self):
         self.deploy()

@@ -11,9 +11,11 @@ permissions:
 
 jobs:
   deploy:
-    # Dormant until the repo variable DEPLOY_ENABLED is set to "true"
-    # (Settings -> Secrets and variables -> Actions -> Variables).
-    # Also requires secrets: VPS_HOST, VPS_USER, VPS_SSH_KEY.
+    # Dormant until the repo variable DEPLOY_ENABLED is "true". Also requires
+    # the variable PORTAL_GUILD_ID and secrets VPS_HOST, VPS_USER, VPS_SSH_KEY.
+    # Releases the bot and portal images built here through the guarded portal
+    # driver (idle lease, journal, rollback). Audio services are never changed:
+    # a commit that touches them stops before staging and needs an operator.
     if: >
       github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.event == 'push' &&
@@ -21,35 +23,96 @@ jobs:
       github.event.workflow_run.head_repository.full_name == github.repository &&
       vars.DEPLOY_ENABLED == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     concurrency:
       group: deploy
       cancel-in-progress: false
+    env:
+      TARGET_SHA: ${{ github.event.workflow_run.head_sha }}
+      GUILD_ID: ${{ vars.PORTAL_GUILD_ID }}
     steps:
-      - name: Deploy over SSH
-        uses: appleboy/ssh-action@v1
+      - uses: actions/checkout@v4
         with:
-          host: ${{ secrets.VPS_HOST }}
-          username: ${{ secrets.VPS_USER }}
-          key: ${{ secrets.VPS_SSH_KEY }}
-          command_timeout: 45m
-          script: |
-            set -euo pipefail
-            cd ~/Vybertron
-            TARGET_SHA='${{ github.event.workflow_run.head_sha }}'
-            [[ "$TARGET_SHA" =~ ^[a-f0-9]{40}$ ]]
-            git fetch --no-tags origin main
-            git cat-file -e "${TARGET_SHA}^{commit}"
-            git merge-base --is-ancestor "$TARGET_SHA" origin/main
-            # Keep the exact tested driver outside Git so rollback remains
-            # available even when the previous commit predates this script.
-            install -d -m 700 /var/lib/vybertron-recovery
-            git show "${TARGET_SHA}:ops/deploy.py" > /var/lib/vybertron-recovery/deploy-driver.py.tmp
-            chmod 600 /var/lib/vybertron-recovery/deploy-driver.py.tmp
-            mv /var/lib/vybertron-recovery/deploy-driver.py.tmp /var/lib/vybertron-recovery/deploy-driver.py
-            python3 /var/lib/vybertron-recovery/deploy-driver.py deploy "$TARGET_SHA" --repo "$PWD"
-            if [ -f /var/lib/vybertron-recovery/settings.json ]; then
-              install -m 644 ops/vybertron-recovery.service ops/vybertron-recovery.timer /etc/systemd/system/
-              systemctl daemon-reload
-              systemctl enable --now vybertron-recovery.timer
-            fi
-            # Previous images and private journals are retained for rollback.
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+
+      - name: Validate release inputs
+        run: |
+          [[ "$TARGET_SHA" =~ ^[a-f0-9]{40}$ ]]
+          [[ "$GUILD_ID" =~ ^[0-9]{17,20}$ ]] || { echo "::error::Set the PORTAL_GUILD_ID repository variable."; exit 1; }
+          git merge-base --is-ancestor "$TARGET_SHA" origin/main
+
+      - name: Configure SSH
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/deploy && chmod 600 ~/.ssh/deploy
+          ssh-keyscan -T 15 "$VPS_HOST" > ~/.ssh/known_hosts 2>/dev/null
+          printf 'Host vps\n  HostName %s\n  User %s\n  IdentityFile ~/.ssh/deploy\n  IdentitiesOnly yes\n  BatchMode yes\n  ServerAliveInterval 30\n' "$VPS_HOST" "$VPS_USER" > ~/.ssh/config
+
+      - name: Plan the release
+        id: plan
+        run: |
+          RUNNING=$(ssh vps "docker inspect --format '{{index .Config.Labels \"org.opencontainers.image.revision\"}}' vybertron-bot")
+          [[ "$RUNNING" =~ ^[a-f0-9]{40}$ ]] || { echo "::error::The running bot has no revision label; release manually."; exit 1; }
+          if [ "$RUNNING" = "$TARGET_SHA" ] || git merge-base --is-ancestor "$TARGET_SHA" "$RUNNING"; then
+            echo "Running $RUNNING already includes $TARGET_SHA; nothing to release."
+            echo "release=false" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          git merge-base --is-ancestor "$RUNNING" "$TARGET_SHA" || { echo "::error::Running $RUNNING is not an ancestor of $TARGET_SHA; release manually."; exit 1; }
+          AUDIO=$(git diff --name-only "$RUNNING" "$TARGET_SHA" -- docker-compose.yml lavalink/ warp/ ops/PlaybackProbe.java)
+          if [ -n "$AUDIO" ]; then
+            echo "::error::Audio service files changed since $RUNNING: $(echo $AUDIO). The portal driver never recreates audio; release with an operator (docs/portal-operations.md)."
+            exit 1
+          fi
+          echo "release=true" >> "$GITHUB_OUTPUT"
+
+      - name: Build release images
+        if: steps.plan.outputs.release == 'true'
+        run: |
+          docker build --label "org.opencontainers.image.revision=$TARGET_SHA" -t "vybertron-bot:sha-$TARGET_SHA" .
+          docker build --label "org.opencontainers.image.revision=$TARGET_SHA" -f portal/Dockerfile -t "vybertron-portal:sha-$TARGET_SHA" .
+          docker save "vybertron-bot:sha-$TARGET_SHA" "vybertron-portal:sha-$TARGET_SHA" | gzip -1 > images.tar.gz
+          git archive --format=tar.gz -o source.tar.gz "$TARGET_SHA"
+
+      - name: Stage and release through the portal driver
+        if: steps.plan.outputs.release == 'true'
+        run: |
+          scp -q images.tar.gz "vps:/var/lib/vybertron-portal/images-$TARGET_SHA.tar.gz"
+          scp -q source.tar.gz "vps:/var/lib/vybertron-portal/source-$TARGET_SHA.tar.gz"
+          ssh vps "S=$TARGET_SHA G=$GUILD_ID bash -s" <<'REMOTE'
+          set -euo pipefail
+          P=/var/lib/vybertron-portal; R="$P/releases/$S"; D=/var/lib/vybertron-recovery
+          gunzip -c "$P/images-$S.tar.gz" | docker load -q
+          rm -f "$P/images-$S.tar.gz"
+          # git archive is deterministic per commit, so an existing release
+          # directory (a retried run) already holds identical source.
+          if [ ! -d "$R" ]; then
+            install -d -m 700 "$R.tmp"
+            tar -xzf "$P/source-$S.tar.gz" -C "$R.tmp"
+            printf '{"revision":"%s"}\n' "$S" > "$R.tmp/.portal-release.json"
+            chmod 600 "$R.tmp/.portal-release.json"
+            mv "$R.tmp" "$R"
+          fi
+          rm -f "$P/source-$S.tar.gz"
+          # Keep the exact tested drivers outside Git, retaining the previous
+          # pair so a source rollback still has a matching driver.
+          for name in portal-driver.py deploy.py; do
+            if [ -f "$D/$name" ]; then cp -p "$D/$name" "$D/$name.previous"; fi
+          done
+          install -m 600 "$R/ops/portal_deploy.py" "$D/portal-driver.py"
+          install -m 600 "$R/ops/deploy.py" "$D/deploy.py"
+          python3 "$D/portal-driver.py" deploy --sha "$S" --guild-id "$G" --repo "$R"
+          REMOTE
+
+      - name: Verify the running release
+        if: steps.plan.outputs.release == 'true'
+        run: |
+          for name in bot portal; do
+            STATE=$(ssh vps "docker inspect --format '{{index .Config.Labels \"org.opencontainers.image.revision\"}} {{.State.Health.Status}}' vybertron-$name")
+            echo "$name: $STATE"
+            [ "$STATE" = "$TARGET_SHA healthy" ] || { echo "::error::vybertron-$name is not the healthy target release."; exit 1; }
+          done

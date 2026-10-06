@@ -335,3 +335,24 @@ Private bridge `/v1/latency` provides bounded numeric timings only to a freshly
 verified maintainer with the bridge secret. The portal does not expose it. Playback
 API invocation/settlement timings do not prove when audio becomes audible on a
 listener's device. Real device responsiveness remains a separate listening check.
+
+## Overlapped authority release
+
+`669962a0dc4e48e4b52510276556ebde598ee2f2` passed both CI jobs and was deployed
+with the guarded driver on 2026-10-06. Bot image
+`sha256:7753d60737f6ea93de64d29e268b6409680ffa9947e96a9eee1c350fe3f2eac0`;
+portal image `sha256:3a9f720a03f502c645f6bc8ca6418c8011d3296e36679e9f160690775e2004cf`.
+Audio container IDs, the music-volume digest and the encrypted login store were
+unchanged across the release; `5b9b6a3` remains the rollback candidate.
+
+Ordinary playback controls now settle identity first, then read the raw guild,
+both members and session channels in one fail-fast wave. Channel prefetch only
+runs in session scope when the actor is already in that guild's voice. Urgent Stop
+keeps its staged width-two sequence and two reserved admissions. Every input is
+still a fresh, detached REST read and no grant is derived until the wave succeeds.
+
+Owner-maintainer `/v1/latency` samples after release (eight controls): native
+authority 297–568 ms (previously 805–954 ms), readiness for mutation 302–592 ms,
+and total command time mostly 652–1,000 ms (previously 1,911–2,269 ms). Two
+outliers near 1.44 s came from a single slow Discord read or filter application.
+The owner reported Pause/Resume "feels way better" on phone and desktop.

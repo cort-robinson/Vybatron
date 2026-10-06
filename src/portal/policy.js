@@ -69,17 +69,20 @@ export function createPortalPolicy(client, { operatorIds = [] } = {}) {
   const identity = async (actorId, { fresh = false, urgent = false } = {}) => {
     ready();
     if (!validId(actorId)) fail(400, 'invalid_actor', 'A valid session actor is required.');
-    const user = await read(`user:${actorId}`, async () => detachUser(await client.users.fetch(actorId, { force: true })), fresh, urgent);
-    if (!user || user.id !== actorId || user.bot) fail(403, 'forbidden', 'This account cannot use the portal.');
-    let maintainer = operators.has(actorId);
-    if (!maintainer) {
-      // User owners and verified team owners only, never every team member.
-      const ownerId = await read('application', async () => {
+    // These independent identity inputs use at most two admissions. Observe
+    // both promises even when one fails, and derive no grant before both pass.
+    // Explicit trusted operators still need a valid user, but no owner lookup.
+    const [user, ownerId] = await Promise.all([
+      read(`user:${actorId}`, async () => detachUser(await client.users.fetch(actorId, { force: true })), fresh, urgent),
+      operators.has(actorId) ? undefined : read('application', async () => {
         const { owner } = await client.application.fetch();
+        // Capture the scalar inside the read, before a sibling/Gateway await.
+        // User owners and verified team owners only, never every team member.
         return owner?.ownerId || owner?.id;
-      }, fresh, urgent);
-      maintainer = actorId === ownerId;
-    }
+      }, fresh, urgent),
+    ]);
+    if (!user || user.id !== actorId || user.bot) fail(403, 'forbidden', 'This account cannot use the portal.');
+    const maintainer = operators.has(actorId) || actorId === ownerId;
     return { user, maintainer };
   };
   const guild = async (actorId, guildId, verifiedIdentity, { fresh = false, urgent = false, channelScope = 'session', channelIds = [] } = {}) => {

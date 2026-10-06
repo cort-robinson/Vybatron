@@ -11,6 +11,11 @@ import { assertFavoriteSelection, assertHistorySelection, assertMixSelection } f
 
 const ALLOWED = new Set(['play', 'playnext', 'pause', 'resume', 'seek', 'skip', 'skipto', 'stop', 'clear', 'remove', 'move', 'shuffle', 'loop', 'volume', 'filter', 'voteskip', 'radio', 'replay', 'session', 'favorite', 'mix', 'settings', 'queue', 'nowplaying', 'history', 'help']);
 const CONFLICTING = new Set(['playnext', 'seek', 'skip', 'skipto', 'clear', 'remove', 'move', 'shuffle', 'replay']);
+// These handlers perform no admission work that needs guild authority. Their
+// first full access check belongs inside the bounded mutation lane. Mutating
+// variants always await the native guard before reading protected state; move
+// preflight authority to that fresh boundary rather than reusing an early grant.
+const DIRECT_CONTROLS = new Set(['pause', 'resume', 'seek', 'filter', 'volume']);
 const ROOT_KEYS = new Set(['actorId', 'command', 'subcommand', 'options', 'expectedRevision', 'expectedTrackId', 'expectedHistoryId', 'expectedMixVersion']);
 const object = value => value && typeof value === 'object' && !Array.isArray(value);
 const publicName = (command, name) => command === 'skipto' && name === 'index' ? 'position' : command === 'replay' && name === 'position' ? 'index' : name;
@@ -152,14 +157,20 @@ function safeReply(payload) {
 
 export async function executePortalCommand(client, policy, revisions, commandMap, guildId, body) {
   const command = validateCommand(body, commandMap);
+  const nativePreflight = DIRECT_CONTROLS.has(command.command)
+    && (command.command !== 'filter' || command.values.preset !== undefined);
   const freshContext = () => policy.guild(body.actorId, guildId, undefined, { fresh: true, urgent: command.command === 'stop',
     channelScope: ['history', 'replay'].includes(command.command) ? 'history' : 'session',
     channelIds: command.command === 'settings' && command.subcommand === 'musicchannel' && command.values.channel ? [command.values.channel] : [] });
-  let context = await freshContext();
+  let context = null;
   // Dynamic indices and source state are checked in preflight after the revision
   // fence inside the guild lane. A vanished old position is a stale intent, not
-  // invalid fresh input. No command handler runs before that access check.
-  commandAccess(client, context, command, { checkState: false });
+  // invalid fresh input. Verified direct handlers acquire their first authority
+  // at the native guard; their earlier dispatch/setup carries no guild context.
+  if (!DIRECT_CONTROLS.has(command.command)) {
+    context = await freshContext();
+    commandAccess(client, context, command, { checkState: false });
+  }
   let message = 'Request completed.';
   let started = false;
   let mutationStarted = false;
@@ -170,8 +181,8 @@ export async function executePortalCommand(client, policy, revisions, commandMap
     if (!mutationStarted && baseline && baseline !== revisions.revision(guildId)) fail(409, 'stale_revision', 'The session changed. Refresh before trying again.');
   };
   const interaction = {
-    client, guildId, commandName: command.command, user: context.user, guild: context.guild, member: context.member, memberPermissions: context.member?.permissions,
-    channelId: null, portalAdmin: command.command === 'settings' && context.maintainer, deferred: false, replied: false,
+    client, guildId, commandName: command.command, user: context?.user, guild: context?.guild, member: context?.member, memberPermissions: context?.member?.permissions,
+    channelId: null, portalAdmin: command.command === 'settings' && context?.maintainer, deferred: false, replied: false,
     get portalHistory() { return client.library.readGuild(guildId).history.filter(item => visibleHistory(context, item)); },
     options: {
       getSubcommand: () => command.subcommand || null,
@@ -193,6 +204,9 @@ export async function executePortalCommand(client, policy, revisions, commandMap
     async portalRecheck() {
       if (!started) return;
       context = await freshContext();
+      // Direct preflight has only established a local intent baseline. Preserve
+      // stale-intent precedence over an invalid target after dispatch/read waits.
+      if (nativePreflight) assertRevision();
       // Validate authority again after each slow lookup. Once a mutation has
       // started, dynamic queue indices/checkpoint conditions must not be applied
       // to our own already-edited state.
@@ -216,14 +230,14 @@ export async function executePortalCommand(client, policy, revisions, commandMap
     interaction.memberPermissions = context.member?.permissions; interaction.user = context.user;
     interaction.portalAdmin = command.command === 'settings' && context.maintainer;
   };
-  applyContext();
+  if (context) applyContext();
   const preflight = async () => {
-    context = await freshContext();
+    if (!nativePreflight) context = await freshContext();
     const current = revisions.revision(guildId);
     if (command.command !== 'stop' && body.expectedRevision && body.expectedRevision !== current) fail(409, 'stale_revision', 'The session changed. Refresh before trying again.');
-    commandAccess(client, context, command);
+    if (!nativePreflight) commandAccess(client, context, command);
     baseline = body.expectedRevision && command.command !== 'stop' ? current : null;
-    applyContext();
+    if (!nativePreflight) applyContext();
     const player = client.lavalink?.getPlayer(guildId);
     interaction.channelId = player?.textChannelId || client.library.settings(guildId).musicTextChannelId;
     started = true;

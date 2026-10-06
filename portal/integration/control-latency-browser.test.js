@@ -85,4 +85,12 @@ test('another compiled device receives Pause promptly without waiting for the pe
   assert.equal(requests.filter(r => r.method === 'POST' && r.resource.endsWith('/commands')).length, 1);
   assert.equal(observerStreams, streamReads,
     'Successful update must keep the observing device stream open');
+  const timings = await bot.request('/v1/latency?actorId=900');
+  assert.equal(timings.status, 200);
+  const pause = timings.body.records.find(record => record.command === 'pause');
+  assert.ok(pause?.success);
+  assert.equal(pause.playback.count, 1);
+  assert.ok(pause.authorization.count >= 2);
+  assert.equal(typeof pause.readyForMutationMs, 'number');
+  assert.equal((await bot.request('/v1/latency?actorId=200')).status, 403);
 });

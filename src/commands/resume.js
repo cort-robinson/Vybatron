@@ -1,9 +1,9 @@
 import { SlashCommandBuilder } from 'discord.js';
 import { requireControl } from '../utils/guards.js';
 import { ephemeralText } from '../utils/messages.js';
-import { refresh, withControllerLink } from '../utils/player-controller.js';
-import { updateTrackPresence } from '../utils/presence.js';
-import { updateVoiceStatus } from '../utils/voice-status.js';
+import { withControllerLink } from '../utils/player-controller.js';
+import { directControlPresentation } from '../utils/presentation-updates.js';
+import { commandTimingSpan } from '../portal/timing.js';
 
 export const data = new SlashCommandBuilder()
   .setName('resume')
@@ -18,10 +18,8 @@ export async function execute(interaction) {
       withControllerLink('Playback is already running.', interaction, player)
     ));
   }
-  await player.resume();
-  updateTrackPresence(interaction.client, player);
-  await refresh(interaction.client, player);
-  await updateVoiceStatus(interaction.client, player);
+  await commandTimingSpan('playback', () => player.resume());
+  await directControlPresentation(interaction, player, { presence: true, voice: true });
   return interaction.reply(ephemeralText(
     withControllerLink('Playback resumed.', interaction, player)
   ));

@@ -313,3 +313,25 @@ distinct from automated browser installability. Record these observations withou
 collecting login tokens or private favorites.
 
 This document is a runbook, not a claim that the portal has passed live acceptance.
+
+## Direct-control response correction
+
+Web Pause/Resume/Seek/Filter-with-preset/Volume acquire fresh guild authority at
+native execution after lane and dispatch waits, then check fresh authority again
+before disclosing the result. They carry no admission grant across a wait. Read-only
+Filter and catalog/persistence commands retain their existing additional checks.
+Independent user/application-owner reads overlap within two admissions; completed
+authorization responses are never cached. Same-voice, DJ, revision, selection,
+player ownership and Stop rules remain authoritative.
+
+Successful direct controls await the actual playback API, then schedule Discord
+controller/status updates through owned writers. Those writers share four ordinary
+and two terminal workers, cap busy resources at 256, retain one current and one
+latest intent, and hold serialization until actual REST settlement. Stop and idle
+disconnect retire presentation ownership immediately and await physical shutdown
+and existing saved-data cleanup without waiting for cosmetic REST updates.
+
+Private bridge `/v1/latency` provides bounded numeric timings only to a freshly
+verified maintainer with the bridge secret. The portal does not expose it. Playback
+API invocation/settlement timings do not prove when audio becomes audible on a
+listener's device. Real device responsiveness remains a separate listening check.

@@ -259,13 +259,21 @@ test('stalled Discord requests remain coalesced after individual deadlines inste
 test('underlying Discord read admission is bounded across snapshot and fresh command reads, with two urgent slots', async t => {
   const f = await portalFixture(t); const release = deferred(); let calls = 0;
   f.client.users.fetch = async id => { calls++; await release.promise; return { id, bot: false }; };
-  const policy = createPortalPolicy(f.client);
-  const pending = Array.from({ length: 128 }, (_, index) => policy.identity(String(1000 + index), { fresh: index % 2 === 0 }));
+  // Fill exact underlying-read admissions, not identity invocation counts.
+  // Operator identities use one user read; non-operator width-two identity
+  // reservations are covered separately in portal-identity-latency.test.js.
+  const actors = Array.from({ length: 128 }, (_, index) => String(1000 + index));
+  const policy = createPortalPolicy(f.client, { operatorIds: [...actors, '200', '201'] });
+  t.after(() => { release.resolve(); policy.close(); });
+  const pending = actors.map((actor, index) => policy.identity(actor, { fresh: index % 2 === 0 }));
+  const settled = Promise.allSettled(pending);
   await delay(20); assert.equal(calls, 128);
   await assert.rejects(policy.identity('200', { fresh: true }), { status: 429 });
   const urgent = [policy.identity('200', { fresh: true, urgent: true }), policy.identity('201', { fresh: true, urgent: true })];
   await delay(20); assert.equal(calls, 130);
   await assert.rejects(policy.identity('202', { fresh: true, urgent: true }), { status: 429 });
-  release.resolve(); await Promise.all([...pending, ...urgent]);
+  release.resolve();
+  assert.ok((await settled).every(result => result.status === 'fulfilled'));
+  await Promise.all(urgent);
   assert.equal((await policy.identity('200')).user.id, '200'); policy.close();
 });

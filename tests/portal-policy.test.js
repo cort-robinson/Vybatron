@@ -108,16 +108,21 @@ test('fresh playback verification retains reserved Stop capacity while ordinary 
     if (Number(id) >= 1000) { await release.promise; return { id, bot: false }; }
     return fetchUser(id);
   };
-  const policy = createPortalPolicy(f.client);
+  // Each configured fixture operator holds exactly one underlying user read.
+  // The real Stop actor stays non-operator and must fit both identity inputs
+  // and every following fresh guild stage inside the two reserved admissions.
+  const actors = Array.from({ length: 128 }, (_, index) => String(1000 + index));
+  const policy = createPortalPolicy(f.client, { operatorIds: actors });
   t.after(() => { release.resolve(); policy.close(); });
-  const ordinary = Array.from({ length: 128 }, (_, index) => policy.identity(String(1000 + index)));
+  const ordinary = actors.map(actor => policy.identity(actor));
+  const settled = Promise.allSettled(ordinary);
   await assert.rejects(policy.guild('200', '100', undefined, { fresh: true }), { status: 429 });
   const context = await policy.guild('200', '100', undefined, { fresh: true, urgent: true });
   requirePlayback(context, f.client);
   assert.equal(context.member.id, '200');
   assert.equal(context.channels.size, 4); assert.equal(channelsMaximum, 2, 'Stop uses only its two reserved admissions for channel work');
   assert.deepEqual(f.calls, []);
-  release.resolve(); await Promise.all(ordinary);
+  release.resolve(); assert.ok((await settled).every(result => result.status === 'fulfilled'));
 });
 
 test('partial permission-read admission fails safely and recovers after rate pressure releases', { timeout: 5000 }, async t => {
@@ -129,12 +134,17 @@ test('partial permission-read admission fails safely and recovers after rate pre
     return fetchUser(id);
   };
   f.guild.members.fetch = async () => { memberStarted.resolve(); await release.promise; throw new Error('Discord read failed behind a saturated route'); };
-  const policy = createPortalPolicy(f.client);
+  // Hold 127 exact user-read slots and leave one for the verification actor.
+  // Its explicit operator identity uses one read, so the first width-two
+  // member/role stage exercises partial admission rather than failing earlier.
+  const actors = Array.from({ length: 127 }, (_, index) => String(1000 + index));
+  const policy = createPortalPolicy(f.client, { operatorIds: [...actors, '200'] });
   t.after(() => { release.resolve(); policy.close(); });
-  const ordinary = Array.from({ length: 127 }, (_, index) => policy.identity(String(1000 + index)));
+  const ordinary = actors.map(actor => policy.identity(actor));
+  const settled = Promise.allSettled(ordinary);
   await assert.rejects(policy.guild('200', '100', undefined, { fresh: true }), { status: 429 });
   await memberStarted.promise;
-  release.resolve(); await Promise.all(ordinary);
+  release.resolve(); assert.ok((await settled).every(result => result.status === 'fulfilled'));
   f.guild.members.fetch = fetchMember;
   const context = await policy.guild('200', '100', undefined, { fresh: true });
   requirePlayback(context, f.client);

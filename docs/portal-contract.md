@@ -200,6 +200,17 @@ browser access or CORS. Portal sets the trusted session's actorId itself.
 - GET `/v1/guilds/:guildId/diagnostics?actorId=...` -> Diagnostics.
 - GET `/v1/guilds/:guildId/activity?actorId=...` -> Activity.
 - GET `/health` (still authenticated) -> `{ready:boolean}`.
+- GET `/v1/latency?actorId=...` -> private maintainer-only direct-control timings:
+  `{retentionSeconds:900,capacity:32,records:[{at:number,command:pause|resume|seek|filter|volume,success:boolean,totalMs:number,readyForMutationMs:number|null,authorization:{count:number,ms:number},playback:{count:number,ms:number},presentation:{count:number,ms:number}}]}`.
+  Requires fresh verified maintainer identity in addition to bridge authentication.
+  No portal/browser route exposes it. No actor, guild, track, input, permission
+  or error data is retained. Records older than 15 minutes are excluded and pruned
+  on observation or a new tracked command; bridge shutdown clears memory immediately.
+  Ready-for-mutation measures native playback-operation entry after guards,
+  not audible delivery. Seek/filter spans include their wrapper validation or
+  serialization and may finish without an audio write.
+  Web direct controls schedule bounded cosmetics: awaited presentation count/ms
+  are zero, and later background writer settlement is excluded from this DTO.
 
 Same response/error shapes. HTTP bridge failures are contained and never fatal
 to audio. A private loopback test harness/fixtures must prove capabilities,

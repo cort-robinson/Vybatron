@@ -9,6 +9,7 @@ import { createPortalPolicy } from './policy.js';
 import { FILTERS, actorProjection, guildProjection, trackProjection, snapshotProjection, libraryProjection, activityProjection, configurationProjection, createRevisions } from './projection.js';
 import { publicCommands, executePortalCommand } from './commands.js';
 import { fail, safeError } from './errors.js';
+import { createCommandTimings, commandTimingSpan } from './timing.js';
 
 const hash = value => createHash('sha256').update(value).digest();
 function json(response, status, body, maxBytes) {
@@ -48,6 +49,8 @@ export function startPortalBridge(client, {
   const secret = hash(`Bearer ${token}`);
   const policy = createPortalPolicy(client, { operatorIds });
   const revisions = createRevisions(client);
+  const timings = createCommandTimings();
+  const measuredPolicy = { ...policy, guild: (...args) => commandTimingSpan('authorization', () => policy.guild(...args)) };
   const commands = loadCommandsData();
   // Every rejection is observed even if no caller waits for startup readiness.
   void commands.catch(() => {});
@@ -80,6 +83,11 @@ export function startPortalBridge(client, {
         if (isStop) stopInFlight++; else ordinaryInFlight++;
         const commandMap = await commands;
         if (url.pathname === '/health' && request.method === 'GET') return json(response, 200, { ready: getHealth(client).ready }, maxResponseBytes);
+        if (url.pathname === '/v1/latency' && request.method === 'GET') {
+          const who = await policy.identity(url.searchParams.get('actorId'), { fresh: true });
+          if (!who.maintainer) fail(403, 'maintainer_required', 'Maintainer access is required.');
+          return json(response, 200, timings.snapshot(), maxResponseBytes);
+        }
         if (url.pathname === '/v1/bootstrap' && request.method === 'GET') {
           const actorId = url.searchParams.get('actorId');
           const who = await policy.identity(actorId);
@@ -98,7 +106,8 @@ export function startPortalBridge(client, {
         const match = url.pathname.match(/^\/v1\/guilds\/(\d{1,22})(?:\/(library|search|commands|diagnostics|activity|configuration))?$/);
         if (!match) fail(404, 'not_found', 'That bridge endpoint does not exist.');
         const [, guildId, resource] = match;
-        if (resource === 'commands' && request.method === 'POST') return json(response, 200, await executePortalCommand(client, policy, revisions, commandMap, guildId, body), maxResponseBytes);
+        if (resource === 'commands' && request.method === 'POST') return json(response, 200, await timings.run(body?.command,
+          () => executePortalCommand(client, measuredPolicy, revisions, commandMap, guildId, body)), maxResponseBytes);
         if (request.method !== 'GET' || resource === 'commands') fail(400, 'invalid_method', 'That request method is unsupported.');
         const actorId = url.searchParams.get('actorId');
         const channelScope = resource === 'library' ? 'history' : resource === 'configuration' ? 'configuration' : ['activity', 'diagnostics'].includes(resource) ? 'none' : 'session';
@@ -161,6 +170,7 @@ export function startPortalBridge(client, {
     }
     revisions.close();
     policy.close();
+    timings.close();
     server.removeAllListeners('connection'); server.removeAllListeners('clientError');
   })();
   return { enabled: true, server, ready, close, dispose: close };

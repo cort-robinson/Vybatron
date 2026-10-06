@@ -6,6 +6,17 @@ The binding public/internal DTO and endpoint contract is
 `server`, `ready`, `close()` and `dispose()`; disabled startup returns the same
 lifecycle interface without opening a socket.
 
+Private `/v1/latency` records the last 32 Pause/Resume/Seek/Filter/Volume command
+stage timings with a 15-minute read-time TTL, without actor/guild/track/input/error data.
+Expiry is pruned on observation or a new tracked command; shutdown clears memory.
+It requires the bridge secret and freshly verified maintainer identity; guild
+administration alone does not grant access. The portal does not proxy it. Numeric
+authorization, playback API and awaited presentation durations distinguish
+command delays; ready-for-mutation marks native operation entry, not audible delivery.
+Seek/filter spans include wrapper validation or serialization and may complete
+without an audio write.
+Instrumentation is observational and preserves operation results/errors.
+
 The bot starts the optional bridge after its single MusicLibrary and command
 catalog are initialized. `PORTAL_BRIDGE_TOKEN` enables it; host defaults to
 `127.0.0.1`, port to `3010`. Tokens need 32-512 non-whitespace bytes. Optional
@@ -172,3 +183,5 @@ deleted role grants using real Discord structures, global-library transaction
 source binding, overflow access and reserved Stop admission. Automated/source
 checks are separate from the root-owned live pilot/audio, secure provisioning
 and deployment release gates.
+
+Web Pause/Resume/Seek/Filter/Volume await the actual playback API and schedule owned, bounded cosmetic writers. Their timing records report zero awaited presentation spans; native Pause/Resume retain awaited controller and voice-status spans. Background writer settlement is excluded from command timing and never represents audible delivery. Terminal Stop and idle paths retire presentation ownership immediately and do not await cosmetic REST settlement before destroying playback.

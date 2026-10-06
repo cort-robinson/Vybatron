@@ -130,9 +130,11 @@ or a fixed startup-failure message.
 - 4,096 device sessions, 256 OAuth transactions, 2,048 keys in each of the
   independent anonymous and authenticated rate-limit maps. Capacity
   failures return 429 without evicting a live authenticated device.
-- 32 SSE streams total, 2 per device; one fresh snapshot poll per three seconds
-  after the previous poll/write finishes. No overlapping polls or snapshot replay
-  buffers. Heartbeat every ten seconds; slow consumers close after five seconds
+- 32 SSE streams total, 2 per device. The bot change feed (one held long poll on
+  its own socket, outside the upstream pool) wakes same-guild streams for a fresh
+  read; while it is healthy each stream also polls every ten seconds to observe
+  Discord-side revocation, otherwise every three seconds after the previous
+  poll/write finishes. No overlapping polls or snapshot replay buffers. Heartbeat every ten seconds; slow consumers close after five seconds
   without drain; streams reconnect after a maximum thirty-minute lifetime.
 - 10-second request/body-read/ordinary-upstream deadline; commands have a bounded
   90-second upstream deadline for the bot's bounded imports. The command socket

@@ -56,7 +56,7 @@ async function until(predicate, timeout = 1500) {
   while (!predicate()) { if (Date.now() >= deadline) assert.fail('Bounded test condition did not complete'); await delay(10); }
 }
 
-async function fixture(t, { limits = {}, now, dataDir, production = false, botOrigin, botToken } = {}) {
+async function fixture(t, { limits = {}, now, dataDir, production = false, botOrigin, botToken, changeFeed = false } = {}) {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'vybertron-portal-test-'));
   const webDist = path.join(directory, 'web'); await fs.mkdir(webDist);
   await fs.writeFile(path.join(webDist, 'index.html'), '<!doctype html><html>Portal shell</html>');
@@ -83,6 +83,8 @@ async function fixture(t, { limits = {}, now, dataDir, production = false, botOr
     const call = { path: url.pathname, params: url.searchParams, body, authorization: req.headers.authorization };
     state.calls.push(call);
     res.once('close', () => { if (!res.writableEnded) state.disconnected++; });
+    // The change feed is a held long poll; tests answer it explicitly.
+    if (url.pathname === '/v1/changes') { state.feedCalls = (state.feedCalls || 0) + 1; if (state.changes) state.changes(res, call); else reply(res, 404, { error: { code: 'not_found' } }); return; }
     if (state.beforeReply) await state.beforeReply(call);
     if (state.delayMs) await delay(state.delayMs);
     if (res.destroyed) return;
@@ -107,7 +109,7 @@ async function fixture(t, { limits = {}, now, dataDir, production = false, botOr
     PORTAL_BOT_URL: botOrigin || botUrl, PORTAL_BRIDGE_TOKEN: botToken || secret, DISCORD_CLIENT_SECRET: secret,
     DISCORD_CLIENT_ID: '345678901234567890', PORTAL_SESSION_SECRET: secret,
     PORTAL_DATA_DIR: dataDir || path.join(directory, 'data'), PORTAL_WEB_DIST: webDist }), port: 0 };
-  let app = await createPortalServer(config, { discordOrigin, limits: { pollMs: 25, heartbeatMs: 35, ...limits }, ...(now && { now }) });
+  let app = await createPortalServer(config, { discordOrigin, limits: { pollMs: 25, heartbeatMs: 35, ...limits }, ...(now && { now }), ...(changeFeed && { changeFeed }) });
   await app.listen(); let base = `http://127.0.0.1:${app.server.address().port}`;
   t.after(async () => {
     await app.close();
@@ -130,7 +132,7 @@ async function fixture(t, { limits = {}, now, dataDir, production = false, botOr
     return { cookie: sessionCookie, csrf: initial.json().csrfToken, response, pending };
   }
   async function restart() {
-    await app.close(); app = await createPortalServer(config, { discordOrigin, limits: { pollMs: 25, heartbeatMs: 35, ...limits }, ...(now && { now }) });
+    await app.close(); app = await createPortalServer(config, { discordOrigin, limits: { pollMs: 25, heartbeatMs: 35, ...limits }, ...(now && { now }), ...(changeFeed && { changeFeed }) });
     await app.listen(); base = `http://127.0.0.1:${app.server.address().port}`;
   }
   return { state, config, begin, login, restart, request: (...args) => request(base, ...args), get base() { return base; }, get app() { return app; } };
@@ -198,6 +200,48 @@ test('Command wake updates a second device promptly with fresh per-actor reads a
   assert.ok([a, b].every(live => !live.text.includes('command-actor-only')));
   await delay(100); assert.equal(streamSnapshots(unrelated).length, 1);
   assert.equal(f.state.calls.slice(before).filter(call => call.body).length, 1);
+});
+
+function feedResponder(f) {
+  const held = []; let sequence = 0;
+  f.state.changes = (res, call) => {
+    if (call.params.get('instance') !== 'bot-instance') { reply(res, 200, { instanceId: 'bot-instance', sequence, reset: true, guildIds: [] }); return; }
+    held.push(res);
+  };
+  return {
+    held: () => held.length,
+    publish(guildIds) { sequence++; for (const res of held.splice(0)) reply(res, 200, { instanceId: 'bot-instance', sequence, reset: false, guildIds }); },
+    fail() { for (const res of held.splice(0)) reply(res, 503, { error: { code: 'unavailable' } }); f.state.changes = null; },
+  };
+}
+
+test('The bot change feed wakes only same-guild streams and relaxes the safety poll while healthy', { timeout: 5000 }, async t => {
+  const f = await fixture(t, { changeFeed: true, limits: { pollMs: 40, pollFeedMs: 60_000 } });
+  const feed = feedResponder(f); const device = await f.login();
+  const otherGuild = '567890123456789012';
+  await until(() => feed.held() === 1 && f.app.resourceCounts().feedLive);
+  let revision = 'before'; f.state.bridgeResponse = (res, call) => { const data = snapshot(); data.guild.id = call.path.split('/')[3]; data.revision = revision; reply(res, 200, data); };
+  const live = await stream(f.base, device.cookie); const unrelated = await stream(f.base, device.cookie, {}, otherGuild);
+  for (const handle of [live, unrelated]) t.after(handle.close);
+  await until(() => streamSnapshots(live).length === 1 && streamSnapshots(unrelated).length === 1);
+  await delay(200);
+  assert.equal(streamSnapshots(live).length, 1, 'no 40 ms fallback polling while the feed is healthy');
+  revision = 'after'; const began = Date.now(); feed.publish([guildId]);
+  await until(() => streamSnapshots(live).at(-1).revision === 'after', 1000);
+  assert.ok(Date.now() - began < 1000);
+  await delay(100); assert.equal(streamSnapshots(unrelated).length, 1, 'other guild streams are not woken');
+  assert.ok(f.state.calls.every(call => !call.body), 'the feed never triggers a command');
+});
+
+test('Feed loss returns open streams to the fallback poll without replaying anything', { timeout: 5000 }, async t => {
+  const f = await fixture(t, { changeFeed: true, limits: { pollMs: 40, pollFeedMs: 60_000 } });
+  const feed = feedResponder(f); const device = await f.login();
+  await until(() => feed.held() === 1);
+  const live = await stream(f.base, device.cookie); t.after(live.close);
+  await until(() => streamSnapshots(live).length === 1);
+  feed.fail();
+  await until(() => !f.app.resourceCounts().feedLive && streamSnapshots(live).length >= 3, 2000);
+  assert.ok(f.state.calls.every(call => !call.body));
 });
 
 test('Command wakes coalesce during an in-flight stale read and serialize a required fresh follow-up', { timeout: 5000 }, async t => {

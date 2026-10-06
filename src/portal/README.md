@@ -184,4 +184,8 @@ source binding, overflow access and reserved Stop admission. Automated/source
 checks are separate from the root-owned live pilot/audio, secure provisioning
 and deployment release gates.
 
-Web Pause/Resume/Seek/Filter/Volume await the actual playback API and schedule owned, bounded cosmetic writers. Their timing records report zero awaited presentation spans; native Pause/Resume retain awaited controller and voice-status spans. Background writer settlement is excluded from command timing and never represents audible delivery. Terminal Stop and idle paths retire presentation ownership immediately and do not await cosmetic REST settlement before destroying playback.
+Web Pause/Resume/Seek/Filter/Volume, and Loop/Shuffle/Remove/Move/Clear/Radio-on, await the actual playback API and schedule owned, bounded cosmetic writers. Their timing records report zero awaited presentation spans; native Pause/Resume retain awaited controller and voice-status spans. Background writer settlement is excluded from command timing and never represents audible delivery. Terminal Stop and idle paths retire presentation ownership immediately and do not await cosmetic REST settlement before destroying playback.
+
+Every handler whose first await is the native `requireControl` guard (those controls plus Skip, Skip-to, Voteskip and Stop) takes its only pre-write authority at that in-lane guard, followed by a fresh final disclosure.
+
+`changes.js` serves the private `GET /v1/changes` wake-up long poll for the portal API: guild IDs and a cursor only, driven by Lavalink player events, a 250 ms local revision scan while a consumer is active, and Gateway voice/channel/role/guild updates. See [instant controls](../../docs/portal-instant-controls.md).

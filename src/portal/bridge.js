@@ -10,6 +10,7 @@ import { FILTERS, actorProjection, guildProjection, trackProjection, snapshotPro
 import { publicCommands, executePortalCommand } from './commands.js';
 import { fail, safeError } from './errors.js';
 import { createCommandTimings, commandTimingSpan } from './timing.js';
+import { createChangeFeed } from './changes.js';
 
 const hash = value => createHash('sha256').update(value).digest();
 function json(response, status, body, maxBytes) {
@@ -50,6 +51,7 @@ export function startPortalBridge(client, {
   const policy = createPortalPolicy(client, { operatorIds });
   const revisions = createRevisions(client);
   const timings = createCommandTimings();
+  const changes = createChangeFeed(client, revisions);
   const measuredPolicy = { ...policy, guild: (...args) => commandTimingSpan('authorization', () => policy.guild(...args)) };
   const commands = loadCommandsData();
   // Every rejection is observed even if no caller waits for startup readiness.
@@ -65,6 +67,15 @@ export function startPortalBridge(client, {
       if (typeof request.headers.authorization !== 'string' || request.headers.authorization.length > 1024 || !timingSafeEqual(secret, hash(request.headers.authorization))) fail(401, 'unauthenticated', 'Bridge authentication is required.');
       if (request.headers.origin !== undefined || request.headers['access-control-request-method'] !== undefined) fail(403, 'browser_forbidden', 'Direct browser access is unavailable.');
       if (closing) fail(503, 'bridge_closing', 'The bridge is closing.');
+      if (request.method === 'GET' && request.url?.length <= 256 && request.url.startsWith('/v1/changes?')) {
+        // A held wake-up long poll for the portal API. It carries guild IDs only,
+        // so it sits outside the protected-read admission and request budget.
+        const url = new URL(request.url, 'http://bridge.invalid');
+        const after = url.searchParams.get('after');
+        const abort = new AbortController(); response.once('close', () => abort.abort());
+        return json(response, 200, await changes.next({ instance: url.searchParams.get('instance') || '',
+          after: /^\d{1,15}$/.test(after || '') ? Number(after) : Number.NaN, signal: abort.signal }), maxResponseBytes);
+      }
       // Two bounded slots remain available to inspect/serve Stop while normal
       // requests are saturated by slow source lookups.
       if (inFlight >= maxInFlight + 2) fail(429, 'busy', 'The bridge is busy. Try again shortly.');
@@ -159,6 +170,8 @@ export function startPortalBridge(client, {
   let closeTask;
   const close = () => closeTask ||= (async () => {
     closing = true;
+    // Release held change long polls before waiting for in-flight work.
+    changes.close();
     // listen() can still be awaiting its callback when startup is interrupted.
     await ready.catch(() => {});
     if (server.listening) {

@@ -195,7 +195,8 @@ test('configuration: discovery recovery cannot authorize offline writes or repla
     expect(server.commands).toHaveLength(1);
     await page.getByRole('button', { name: 'Pause playback' }).click();
     await expect(page.getByRole('button', { name: 'Resume playback' })).toBeEnabled();
-    expect(server.commands).toEqual([{ command: 'settings', subcommand: 'volume', options: { value: 53 } }, { command: 'pause', expectedRevision: 'http-command-revision-1' }]);
+    // Pause is idempotent set-state: it carries no revision fence.
+    await expect.poll(() => server.commands).toEqual([{ command: 'settings', subcommand: 'volume', options: { value: 53 } }, { command: 'pause' }]);
   } finally { await page.close(); await server.close(); }
 });
 

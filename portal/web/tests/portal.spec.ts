@@ -34,7 +34,7 @@ test('one player transforms, stays across navigation, and sends scoped core comm
   await expect(page.getByTestId('player').getByText('Evening Light', { exact: true })).toHaveCount(1);
   await page.getByRole('button', { name: 'Pause playback' }).click();
   await expect(page.getByRole('button', { name: 'Resume playback' })).toBeEnabled();
-  expect(fixture.commands[0]).toEqual({ command: 'pause', expectedRevision: 'revision-1' });
+  await expect.poll(() => fixture.commands[0]).toEqual({ command: 'pause' });
   expect(fixture.commands[0]).not.toHaveProperty('actorId');
   await page.getByRole('button', { name: 'Open player', exact: true }).click();
   await expect(page.getByTestId('player').getByText('Evening Light', { exact: true })).toHaveCount(1);

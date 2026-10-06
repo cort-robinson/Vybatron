@@ -20,7 +20,7 @@ async function freePort() {
   await new Promise(resolve => server.close(resolve)); return port;
 }
 
-test('fresh observed playback remains distinct from a held command confirmation', { timeout: 40_000 }, async t => {
+test('the acting device shows its change at once and queues further taps behind a held confirmation', { timeout: 40_000 }, async t => {
   const bot = await portalFixture(t);
   for (const user of bot.users.values()) user.displayAvatarURL = () => null;
   const disclosureEntered = deferred(), releaseDisclosure = deferred();
@@ -102,24 +102,26 @@ test('fresh observed playback remains distinct from a held command confirmation'
   assert.equal(bot.player.paused, true);
   assert.equal(bot.calls.filter(call => call === 'pause').length, 1);
   const resume = pages[0].getByRole('button', { name: 'Resume playback' });
-  await expect(resume).toBeVisible();
-  await expect(resume).toBeDisabled();
+  // The acting device shows its change at once and stays usable while the
+  // final disclosure is held; it never waits behind a confirmation lock.
+  await expect(resume).toBeEnabled();
   await expect(resume.locator('.spinner')).toHaveCount(0);
-  await expect(pages[0].getByText(/Waiting for confirmation/i)).toBeVisible();
-  await expect(pages[0].locator('.transport')).toHaveAttribute('aria-busy', 'true');
+  await expect(pages[0].getByText(/Waiting for confirmation/i)).toHaveCount(0);
+  await expect(pages[0].locator('.transport')).not.toHaveAttribute('aria-busy', 'true');
   await expect(pages[1].getByRole('button', { name: 'Resume playback' })).toBeEnabled();
   await expect.poll(() => streamMemberReadsDuringDisclosure).toBeGreaterThan(0);
   assert.equal(commandReplies, 0, 'Fresh stream observation does not complete final command disclosure');
-  await resume.dispatchEvent('click');
-  assert.equal(commands.length, 1, 'Pending request fence rejects another ordinary action');
+  // A second tap is queued behind the unconfirmed Pause, not sent alongside it.
+  await resume.click();
+  await expect(pages[0].getByRole('button', { name: 'Pause playback' })).toBeEnabled();
+  assert.equal(commands.length, 1, 'One command reaches the bot at a time');
   assert.equal(bot.calls.filter(call => call === 'resume').length, 0);
   disclosureReleased = true; releaseDisclosure.resolve();
-  await expect(resume).toBeEnabled();
-  await expect(pages[0].getByText(/Waiting for confirmation/i)).toHaveCount(0);
-  assert.equal(commandReplies, 1);
-  assert.equal(commands.length, 1);
+  await expect.poll(() => commandReplies).toBe(2);
+  await Promise.all(pages.map(page => expect(page.getByRole('button', { name: 'Pause playback' })).toBeEnabled()));
+  assert.equal(commands.length, 2);
   assert.equal(bot.calls.filter(call => call === 'pause').length, 1);
-  assert.equal(bot.calls.filter(call => call === 'resume').length, 0);
+  assert.equal(bot.calls.filter(call => call === 'resume').length, 1, 'The queued Resume is sent once, after Pause confirms');
   const timings = await bot.request('/v1/latency?actorId=900');
   assert.equal(timings.status, 200);
   const record = timings.body.records.find(item => item.command === 'pause');

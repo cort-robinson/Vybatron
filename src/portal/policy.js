@@ -42,6 +42,10 @@ function channelPool(limit) {
   return fetch => new Promise((resolve, reject) => { waiting.push({ fetch, resolve, reject }); drain(); });
 }
 
+// One authorization round can admit identity (2), guild (1), both members (2)
+// and Stop's two channel reads together, so urgent work reserves a full round.
+export const READ_ADMISSIONS = Object.freeze({ ordinary: 128, urgent: 8 });
+
 export function createPortalPolicy(client, { operatorIds = [] } = {}) {
   const operators = new Set(operatorIds.map(String));
   if ([...operators].some(id => !validId(id))) throw new Error('Invalid trusted portal operator configuration.');
@@ -54,7 +58,7 @@ export function createPortalPolicy(client, { operatorIds = [] } = {}) {
     if (fresh) key = Symbol(key);
     let pending = pendingReads.get(key);
     if (!pending) {
-      if (pendingReads.size >= (urgent ? 130 : 128)) fail(429, 'busy', 'Discord verification is busy. Try again shortly.');
+      if (pendingReads.size >= READ_ADMISSIONS.ordinary + (urgent ? READ_ADMISSIONS.urgent : 0)) fail(429, 'busy', 'Discord verification is busy. Try again shortly.');
       pending = Promise.resolve().then(fetch);
       pendingReads.set(key, pending);
       // Retain the underlying request after a caller's deadline. Otherwise a
@@ -89,17 +93,10 @@ export function createPortalPolicy(client, { operatorIds = [] } = {}) {
     ready();
     if (!['session', 'history', 'none', 'configuration'].includes(channelScope)) throw new Error('Invalid internal channel scope.');
     if (!validId(guildId) || !client.guilds.cache.has(guildId)) fail(404, 'guild_not_found', 'That server is unavailable.');
+    if (!verifiedIdentity && !validId(actorId)) fail(400, 'invalid_actor', 'A valid session actor is required.');
     const server = client.guilds.cache.get(guildId);
     const readGuild = () => read('guild', `guild:${guildId}`, async () =>
       detachGuildResponse(server, await client.rest.get(Routes.guild(guildId)), guildId), fresh, urgent);
-    // Identity settles first, so every guild input is read after even a slow
-    // identity lookup. Ordinary reads then overlap the raw guild, both members
-    // and session channels in one wave; urgent Stop keeps its staged width-two
-    // sequence so it always fits its two reserved admissions. Every input is a
-    // fresh, separately detached REST read, and no grant is derived until every
-    // input in the wave succeeds. A malformed guild inventory still fails closed.
-    const who = verifiedIdentity || await identity(actorId, { fresh, urgent });
-    const overlap = !urgent;
     const fetchDetachedChannel = id => read('channels', `channel:${guildId}:${id}`, () => (urgent ? urgentChannels : ordinaryChannels)(async () => {
       ready();
       try {
@@ -113,12 +110,12 @@ export function createPortalPolicy(client, { operatorIds = [] } = {}) {
         throw error;
       }
     }), fresh, urgent);
-    const sessionChannelIds = voiceId => {
+    const sessionChannelIds = (voiceId, includeHistory = channelScope === 'history') => {
       const player = client.lavalink?.getPlayer(guildId);
       const saved = savedSession(client.library, guildId);
       const ids = new Set([player?.voiceChannelId, player?.textChannelId, voiceId, saved?.voiceChannelId,
         saved?.textChannelId, client.library.settings(guildId).musicTextChannelId, ...channelIds].filter(validId));
-      if (channelScope === 'history') for (const item of client.library.readGuild(guildId).history.slice(0, LIBRARY_LIMITS.history)) {
+      if (includeHistory) for (const item of client.library.readGuild(guildId).history.slice(0, LIBRARY_LIMITS.history)) {
         if (validId(item.voiceChannelId)) ids.add(item.voiceChannelId);
       }
       return ids;
@@ -138,26 +135,28 @@ export function createPortalPolicy(client, { operatorIds = [] } = {}) {
         .catch(error => { if (Number(error?.code) !== 10007) throw error; return null; }),
       read('botMember', `botMember:${guildId}`, async () => detachMember(await server.members.fetchMe({ force: true })), fresh, urgent),
     ]);
-    // Session channel IDs are known before membership. Prefetch them only when
-    // the actor is already in this guild's voice (which every playback control
-    // requires), so non-members and history/configuration reads never fan out
-    // channel work ahead of the membership decision below.
+    // Identity, raw guild/role inventory and both members are independent
+    // routes, so they start as one round for every caller, Stop included. Every
+    // input is a fresh, separately detached REST read, and no grant is derived
+    // until all of them succeed. A malformed guild inventory still fails closed.
+    // Session channel IDs are known before membership: when Gateway already
+    // places the actor in this guild's voice (which every playback control
+    // requires), they join the round too. Non-members, configuration reads and
+    // actors outside voice keep channel work after the membership decision.
     const gatewayVoiceId = actorVoiceId(server.members?.cache?.get(actorId)) || server.voiceStates?.cache?.get(actorId)?.channelId || null;
-    const prefetch = overlap && channelScope === 'session' && validId(gatewayVoiceId);
-    let guildInput, allRoles, memberInput, botInput, prefetched = null;
-    if (overlap) {
-      // Promise.all observes every input and fails fast, so admission pressure
-      // denies immediately instead of waiting on still-pending siblings.
-      const wave = { failed: false };
-      try {
-        [{ guildInput, allRoles }, [memberInput, botInput], prefetched] = await Promise.all([readGuild(), readMembers(),
-          prefetch ? fetchDetachedChannels(sessionChannelIds(gatewayVoiceId), wave) : null]);
-      } catch (error) { wave.failed = true; throw error; }
-    } else {
-      // Staged urgent path: the raw role inventory precedes both member inputs.
-      ({ guildInput, allRoles } = await readGuild());
-      [memberInput, botInput] = await readMembers();
-    }
+    const early = ['session', 'history'].includes(channelScope) && validId(gatewayVoiceId) ? sessionChannelIds(gatewayVoiceId, false) : null;
+    // Admit the whole round or none of it, so saturation never leaves a partial
+    // round of Discord requests running without a possible grant.
+    const round = (verifiedIdentity ? 0 : operators.has(actorId) ? 1 : 2) + 3 + Math.min(early?.size || 0, urgent ? 2 : 4);
+    if (pendingReads.size + round > READ_ADMISSIONS.ordinary + (urgent ? READ_ADMISSIONS.urgent : 0)) fail(429, 'busy', 'Discord verification is busy. Try again shortly.');
+    let who, guildInput, allRoles, memberInput, botInput, prefetched;
+    // Promise.all observes every input and fails fast; a failed round stops
+    // submitting further channel batches.
+    const wave = { failed: false };
+    try {
+      [who, { guildInput, allRoles }, [memberInput, botInput], prefetched] = await Promise.all([verifiedIdentity || identity(actorId, { fresh, urgent }),
+        readGuild(), readMembers(), early ? fetchDetachedChannels(early, wave) : null]);
+    } catch (error) { wave.failed = true; throw error; }
     if (!memberInput && !who.maintainer) fail(404, 'guild_not_found', 'That server is unavailable.');
     ready();
     // Deleted roles remain absent from this stage even while Gateway is late.
@@ -177,13 +176,13 @@ export function createPortalPolicy(client, { operatorIds = [] } = {}) {
         }, fresh, urgent);
         return new Map([...inventory].filter(([id, channel]) => channel?.id === id && channel.guildId === guildId).map(([id, channel]) => [id, stage.bindChannel(channel)]));
       }
-      // The stage member's voice ID can move during the overlapped wave. Read any
-      // newly current channel too, exactly as the staged path would have.
+      // The stage member's voice ID can move during the round. Read any newly
+      // current channel too, and bind only the channels this stage references.
       const detached = prefetched || new Map();
-      const missing = [...sessionChannelIds(actorVoiceId(stage.member))].filter(id => !detached.has(id));
-      for (const [id, channel] of await fetchDetachedChannels(missing)) detached.set(id, channel);
+      const ids = sessionChannelIds(actorVoiceId(stage.member));
+      for (const [id, channel] of await fetchDetachedChannels([...ids].filter(id => !detached.has(id)))) detached.set(id, channel);
       const channels = new Map();
-      for (const [id, channel] of detached) { const bound = stage.bindChannel(channel); if (bound) channels.set(id, bound); }
+      for (const id of ids) { const bound = stage.bindChannel(detached.get(id)); if (bound) channels.set(id, bound); }
       return channels;
     };
     const channels = await fetchChannels();

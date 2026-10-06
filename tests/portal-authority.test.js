@@ -182,16 +182,15 @@ test('malformed raw guild/role inventory fails closed without any grant despite 
   for (const [name, change] of Object.entries(cases)) await t.test(name, async t => {
     const f = await realFixture(t); f.state.guildResponse = change;
     await assert.rejects(f.policy.guild('900', '100', undefined, { fresh: true, channelScope: 'configuration' }), { status: 503, code: 'discord_unavailable' });
-    // Ordinary member/channel reads may overlap the guild read; none can grant.
-    // Urgent Stop stays staged and never starts member/channel work.
-    f.requests.length = 0;
+    // Member reads share the inventory's round, but no grant or channel
+    // discovery follows a malformed inventory, and Stop writes nothing.
+    assert.equal(f.requests.some(path => path.endsWith('/channels')), false);
     assert.equal((await f.command({ command: 'stop' })).status, 503); assert.deepEqual(f.calls, []);
-    assert.equal(f.requests.some(path => path.includes('/members/') || path.includes('/channels/')), false);
     assert.equal(f.guild.roles.cache.get('500').permissions.has(P.ViewChannel), true);
   });
 });
 
-test('native Stop actor/bot timeouts hold the two urgent admissions while 128 ordinary native reads remain unsettled', { timeout: 16_000 }, async t => {
+test('native Stop actor/bot timeouts hold urgent admissions while 128 ordinary native reads remain unsettled', { timeout: 16_000 }, async t => {
   const f = await realFixture(t); const ordinaryRelease = deferred(), memberRelease = deferred(), membersEntered = deferred();
   t.after(() => { ordinaryRelease.resolve(); memberRelease.resolve(); });
   const operators = Array.from({ length: 128 }, (_, index) => String(1000 + index));
@@ -211,11 +210,13 @@ test('native Stop actor/bot timeouts hold the two urgent admissions while 128 or
   const stop = () => executePortalCommand(f.client, policy, revisions, commands, '100', { actorId: '200', command: 'stop' });
   const firstStop = stop(); const denied = assert.rejects(firstStop, /too long/);
   await membersEntered.promise;
-  await assert.rejects(policy.identity('201', { fresh: true, urgent: true }), { status: 429 });
+  // Two held member reads leave too little reserve for another whole round;
+  // it is refused before any of its Discord requests start.
+  await assert.rejects(stop(), { status: 429 });
   const timedOut = await ordinary; await denied;
   assert.ok(timedOut.every(result => result.status === 'rejected' && /too long/.test(result.reason.message)));
   await assert.rejects(policy.identity(operators[0], { fresh: true }), { status: 429 });
-  await assert.rejects(stop(), { status: 429 }, 'timed-out underlying member requests still hold both urgent admissions');
+  await assert.rejects(stop(), { status: 429 }, 'timed-out underlying member requests still hold their urgent admissions');
   assert.equal(memberReads, 2); assert.deepEqual(f.calls, []); assert.equal(f.manager.getPlayer('100'), f.player);
   memberRelease.resolve(); await delay(20);
   assert.equal((await stop()).ok, true, 'Stop recovers after actual settlement while the ordinary pool stays occupied');

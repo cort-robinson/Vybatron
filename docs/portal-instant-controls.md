@@ -10,7 +10,7 @@ confirmation".
 
 | Stage | Before | After |
 | --- | --- | --- |
-| Authorization round (identity, raw guild/roles, actor, bot, channels) | 4 sequential Discord REST waves | identity, then one overlapped wave (`669962a`, ordinary reads; Stop stays staged) |
+| Authorization round (identity, raw guild/roles, actor, bot, channels) | 4 sequential Discord REST waves | 1 round when Gateway shows the actor in voice (Stop included), otherwise 2 |
 | Authorizations per queue/transport command (skip, skipto, loop, shuffle, remove, move, clear, radio, voteskip, stop) | 4 (admission, lane preflight, native guard, final disclosure) | 2 (native guard, final disclosure) |
 | Awaited controller message edit for loop/shuffle/remove/move/clear/radio-on | inside the web reply | background writer (native slash commands unchanged) |
 | Discord-side changes (slash/button, track end, voice join) reaching the portal | next 3 s poll, then a fresh read | bot change feed wakes same-guild streams immediately |
@@ -22,10 +22,15 @@ which accounted for the 2-5 s outliers.
 
 ## Server
 
-- `src/portal/policy.js` (`669962a`, separate change): identity settles first,
-  then the raw guild, both members and, for an actor already in voice, the
-  session channels overlap in one fresh wave. Stop keeps its staged reads inside
-  the two reserved admissions.
+- `src/portal/policy.js`: user, application owner, `GET /guilds/:id`, actor
+  member and bot member start together, and for an actor Gateway already places
+  in voice the session channels join that round. This extends `669962a`, which
+  overlapped everything after identity for ordinary reads only. The channel set
+  is recomputed after binding; a failed round submits no further channel
+  batches. Every input is still a forced fresh read detached inside its read, no
+  grant is derived until all settle, and nothing is cached. A round is admitted
+  whole or refused. The urgent reserve grew from 2 to 8 reads so a full Stop
+  round fits while 128 ordinary reads are stalled.
 - `src/portal/commands.js`: every handler whose first await is the native
   `requireControl` guard skips the earlier admission and preflight rounds; that
   guard takes fresh authority inside the mutation lane. Final protected
@@ -73,6 +78,9 @@ executes every write, and the screen converges on verified state.
 
 ## Local evidence
 
+- With 35 ms injected per Discord route, one fresh authorization takes one
+  network round for an actor in voice (two otherwise), versus two after
+  `669962a` and four before it (`tests/portal-identity-latency.test.js`).
 - Queue/transport commands authorize twice instead of four times
   (`tests/portal-control-latency.test.js`).
 - With polling pushed out to a minute, the compiled browser saw a Discord-side

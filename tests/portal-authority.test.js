@@ -158,7 +158,7 @@ test('native direct execution and disclosure use separate raw inventories; final
   assert.deepEqual(f.calls, ['pause']);
 });
 
-test('malformed raw guild/role inventory fails closed before any member/channel work despite valid cached grants', async t => {
+test('malformed raw guild/role inventory fails closed without any grant despite valid cached grants', async t => {
   const cases = {
     'missing body': () => null,
     'wrong guild': data => ({ ...data, id: '101' }),
@@ -182,8 +182,11 @@ test('malformed raw guild/role inventory fails closed before any member/channel 
   for (const [name, change] of Object.entries(cases)) await t.test(name, async t => {
     const f = await realFixture(t); f.state.guildResponse = change;
     await assert.rejects(f.policy.guild('900', '100', undefined, { fresh: true, channelScope: 'configuration' }), { status: 503, code: 'discord_unavailable' });
-    assert.equal(f.requests.some(path => path.includes('/members/') || path.includes('/channels/')), false);
+    // Ordinary member/channel reads may overlap the guild read; none can grant.
+    // Urgent Stop stays staged and never starts member/channel work.
+    f.requests.length = 0;
     assert.equal((await f.command({ command: 'stop' })).status, 503); assert.deepEqual(f.calls, []);
+    assert.equal(f.requests.some(path => path.includes('/members/') || path.includes('/channels/')), false);
     assert.equal(f.guild.roles.cache.get('500').permissions.has(P.ViewChannel), true);
   });
 });

@@ -132,10 +132,10 @@ test('partial permission-read admission fails safely and recovers after rate pre
     return fetchUser(id);
   };
   f.guild.members.fetch = async () => { memberStarted.resolve(); await release.promise; throw new Error('Discord read failed behind a saturated route'); };
-  // Hold 127 exact user-read slots and leave one for the verification actor.
-  // Its explicit operator identity uses one read, so the first width-two
-  // actor/bot member stage exercises partial admission rather than failing earlier.
-  const actors = Array.from({ length: 127 }, (_, index) => String(1000 + index));
+  // Hold 126 exact user-read slots and leave two for the verification actor.
+  // Its operator identity and raw guild fit, so the second wave (members with
+  // channels) exercises partial admission rather than failing earlier.
+  const actors = Array.from({ length: 126 }, (_, index) => String(1000 + index));
   const policy = createPortalPolicy(f.client, { operatorIds: [...actors, '200'] });
   t.after(() => { release.resolve(); policy.close(); });
   const ordinary = actors.map(actor => policy.identity(actor));
@@ -190,4 +190,27 @@ test('gateway loss during a slow permission check fails closed without affecting
   assert.equal(f.manager.getPlayer('100'), f.player);
   assert.equal(f.player.playing, true);
   assert.deepEqual(f.calls, []);
+});
+
+test('overlapped authority never prefetches channels for an actor outside this guild voice', async t => {
+  const f = await portalFixture(t); const policy = createPortalPolicy(f.client); t.after(() => policy.close());
+  f.members.delete('200');
+  await assert.rejects(policy.guild('200', '100', undefined, { fresh: true }), { status: 404 });
+  assert.equal(f.channelReads.length, 0, 'a non-member cannot fan out channel reads before the membership decision');
+  f.members.get('201').voice.channel = null;
+  await policy.guild('201', '100', undefined, { fresh: true, channelScope: 'history' });
+  assert.ok(f.channelReads.length > 0, 'history channels still load after membership is verified');
+  assert.deepEqual(f.calls, []);
+});
+
+test('a failed overlapped wave submits no further channel batches', async t => {
+  const f = await portalFixture(t); const policy = createPortalPolicy(f.client); t.after(() => policy.close());
+  const held = deferred(); const entered = deferred(); let channelCalls = 0;
+  const fetchChannel = f.guild.channels.fetch.bind(f.guild.channels);
+  f.guild.channels.fetch = async (...args) => { if (++channelCalls === 4) entered.resolve(); await held.promise; return fetchChannel(...args); };
+  f.client.rest.get = async () => null;
+  const pending = assert.rejects(policy.guild('200', '100', undefined, { fresh: true, channelIds: ['501', '502', '503', '504'] }), { status: 503 });
+  await entered.promise; await pending;
+  held.resolve(); await delay(20);
+  assert.equal(channelCalls, 4, 'only the first in-flight batch ran; the second batch was never submitted');
 });

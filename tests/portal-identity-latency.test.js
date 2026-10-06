@@ -54,7 +54,7 @@ async function serialPolicy() {
   return (await import(`data:text/javascript;base64,${Buffer.from(resolved).toString('base64')}`)).createPortalPolicy;
 }
 
-test('actual policy removes one injected identity round with identical fetch counts and width two', async t => {
+test('ordinary authority settles identity, then overlaps guild, members and channels, with identical fetch counts', async t => {
   const sequential = await serialPolicy();
   const results = [];
   for (const factory of [sequential, createPortalPolicy]) {
@@ -77,15 +77,20 @@ test('actual policy removes one injected identity round with identical fetch cou
     const start = performance.now(); const context = await policy.guild('200', '100', undefined, { fresh: true });
     const elapsed = Math.round(performance.now() - start);
     requirePlayback(context, f.client); assert.equal(context.admin, false); assert.notEqual(context.user, f.users.get('200'));
-    assert.equal(maximum, 2); assert.equal(active, 0);
+    assert.ok(maximum <= 5, `at most five overlapped reads, saw ${maximum}`); assert.equal(active, 0);
     results.push({ counts, events, elapsed });
   }
   assert.deepEqual(results[0].counts, { user: 1, application: 1, guild: 1, member: 1, bot: 1, channel: 2 });
   assert.deepEqual(results[1].counts, results[0].counts);
   assert.ok(results[0].events.indexOf('start:application') > results[0].events.indexOf('end:user'));
   assert.ok(results[1].events.indexOf('start:application') < results[1].events.indexOf('end:user'));
-  for (const result of results) assert.ok(result.events.indexOf('start:guild') > result.events.indexOf('end:application'));
-  t.diagnostic(`35 ms injected routes: sequential identity ${results[0].elapsed} ms / five rounds; overlap identity ${results[1].elapsed} ms / four rounds; seven fetches each, maximum width two`);
+  for (const result of results) {
+    // Identity settles before any guild, member or channel read starts.
+    const firstGuildWave = Math.min(...['start:guild', 'start:member', 'start:bot', 'start:channel'].map(event => result.events.indexOf(event)));
+    for (const end of ['end:user', 'end:application']) assert.ok(result.events.indexOf(end) < firstGuildWave, `${end} precedes guild work`);
+  }
+  assert.ok(results[1].elapsed < results[0].elapsed, 'overlapped identity is faster than the sequential identity baseline');
+  t.diagnostic(`35 ms injected routes: sequential identity ${results[0].elapsed} ms; overlapped identity ${results[1].elapsed} ms / two waves; seven fetches each`);
 });
 
 test('readiness and actor-ID validation reject before either identity read starts', async t => {

@@ -31,10 +31,12 @@ async function timedPolicy(t) {
 test('real direct handler separates slow final inputs from native readiness and parallel wait sums', async t => {
   const f = await timedPolicy(t); const revisions = createRevisions(f.client); t.after(() => revisions.close());
   const commands = await loadCommandsData();
-  const rounds = Array.from({ length: 2 }, () => [gate(2), gate(), gate(2), gate(2)]);
+  // Ordinary authority reads settle identity first, then overlap the raw guild,
+  // both members and the two session channels in one wave.
+  const rounds = Array.from({ length: 2 }, () => [gate(2), gate(5)]);
   t.after(() => rounds.flat().forEach(value => value.release()));
   for (const [target, method, stage] of [[f.client.users, 'fetch', 0], [f.client.application, 'fetch', 0],
-    [f.client.rest, 'get', 1], [f.guild.members, 'fetch', 2], [f.guild.members, 'fetchMe', 2], [f.guild.channels, 'fetch', 3]]) {
+    [f.client.rest, 'get', 1], [f.guild.members, 'fetch', 1], [f.guild.members, 'fetchMe', 1], [f.guild.channels, 'fetch', 1]]) {
     const original = target[method].bind(target); let calls = 0;
     target[method] = async (...args) => {
       const round = method === 'fetch' && target === f.guild.channels ? Math.floor(calls++ / 2) : calls++;
@@ -47,11 +49,11 @@ test('real direct handler separates slow final inputs from native readiness and 
   let replied = false;
   const result = f.timing.run('pause', () => executePortalCommand(f.client, measuredPolicy, revisions, commands, '100',
     { actorId: '200', command: 'pause' })).then(value => { replied = true; return value; });
-  for (let round = 0; round < 2; round++) for (let stage = 0; stage < 4; stage++) {
+  for (let round = 0; round < 2; round++) for (let stage = 0; stage < 2; stage++) {
     await rounds[round][stage].entered;
     assert.equal(replied, false, 'reply still waits for the final fresh authority');
     if (round === 1) assert.deepEqual(f.calls, ['pause']);
-    f.advance([[10, 20, 30, 40], [60, 70, 80, 90]][round][stage]); rounds[round][stage].release();
+    f.advance([[30, 70], [110, 190]][round][stage]); rounds[round][stage].release();
   }
   assert.equal((await result).ok, true); assert.deepEqual(f.calls, ['pause']);
   const record = f.timing.snapshot().records[0];
@@ -59,15 +61,15 @@ test('real direct handler separates slow final inputs from native readiness and 
   assert.deepEqual(record.authorization, { count: 2, ms: 400 });
   assert.deepEqual(record.playback, { count: 1, ms: 5 });
   assert.deepEqual(record.presentation, { count: 0, ms: 0 });
-  for (const [phase, waits, wallMs] of [['native', [10, 10, 20, 30, 30, 80], 100],
-    ['finalDisclosure', [60, 60, 70, 80, 80, 180], 300]]) {
+  for (const [phase, waits, wallMs] of [['native', [30, 30, 70, 70, 70, 140], 100],
+    ['finalDisclosure', [110, 110, 190, 190, 190, 380], 300]]) {
     const value = record.authority[phase]; assert.equal(value.count, 1); assert.equal(value.wallMs, wallMs);
     assert.deepEqual(Object.values(value.inputs).map(input => input.waitMs), waits);
     assert.ok(waits.reduce((sum, wait) => sum + wait, 0) > wallMs, 'overlapping waits are not reported as phase wall time');
     assert.equal(value.inputs.channels.count, 2); assert.equal(value.inputs.channels.maxMs, waits[5] / 2);
   }
   record.authority.native.inputs.user.waitMs = 999;
-  assert.equal(f.timing.snapshot().records[0].authority.native.inputs.user.waitMs, 10, 'nested DTO is defensively cloned');
+  assert.equal(f.timing.snapshot().records[0].authority.native.inputs.user.waitMs, 30, 'nested DTO is defensively cloned');
 });
 
 test('interleaved authority phases remain isolated while native readiness stays on each parent trace', async () => {

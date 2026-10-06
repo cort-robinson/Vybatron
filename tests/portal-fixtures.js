@@ -47,7 +47,7 @@ export async function portalFixture(t, options = {}) {
     }));
   } };
   guild.roles = { cache: new Map(roles), async fetch() { for (const [id, role] of roles) this.cache.set(id, role); return new Map(roles); } };
-  guild.members = { async fetch({ user }) { memberFetches++; if (options.memberFetch) await options.memberFetch(user); const member = members.get(user); if (!member) throw Object.assign(new Error('Unknown member'), { code: 10007 }); return member; }, async fetchMe() { return me; } };
+  guild.members = { get cache() { return members; }, async fetch({ user }) { memberFetches++; if (options.memberFetch) await options.memberFetch(user); const member = members.get(user); if (!member) throw Object.assign(new Error('Unknown member'), { code: 10007 }); return member; }, async fetchMe() { return me; } };
   client.guilds = { cache: new Map([['100', guild]]), async fetch() { return guild; } };
   // Faithful raw GET Guild seam: the role inventory is an independent server
   // response, not the Guild/RoleManager cache returned by an SDK fetch.

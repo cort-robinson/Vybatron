@@ -89,28 +89,18 @@ export function createPortalPolicy(client, { operatorIds = [] } = {}) {
     ready();
     if (!['session', 'history', 'none', 'configuration'].includes(channelScope)) throw new Error('Invalid internal channel scope.');
     if (!validId(guildId) || !client.guilds.cache.has(guildId)) fail(404, 'guild_not_found', 'That server is unavailable.');
-    const who = verifiedIdentity || await identity(actorId, { fresh, urgent });
     const server = client.guilds.cache.get(guildId);
-    const { guildInput, allRoles } = await read('guild', `guild:${guildId}`, async () =>
+    const readGuild = () => read('guild', `guild:${guildId}`, async () =>
       detachGuildResponse(server, await client.rest.get(Routes.guild(guildId)), guildId), fresh, urgent);
-    // GET Guild already contains the complete role inventory. Capture it before
-    // starting at most two independent member inputs, including urgent Stop.
-    // Each response still detaches inside its own read before its sibling waits.
-    const [memberInput, botInput] = await Promise.all([
-      read('actorMember', `member:${guildId}:${actorId}`, async () => detachMember(await server.members.fetch({ user: actorId, force: true })), fresh, urgent)
-        .catch(error => { if (Number(error?.code) !== 10007) throw error; return null; }),
-      read('botMember', `botMember:${guildId}`, async () => detachMember(await server.members.fetchMe({ force: true })), fresh, urgent),
-    ]);
-    if (!memberInput && !who.maintainer) fail(404, 'guild_not_found', 'That server is unavailable.');
-    ready();
-    // Deleted roles remain absent from this stage even while Gateway is late.
-    // Do not edit shared caches: every native getter resolves through this view.
-    const stage = bindAuthority(guildInput, memberInput, allRoles, botInput, actorId);
-    const guildAdmin = Boolean(stage.member && (stage.guild.ownerId === actorId || stage.member.permissions?.has(P.ManageGuild)));
-    const admin = guildAdmin || who.maintainer;
-    // Deny complete discovery before it can consume Discord's list bucket.
-    if (channelScope === 'configuration' && !admin) fail(403, 'admin_required', 'Manage Server permission is required.');
-    const fetchChannel = id => read('channels', `channel:${guildId}:${id}`, () => (urgent ? urgentChannels : ordinaryChannels)(async () => {
+    // Identity settles first, so every guild input is read after even a slow
+    // identity lookup. Ordinary reads then overlap the raw guild, both members
+    // and session channels in one wave; urgent Stop keeps its staged width-two
+    // sequence so it always fits its two reserved admissions. Every input is a
+    // fresh, separately detached REST read, and no grant is derived until every
+    // input in the wave succeeds. A malformed guild inventory still fails closed.
+    const who = verifiedIdentity || await identity(actorId, { fresh, urgent });
+    const overlap = !urgent;
+    const fetchDetachedChannel = id => read('channels', `channel:${guildId}:${id}`, () => (urgent ? urgentChannels : ordinaryChannels)(async () => {
       ready();
       try {
         // cache:false can return an existing channel WITHOUT applying REST data.
@@ -122,7 +112,62 @@ export function createPortalPolicy(client, { operatorIds = [] } = {}) {
         if ([10003, 50001, 50013].includes(Number(error?.code)) || error?.code === 'GuildChannelUnowned') return null;
         throw error;
       }
-    }), fresh, urgent).then(channel => stage.bindChannel(channel));
+    }), fresh, urgent);
+    const sessionChannelIds = voiceId => {
+      const player = client.lavalink?.getPlayer(guildId);
+      const saved = savedSession(client.library, guildId);
+      const ids = new Set([player?.voiceChannelId, player?.textChannelId, voiceId, saved?.voiceChannelId,
+        saved?.textChannelId, client.library.settings(guildId).musicTextChannelId, ...channelIds].filter(validId));
+      if (channelScope === 'history') for (const item of client.library.readGuild(guildId).history.slice(0, LIBRARY_LIMITS.history)) {
+        if (validId(item.voiceChannelId)) ids.add(item.voiceChannelId);
+      }
+      return ids;
+    };
+    // Bound submissions as well as actual network work; history has at most
+    // 100 sources, and no hundreds-of-promises fanout reaches REST admission.
+    // A failed overlapped wave stops submitting further channel batches.
+    const fetchDetachedChannels = async (ids, wave = null) => {
+      const detached = new Map(); const ordered = [...ids]; const width = urgent ? 2 : 4;
+      for (let start = 0; start < ordered.length && !wave?.failed; start += width) {
+        await Promise.all(ordered.slice(start, start + width).map(async id => { detached.set(id, await fetchDetachedChannel(id)); }));
+      }
+      return detached;
+    };
+    const readMembers = () => Promise.all([
+      read('actorMember', `member:${guildId}:${actorId}`, async () => detachMember(await server.members.fetch({ user: actorId, force: true })), fresh, urgent)
+        .catch(error => { if (Number(error?.code) !== 10007) throw error; return null; }),
+      read('botMember', `botMember:${guildId}`, async () => detachMember(await server.members.fetchMe({ force: true })), fresh, urgent),
+    ]);
+    // Session channel IDs are known before membership. Prefetch them only when
+    // the actor is already in this guild's voice (which every playback control
+    // requires), so non-members and history/configuration reads never fan out
+    // channel work ahead of the membership decision below.
+    const gatewayVoiceId = actorVoiceId(server.members?.cache?.get(actorId)) || server.voiceStates?.cache?.get(actorId)?.channelId || null;
+    const prefetch = overlap && channelScope === 'session' && validId(gatewayVoiceId);
+    let guildInput, allRoles, memberInput, botInput, prefetched = null;
+    if (overlap) {
+      // Promise.all observes every input and fails fast, so admission pressure
+      // denies immediately instead of waiting on still-pending siblings.
+      const wave = { failed: false };
+      try {
+        [{ guildInput, allRoles }, [memberInput, botInput], prefetched] = await Promise.all([readGuild(), readMembers(),
+          prefetch ? fetchDetachedChannels(sessionChannelIds(gatewayVoiceId), wave) : null]);
+      } catch (error) { wave.failed = true; throw error; }
+    } else {
+      // Staged urgent path: the raw role inventory precedes both member inputs.
+      ({ guildInput, allRoles } = await readGuild());
+      [memberInput, botInput] = await readMembers();
+    }
+    if (!memberInput && !who.maintainer) fail(404, 'guild_not_found', 'That server is unavailable.');
+    ready();
+    // Deleted roles remain absent from this stage even while Gateway is late.
+    // Do not edit shared caches: every native getter resolves through this view.
+    const stage = bindAuthority(guildInput, memberInput, allRoles, botInput, actorId);
+    const guildAdmin = Boolean(stage.member && (stage.guild.ownerId === actorId || stage.member.permissions?.has(P.ManageGuild)));
+    const admin = guildAdmin || who.maintainer;
+    // Deny complete discovery before it can consume Discord's list bucket.
+    if (channelScope === 'configuration' && !admin) fail(403, 'admin_required', 'Manage Server permission is required.');
+    const fetchChannel = id => fetchDetachedChannel(id).then(channel => stage.bindChannel(channel));
     const fetchChannels = async () => {
       if (channelScope === 'none') return new Map();
       if (channelScope === 'configuration') {
@@ -132,23 +177,13 @@ export function createPortalPolicy(client, { operatorIds = [] } = {}) {
         }, fresh, urgent);
         return new Map([...inventory].filter(([id, channel]) => channel?.id === id && channel.guildId === guildId).map(([id, channel]) => [id, stage.bindChannel(channel)]));
       }
-      const player = client.lavalink?.getPlayer(guildId);
-      const saved = savedSession(client.library, guildId);
-      const ids = new Set([player?.voiceChannelId, player?.textChannelId, actorVoiceId(stage.member), saved?.voiceChannelId,
-        saved?.textChannelId, client.library.settings(guildId).musicTextChannelId, ...channelIds].filter(validId));
-      if (channelScope === 'history') for (const item of client.library.readGuild(guildId).history.slice(0, LIBRARY_LIMITS.history)) {
-        if (validId(item.voiceChannelId)) ids.add(item.voiceChannelId);
-      }
+      // The stage member's voice ID can move during the overlapped wave. Read any
+      // newly current channel too, exactly as the staged path would have.
+      const detached = prefetched || new Map();
+      const missing = [...sessionChannelIds(actorVoiceId(stage.member))].filter(id => !detached.has(id));
+      for (const [id, channel] of await fetchDetachedChannels(missing)) detached.set(id, channel);
       const channels = new Map();
-      // Bound submissions as well as actual network work; history has at most
-      // 100 sources, and no hundreds-of-promises fanout reaches REST admission.
-      const ordered = [...ids]; const width = urgent ? 2 : 4;
-      for (let start = 0; start < ordered.length; start += width) {
-        await Promise.all(ordered.slice(start, start + width).map(async id => {
-          const channel = await fetchChannel(id);
-          if (channel) channels.set(id, channel);
-        }));
-      }
+      for (const [id, channel] of detached) { const bound = stage.bindChannel(channel); if (bound) channels.set(id, bound); }
       return channels;
     };
     const channels = await fetchChannels();

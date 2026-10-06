@@ -160,12 +160,14 @@ test('short offline sleeve keeps transport visible and reduced motion leaves int
   await page.getByRole('button', { name: 'Open player', exact: true }).click();
   fixture.delayCommand(1500);
   await page.getByTestId('player').getByRole('button', { name: 'Pause playback' }).click();
-  const pending = page.getByTestId('player').locator('.play-button .spinner');
+  const pending = page.getByTestId('player').locator('.player-confirmation .spinner');
   await expect(pending).toBeVisible();
   const feedback = await pending.evaluate(element => ({ animation: getComputedStyle(element).animationName, border: getComputedStyle(element).borderTopStyle }));
   expect(feedback).toEqual({ animation: 'none', border: 'dotted' });
   await expect(page.getByRole('group', { name: 'Playback controls' })).toHaveAttribute('aria-busy', 'true');
-  await expect(page.getByTestId('player').getByText('Updating playback', { exact: true })).toHaveCount(1);
+  await expect(page.getByTestId('player').getByText('Waiting for confirmation', { exact: true })).toBeVisible();
+  await expect(page.getByTestId('player').locator('.play-button .spinner')).toHaveCount(0);
+  await expect(page.getByTestId('player').getByRole('button', { name: 'Pause playback' })).toBeDisabled();
   await expect(page.getByTestId('player').getByRole('button', { name: 'Resume playback' })).toBeEnabled();
   await streamAction(page, 'disconnect');
   const resume = page.getByTestId('player').getByRole('button', { name: 'Resume playback' });

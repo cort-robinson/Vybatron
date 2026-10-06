@@ -222,6 +222,22 @@ browser access or CORS. Portal sets the trusted session's actorId itself.
   serialization and may finish without an audio write.
   Web direct controls schedule bounded cosmetics: awaited presentation count/ms
   are zero, and later background writer settlement is excluded from this DTO.
+  Each record also contains `authority:{native:Phase,finalDisclosure:Phase}`,
+  where `Phase` is `{count:number,wallMs:number,inputs:{user:Input,
+  application:Input,guild:Input,actorMember:Input,botMember:Input,channels:Input}}`
+  and `Input` is `{count:number,waitMs:number,maxMs:number,timeouts:number}`.
+  These are fixed internal labels and numeric caller timings only. Phase count
+  counts fresh policy contexts; phase wall time includes their dependency rounds.
+  Input waits include overlapping shared-read and channel-pool wait time, so their
+  sum is not phase wall time and does not identify SDK/network/bucket causes.
+  Timeouts count the bounded caller deadline while its underlying input remains
+  unsettled; actual admission remains held until that underlying work settles.
+  A failed phase freezes pending sibling fields, which may have count but zero
+  wait time. Publication, phase exit, expiry and shutdown exclude late updates.
+  Active traces older than 15 minutes cannot publish a new completed record.
+  Fresh observed stream state is distinct from a command acknowledgment: the
+  player can display an independently authorized live icon while visibly waiting
+  for confirmation, but ordinary controls remain locked until actual settlement.
 
 Same response/error shapes. HTTP bridge failures are contained and never fatal
 to audio. A private loopback test harness/fixtures must prove capabilities,

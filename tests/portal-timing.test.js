@@ -16,8 +16,10 @@ test('private command timings retain only fixed labels and numeric spans, preser
   const failure = new Error('private error');
   await assert.rejects(timing.run('resume', () => commandTimingSpan('authorization', () => { elapsed += 4; throw failure; })), error => error === failure);
   const records = timing.snapshot().records;
-  assert.deepEqual(records[0], { at: 123, command: 'pause', success: true, totalMs: 62, readyForMutationMs: 30,
+  const { authority, ...aggregate } = records[0];
+  assert.deepEqual(aggregate, { at: 123, command: 'pause', success: true, totalMs: 62, readyForMutationMs: 30,
     authorization: { count: 1, ms: 30 }, playback: { count: 1, ms: 10 }, presentation: { count: 1, ms: 20 } });
+  assert.equal(authority.native.count, 0); assert.equal(authority.finalDisclosure.count, 0);
   assert.equal(records[1].success, false); assert.equal(records[1].authorization.ms, 4);
   assert.ok(!JSON.stringify(records).includes('private'));
   records[0].command = 'changed'; assert.equal(timing.snapshot().records[0].command, 'pause');
@@ -66,9 +68,25 @@ test('real bridge timing observations require fresh maintainer identity and neve
   assert.equal(record.command, 'pause'); assert.equal(record.success, true);
   assert.ok(record.authorization.count >= 2);
   assert.equal(record.playback.count, 1);
+  assert.deepEqual(Object.keys(record.authority), ['native', 'finalDisclosure']);
+  for (const phase of Object.values(record.authority)) {
+    assert.equal(phase.count, 1);
+    assert.equal(typeof phase.wallMs, 'number');
+    assert.deepEqual(Object.keys(phase.inputs), ['user', 'application', 'guild', 'actorMember', 'botMember', 'channels']);
+    for (const [input, value] of Object.entries(phase.inputs)) {
+      assert.equal(value.count, input === 'channels' ? 2 : 1);
+      assert.deepEqual(Object.keys(value), ['count', 'waitMs', 'maxMs', 'timeouts']);
+      assert.ok(Object.values(value).every(number => Number.isSafeInteger(number) && number >= 0));
+      assert.equal(value.timeouts, 0);
+    }
+  }
   assert.deepEqual(record.presentation, { count: 0, ms: 0 }, 'web commands do not await cosmetic writers');
   assert.equal(typeof record.readyForMutationMs, 'number');
-  assert.deepEqual(Object.keys(record).sort(), ['at', 'authorization', 'command', 'playback', 'presentation', 'readyForMutationMs', 'success', 'totalMs'].sort());
+  assert.deepEqual(Object.keys(record).sort(), ['at', 'authority', 'authorization', 'command', 'playback', 'presentation', 'readyForMutationMs', 'success', 'totalMs'].sort());
+  const fetchUser = f.client.users.fetch.bind(f.client.users); let operatorReads = 0;
+  f.client.users.fetch = async (...args) => { operatorReads++; return fetchUser(...args); };
+  assert.deepEqual((await f.request(route)).body, observed.body);
+  assert.equal(operatorReads, 1, 'each timing observation freshly verifies the operator without creating another trace');
   f.client.application.fetch = async () => ({ owner: f.users.get('901') });
   assert.equal((await f.request(route)).status, 403);
 });

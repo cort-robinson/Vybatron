@@ -8,6 +8,7 @@ import { fail, PortalError } from './errors.js';
 import { requirePlayback, visible, visibleHistory, visibleSession, writable } from './policy.js';
 import { snapshotProjection } from './projection.js';
 import { assertFavoriteSelection, assertHistorySelection, assertMixSelection } from './selections.js';
+import { commandAuthorityPhase } from './timing.js';
 
 const ALLOWED = new Set(['play', 'playnext', 'pause', 'resume', 'seek', 'skip', 'skipto', 'stop', 'clear', 'remove', 'move', 'shuffle', 'loop', 'volume', 'filter', 'voteskip', 'radio', 'replay', 'session', 'favorite', 'mix', 'settings', 'queue', 'nowplaying', 'history', 'help']);
 const CONFLICTING = new Set(['playnext', 'seek', 'skip', 'skipto', 'clear', 'remove', 'move', 'shuffle', 'replay']);
@@ -159,9 +160,9 @@ export async function executePortalCommand(client, policy, revisions, commandMap
   const command = validateCommand(body, commandMap);
   const nativePreflight = DIRECT_CONTROLS.has(command.command)
     && (command.command !== 'filter' || command.values.preset !== undefined);
-  const freshContext = () => policy.guild(body.actorId, guildId, undefined, { fresh: true, urgent: command.command === 'stop',
+  const freshContext = (phase = 'native') => commandAuthorityPhase(phase, () => policy.guild(body.actorId, guildId, undefined, { fresh: true, urgent: command.command === 'stop',
     channelScope: ['history', 'replay'].includes(command.command) ? 'history' : 'session',
-    channelIds: command.command === 'settings' && command.subcommand === 'musicchannel' && command.values.channel ? [command.values.channel] : [] });
+    channelIds: command.command === 'settings' && command.subcommand === 'musicchannel' && command.values.channel ? [command.values.channel] : [] }));
   let context = null;
   // Dynamic indices and source state are checked in preflight after the revision
   // fence inside the guild lane. A vanished old position is a stale intent, not
@@ -248,7 +249,7 @@ export async function executePortalCommand(client, policy, revisions, commandMap
   interaction.portalMutationStarted = () => { assertRevision(); if (!mutationStarted) assertCommandSelection(client, context, command); mutationStarted = true; };
   if (command.policy.readOnly) { await preflight(); await commandMap.get(command.command).execute(interaction); }
   else await guardedMutation(interaction, commandMap.get(command.command).execute, { ...command.policy, beforeMutation: preflight });
-  context = await freshContext();
+  context = await freshContext('finalDisclosure');
   // Captured embeds predate this final authority check. Neutral acknowledgments
   // avoid leaking queue/history names (including individually revoked history
   // sources) and never reexecute a mutation to regenerate its reply.

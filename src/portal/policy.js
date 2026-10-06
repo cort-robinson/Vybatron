@@ -1,7 +1,7 @@
 import { ChannelType, PermissionFlagsBits as P, Routes } from 'discord.js';
 import { LIBRARY_LIMITS, validId } from '../utils/library.js';
 import { fail } from './errors.js';
-import { withTimeout } from '../utils/enqueue.js';
+import { commandAuthorityInput } from './timing.js';
 import { savedSession } from '../utils/sessions.js';
 import { bindAuthority, detachChannel, detachGuildResponse, detachMember, detachUser } from './authority.js';
 
@@ -48,7 +48,7 @@ export function createPortalPolicy(client, { operatorIds = [] } = {}) {
   const pendingReads = new Map();
   const ordinaryChannels = channelPool(4);
   const urgentChannels = channelPool(2);
-  const read = async (key, fetch, fresh, urgent) => {
+  const read = async (input, key, fetch, fresh, urgent) => {
     // Share only overlapping REST requests, never a completed authorization
     // result. Commands deliberately begin new reads after each slow lookup.
     if (fresh) key = Symbol(key);
@@ -61,7 +61,7 @@ export function createPortalPolicy(client, { operatorIds = [] } = {}) {
       // stalled Discord request could spawn duplicates every snapshot poll.
       void pending.finally(() => { if (pendingReads.get(key) === pending) pendingReads.delete(key); }).catch(() => {});
     }
-    return withTimeout(pending, 5000);
+    return commandAuthorityInput(input, pending);
   };
   const ready = () => {
     if (client.isReady?.() !== true || client.runtimeState?.draining || !client.library) fail(503, 'discord_unavailable', 'Discord is temporarily unavailable.');
@@ -73,8 +73,8 @@ export function createPortalPolicy(client, { operatorIds = [] } = {}) {
     // both promises even when one fails, and derive no grant before both pass.
     // Explicit trusted operators still need a valid user, but no owner lookup.
     const [user, ownerId] = await Promise.all([
-      read(`user:${actorId}`, async () => detachUser(await client.users.fetch(actorId, { force: true })), fresh, urgent),
-      operators.has(actorId) ? undefined : read('application', async () => {
+      read('user', `user:${actorId}`, async () => detachUser(await client.users.fetch(actorId, { force: true })), fresh, urgent),
+      operators.has(actorId) ? undefined : read('application', 'application', async () => {
         const { owner } = await client.application.fetch();
         // Capture the scalar inside the read, before a sibling/Gateway await.
         // User owners and verified team owners only, never every team member.
@@ -91,15 +91,15 @@ export function createPortalPolicy(client, { operatorIds = [] } = {}) {
     if (!validId(guildId) || !client.guilds.cache.has(guildId)) fail(404, 'guild_not_found', 'That server is unavailable.');
     const who = verifiedIdentity || await identity(actorId, { fresh, urgent });
     const server = client.guilds.cache.get(guildId);
-    const { guildInput, allRoles } = await read(`guild:${guildId}`, async () =>
+    const { guildInput, allRoles } = await read('guild', `guild:${guildId}`, async () =>
       detachGuildResponse(server, await client.rest.get(Routes.guild(guildId)), guildId), fresh, urgent);
     // GET Guild already contains the complete role inventory. Capture it before
     // starting at most two independent member inputs, including urgent Stop.
     // Each response still detaches inside its own read before its sibling waits.
     const [memberInput, botInput] = await Promise.all([
-      read(`member:${guildId}:${actorId}`, async () => detachMember(await server.members.fetch({ user: actorId, force: true })), fresh, urgent)
+      read('actorMember', `member:${guildId}:${actorId}`, async () => detachMember(await server.members.fetch({ user: actorId, force: true })), fresh, urgent)
         .catch(error => { if (Number(error?.code) !== 10007) throw error; return null; }),
-      read(`botMember:${guildId}`, async () => detachMember(await server.members.fetchMe({ force: true })), fresh, urgent),
+      read('botMember', `botMember:${guildId}`, async () => detachMember(await server.members.fetchMe({ force: true })), fresh, urgent),
     ]);
     if (!memberInput && !who.maintainer) fail(404, 'guild_not_found', 'That server is unavailable.');
     ready();
@@ -110,7 +110,7 @@ export function createPortalPolicy(client, { operatorIds = [] } = {}) {
     const admin = guildAdmin || who.maintainer;
     // Deny complete discovery before it can consume Discord's list bucket.
     if (channelScope === 'configuration' && !admin) fail(403, 'admin_required', 'Manage Server permission is required.');
-    const fetchChannel = id => read(`channel:${guildId}:${id}`, () => (urgent ? urgentChannels : ordinaryChannels)(async () => {
+    const fetchChannel = id => read('channels', `channel:${guildId}:${id}`, () => (urgent ? urgentChannels : ordinaryChannels)(async () => {
       ready();
       try {
         // cache:false can return an existing channel WITHOUT applying REST data.
@@ -126,7 +126,7 @@ export function createPortalPolicy(client, { operatorIds = [] } = {}) {
     const fetchChannels = async () => {
       if (channelScope === 'none') return new Map();
       if (channelScope === 'configuration') {
-        const inventory = await read(`channels:${guildId}`, async () => {
+        const inventory = await read('channels', `channels:${guildId}`, async () => {
           const fetched = await server.channels.fetch();
           return new Map([...fetched].map(([id, channel]) => [id, detachChannel(channel)]));
         }, fresh, urgent);

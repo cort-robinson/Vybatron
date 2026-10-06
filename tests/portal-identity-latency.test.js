@@ -35,11 +35,11 @@ async function serialPolicy() {
   const baseline = `  const identity = async (actorId, { fresh = false, urgent = false } = {}) => {
     ready();
     if (!validId(actorId)) fail(400, 'invalid_actor', 'A valid session actor is required.');
-    const user = await read(\`user:\${actorId}\`, async () => detachUser(await client.users.fetch(actorId, { force: true })), fresh, urgent);
+    const user = await read('user', \`user:\${actorId}\`, async () => detachUser(await client.users.fetch(actorId, { force: true })), fresh, urgent);
     if (!user || user.id !== actorId || user.bot) fail(403, 'forbidden', 'This account cannot use the portal.');
     let maintainer = operators.has(actorId);
     if (!maintainer) {
-      const ownerId = await read('application', async () => {
+      const ownerId = await read('application', 'application', async () => {
         const { owner } = await client.application.fetch();
         return owner?.ownerId || owner?.id;
       }, fresh, urgent);

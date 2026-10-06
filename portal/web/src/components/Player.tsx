@@ -23,6 +23,7 @@ export function Player({ portal, expanded, setExpanded, onAdd, accent, animate }
   const wasExpanded = useRef(expanded);
   const openedFromIdentity = useRef(false);
   const reasonId = useId();
+  const confirmationId = useId();
   useEffect(() => {
     if (expanded) headingRef.current?.focus({ preventScroll: true });
     else if (wasExpanded.current) (openedFromIdentity.current ? identityTriggerRef : expandTriggerRef).current?.focus({ preventScroll: true });
@@ -50,8 +51,12 @@ export function Player({ portal, expanded, setExpanded, onAdd, accent, animate }
   const index = library?.favorites.findIndex(t => t.id === track?.id) ?? -1;
   const toggleFavorite = () => index < 0 ? run({ command: 'favorite', subcommand: 'add', expectedRevision: snapshot?.revision }, 'library') : run({ command: 'favorite', subcommand: 'remove', options: { index: index + 1 }, expectedTrackId: library?.favorites[index].id }, 'library');
   const active = session?.status === 'playing';
-  const blockedTitle = pending.length ? 'Updating playback. Controls return when the change is complete.' : !can('control') ? portal.blockedReason : undefined;
+  const blockedTitle = !can('control') ? portal.blockedReason : pending.length ? 'Waiting for confirmation. Playback controls are temporarily unavailable.' : undefined;
   const permissionReason = !can('control') ? portal.blockedReason : session?.reason;
+  const controlDescription = [permissionReason ? reasonId : '', pending.length ? confirmationId : ''].filter(Boolean).join(' ') || undefined;
+  // Observation and request settlement are independent. Only accepted live state
+  // supplies the icon; the hook alone owns pending and the duplicate-write lock.
+  const pendingObservation = !snapshot ? 'Playback state unavailable. ' : connection !== 'live' ? 'Last known playback. ' : session?.status === 'playing' ? 'Playing. ' : session?.status === 'paused' ? 'Paused. ' : '';
   const sourceUrl = publicUrl(track?.uri);
   const favorite = track && <IconButton className={`favorite ${index >= 0 ? 'active' : ''}`} label={index >= 0 ? 'Remove current song from favorites' : 'Save current song to favorites'} aria-pressed={index >= 0} disabled={!can('library') || !library || !!pending.length} onClick={() => void toggleFavorite()}><HeartIcon size={expanded ? 28 : 25} weight={index >= 0 ? 'fill' : 'regular'} /></IconButton>;
   const metadata = track ? <>{track.author}<span className="metadata-dot" aria-hidden="true">·</span><span className="track-source">{track.source}</span></> : 'Add a song to start the room.';
@@ -60,19 +65,19 @@ export function Player({ portal, expanded, setExpanded, onAdd, accent, animate }
   const spectrumMode = track && active && connection === 'live' ? 'playing' : 'standby';
   const spectrum = (className: string, bands: number, ghost?: number) => <Spectrum className={className} seed={track?.id || 'idle'} color={accent} mode={spectrumMode} animate={animate} bands={bands} ghost={ghost} />;
   const seek = () => { if (scrub === null) return; const value = scrub; setScrub(null); if (seekable) void control({ command: 'seek', options: { timestamp: timestamp(value) } }); };
-  const timeline = <div className={`timeline ${track?.isStream ? 'is-live' : ''}`}>
+  const timeline = <div className="playback-timeline"><div className={`timeline ${track?.isStream ? 'is-live' : ''}`}>
     <span>{track?.isStream ? 'LIVE' : time(scrub ?? position)}</span>
     <input className="range seek-range" aria-label="Playback position" type="range" min={0} max={duration || 1} step={1000} value={scrub ?? Math.min(position, duration || 1)} disabled={!seekable}
       aria-valuetext={track?.isStream ? 'Live stream' : `${time(scrub ?? position)} of ${time(duration)}`}
       style={{ '--range-progress': `${Math.min(100, ((scrub ?? position) / (duration || 1)) * 100)}%` } as React.CSSProperties}
       onChange={event => setScrub(Number(event.target.value))} onPointerUp={seek} onKeyUp={event => { if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown'].includes(event.key)) seek(); }} onBlur={seek} />
     <span>{track?.isStream ? 'Streaming' : time(duration)}</span>
-  </div>;
-  const controls = <div className="transport" role="group" aria-label="Playback controls" aria-describedby={expanded && permissionReason ? reasonId : undefined} aria-busy={!!pending.length}>
+  </div><div className="player-confirmation" id={confirmationId} role="status" aria-live="polite" aria-atomic="true">{!!pending.length && <><span className="spinner" aria-hidden="true" /><span className="sr-only">{pendingObservation}</span><span>Waiting for confirmation</span><span className="sr-only">. {connection !== 'live' ? portal.blockedReason : 'Playback controls are temporarily unavailable.'}</span></>}</div></div>;
+  const controls = <div className="transport" role="group" aria-label="Playback controls" aria-describedby={controlDescription} aria-busy={!!pending.length}>
     <IconButton label="Shuffle queue" disabled={!controllable || !session?.queue.length} title={blockedTitle} onClick={() => void control({ command: 'shuffle' })}><ShuffleIcon size={24} /></IconButton>
     <IconButton label="Restart current song" disabled={!seekable} title={blockedTitle} onClick={() => void control({ command: 'seek', options: { timestamp: '00:00' } })}><SkipBackIcon size={27} weight="fill" /></IconButton>
-    <IconButton className={`play-button ${session?.status === 'paused' || session?.status === 'recovering' ? 'settled' : ''}`} label={active ? 'Pause playback' : 'Resume playback'} disabled={!controllable || !track || !['playing', 'paused'].includes(session?.status || '')} title={blockedTitle}
-      onClick={() => void control({ command: active ? 'pause' : 'resume' })}>{pending.some(k => k.startsWith('pause:') || k.startsWith('resume:')) ? <><span className="spinner" aria-hidden="true" /><span className="sr-only">Updating playback</span></> : active ? <PauseIcon size={31} weight="fill" /> : <PlayIcon size={31} weight="fill" />}</IconButton>
+    <IconButton className={`play-button ${session?.status === 'paused' || session?.status === 'recovering' ? 'settled' : ''}`} label={active ? 'Pause playback' : 'Resume playback'} disabled={!controllable || !track || !['playing', 'paused'].includes(session?.status || '')} title={blockedTitle} aria-describedby={controlDescription}
+      onClick={() => void control({ command: active ? 'pause' : 'resume' })}>{active ? <PauseIcon size={31} weight="fill" /> : <PlayIcon size={31} weight="fill" />}</IconButton>
     <IconButton label="Skip current song" disabled={!controllable || !track} title={blockedTitle} onClick={() => void control({ command: 'skip' })}><SkipForwardIcon size={27} weight="fill" /></IconButton>
     <IconButton label={`Repeat: ${session?.repeat || 'off'}. Change repeat mode`} className={session?.repeat !== 'off' && session?.repeat ? 'active-control' : ''} disabled={!controllable || !track} title={blockedTitle}
       onClick={() => void control({ command: 'loop', options: { mode: session?.repeat === 'off' ? 'track' : session?.repeat === 'track' ? 'queue' : 'off' } })}>{session?.repeat === 'track' ? <RepeatOnceIcon size={25} /> : <RepeatIcon size={25} />}</IconButton>
@@ -100,12 +105,13 @@ export function Player({ portal, expanded, setExpanded, onAdd, accent, animate }
   return <section className={`persistent-player ${expanded ? 'expanded' : 'collapsed'} ${session?.status || 'idle'}`} aria-label="Music player" data-testid="player">
     {!expanded && spectrum('player-spectrum', 56, 0)}
     {expanded && <div className="sleeve-content"><button className="mobile-collapse text-button" onClick={() => setExpanded(false)}><CaretDownIcon size={22} />Back to queue</button>
-      <div className="sleeve-main"><div className="sleeve-artwork"><Artwork track={track} large />{spectrum('sleeve-spectrum', 40)}</div>{identity}<div className="player-context"><p className="player-destination"><UsersIcon size={18} aria-hidden="true" /><span>{session?.voiceChannel ? <>Audio in <strong>{session.voiceChannel.name}</strong></> : 'Audio plays in Discord'}</span></p>{permissionReason && <p className="player-permission" id={reasonId}><WarningCircleIcon size={18} aria-hidden="true" /><span>{permissionReason}</span></p>}{session?.status === 'recovering' && <p className="player-state warm-text" role="status">Recovering your place. Playback controls will return when it’s ready.</p>}{session?.status === 'paused' && <p className="player-state warm-text">Paused · right here when you’re ready</p>}</div></div>
+      <div className="sleeve-main"><div className="sleeve-artwork"><Artwork track={track} large />{spectrum('sleeve-spectrum', 40)}</div>{identity}<div className="player-context"><p className="player-destination"><UsersIcon size={18} aria-hidden="true" /><span>{session?.voiceChannel ? <>Audio in <strong>{session.voiceChannel.name}</strong></> : 'Audio plays in Discord'}</span></p>{permissionReason && <p className="player-permission" id={reasonId}><WarningCircleIcon size={18} aria-hidden="true" /><span>{permissionReason}</span></p>}{connection === 'live' && session?.status === 'recovering' && <p className="player-state warm-text" role="status">Recovering your place. Playback controls will return when it’s ready.</p>}{session?.status === 'paused' && <p className="player-state warm-text">{connection === 'live' ? 'Paused · right here when you’re ready' : 'Last known: paused'}</p>}</div></div>
       <div className="sleeve-queue"><Queue portal={portal} compact onAdd={onAdd} /></div>
     </div>}
     <div className="player-footer">{!expanded && <div className="compact-identity"><button ref={identityTriggerRef} type="button" className="player-expand-trigger" aria-label={track ? `Open player for ${track.title}` : 'Open player details'} aria-expanded={false} onClick={() => { openedFromIdentity.current = true; setExpanded(true); }}><Artwork track={track} /><span className="compact-title"><span className="compact-track-title" title={track?.title}>{track?.title || 'Nothing playing'}</span><span className="compact-track-meta" title={track ? `${track.author} · ${track.source}` : undefined}>{metadata}</span></span></button><span className="compact-favorite">{favorite}</span></div>}
       <div className="playback-cluster">{expanded ? <>{controls}{timeline}</> : <>{timeline}{controls}</>}</div>
       {extras}
+      {!expanded && permissionReason && <span className="sr-only" id={reasonId}>{permissionReason}</span>}
       <button ref={expandTriggerRef} className="expand-button" aria-expanded={expanded} aria-label={expanded ? 'Back to queue' : 'Open player'} onClick={() => { openedFromIdentity.current = false; setExpanded(!expanded); }}>{expanded ? <CaretDownIcon size={29} /> : <CaretUpIcon size={29} />}<span>{expanded ? 'Back to queue' : 'Open player'}</span></button>
     </div>
     {confirmStop && <Confirm title="Stop this listening session?" detail="Stops playback in Discord, clears the queue, and discards the saved checkpoint. Your favorites and shared mixes stay saved." action="Stop and discard" busy={pending.includes('stop:')} onClose={() => setConfirmStop(false)} onConfirm={() => { void run({ command: 'stop' }, 'control').then(ok => { if (ok) setConfirmStop(false); }); }} />}

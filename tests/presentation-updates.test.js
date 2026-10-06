@@ -22,7 +22,7 @@ function cosmetics(f) {
   const channel = f.channels.get('400');
   channel.send = async () => message;
   channel.messages = { fetch: async () => message };
-  f.client.rest = { async put(route, payload) {
+  f.client.rest = { ...f.client.rest, async put(route, payload) {
     statuses.push({ route, payload }); statusEntered.resolve(); await statusGate.promise;
   } };
   f.client.channels.cache.get('300').permissionsFor = () => ({ has: () => true });

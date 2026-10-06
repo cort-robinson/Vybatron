@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { setTimeout as delay } from 'node:timers/promises';
-import { Client, Collection, VoiceChannel, TextChannel, PermissionFlagsBits as P } from 'discord.js';
+import { Client, VoiceChannel, TextChannel, PermissionFlagsBits as P } from 'discord.js';
 import { portalFixture, deferred } from './portal-fixtures.js';
 import { track } from './fixtures.js';
 import { trackReference } from '../src/utils/library.js';
@@ -160,17 +160,17 @@ test('mix source visibility is checked again at the actual durable write after a
 
 test('four overlapping HTTP snapshots coalesce fresh individual Discord reads without retaining permission or owner results', async t => {
   const f = await portalFixture(t); const counts = {};
-  for (const [key, target, name] of [['user', f.client.users, 'fetch'], ['application', f.client.application, 'fetch'], ['guild', f.client.guilds, 'fetch'], ['member', f.guild.members, 'fetch'], ['channels', f.guild.channels, 'fetch'], ['roles', f.guild.roles, 'fetch'], ['me', f.guild.members, 'fetchMe']]) {
+  for (const [key, target, name] of [['user', f.client.users, 'fetch'], ['application', f.client.application, 'fetch'], ['guild', f.client.rest, 'get'], ['member', f.guild.members, 'fetch'], ['channels', f.guild.channels, 'fetch'], ['me', f.guild.members, 'fetchMe']]) {
     const original = target[name].bind(target);
     target[name] = async (...args) => { counts[key] = (counts[key] || 0) + 1; await delay(30); return original(...args); };
   }
   const snapshots = await Promise.all(Array.from({ length: 4 }, () => f.request()));
   assert.ok(snapshots.every(response => response.status === 200));
-  assert.deepEqual(counts, { user: 1, application: 1, guild: 1, member: 1, channels: 2, roles: 1, me: 1 });
+  assert.deepEqual(counts, { user: 1, application: 1, guild: 1, member: 1, me: 1, channels: 2 });
   assert.ok(f.channelReads.every(read => read.id && read.force === true && read.cache !== false));
   f.channels.get('400').hidden.add('200');
   assert.equal((await f.request()).body.session.current, null);
-  assert.equal(counts.channels, 4); assert.equal(counts.roles, 2);
+  assert.equal(counts.channels, 4); assert.equal(counts.guild, 2);
   assert.equal((await f.request('/diagnostics', { actor: '900' })).status, 200);
   f.client.application.fetch = async () => ({ owner: f.users.get('901') });
   assert.equal((await f.request('/diagnostics', { actor: '900' })).status, 404);
@@ -202,8 +202,9 @@ test('fresh role inventory removes a deleted cached role from real Discord membe
   guild.channels.cache.set('400', new TextChannel(guild, { id: '400', name: 'Restricted music', permission_overwrites: [] }, discord));
   guild.members.fetch = async () => member; guild.members.fetchMe = async () => f.me;
   guild.channels.fetch = async (id, options) => { assert.equal(options.force, true); return guild.channels.cache.get(id); };
-  guild.roles.fetch = async () => new Collection([['100', guild.roles.cache.get('100')]]);
   f.client.guilds.cache.set('100', guild); f.client.guilds.fetch = async () => guild;
+  f.client.rest.get = async route => { assert.equal(route, '/guilds/100'); return { id: '100', name: guild.name, owner_id: '202',
+    roles: [{ id: '100', name: '@everyone', permissions: '0', position: 0 }] }; };
   const snapshot = (await f.request()).body;
   assert.equal(snapshot.guild.admin, false); assert.equal(snapshot.settings, null);
   assert.equal(snapshot.session.current, null); assert.deepEqual(snapshot.channels, []);

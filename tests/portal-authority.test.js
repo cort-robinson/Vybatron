@@ -22,7 +22,7 @@ async function realFixture(t, options = {}) {
   const state = {
     ownerId: '202', roles: new Map([['100', 0n], ['500', P.ViewChannel], ['501', botAccess], ['502', P.Administrator]]),
     members: new Map([['200', ['500']], ['900', ['500']], ['999', ['501']]]),
-    overwrites: new Map(), beforeResponse: async () => {}, applicationReads: 0,
+    overwrites: new Map(), beforeResponse: async () => {}, applicationReads: 0, guildResponse: data => data,
   };
   const roleData = () => [...state.roles].map(([id, permissions]) => ({ id, name: `Role ${id}`, permissions: String(permissions), position: 1 }));
   const userData = id => ({ id, username: `Synthetic ${id}`, discriminator: '0', bot: id === '999' });
@@ -40,7 +40,7 @@ async function realFixture(t, options = {}) {
     let data, status = 200;
     const id = path.split('/').at(-1);
     if (/^\/api\/v10\/users\/\d+$/.test(path)) data = userData(id);
-    else if (path === '/api/v10/guilds/100') data = guildData();
+    else if (path === '/api/v10/guilds/100') data = state.guildResponse(guildData());
     else if (path === '/api/v10/guilds/100/roles') data = roleData();
     else if (/^\/api\/v10\/guilds\/100\/members\/\d+$/.test(path)) {
       if (state.members.has(id)) data = { user: userData(id), roles: state.members.get(id), communication_disabled_until: null };
@@ -51,6 +51,7 @@ async function realFixture(t, options = {}) {
     return new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json' } });
   };
   f.client.guilds = discord.guilds; f.client.users = discord.users; f.client.channels = discord.channels;
+  f.client.rest = discord.rest;
   f.client.application.fetch = async () => { state.applicationReads++; return { owner: { id: '900' } }; };
   const policy = createPortalPolicy(f.client); t.after(() => policy.close());
   return { ...f, discord, guild, state, requests, policy };
@@ -70,6 +71,153 @@ test('Gateway voice movement during pending channel reads still denies native sa
   f.state.beforeResponse = async () => {};
   f.guild.voiceStates._add({ user_id: '200', channel_id: '300' });
   assert.equal((await f.command({ command: 'pause' })).status, 200); assert.deepEqual(f.calls, ['pause']);
+});
+
+test('one raw guild inventory replaces role-list authority and actor/bot members overlap only after capture', async t => {
+  const f = await realFixture(t); const entered = deferred(), release = deferred(); t.after(() => release.resolve());
+  let active = 0, maximum = 0, membersStarted = 0;
+  f.state.beforeResponse = async path => {
+    if (path.startsWith('/api/v10/guilds/100/members/')) {
+      assert.equal(f.requests.filter(path => path === '/api/v10/guilds/100').length, 1);
+      maximum = Math.max(maximum, ++active);
+      if (++membersStarted === 2) entered.resolve();
+      try { await release.promise; } finally { active--; }
+    }
+  };
+  f.client.guilds.fetch = () => assert.fail('SDK guild fetch cannot supply raw authority');
+  f.guild.roles.fetch = () => assert.fail('no redundant role inventory request');
+  const reading = f.policy.guild('200', '100', undefined, { fresh: true });
+  await entered.promise; assert.equal(maximum, 2); assert.equal(active, 2); release.resolve();
+  const context = await reading; requirePlayback(context, f.client);
+  assert.equal(f.requests.length, 6, 'user + raw guild + actor/bot + two channels; owner uses the explicit synthetic application seam');
+  assert.equal(f.requests.some(path => path.endsWith('/roles')), false);
+  assert.ok(context.member instanceof GuildMember); assert.ok(context.me instanceof GuildMember);
+  assert.ok(context.guild.roles.everyone instanceof Role);
+  const rolePermissions = context.guild.roles.cache.get('500').permissions;
+  assert.notEqual(rolePermissions.add(P.Administrator), rolePermissions,
+    'owned role definitions remain immutable across shared pending readers');
+  assert.equal(context.member.permissions.has(P.Administrator), false);
+  f.state.beforeResponse = async () => {};
+  await f.policy.guild('200', '100', undefined, { fresh: true, channelScope: 'none' });
+  assert.equal(f.requests.filter(path => path === '/api/v10/guilds/100').length, 2, 'a completed inventory never becomes a cached grant');
+});
+
+test('raw deleted/edited actor and bot roles defeat intact stale Gateway grants in native permission getters and controls', async t => {
+  for (const kind of ['deleted actor', 'edited actor', 'deleted DJ', 'deleted bot']) await t.test(kind, async t => {
+    const f = await realFixture(t);
+    if (kind === 'deleted actor') f.state.roles.delete('500');
+    if (kind === 'edited actor') f.state.roles.set('500', 0n);
+    if (kind === 'deleted DJ') {
+      f.state.roles.set('100', P.ViewChannel); f.state.roles.delete('500');
+      await f.library.updateGuild('100', data => { data.settings.djRoleId = '500'; });
+    }
+    if (kind === 'deleted bot') f.state.roles.delete('501');
+    const context = await f.policy.guild('200', '100', undefined, { fresh: true });
+    assert.equal(f.guild.roles.cache.get('500').permissions.has(P.ViewChannel), true, 'Gateway deletion/edit remains late');
+    assert.equal(context.guildAdmin, false);
+    if (kind === 'deleted bot') {
+      assert.equal(f.guild.members.me.permissions.has(P.Connect), true);
+      assert.equal(context.channels.get('300').joinable, false); assert.equal(context.channels.get('300').speakable, false);
+      assert.equal(writable(context, context.channels.get('400')), false);
+      assert.equal((await f.command({ command: 'play', options: { query: 'safe' } })).status, 403);
+    } else {
+      if (kind === 'deleted DJ') assert.equal(visible(context, context.channels.get('300')), true);
+      else assert.equal(project(f, context).session.current, null);
+      assert.throws(() => requirePlayback(context, f.client), { status: 403, code: kind === 'deleted DJ' ? 'dj_required' : 'hidden_channel' });
+      assert.equal((await f.command({ command: 'pause' })).status, 403);
+      assert.equal((await f.command({ command: 'stop' })).status, 403);
+    }
+    assert.deepEqual(f.calls, []);
+  });
+});
+
+test('raw owner transfer replaces a stale cached guild owner and only the next fresh stage receives a new grant', async t => {
+  const f = await realFixture(t); f.state.roles.set('500', 0n);
+  f.guild._patch({ id: '100', owner_id: '200' });
+  const denied = await f.policy.guild('200', '100', undefined, { fresh: true });
+  assert.equal(f.guild.members.cache.get('200').permissions.has(P.ManageGuild), true);
+  assert.equal(denied.guild.ownerId, '202'); assert.equal(denied.guildAdmin, false);
+  assert.throws(() => requirePlayback(denied, f.client), { status: 403 });
+  f.state.ownerId = '200';
+  const allowed = await f.policy.guild('200', '100', undefined, { fresh: true });
+  assert.equal(allowed.guildAdmin, true); requirePlayback(allowed, f.client);
+  assert.equal(denied.guildAdmin, false); assert.equal(visible(denied, denied.channels.get('300')), false);
+  f.state.ownerId = '202'; assert.equal((await f.command({ command: 'stop' })).status, 403); assert.deepEqual(f.calls, []);
+});
+
+test('native direct execution and disclosure use separate raw inventories; final role deletion hides state after exactly one write', async t => {
+  const f = await realFixture(t); const pause = f.player.pause.bind(f.player);
+  f.player.pause = async () => { await pause(); f.state.roles.delete('500'); };
+  const response = await f.command({ command: 'pause' });
+  assert.equal(response.status, 200); assert.equal(response.body.message, 'Request completed.');
+  assert.equal(response.body.snapshot.session.current, null); assert.deepEqual(response.body.snapshot.session.listeners, []);
+  assert.doesNotMatch(JSON.stringify(response.body), /Private channel|Song |abcdefghijk/);
+  assert.equal(f.requests.filter(path => path === '/api/v10/guilds/100').length, 2);
+  assert.equal(f.requests.some(path => path.endsWith('/roles')), false);
+  assert.equal(f.guild.roles.cache.get('500').permissions.has(P.ViewChannel), true, 'the Gateway grant is still late');
+  assert.deepEqual(f.calls, ['pause']);
+});
+
+test('malformed raw guild/role inventory fails closed before any member/channel work despite valid cached grants', async t => {
+  const cases = {
+    'missing body': () => null,
+    'wrong guild': data => ({ ...data, id: '101' }),
+    'missing owner': data => ({ ...data, owner_id: undefined }),
+    'numeric owner': data => ({ ...data, owner_id: 200 }),
+    'unavailable guild': data => ({ ...data, unavailable: true }),
+    'missing roles': data => ({ ...data, roles: undefined }),
+    'map roles': data => ({ ...data, roles: {} }),
+    'empty roles': data => ({ ...data, roles: [] }),
+    'missing everyone': data => ({ ...data, roles: data.roles.filter(role => role.id !== '100') }),
+    'duplicate role': data => ({ ...data, roles: [...data.roles, data.roles[1]] }),
+    'null role': data => ({ ...data, roles: [...data.roles, null] }),
+    'missing permissions': data => ({ ...data, roles: data.roles.map(role => ({ ...role, permissions: undefined })) }),
+    'numeric permissions': data => ({ ...data, roles: data.roles.map(role => ({ ...role, permissions: 8 })) }),
+    'negative permissions': data => ({ ...data, roles: data.roles.map(role => ({ ...role, permissions: '-1' })) }),
+    'malformed permissions': data => ({ ...data, roles: data.roles.map(role => ({ ...role, permissions: '0x8' })) }),
+    'invalid role id': data => ({ ...data, roles: [...data.roles, { ...data.roles[1], id: 'bad' }] }),
+    'missing role name': data => ({ ...data, roles: data.roles.map(role => ({ ...role, name: undefined })) }),
+    'missing position': data => ({ ...data, roles: data.roles.map(role => ({ ...role, position: undefined })) }),
+  };
+  for (const [name, change] of Object.entries(cases)) await t.test(name, async t => {
+    const f = await realFixture(t); f.state.guildResponse = change;
+    await assert.rejects(f.policy.guild('900', '100', undefined, { fresh: true, channelScope: 'configuration' }), { status: 503, code: 'discord_unavailable' });
+    assert.equal(f.requests.some(path => path.includes('/members/') || path.includes('/channels/')), false);
+    assert.equal((await f.command({ command: 'stop' })).status, 503); assert.deepEqual(f.calls, []);
+    assert.equal(f.guild.roles.cache.get('500').permissions.has(P.ViewChannel), true);
+  });
+});
+
+test('native Stop actor/bot timeouts hold the two urgent admissions while 128 ordinary native reads remain unsettled', { timeout: 16_000 }, async t => {
+  const f = await realFixture(t); const ordinaryRelease = deferred(), memberRelease = deferred(), membersEntered = deferred();
+  t.after(() => { ordinaryRelease.resolve(); memberRelease.resolve(); });
+  const operators = Array.from({ length: 128 }, (_, index) => String(1000 + index));
+  const policy = createPortalPolicy(f.client, { operatorIds: operators }); t.after(() => policy.close());
+  const revisions = createRevisions(f.client); t.after(() => revisions.close()); const commands = await loadCommandsData();
+  let memberReads = 0;
+  f.state.beforeResponse = async path => {
+    if (operators.includes(path.split('/').at(-1))) await ordinaryRelease.promise;
+    if (path.startsWith('/api/v10/guilds/100/members/')) {
+      if (++memberReads === 2) membersEntered.resolve();
+      await memberRelease.promise;
+    }
+  };
+  const ordinary = Promise.allSettled(operators.map(actor => policy.identity(actor)));
+  await delay(10);
+  await assert.rejects(policy.guild('200', '100', undefined, { fresh: true }), { status: 429 });
+  const stop = () => executePortalCommand(f.client, policy, revisions, commands, '100', { actorId: '200', command: 'stop' });
+  const firstStop = stop(); const denied = assert.rejects(firstStop, /too long/);
+  await membersEntered.promise;
+  await assert.rejects(policy.identity('201', { fresh: true, urgent: true }), { status: 429 });
+  const timedOut = await ordinary; await denied;
+  assert.ok(timedOut.every(result => result.status === 'rejected' && /too long/.test(result.reason.message)));
+  await assert.rejects(policy.identity(operators[0], { fresh: true }), { status: 429 });
+  await assert.rejects(stop(), { status: 429 }, 'timed-out underlying member requests still hold both urgent admissions');
+  assert.equal(memberReads, 2); assert.deepEqual(f.calls, []); assert.equal(f.manager.getPlayer('100'), f.player);
+  memberRelease.resolve(); await delay(20);
+  assert.equal((await stop()).ok, true, 'Stop recovers after actual settlement while the ordinary pool stays occupied');
+  assert.deepEqual(f.calls, ['stopPlaying', 'destroy']); assert.equal(f.manager.getPlayer('100'), undefined);
+  ordinaryRelease.resolve();
 });
 
 test('pending shared channel responses bind separately to each actor authority without sharing grants', async t => {
@@ -134,24 +282,32 @@ test('stage-local actor role bits, membership role IDs and guild owner defeat st
   });
 });
 
-test('each guild/member/role response detaches before awaiting its still-pending sibling input', async t => {
-  for (const kind of ['roles before member', 'member before roles', 'owner before roles']) await t.test(kind, async t => {
+test('raw guild roles/owner and both member responses detach before still-pending sibling inputs', async t => {
+  for (const kind of ['roles before member', 'member before bot', 'bot before member', 'owner before bot']) await t.test(kind, async t => {
     const f = await realFixture(t); const held = deferred(), release = deferred(); t.after(() => release.resolve());
     if (kind === 'roles before member') f.state.roles.set('500', 0n);
-    else if (kind === 'member before roles') f.state.members.set('200', []);
+    else if (kind === 'member before bot') f.state.members.set('200', []);
+    else if (kind === 'bot before member') f.state.members.set('999', []);
     else f.state.roles.set('500', 0n);
     f.state.beforeResponse = async path => {
-      if (path === (kind === 'roles before member' ? '/api/v10/guilds/100/members/200' : '/api/v10/guilds/100/roles')) { held.resolve(); await release.promise; }
+      if (path === (['roles before member', 'bot before member'].includes(kind) ? '/api/v10/guilds/100/members/200' : '/api/v10/guilds/100/members/999')) { held.resolve(); await release.promise; }
     };
     const pending = f.policy.guild('200', '100', undefined, { fresh: true }); await held.promise;
     await delay(20); // The other installed REST manager has settled and patched.
     if (kind === 'roles before member') f.guild.roles.cache.get('500')._patch({ id: '500', permissions: String(P.ViewChannel) });
-    if (kind === 'member before roles') f.guild.members.cache.get('200')._patch({ roles: ['500'] });
-    if (kind === 'owner before roles') f.guild._patch({ id: '100', owner_id: '200' });
+    if (kind === 'member before bot') f.guild.members.cache.get('200')._patch({ roles: ['500'] });
+    if (kind === 'bot before member') f.guild.members.cache.get('999')._patch({ roles: ['501'] });
+    if (kind === 'owner before bot') f.guild._patch({ id: '100', owner_id: '200' });
     assert.equal(f.guild.members.cache.get('200').permissions.has(P.ViewChannel), true);
     release.resolve(); const context = await pending;
-    assert.equal(project(f, context).session.current, null); assert.equal(context.guildAdmin, false);
-    assert.throws(() => requirePlayback(context, f.client), { status: 403 });
+    assert.equal(context.guildAdmin, false);
+    if (kind === 'bot before member') {
+      assert.equal(context.channels.get('300').joinable, false); assert.equal(context.channels.get('300').speakable, false);
+      assert.equal(writable(context, context.channels.get('400')), false);
+    } else {
+      assert.equal(project(f, context).session.current, null);
+      assert.throws(() => requirePlayback(context, f.client), { status: 403 });
+    }
   });
 });
 

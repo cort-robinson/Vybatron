@@ -113,7 +113,7 @@ export function startPortalBridge(client, {
         const channelScope = resource === 'library' ? 'history' : resource === 'configuration' ? 'configuration' : ['activity', 'diagnostics'].includes(resource) ? 'none' : 'session';
         const context = await policy.guild(actorId, guildId, undefined, { channelScope });
         let result;
-        if (!resource) result = snapshotProjection(client, context, revisions.revision(guildId));
+        if (!resource) result = snapshotProjection(client, context, revisions.revision(guildId), revisions.nextSnapshot());
         if (resource === 'library') result = libraryProjection(client, context);
         if (resource === 'configuration') result = configurationProjection(context);
         if (resource === 'activity' || resource === 'diagnostics') {

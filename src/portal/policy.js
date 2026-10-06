@@ -1,9 +1,9 @@
-import { ChannelType, PermissionFlagsBits as P } from 'discord.js';
+import { ChannelType, PermissionFlagsBits as P, Routes } from 'discord.js';
 import { LIBRARY_LIMITS, validId } from '../utils/library.js';
 import { fail } from './errors.js';
 import { withTimeout } from '../utils/enqueue.js';
 import { savedSession } from '../utils/sessions.js';
-import { bindAuthority, detachChannel, detachGuild, detachMember, detachRoles, detachUser } from './authority.js';
+import { bindAuthority, detachChannel, detachGuildResponse, detachMember, detachUser } from './authority.js';
 
 export const TEXT_TYPES = new Set([ChannelType.GuildText, ChannelType.GuildAnnouncement]);
 export const VOICE_TYPES = new Set([ChannelType.GuildVoice, ChannelType.GuildStageVoice]);
@@ -90,26 +90,23 @@ export function createPortalPolicy(client, { operatorIds = [] } = {}) {
     if (!['session', 'history', 'none', 'configuration'].includes(channelScope)) throw new Error('Invalid internal channel scope.');
     if (!validId(guildId) || !client.guilds.cache.has(guildId)) fail(404, 'guild_not_found', 'That server is unavailable.');
     const who = verifiedIdentity || await identity(actorId, { fresh, urgent });
-    const { server, guildInput } = await read(`guild:${guildId}`, async () => {
-      const server = await client.guilds.fetch({ guild: guildId, force: true });
-      return { server, guildInput: detachGuild(server) };
-    }, fresh, urgent);
-    const memberRead = read(`member:${guildId}:${actorId}`, async () => detachMember(await server.members.fetch({ user: actorId, force: true })), fresh, urgent)
-      .catch(error => { if (Number(error?.code) !== 10007) throw error; return null; });
-    // Guild refresh patches roles. Fetch the authoritative inventory afterwards,
-    // with no more than two non-channel inputs in flight even for urgent work.
-    const [memberInput, allRoles] = await Promise.all([
-      memberRead,
-      read(`roles:${guildId}`, async () => detachRoles(await server.roles.fetch()), fresh, urgent),
+    const server = client.guilds.cache.get(guildId);
+    const { guildInput, allRoles } = await read(`guild:${guildId}`, async () =>
+      detachGuildResponse(server, await client.rest.get(Routes.guild(guildId)), guildId), fresh, urgent);
+    // GET Guild already contains the complete role inventory. Capture it before
+    // starting at most two independent member inputs, including urgent Stop.
+    // Each response still detaches inside its own read before its sibling waits.
+    const [memberInput, botInput] = await Promise.all([
+      read(`member:${guildId}:${actorId}`, async () => detachMember(await server.members.fetch({ user: actorId, force: true })), fresh, urgent)
+        .catch(error => { if (Number(error?.code) !== 10007) throw error; return null; }),
+      read(`botMember:${guildId}`, async () => detachMember(await server.members.fetchMe({ force: true })), fresh, urgent),
     ]);
     if (!memberInput && !who.maintainer) fail(404, 'guild_not_found', 'That server is unavailable.');
     ready();
-    // discord.js fetch-all updates roles but does not evict deleted ones. Its
-    // member/channel permission getters otherwise retain a removed grant until
-    // the gateway deletion arrives, despite the fresh REST role inventory.
-    for (const roleId of server.roles.cache?.keys() || []) if (!allRoles.has(roleId)) server.roles.cache.delete(roleId);
-    const authority = bindAuthority(guildInput, memberInput, allRoles, null, actorId);
-    const guildAdmin = Boolean(authority.member && (authority.guild.ownerId === actorId || authority.member.permissions?.has(P.ManageGuild)));
+    // Deleted roles remain absent from this stage even while Gateway is late.
+    // Do not edit shared caches: every native getter resolves through this view.
+    const stage = bindAuthority(guildInput, memberInput, allRoles, botInput, actorId);
+    const guildAdmin = Boolean(stage.member && (stage.guild.ownerId === actorId || stage.member.permissions?.has(P.ManageGuild)));
     const admin = guildAdmin || who.maintainer;
     // Deny complete discovery before it can consume Discord's list bucket.
     if (channelScope === 'configuration' && !admin) fail(403, 'admin_required', 'Manage Server permission is required.');
@@ -154,10 +151,6 @@ export function createPortalPolicy(client, { operatorIds = [] } = {}) {
       }
       return channels;
     };
-    // Refresh bot membership before evaluating channel access. Stop then has at
-    // most two channel reads outstanding even with 128 ordinary admissions held.
-    const botInput = await read(`botMember:${guildId}`, async () => detachMember(await server.members.fetchMe({ force: true })), fresh, urgent);
-    const stage = bindAuthority(guildInput, memberInput, allRoles, botInput, actorId);
     const channels = await fetchChannels();
     for (const [id, channel] of channels) stage.channels.set(id, channel);
     ready();

@@ -4,7 +4,7 @@ import type { Activity, Bootstrap, Command, Configuration, Diagnostics, GuildSna
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 
-const art = (name: string) => `http://127.0.0.1:4178/test-art/${name}.png`;
+const art = (name: string) => `http://127.0.0.1:${Number(process.env.PLAYWRIGHT_PORT || 4178)}/test-art/${name}.png`;
 const person = (id: string, displayName: string, image: string) => ({ id, displayName, avatarUrl: art(image) });
 const people = [person('jordan', 'Jordan', 'jordan'), person('alex', 'Alex', 'alex'), person('sam', 'Sam', 'sam')];
 function track(id: string, title: string, author: string, durationMs: number, artwork: string, requester = 0): Track {

@@ -49,6 +49,15 @@ export async function portalFixture(t, options = {}) {
   guild.roles = { cache: new Map(roles), async fetch() { for (const [id, role] of roles) this.cache.set(id, role); return new Map(roles); } };
   guild.members = { async fetch({ user }) { memberFetches++; if (options.memberFetch) await options.memberFetch(user); const member = members.get(user); if (!member) throw Object.assign(new Error('Unknown member'), { code: 10007 }); return member; }, async fetchMe() { return me; } };
   client.guilds = { cache: new Map([['100', guild]]), async fetch() { return guild; } };
+  // Faithful raw GET Guild seam: the role inventory is an independent server
+  // response, not the Guild/RoleManager cache returned by an SDK fetch.
+  client.rest = { async get(route) {
+    const server = client.guilds.cache.get(route.split('/').at(-1));
+    if (!server) throw Object.assign(new Error('Unknown guild'), { code: 10004 });
+    const inventory = new Map(roles); inventory.set(server.id, { id: server.id, name: '@everyone' });
+    return { id: server.id, owner_id: server.ownerId, name: server.name, icon: null,
+      roles: [...inventory].map(([id, role]) => ({ id, name: role.name, permissions: String(role.permissions?.bitfield ?? role.permissions ?? 0n), position: role.rawPosition ?? 0 })) };
+  } };
   client.channels = { cache: channelCache };
   client.users = { async fetch(id) { return users.get(id); } };
   client.application = { async fetch() { return { owner: options.owner || users.get('900') }; } };

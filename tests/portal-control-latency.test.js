@@ -32,8 +32,8 @@ test('actual direct handlers reduce full policy latency before playback and reta
     const f = await harness(t);
     if (name === 'resume') { f.player.paused = true; f.player.playing = false; }
     let fetches = 0;
-    for (const [owner, key] of [[f.client.users, 'fetch'], [f.client.application, 'fetch'], [f.client.guilds, 'fetch'],
-      [f.guild.members, 'fetch'], [f.guild.members, 'fetchMe'], [f.guild.roles, 'fetch'], [f.guild.channels, 'fetch']]) {
+    for (const [owner, key] of [[f.client.users, 'fetch'], [f.client.application, 'fetch'], [f.client.rest, 'get'],
+      [f.guild.members, 'fetch'], [f.guild.members, 'fetchMe'], [f.guild.channels, 'fetch']]) {
       const original = owner[key].bind(owner);
       owner[key] = async (...args) => { fetches++; await delay(20); return original(...args); };
     }
@@ -54,7 +54,7 @@ test('actual direct handlers reduce full policy latency before playback and reta
     t.diagnostic(JSON.stringify({ command: name, phases: f.phases.length, fetches, phasesAtWrite,
       firstWriteMs: Math.round(firstWrite - started), replyMs: Math.round(elapsed) }));
     assert.equal(result.ok, true); assert.ok(firstWrite, 'real handler reached the mocked playback transport');
-    assert.equal(f.phases.length, 2); assert.equal(phasesAtWrite, 1); assert.equal(fetches, 16);
+    assert.equal(f.phases.length, 2); assert.equal(phasesAtWrite, 1); assert.equal(fetches, 14);
     assert.ok(f.phases.every(phase => phase.options.fresh === true));
     assert.ok(f.phases[0].start >= started && f.phases[0].end <= firstWrite && f.phases[1].start >= firstWrite);
     const measuredPolicyMs = f.phases.reduce((sum, phase) => sum + phase.end - phase.start, 0);

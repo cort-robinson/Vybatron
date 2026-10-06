@@ -9,8 +9,8 @@ import { track } from './fixtures.js';
 
 function delayedDiscord(f, latencyMs) {
   for (const [target, method] of [
-    [f.client.users, 'fetch'], [f.client.application, 'fetch'], [f.client.guilds, 'fetch'],
-    [f.guild.members, 'fetch'], [f.guild.channels, 'fetch'], [f.guild.roles, 'fetch'],
+    [f.client.users, 'fetch'], [f.client.application, 'fetch'], [f.client.rest, 'get'],
+    [f.guild.members, 'fetch'], [f.guild.channels, 'fetch'],
     [f.guild.members, 'fetchMe'],
   ]) {
     const fetch = target[method].bind(target);
@@ -25,8 +25,8 @@ test('authenticated snapshots and library stay within the real portal transport 
     position: 12000, paused: true, volume: 70, repeatMode: 'off', tracks: [trackReference(track())] }; });
   let revision;
   // Every route responds inside its five-second authority deadline, but the
-  // Full identity plus guild/member-role/bot/individual-channel stages take
-  // six rounds (9.6 seconds); the old seven-step waterfall exceeds ten seconds.
+  // Identity plus raw guild/member-pair/channel stages and library disclosure
+  // fit the transport deadline without completed authority caching.
   delayedDiscord(f, 1600);
   for (let round = 0; round < 3; round++) {
     const startedAt = performance.now();
@@ -56,12 +56,10 @@ test('authenticated snapshots and library stay within the real portal transport 
 test('overlapping slow authorization waits for current channel and role results before returning protected state', { timeout: 5000 }, async t => {
   const f = await portalFixture(t);
   const release = deferred(); const started = deferred();
-  const fetchRoles = f.guild.roles.fetch.bind(f.guild.roles);
   const fetchMember = f.guild.members.fetch.bind(f.guild.members);
   // Revoke before the fresh membership response settles; later cache patches
   // cannot rewrite an already captured response in this stage.
-  f.guild.members.fetch = async (...args) => { await release.promise; return fetchMember(...args); };
-  f.guild.roles.fetch = async () => { started.resolve(); await release.promise; return fetchRoles(); };
+  f.guild.members.fetch = async (...args) => { started.resolve(); await release.promise; return fetchMember(...args); };
   t.after(() => release.resolve());
   f.members.get('201').permissions = new PermissionsBitField([P.ManageGuild]);
   const reading = f.request('', { actor: '201' });
@@ -136,7 +134,7 @@ test('partial permission-read admission fails safely and recovers after rate pre
   f.guild.members.fetch = async () => { memberStarted.resolve(); await release.promise; throw new Error('Discord read failed behind a saturated route'); };
   // Hold 127 exact user-read slots and leave one for the verification actor.
   // Its explicit operator identity uses one read, so the first width-two
-  // member/role stage exercises partial admission rather than failing earlier.
+  // actor/bot member stage exercises partial admission rather than failing earlier.
   const actors = Array.from({ length: 127 }, (_, index) => String(1000 + index));
   const policy = createPortalPolicy(f.client, { operatorIds: [...actors, '200'] });
   t.after(() => { release.resolve(); policy.close(); });
@@ -183,8 +181,8 @@ test('a command queued behind a rate-limited channel read checks new visibility 
 
 test('gateway loss during a slow permission check fails closed without affecting the active player', { timeout: 5000 }, async t => {
   const f = await portalFixture(t); const started = deferred(); const release = deferred();
-  const fetchRoles = f.guild.roles.fetch.bind(f.guild.roles);
-  f.guild.roles.fetch = async () => { started.resolve(); await release.promise; return fetchRoles(); };
+  const fetchGuild = f.client.rest.get.bind(f.client.rest);
+  f.client.rest.get = async (...args) => { started.resolve(); await release.promise; return fetchGuild(...args); };
   t.after(() => release.resolve());
   const snapshot = f.request(); await started.promise;
   f.client.isReady = () => false; release.resolve();

@@ -1,4 +1,6 @@
-import { Collection, GuildMember, PermissionsBitField } from 'discord.js';
+import { Collection, Guild, GuildMember, PermissionsBitField, Role } from 'discord.js';
+import { validId } from '../utils/library.js';
+import { fail } from './errors.js';
 
 // Preserve discord.js prototypes/getters, but never inherit from a live cached
 // instance (Base._clone does). Capture these inputs INSIDE each REST read,
@@ -11,6 +13,36 @@ function copy(value, overrides = {}) {
 const permissions = value => new PermissionsBitField(value).freeze();
 export const detachGuild = guild => copy(guild);
 export const detachUser = user => user && copy(user);
+export function detachGuildResponse(server, data, guildId) {
+  const invalid = () => fail(503, 'discord_unavailable', 'Discord server verification is temporarily unavailable.');
+  const id = value => typeof value === 'string' && validId(value);
+  if (!data || data.id !== guildId || !id(data.owner_id) || data.unavailable === true
+    || typeof data.name !== 'string' || !data.name.length || data.name.length > 100 || !Array.isArray(data.roles)) invalid();
+  // The installed Guild supplies only prototypes/service handles and the
+  // approved Gateway voice/listener source. Owner and every role definition
+  // come from this one raw GET Guild response, never its patched shared cache.
+  const rawGuild = { id: data.id, owner_id: data.owner_id, name: data.name, icon: data.icon ?? null };
+  const guildInput = server instanceof Guild ? new Guild(server.client, rawGuild)
+    : Object.assign(Object.create(Object.getPrototypeOf(server)), { id: data.id, ownerId: data.owner_id, name: data.name, icon: rawGuild.icon, iconURL: server.iconURL });
+  // Reuse installed service managers/Gateway sources, not any cached Guild
+  // scalar authority or Role instances. bindAuthority replaces these caches.
+  guildInput.roles = server.roles; guildInput.members = server.members; guildInput.channels = server.channels;
+  if (server.voiceStates) guildInput.voiceStates = server.voiceStates;
+  const allRoles = new Collection();
+  for (const role of data.roles) {
+    if (!role || !id(role.id) || allRoles.has(role.id) || typeof role.name !== 'string' || !role.name.length || role.name.length > 100
+      || !Number.isSafeInteger(role.position) || role.position < 0 || typeof role.permissions !== 'string' || !/^\d+$/.test(role.permissions)) invalid();
+    // Construct owned native Roles without _add/_clone or any cache mutation.
+    // Only scalar fields needed for permission evaluation/projection are kept.
+    const input = new Role(server.client, { id: role.id, name: role.name, position: role.position, permissions: role.permissions }, guildInput);
+    input.permissions = permissions(input.permissions);
+    allRoles.set(role.id, input);
+  }
+  // Native member/channel getters require the complete @everyone definition.
+  // Missing inventories cannot fall back to old Gateway grants.
+  if (!allRoles.has(guildId)) invalid();
+  return { guildInput, allRoles };
+}
 export function detachRoles(roles) {
   // The 250-role bound belongs to the UI projection, not permission evaluation.
   return new Collection([...roles].map(([id, role]) => [id, copy(role, role.permissions === undefined ? {} : { permissions: permissions(role.permissions) })]));

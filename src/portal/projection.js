@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { plainText } from '../utils/presentation.js';
 import { catalogUrl, LIBRARY_LIMITS, validId } from '../utils/library.js';
 import { savedSession } from '../utils/sessions.js';
@@ -50,6 +50,11 @@ export const FILTERS = Object.entries(AUDIO_PRESETS).map(([id, preset]) => ({ id
 
 export function createRevisions(client) {
   const epochs = new Map(); const objects = new WeakMap(); let nextObject = 0;
+  const instanceId = randomUUID(); let sequence = 0, closed = false;
+  const nextSnapshot = () => {
+    if (closed || !Number.isSafeInteger(sequence + 1)) throw new Error('Snapshot ordering is unavailable.');
+    return { instanceId, sequence: ++sequence };
+  };
   const objectId = value => {
     if (!value || typeof value !== 'object') return null;
     if (!objects.has(value)) objects.set(value, ++nextObject);
@@ -73,7 +78,7 @@ export function createRevisions(client) {
       checkpoint ? [checkpoint.voiceChannelId, checkpoint.textChannelId, checkpoint.tracks, checkpoint.paused, checkpoint.volume, checkpoint.repeatMode] : null];
     return createHash('sha256').update(JSON.stringify(signature)).digest('hex').slice(0, 32);
   };
-  return { revision, close() { for (const [event, handler] of listeners) client.lavalink?.off?.(event, handler); epochs.clear(); } };
+  return { revision, nextSnapshot, close() { closed = true; for (const [event, handler] of listeners) client.lavalink?.off?.(event, handler); epochs.clear(); } };
 }
 
 const channelProjection = channel => channel ? { id: channel.id, name: plainText(channel.name, { maxLength: 100 }) } : null;
@@ -82,7 +87,7 @@ export function configurationProjection(context) {
     channels: context.admin ? [...context.channels.values()].filter(channel => channel && visible(context, channel) && (TEXT_TYPES.has(channel.type) || VOICE_TYPES.has(channel.type))).slice(0, 500).map(channel => ({ ...channelProjection(channel), type: VOICE_TYPES.has(channel.type) ? 'voice' : 'text' })) : [],
     roles: context.admin ? [...context.roles.values()].slice(0, 250).map(role => ({ id: role.id, name: plainText(role.name, { maxLength: 100 }) })) : [] };
 }
-export function snapshotProjection(client, context, revision) {
+export function snapshotProjection(client, context, revision, ordering) {
   const id = context.guild.id;
   const player = client.lavalink?.getPlayer(id);
   const allowed = visibleSession(context, player);
@@ -102,7 +107,7 @@ export function snapshotProjection(client, context, revision) {
   const listeners = allowed ? [...(context.channels.get(player?.voiceChannelId)?.members?.values() || [])].filter(member => !member.user.bot).slice(0, 100).map(member => actorProjection({ ...member.user, id: member.id, displayName: member.displayName, avatarUrl: member.user.displayAvatarURL?.() })).filter(Boolean) : [];
   const reason = !allowed ? 'The listening channel is not visible to you.' : !context.member ? 'Join this server to control playback.' : !sameVoice ? 'Join the listening voice channel to control playback.' : !player && !canAdd ? 'An administrator must configure a visible music text channel.' : !djAccess(context, client) ? 'Playback controls require the DJ role.' : null;
   const configuration = configurationProjection(context);
-  return { guild: guildProjection(context), revision,
+  return { guild: guildProjection(context), revision, ...(ordering ? { ordering } : {}),
     session: { status, voiceChannel: allowed ? channelProjection(context.channels.get(player?.voiceChannelId)) : null, textChannel: allowed ? channelProjection(context.channels.get(player?.textChannelId)) : null,
       current: current ? trackProjection(current) : null, queue: allowed ? (player?.queue?.tracks || []).slice(0, LIBRARY_LIMITS.queue).map(trackProjection) : [],
       positionMs: current ? boundedNumber(status === 'playing' ? player.position : player.lastPosition ?? player.position, 0, boundedNumber(current.info?.duration) || Number.MAX_SAFE_INTEGER) : 0,

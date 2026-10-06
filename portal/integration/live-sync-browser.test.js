@@ -115,12 +115,15 @@ test('two real clients recover transient authorization reads and synchronize slo
   // authorization is still pending. Establish it before injecting the fault.
   await delay(250);
   const streamsBeforeTransient = count('GET', '/api/guilds/100/events');
+  const readsBeforeTransient = count('GET', '/api/guilds/100');
   unavailableUntil = Date.now() + 1_800;
   await Promise.all(pages.map(page => expect(page.getByRole('button', { name: 'Resume playback' })).toBeDisabled()));
   await Promise.all(pages.map(page => expect(page.getByRole('button', { name: 'Resume playback' })).toBeEnabled()));
   assert.equal(count('POST', commandPath), beforePause + 1);
-  assert.equal(count('GET', '/api/guilds/100/events'), streamsBeforeTransient,
-    'An application error on an open stream must respect server backoff, not force new streams');
+  assert.equal(count('GET', '/api/guilds/100'), readsBeforeTransient + 2,
+    'Each ordered client must independently verify state once after its freshness lease is lost');
+  assert.equal(count('GET', '/api/guilds/100/events'), streamsBeforeTransient + 2,
+    'Recovered ordered state replaces each stream once, without reconnecting on every application error');
   await pages[1].getByRole('button', { name: 'Resume playback' }).click();
   await Promise.all(pages.map(page => expect(page.getByRole('button', { name: 'Pause playback' })).toBeEnabled()));
   assert.equal(bot.player.playing, true);

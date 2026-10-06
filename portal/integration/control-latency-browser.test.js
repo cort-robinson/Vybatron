@@ -65,7 +65,12 @@ test('another compiled device receives Pause promptly without waiting for the pe
     browser.newContext({ viewport: { width: 393, height: 852 }, isMobile: true, hasTouch: true, reducedMotion: 'reduce' }),
   ]);
   const pages = await Promise.all(contexts.map(context => context.newPage()));
-  let observerStreams = 0;
+  let observerStreams = 0, actingStreams = 0, actingSnapshotReads = 0;
+  pages[0].on('request', request => {
+    const resource = new URL(request.url()).pathname;
+    if (resource === '/api/guilds/100/events') actingStreams++;
+    if (request.method() === 'GET' && resource === '/api/guilds/100') actingSnapshotReads++;
+  });
   pages[1].on('request', request => { if (new URL(request.url()).pathname === '/api/guilds/100/events') observerStreams++; });
   for (const page of pages) {
     await page.goto(origin);
@@ -74,7 +79,9 @@ test('another compiled device receives Pause promptly without waiting for the pe
   }
   await expect.poll(() => app.resourceCounts().streams).toBe(2);
   const streamReads = observerStreams;
+  const actingStreamReads = actingStreams, snapshotReads = actingSnapshotReads;
   await pages[0].getByRole('button', { name: 'Pause playback' }).click();
+  await expect(pages[0].getByRole('button', { name: 'Resume playback' })).toBeEnabled({ timeout: 2000 });
   await expect(pages[1].getByRole('button', { name: 'Resume playback' })).toBeEnabled({ timeout: 2000 });
   assert.ok(pauseReplyAt > 0);
   const propagationMs = Math.round(performance.now() - pauseReplyAt);
@@ -85,6 +92,10 @@ test('another compiled device receives Pause promptly without waiting for the pe
   assert.equal(requests.filter(r => r.method === 'POST' && r.resource.endsWith('/commands')).length, 1);
   assert.equal(observerStreams, streamReads,
     'Successful update must keep the observing device stream open');
+  assert.equal(actingStreams, actingStreamReads,
+    'Ordered successful reply must keep the acting device stream open');
+  assert.equal(actingSnapshotReads, snapshotReads,
+    'Ordered command/live overlap must not add another protected snapshot read');
   const timings = await bot.request('/v1/latency?actorId=900');
   assert.equal(timings.status, 200);
   const pause = timings.body.records.find(record => record.command === 'pause');

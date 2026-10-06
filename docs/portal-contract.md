@@ -51,7 +51,7 @@ descriptions, subcommands/options/choices), useful for auxiliary forms. Exclude
 runtime objects and credential-bearing data. Maintain existing command meanings.
 
 `GuildSnapshot = {
-  guild: Guild, revision: string,
+  guild: Guild, revision: string, ordering?: {instanceId:string, sequence:number},
   session: {
     status: 'idle'|'playing'|'paused'|'recovering'|'unavailable',
     voiceChannel: {id,name}|null, textChannel: {id,name}|null,
@@ -76,6 +76,17 @@ members. Snapshot channels are the relevant, freshly verified session channels;
 the complete settings catalog is discovered separately on demand. Revision changes on queue/current identity and relevant state changes,
 not continuously on time interpolation. Compare revision INSIDE the mutation
 lane for queue conflicts; web queue edits must not race a Discord edit/track end.
+
+Production snapshots carry `ordering`: a random UUID identifying the current
+bridge lifetime and a strictly increasing safe integer allocated synchronously
+at projection capture across GET and command results. It is reconciliation
+metadata, never a permission grant or replacement for expectedRevision. Clients
+can compare only validated stamps from the same instance while the guild,
+generation, connection-loss and freshness fences remain valid. Older/equal
+frames do not refresh the authorization lease. Different instances, missing or
+invalid stamps and uncertain/lost connections require conservative fresh reads.
+Ordering has no actor identity, request payload or music fields; restart creates
+a new instance. Legacy clients ignore this additive field.
 
 `Library = { favorites: Track[],
   mixes: {id:string,name:string,ownerId:string,version:string,tracks:Track[],canEdit:boolean}[],

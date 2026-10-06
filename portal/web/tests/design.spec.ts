@@ -12,7 +12,7 @@ test('capture approved desktop and phone states with interaction and console evi
     const context = await browser.newContext({ viewport: { width, height }, deviceScaleFactor: density, reducedMotion: 'reduce', serviceWorkers: 'block' });
     const page = await context.newPage();
     const errors: string[] = []; page.on('pageerror', error => errors.push(error.message)); page.on('console', msg => { if (msg.type() === 'error') errors.push(msg.text()); });
-    await mockPortal(page); await page.goto('http://127.0.0.1:4178/');
+    await mockPortal(page); await page.goto(String(test.info().project.use.baseURL));
     await expect(page.getByRole('button', { name: 'Pause playback' })).toBeEnabled();
     await page.evaluate(async () => { await document.fonts.ready; await Promise.all(Array.from(document.images).filter(image => image.getBoundingClientRect().width > 0).map(image => { image.loading = 'eager'; return image.decode().catch(() => {}); })); });
     await page.screenshot({ path: fileURLToPath(new URL(`${name}-queue.png`, directory)) });

@@ -1,11 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, ApiError, errorMessage } from './api';
-import type { Bootstrap, Capability, Command, Connection, GuildSnapshot, Library } from './types';
+import type { Bootstrap, Capability, Command, Connection, GuildSnapshot, Library, SnapshotOrdering } from './types';
 
 export interface Notice { id: number; kind: 'success' | 'error' | 'info'; message: string }
 const conflicting = new Set(['playnext', 'pause', 'resume', 'seek', 'skip', 'skipto', 'clear', 'remove', 'move', 'shuffle', 'loop', 'filter', 'volume', 'session', 'radio', 'replay']);
 const freshnessMs = 25_000;
 const retryDelay = (attempt: number, error?: unknown) => Math.max(Math.min(1000 * 2 ** Math.min(attempt, 5), 30_000), error instanceof ApiError ? error.retryAfterMs : 0);
+const orderingOf = (snapshot: GuildSnapshot | null): SnapshotOrdering | null => {
+  const stamp = snapshot?.ordering;
+  return stamp && typeof stamp.instanceId === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(stamp.instanceId)
+    && Number.isSafeInteger(stamp.sequence) && stamp.sequence > 0 ? stamp : null;
+};
 
 export function usePortal() {
   const [bootstrap, setBootstrap] = useState<Bootstrap | null>(null);
@@ -31,7 +36,7 @@ export function usePortal() {
   const refreshRef = useRef<() => Promise<void>>(async () => {});
   const libraryRefreshRef = useRef<() => Promise<void>>(async () => {});
   const reconnectRef = useRef<() => void>(() => {});
-  const completeCommandRef = useRef<(next: GuildSnapshot, version: number, loss: number) => Promise<void>>(async () => {});
+  const completeCommandRef = useRef<(next: GuildSnapshot, version: number, loss: number, startedOrdering: SnapshotOrdering | null) => Promise<void>>(async () => {});
   const bootstrapSequence = useRef(0);
   const bootstrapAttempt = useRef(0);
   const bootstrapRetryMs = useRef(0);
@@ -111,9 +116,13 @@ export function usePortal() {
       if (error instanceof ApiError) retryNotBefore = Date.now() + error.retryAfterMs;
       recoveryTimer = setTimeout(() => { recoveryTimer = undefined; void refresh(); }, Math.max(delay, retryNotBefore - Date.now()));
     };
+    const validate = (next: GuildSnapshot) => {
+      if (next?.guild?.id !== guildId || typeof next.revision !== 'string' || !Array.isArray(next.session?.queue)
+        || (next.ordering !== undefined && !orderingOf(next))) throw new ApiError(503, 'invalid_response', 'Live state is unavailable. Refresh and try again.');
+    };
     const accept = (next: GuildSnapshot) => {
       if (!valid() || offline) return;
-      if (next?.guild?.id !== guildId || typeof next.revision !== 'string' || !Array.isArray(next.session?.queue)) throw new ApiError(503, 'invalid_response', 'Live state is unavailable. Refresh and try again.');
+      validate(next);
       const before = current.current;
       stateVersion.current++; current.current = next;
       verifiedAt.current = Date.now();
@@ -146,7 +155,7 @@ export function usePortal() {
       const requestController = new AbortController(); refreshController = requestController;
       const signal = AbortSignal.any([abort.signal, requestController.signal]);
       const startedEpoch = readEpoch;
-      fresh.current = false; setConnection('refreshing');
+      lossVersion.current++; fresh.current = false; setConnection('refreshing');
       const request = api.snapshot(guildId, signal).then(next => {
         if (!valid() || requestController.signal.aborted || startedEpoch !== readEpoch) return;
         // No pre-read stream remains open: its opaque revision cannot tell us
@@ -171,7 +180,8 @@ export function usePortal() {
       } finally { if (libraryController === requestController) libraryController = undefined; }
     };
     // A conflict or uncertain command needs a new read, not one already in flight.
-    refreshRef.current = () => { closeStream(); invalidateRead(); return refresh(); }; libraryRefreshRef.current = refreshLibrary;
+    const freshRead = () => { closeStream(); invalidateRead(); return refresh(); };
+    refreshRef.current = freshRead; libraryRefreshRef.current = refreshLibrary;
     const openStream = () => {
       if (!valid() || offline || stream) return;
       const openedEpoch = ++streamEpoch;
@@ -181,7 +191,19 @@ export function usePortal() {
       // it is not proof of freshness and does not need a duplicate protected GET.
       source.addEventListener('snapshot', event => {
         if (!liveSource()) return;
-        try { accept(JSON.parse((event as MessageEvent).data)); recoveryAttempt = 0; retryNotBefore = 0; }
+        try {
+          const next = JSON.parse((event as MessageEvent).data) as GuildSnapshot;
+          validate(next);
+          const incoming = orderingOf(next); const accepted = orderingOf(current.current);
+          if (incoming || accepted) {
+            // Instance changes and lost freshness need an independent read. An
+            // ordered frame cannot restore a lease that the transport invalidated.
+            if (!incoming || !accepted || incoming.instanceId !== accepted.instanceId
+              || !fresh.current || Date.now() - verifiedAt.current >= freshnessMs) { void refresh(); return; }
+            if (incoming.sequence <= accepted.sequence) return; // No freshness extension.
+          }
+          accept(next); recoveryAttempt = 0; retryNotBefore = 0;
+        }
         catch (error) { failure(error); }
       });
       source.onerror = event => {
@@ -209,9 +231,23 @@ export function usePortal() {
         scheduleRecovery();
       };
     };
-    completeCommandRef.current = async (next, version, loss) => {
+    completeCommandRef.current = async (next, version, loss, startedOrdering) => {
       if (!valid()) return;
       const stillFresh = fresh.current && Date.now() - verifiedAt.current < freshnessMs && loss === lossVersion.current;
+      const incoming = orderingOf(next); const accepted = orderingOf(current.current);
+      if (startedOrdering || incoming || accepted || next?.ordering !== undefined) {
+        // Compare only within the bridge lifetime in which this command began,
+        // with the same guild/generation and an uninterrupted freshness lease.
+        if (stillFresh && !offline && startedOrdering && incoming && accepted
+          && incoming.instanceId === startedOrdering.instanceId && incoming.instanceId === accepted.instanceId) {
+          try {
+            validate(next);
+            if (incoming.sequence > accepted.sequence) accept(next);
+          } catch { await freshRead(); }
+          return; // Keep a healthy SSE open; older/equal replies do not renew freshness.
+        }
+        await freshRead(); return;
+      }
       const unambiguous = stillFresh && version === stateVersion.current;
       const alreadyVerified = stillFresh && !offline && JSON.stringify(next) === JSON.stringify(current.current);
       closeStream(); invalidateRead();
@@ -288,10 +324,11 @@ export function usePortal() {
     pendingRef.current.add(key); setPending([...pendingRef.current]);
     const startedVersion = stateVersion.current;
     const startedLoss = lossVersion.current;
+    const startedOrdering = orderingOf(current.current);
     try {
       const result = await api.command(id, bootstrap.csrfToken, command);
       if (epoch !== generation.current || activeGuild.current !== id) return false;
-      await completeCommandRef.current(result.snapshot, startedVersion, startedLoss);
+      await completeCommandRef.current(result.snapshot, startedVersion, startedLoss, startedOrdering);
       if (epoch !== generation.current || activeGuild.current !== id) return false;
       if (!fresh.current || !current.current) {
         notify('The action completed. Reconnect for fresh state before making another change.', 'info');

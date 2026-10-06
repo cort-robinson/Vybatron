@@ -24,7 +24,7 @@ for (const terminal of ['portal Stop', 'component Stop', 'idle disconnect']) {
     const permissions = f.channelCache.get('300').permissionsFor.bind(f.channelCache.get('300'));
     f.channelCache.get('300').permissionsFor = member => member?.id === '999'
       ? new PermissionsBitField([P.Administrator]) : permissions(member);
-    f.client.rest = { async put() { voiceWrites++; voiceStarted.resolve(); await release.promise; } };
+    f.client.rest = { ...f.client.rest, async put() { voiceWrites++; voiceStarted.resolve(); await release.promise; } };
     await createOrUpdate(f.client, f.player);
     const pendingController = refresh(f.client, f.player), pendingVoice = updateVoiceStatus(f.client, f.player);
     try {

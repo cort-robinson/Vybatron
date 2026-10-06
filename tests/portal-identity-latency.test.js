@@ -62,8 +62,8 @@ test('actual policy removes one injected identity round with identical fetch cou
     const events = [], counts = {};
     for (const [target, method, label] of [
       [f.client.users, 'fetch', 'user'], [f.client.application, 'fetch', 'application'],
-      [f.client.guilds, 'fetch', 'guild'], [f.guild.members, 'fetch', 'member'],
-      [f.guild.roles, 'fetch', 'roles'], [f.guild.members, 'fetchMe', 'bot'], [f.guild.channels, 'fetch', 'channel'],
+      [f.client.rest, 'get', 'guild'], [f.guild.members, 'fetch', 'member'],
+      [f.guild.members, 'fetchMe', 'bot'], [f.guild.channels, 'fetch', 'channel'],
     ]) {
       const original = target[method].bind(target);
       target[method] = async (...args) => {
@@ -80,12 +80,12 @@ test('actual policy removes one injected identity round with identical fetch cou
     assert.equal(maximum, 2); assert.equal(active, 0);
     results.push({ counts, events, elapsed });
   }
-  assert.deepEqual(results[0].counts, { user: 1, application: 1, guild: 1, member: 1, roles: 1, bot: 1, channel: 2 });
+  assert.deepEqual(results[0].counts, { user: 1, application: 1, guild: 1, member: 1, bot: 1, channel: 2 });
   assert.deepEqual(results[1].counts, results[0].counts);
   assert.ok(results[0].events.indexOf('start:application') > results[0].events.indexOf('end:user'));
   assert.ok(results[1].events.indexOf('start:application') < results[1].events.indexOf('end:user'));
   for (const result of results) assert.ok(result.events.indexOf('start:guild') > result.events.indexOf('end:application'));
-  t.diagnostic(`35 ms injected routes: sequential ${results[0].elapsed} ms / six rounds; overlap ${results[1].elapsed} ms / five rounds; eight fetches each, maximum width two`);
+  t.diagnostic(`35 ms injected routes: sequential identity ${results[0].elapsed} ms / five rounds; overlap identity ${results[1].elapsed} ms / four rounds; seven fetches each, maximum width two`);
 });
 
 test('readiness and actor-ID validation reject before either identity read starts', async t => {
@@ -180,8 +180,8 @@ test('no guild work starts while identity is pending; fresh role revocation and 
   await f.library.updateGuild('100', data => { data.settings.djRoleId = '500'; });
   f.members.get('200').roles.cache.set('500', f.roles.get('500'));
   f.client.application.fetch = () => owner.promise;
-  const fetchGuild = f.client.guilds.fetch.bind(f.client.guilds); let guildReads = 0;
-  f.client.guilds.fetch = async (...args) => { guildReads++; return fetchGuild(...args); };
+  const fetchGuild = f.client.rest.get.bind(f.client.rest); let guildReads = 0;
+  f.client.rest.get = async (...args) => { guildReads++; return fetchGuild(...args); };
   const fetchChannel = f.guild.channels.fetch.bind(f.guild.channels);
   f.guild.channels.fetch = async (...args) => { entered.resolve(); await channels.promise; return fetchChannel(...args); };
   const reading = policy.guild('200', '100', undefined, { fresh: true }); await tick();
@@ -229,8 +229,8 @@ test('128 underlying ordinary reads retain admissions after five-second timeouts
   await assert.rejects(policy.identity('201', { fresh: true, urgent: true }), { status: 429 }, 'urgent timeouts must retain both underlying admissions');
   urgentRelease.resolve(); await tick();
   let active = 0, maximum = 0;
-  for (const [target, method] of [[f.client.users, 'fetch'], [f.client.application, 'fetch'], [f.client.guilds, 'fetch'],
-    [f.guild.members, 'fetch'], [f.guild.roles, 'fetch'], [f.guild.members, 'fetchMe'], [f.guild.channels, 'fetch']]) {
+  for (const [target, method] of [[f.client.users, 'fetch'], [f.client.application, 'fetch'], [f.client.rest, 'get'],
+    [f.guild.members, 'fetch'], [f.guild.members, 'fetchMe'], [f.guild.channels, 'fetch']]) {
     const original = target[method].bind(target);
     target[method] = async (...args) => {
       maximum = Math.max(maximum, ++active);

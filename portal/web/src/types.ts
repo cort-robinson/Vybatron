@@ -20,8 +20,11 @@ export interface Bootstrap {
   filters: { id: string; label: string; description: string }[];
   commands: CommandSchema[];
 }
+// Transport reconciliation only; never authority or a mutation revision.
+export interface SnapshotOrdering { instanceId: string; sequence: number }
 export interface GuildSnapshot {
   guild: Guild; revision: string;
+  ordering?: SnapshotOrdering;
   session: {
     status: 'idle' | 'playing' | 'paused' | 'recovering' | 'unavailable';
     voiceChannel: { id: string; name: string } | null; textChannel: { id: string; name: string } | null;

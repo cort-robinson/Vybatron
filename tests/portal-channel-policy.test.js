@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { setTimeout as delay } from 'node:timers/promises';
-import { Client, Collection, TextChannel, VoiceChannel, ChannelType, PermissionFlagsBits as P } from 'discord.js';
+import { Client, TextChannel, VoiceChannel, ChannelType, PermissionFlagsBits as P } from 'discord.js';
 import { portalFixture, deferred } from './portal-fixtures.js';
 import { createPortalPolicy, requirePlayback } from '../src/portal/policy.js';
 import { trackReference } from '../src/utils/library.js';
@@ -44,7 +44,9 @@ test('directory and admin infrastructure/activity read no channels; configuratio
   assert.equal(f.channelReads.length, 0);
   f.roles.delete('500');
   assert.equal((await f.request('/diagnostics', { actor: '900' })).status, 200);
-  assert.equal(f.guild.roles.cache.has('500'), false);
+  assert.equal(f.guild.roles.cache.has('500'), true, 'verification does not mutate the late Gateway cache');
+  const policy = createPortalPolicy(f.client); t.after(() => policy.close());
+  assert.equal((await policy.guild('900', '100', undefined, { channelScope: 'none', fresh: true })).roleIds.has('500'), false);
   f.client.application.fetch = async () => ({ owner: f.users.get('901') });
   assert.equal((await f.request('/diagnostics', { actor: '900' })).status, 404);
 });
@@ -71,7 +73,7 @@ test('explicit fresh configuration filters visible same-guild text/voice invento
   assert.deepEqual(configuration.body, { guildId: '100', channels: [
     { id: '300', name: 'General', type: 'voice' }, { id: '400', name: 'music', type: 'text' },
     { id: '401', name: 'alternate music', type: 'text' },
-  ], roles: [{ id: '500', name: 'DJ' }] });
+  ], roles: [{ id: '500', name: 'DJ' }, { id: '100', name: '@everyone' }] });
   assert.deepEqual(f.channelReads, [{ id: undefined }]);
   replaceChannel(f, '401', { name: 'Renamed by REST' });
   assert.equal((await f.request('/configuration', { actor: '201' })).body.channels.at(-1).name, 'Renamed by REST');
@@ -210,8 +212,9 @@ test('real discord.js REST ignores an exhausted list bucket, forces detached ove
   };
   guild.members.fetch = async ({ force }) => { assert.equal(force, true); return member; };
   guild.members.fetchMe = async () => me;
-  guild.roles.fetch = async () => new Collection(guild.roles.cache);
   f.client.guilds.cache.set('100', guild); f.client.guilds.fetch = async () => guild;
+  const roleInventory = [...guild.roles.cache.values()].map(role => ({ id: role.id, name: role.name, permissions: String(role.permissions.bitfield), position: 0 }));
+  f.client.rest.get = async route => { assert.equal(route, '/guilds/100'); return { id: '100', name: guild.name, owner_id: '202', roles: roleInventory }; };
   // Seed the actual REST handler with an exhausted list response. Individual
   // channels keep independent ample synthetic budgets; no network is used.
   await guild.channels.fetch();

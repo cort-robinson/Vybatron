@@ -261,5 +261,5 @@ export async function executePortalCommand(client, policy, revisions, commandMap
   // access, but no guild-library access. Do not replay its handler for new text.
   const hiddenGuildLibrary = command.command === 'mix' && !context.member;
   if (neutralRead || hiddenGuildLibrary || (command.command !== 'help' && hiddenReplySource) || (command.command === 'settings' && !context.admin)) message = 'Request completed.';
-  return { ok: true, message, snapshot: snapshotProjection(client, context, revisions.revision(guildId)) };
+  return { ok: true, message, snapshot: snapshotProjection(client, context, revisions.revision(guildId), revisions.nextSnapshot()) };
 }

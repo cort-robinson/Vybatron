@@ -145,7 +145,7 @@ test('two real clients recover transient authorization reads and synchronize slo
   await Promise.all(pages.map(async page => {
     const player = page.getByTestId('player');
     await expect(player.getByRole('button', { name: 'Open player details', exact: true })).toBeVisible();
-    await expect(player.getByText('Your next good vibe', { exact: true })).toBeVisible();
+    await expect(player.getByText('Nothing playing', { exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Resume playback' })).toBeDisabled();
   }));
   assert.ok(rejectedPolicyReads >= 2, 'Real authority failures must actually reach the integration boundary');

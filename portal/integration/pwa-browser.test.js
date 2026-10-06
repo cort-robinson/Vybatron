@@ -95,7 +95,7 @@ test('production PWA installs under real CSP, serves an offline shell, and never
     await response.arrayBuffer();
   }
   const fontPaths = files.filter(resource => resource.endsWith('.woff2'));
-  assert.ok(fontPaths.some(resource => resource.includes('cyrillic-ext')), 'Small font subsets must be self-hosted too');
+  assert.ok(fontPaths.some(resource => resource.includes('vietnamese')), 'Small font subsets must be self-hosted too');
   const css = (await Promise.all(files.filter(resource => resource.endsWith('.css')).map(resource => readFile(path.join(dist, resource), 'utf8')))).join('\n');
   assert.doesNotMatch(css, /url\(["']?data:/i, 'CSP must not require inline font data');
   const expectedPaths = [...files].sort();
@@ -117,8 +117,9 @@ test('production PWA installs under real CSP, serves an offline shell, and never
         assert.equal(event.request.method, 'GET');
         assert.equal(event.resourceType, 'Image');
         artworkRequests.add(event.request.url);
+        // Mirrors i.ytimg.com, which serves public artwork with Access-Control-Allow-Origin: *.
         await artworkSession.send('Fetch.fulfillRequest', { requestId: event.requestId, responseCode: 200,
-          responseHeaders: [{ name: 'Content-Type', value: 'image/png' }], body: artworkPng.toString('base64') });
+          responseHeaders: [{ name: 'Content-Type', value: 'image/png' }, { name: 'Access-Control-Allow-Origin', value: '*' }], body: artworkPng.toString('base64') });
       });
       await artworkSession.send('Fetch.enable', { patterns: [...artworkUrls].map(urlPattern =>
         ({ urlPattern, resourceType: 'Image', requestStage: 'Request' })) });
@@ -166,11 +167,11 @@ test('production PWA installs under real CSP, serves an offline shell, and never
       assert.deepEqual(registration, { count: 1, script: origin + '/sw.js', scope: origin + '/', active: 'activated' });
       assert.deepEqual(await cachedPaths(page), expectedPaths);
 
-      // Exercise every subset, including the previously inlined Cyrillic extension.
+      // Exercise every subset, including the small Vietnamese file.
       const fonts = await page.evaluate(async () => {
-        await document.fonts.load('500 16px "Manrope Variable"', 'Aa Ā Ω Ж Ӑ ế');
+        await document.fonts.load('500 16px "Archivo Variable"', 'Aa Ā ế');
         await document.fonts.ready;
-        return { loaded: document.fonts.check('500 16px "Manrope Variable"', 'Aa Ā Ω Ж Ӑ ế'),
+        return { loaded: document.fonts.check('500 16px "Archivo Variable"', 'Aa Ā ế'),
           states: [...document.fonts].map(font => font.status) };
       });
       assert.equal(fonts.loaded, true);
@@ -248,7 +249,7 @@ test('production PWA installs under real CSP, serves an offline shell, and never
       const reload = await page.reload({ waitUntil: 'load' });
       assert.equal(reload.fromServiceWorker(), true);
       await page.getByRole('heading', { name: 'A better vibe together.' }).waitFor();
-      assert.equal(await page.evaluate(() => document.fonts.ready.then(() => document.fonts.check('500 16px "Manrope Variable"'))), true);
+      assert.equal(await page.evaluate(() => document.fonts.ready.then(() => document.fonts.check('500 16px "Archivo Variable"'))), true);
       const uncached = await page.evaluate(async () => {
         const probes = [['/api/bootstrap', 'GET'], ['/api/guilds/100/library', 'GET'], ['/auth/discord', 'GET'], ['/health', 'GET'],
           ['/index.html', 'HEAD'], ['/api/guilds/100/commands', 'POST'], ['/auth/logout', 'POST']];

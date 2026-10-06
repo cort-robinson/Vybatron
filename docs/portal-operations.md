@@ -351,8 +351,15 @@ runs in session scope when the actor is already in that guild's voice. Urgent St
 keeps its staged width-two sequence and two reserved admissions. Every input is
 still a fresh, detached REST read and no grant is derived until the wave succeeds.
 
-Owner-maintainer `/v1/latency` samples after release (eight controls): native
-authority 297–568 ms (previously 805–954 ms), readiness for mutation 302–592 ms,
-and total command time mostly 652–1,000 ms (previously 1,911–2,269 ms). Two
-outliers near 1.44 s came from a single slow Discord read or filter application.
+PR #23 (`feat/instant-sync-controls`) then built on this release: one authorization
+round for identity, guild and members (Stop included, with an eight-read urgent
+reserve and all-or-nothing round admission), instant playback controls, and pushed
+Discord-side changes. Its head `82fab8b6021788d76a6f6dd1bf1926867d5ddbe8` has been
+live since 2026-10-06 08:31 UTC, so the samples below measure `82fab8b`, not
+`669962a` alone.
+
+Owner-maintainer `/v1/latency` samples on `82fab8b` (eight controls): native
+authority 297–568 ms (previously 805–954 ms on `5b9b6a3`), readiness for mutation
+302–592 ms, and total command time mostly 652–1,000 ms (previously 1,911–2,269 ms).
+Two outliers near 1.44 s came from a single slow Discord read or filter application.
 The owner reported Pause/Resume "feels way better" on phone and desktop.

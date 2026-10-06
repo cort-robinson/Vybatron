@@ -24,7 +24,17 @@ test('fresh observed playback remains distinct from a held command confirmation'
   const bot = await portalFixture(t);
   for (const user of bot.users.values()) user.displayAvatarURL = () => null;
   const disclosureEntered = deferred(), releaseDisclosure = deferred();
-  let armed = false, held = false, commandReplies = 0;
+  let armed = false, held = false, disclosureReleased = false, commandReplies = 0;
+  let streamMemberReadsDuringDisclosure = 0;
+  const fetchMember = bot.guild.members.fetch.bind(bot.guild.members);
+  bot.guild.members.fetch = async (...args) => {
+    // Native authority has finished before Pause arms the disclosure gate.
+    // Final disclosure cannot reach member reads while its identity is held.
+    // Count real stream reads in that interval, allowing overlapping devices
+    // to share pending work without assuming separate underlying REST calls.
+    if (held && !disclosureReleased) streamMemberReadsDuringDisclosure++;
+    return fetchMember(...args);
+  };
   const fetchUser = bot.client.users.fetch.bind(bot.client.users);
   bot.client.users.fetch = async (...args) => {
     // Armed inside the real native Pause. The command's next fresh identity
@@ -87,7 +97,6 @@ test('fresh observed playback remains distinct from a held command confirmation'
     await expect(page.getByRole('button', { name: 'Pause playback' })).toBeEnabled();
   }
   await expect.poll(() => app.resourceCounts().streams).toBe(2);
-  const beforeMemberReads = bot.memberFetches;
   await pages[0].getByRole('button', { name: 'Pause playback' }).click();
   await disclosureEntered.promise;
   assert.equal(bot.player.paused, true);
@@ -99,13 +108,12 @@ test('fresh observed playback remains distinct from a held command confirmation'
   await expect(pages[0].getByText(/Waiting for confirmation/i)).toBeVisible();
   await expect(pages[0].locator('.transport')).toHaveAttribute('aria-busy', 'true');
   await expect(pages[1].getByRole('button', { name: 'Resume playback' })).toBeEnabled();
-  assert.ok(bot.memberFetches > beforeMemberReads + 2,
-    'Independent stream observations execute fresh policy reads beyond native authorization');
+  await expect.poll(() => streamMemberReadsDuringDisclosure).toBeGreaterThan(0);
   assert.equal(commandReplies, 0, 'Fresh stream observation does not complete final command disclosure');
   await resume.dispatchEvent('click');
   assert.equal(commands.length, 1, 'Pending request fence rejects another ordinary action');
   assert.equal(bot.calls.filter(call => call === 'resume').length, 0);
-  releaseDisclosure.resolve();
+  disclosureReleased = true; releaseDisclosure.resolve();
   await expect(resume).toBeEnabled();
   await expect(pages[0].getByText(/Waiting for confirmation/i)).toHaveCount(0);
   assert.equal(commandReplies, 1);

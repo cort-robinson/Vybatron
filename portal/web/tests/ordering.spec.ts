@@ -86,7 +86,7 @@ for (const sequence of [1, 2]) {
       expect(server.snapshotReads).toHaveLength(reads); expect(server.eventReads).toHaveLength(events);
       await page.clock.fastForward(5_001);
       await expect(pause(page)).toBeDisabled(); await expect.poll(() => server.capturedSnapshots.size).toBe(1);
-      expect(server.snapshotReads).toHaveLength(reads + 1); expect(server.commands).toHaveLength(0);
+      await expect.poll(() => server.snapshotReads.length).toBe(reads + 1); expect(server.commands).toHaveLength(0);
       stamp(server.state.snapshot, 3); server.releaseSnapshotReads(); await expect(pause(page)).toBeEnabled();
     } finally { await page.close(); await server.close(); }
   });
@@ -139,7 +139,7 @@ test('an ordered command from a different instance requires fresh GET even witho
     server.holdSnapshotReads(); server.releaseCommandReplies();
     await expect.poll(() => server.capturedSnapshots.size).toBe(1); await expect(resume(page)).toBeDisabled();
     server.releaseSnapshotReads(); await expect(resume(page)).toBeEnabled();
-    expect(server.snapshotReads).toHaveLength(reads + 1); expect(server.commands).toHaveLength(1);
+    await expect.poll(() => server.snapshotReads.length).toBe(reads + 1); expect(server.commands).toHaveLength(1);
   } finally { await page.close(); await server.close(); }
 });
 
@@ -173,7 +173,7 @@ test('ordered reply after a 503 stream loss cannot restore controls before a new
     server.holdSnapshotReads(); server.releaseCommandReplies();
     await expect.poll(() => server.capturedSnapshots.size).toBe(1); await expect(resume(page)).toBeDisabled();
     stamp(server.state.snapshot, 4); server.releaseSnapshotReads(); await expect(resume(page)).toBeEnabled();
-    expect(server.snapshotReads).toHaveLength(reads + 1); expect(server.commands).toHaveLength(1);
+    await expect.poll(() => server.snapshotReads.length).toBe(reads + 1); expect(server.commands).toHaveLength(1);
   } finally { await page.close(); await server.close(); }
 });
 
@@ -185,7 +185,7 @@ test('an ordered live frame after loss requires a fresh read rather than reopeni
     server.holdSnapshotReads(); stamp(server.state.snapshot, 3); server.state.snapshot.session.status = 'paused'; server.broadcast();
     await expect.poll(() => server.capturedSnapshots.size).toBe(1); await expect(pause(page)).toBeDisabled();
     server.releaseSnapshotReads(); await expect(resume(page)).toBeEnabled();
-    expect(server.snapshotReads).toHaveLength(reads + 1); expect(server.commands).toHaveLength(0);
+    await expect.poll(() => server.snapshotReads.length).toBe(reads + 1); expect(server.commands).toHaveLength(0);
   } finally { await page.close(); await server.close(); }
 });
 
@@ -216,11 +216,11 @@ test('a completed visibility read cannot erase the loss fence of an outstanding 
     server.state.snapshot.session.current!.title = 'State verified by visibility GET';
     await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
     await expect(playerTitle(page, 'State verified by visibility GET')).toBeVisible();
-    expect(server.snapshotReads).toHaveLength(reads + 1);
+    await expect.poll(() => server.snapshotReads.length).toBe(reads + 1);
     server.holdSnapshotReads(); server.releaseCommandReplies();
     await expect.poll(() => server.capturedSnapshots.size).toBe(1); await expect(resume(page)).toBeDisabled();
     server.releaseSnapshotReads(); await expect(pause(page)).toBeEnabled();
-    expect(server.snapshotReads).toHaveLength(reads + 2); expect(server.commands).toHaveLength(1);
+    await expect.poll(() => server.snapshotReads.length).toBe(reads + 2); expect(server.commands).toHaveLength(1);
   } finally { await page.close(); await server.close(); }
 });
 
@@ -339,7 +339,7 @@ for (const { label, value } of unknownStamps) {
       await expect.poll(() => server.capturedSnapshots.size).toBe(1);
       await expect(playerTitle(page, 'Unverified command response')).toHaveCount(0); await expect(resume(page)).toBeDisabled();
       server.releaseSnapshotReads(); await expect(resume(page)).toBeEnabled();
-      expect(server.snapshotReads).toHaveLength(reads + 1); expect(server.commands).toHaveLength(1);
+      await expect.poll(() => server.snapshotReads.length).toBe(reads + 1); expect(server.commands).toHaveLength(1);
     } finally { await page.close(); await server.close(); }
   });
 }
@@ -353,7 +353,7 @@ test('a malformed SSE stamp disables writes and independently refreshes instead 
     await expect(pause(page)).toBeDisabled(); await expect(playerTitle(page, 'Malformed frame')).toHaveCount(0);
     await expect.poll(() => server.capturedSnapshots.size).toBe(1);
     stamp(server.state.snapshot, 3); server.releaseSnapshotReads(); await expect(pause(page)).toBeEnabled();
-    expect(server.snapshotReads).toHaveLength(reads + 1); expect(server.commands).toHaveLength(0);
+    await expect.poll(() => server.snapshotReads.length).toBe(reads + 1); expect(server.commands).toHaveLength(0);
   } finally { await page.close(); await server.close(); }
 });
 
@@ -365,7 +365,7 @@ test('legacy snapshots without ordering keep the conservative overlap fallback',
     server.state.snapshot.session.queue[0].title = 'Legacy overlapping frame'; server.broadcast();
     await expect(page.getByTitle('Legacy overlapping frame', { exact: true })).toBeVisible();
     server.releaseCommandExecution(); await expect(resume(page)).toBeEnabled();
-    expect(server.snapshotReads).toHaveLength(reads + 1); expect(server.commands).toHaveLength(1);
+    await expect.poll(() => server.snapshotReads.length).toBe(reads + 1); expect(server.commands).toHaveLength(1);
   } finally { await page.close(); await server.close(); }
 });
 
@@ -382,7 +382,7 @@ for (const status of [403, 409, 503]) {
       server.holdSnapshotReads(); await pause(page).click(); await expect.poll(() => server.capturedSnapshots.size).toBe(1);
       await expect(pause(page)).toBeDisabled(); server.releaseSnapshotReads(); await expect(pause(page)).toBeEnabled();
       await expect(page.getByRole('alert')).toBeVisible();
-      expect(server.snapshotReads).toHaveLength(reads + 1);
+      await expect.poll(() => server.snapshotReads.length).toBe(reads + 1);
       expect(bodies).toEqual([{ command: 'pause' }]);
     } finally { await page.close(); await server.close(); }
   });

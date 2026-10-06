@@ -109,7 +109,7 @@ test('a pre-mutation SSE frame cannot discard a slow pause command result', asyn
     await expect(page.getByTitle('Frame produced before pause', { exact: true })).toBeVisible();
     server.releaseCommandExecution();
     await expect(page.getByRole('button', { name: 'Resume playback' })).toBeEnabled();
-    expect(server.snapshotReads).toHaveLength(reads + 1);
+    await expect.poll(() => server.snapshotReads.length).toBe(reads + 1);
     expect(server.commands).toEqual([{ command: 'pause' }]);
     expect(server.state.snapshot.session.status).toBe('paused');
     expect(server.state.snapshot.revision).not.toBe(revision);
@@ -131,7 +131,7 @@ test('a delayed command snapshot cannot replace a later Discord state', async ({
     server.releaseCommandReplies();
     await expect(page.getByRole('button', { name: 'Pause playback' })).toBeEnabled();
     await expect(page.getByTestId('player').getByText('Later Discord selection', { exact: true })).toBeVisible();
-    expect(server.snapshotReads).toHaveLength(reads + 1);
+    await expect.poll(() => server.snapshotReads.length).toBe(reads + 1);
     expect(server.commands).toHaveLength(1);
   } finally { await page.close(); await server.close(); }
 });
@@ -341,7 +341,7 @@ test('a silent stream expires freshness and accepts recovery GET state without a
     server.releaseSnapshotReads();
     await expect(page.getByRole('button', { name: 'Resume playback' })).toBeEnabled();
     await expect.poll(() => server.streams.size).toBe(1);
-    expect(server.snapshotReads).toHaveLength(reads + 1);
+    await expect.poll(() => server.snapshotReads.length).toBe(reads + 1);
     expect(server.commands).toHaveLength(0);
   } finally { await page.close(); await server.close(); }
 });

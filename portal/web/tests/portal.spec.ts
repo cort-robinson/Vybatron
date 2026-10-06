@@ -104,7 +104,7 @@ test('queued favorites work outside voice and confirmed clearing preserves the p
   await page.getByRole('button', { name: 'Clear upcoming queue' }).click();
   expect(fixture.commands.some(c => c.command === 'clear')).toBe(false);
   await page.getByRole('button', { name: 'Clear queue', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Make room for a good vibe' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Nothing queued yet' })).toBeVisible();
   expect(fixture.commands.at(-1)).toEqual({ command: 'clear', expectedRevision: 'revision-3' });
   await expect(page.getByTestId('player').getByText('Evening Light', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Resume playback' })).toBeEnabled();
@@ -333,7 +333,7 @@ test('phone player is singular, keyboard-accessible, responsive and reduced-moti
   await expect(page.getByRole('slider', { name: 'Playback position' })).toHaveCount(1);
   await expect(page.getByRole('button', { name: 'Pause playback' })).toHaveCount(1);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-  const motion = await page.locator('.aurora-field').evaluate(el => getComputedStyle(el).animationName); expect(motion).toBe('none');
+  const motion = await page.locator('.room-light .light').first().evaluate(el => getComputedStyle(el).animationName); expect(motion).toBe('none');
   const result = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze();
   expect(result.violations).toEqual([]);
 });

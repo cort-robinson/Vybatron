@@ -6,8 +6,9 @@ import { publicUrl } from '../api';
 import { time, timestamp } from '../format';
 import { ActionPopover, Artwork, Confirm, IconButton } from './ui';
 import { Queue } from './Queue';
+import { Spectrum } from './Spectrum';
 
-export function Player({ portal, expanded, setExpanded, onAdd }: { portal: Portal; expanded: boolean; setExpanded: (value: boolean) => void; onAdd: () => void }) {
+export function Player({ portal, expanded, setExpanded, onAdd, accent, animate }: { portal: Portal; expanded: boolean; setExpanded: (value: boolean) => void; onAdd: () => void; accent: string; animate: boolean }) {
   const { snapshot, bootstrap, can, run, receivedAt, connection, pending, library } = portal;
   const session = snapshot?.session;
   const track = session?.current || null;
@@ -53,9 +54,11 @@ export function Player({ portal, expanded, setExpanded, onAdd }: { portal: Porta
   const permissionReason = !can('control') ? portal.blockedReason : session?.reason;
   const sourceUrl = publicUrl(track?.uri);
   const favorite = track && <IconButton className={`favorite ${index >= 0 ? 'active' : ''}`} label={index >= 0 ? 'Remove current song from favorites' : 'Save current song to favorites'} aria-pressed={index >= 0} disabled={!can('library') || !library || !!pending.length} onClick={() => void toggleFavorite()}><HeartIcon size={expanded ? 28 : 25} weight={index >= 0 ? 'fill' : 'regular'} /></IconButton>;
-  const metadata = track ? <>{track.author}<span className="metadata-dot" aria-hidden="true">·</span><span className="track-source">{track.source}</span></> : 'Add music. Listen together in Discord.';
-  const identity = <div className="player-identity"><div className="player-title-row"><h2 ref={headingRef} tabIndex={-1} title={track?.title}>{track?.title || 'Your next good vibe'}</h2>{favorite}</div><p title={track ? `${track.author} · ${track.source}` : undefined}>{metadata}</p>
+  const metadata = track ? <>{track.author}<span className="metadata-dot" aria-hidden="true">·</span><span className="track-source">{track.source}</span></> : 'Add a song to start the room.';
+  const identity = <div className="player-identity"><div className="player-title-row"><h2 ref={headingRef} tabIndex={-1} title={track?.title}>{track?.title || 'Nothing playing'}</h2>{favorite}</div><p title={track ? `${track.author} · ${track.source}` : undefined}>{metadata}</p>
   </div>;
+  const spectrumMode = track && active && connection === 'live' ? 'playing' : 'standby';
+  const spectrum = (className: string, bands: number, ghost?: number) => <Spectrum className={className} seed={track?.id || 'idle'} color={accent} mode={spectrumMode} animate={animate} bands={bands} ghost={ghost} />;
   const seek = () => { if (scrub === null) return; const value = scrub; setScrub(null); if (seekable) void control({ command: 'seek', options: { timestamp: timestamp(value) } }); };
   const timeline = <div className={`timeline ${track?.isStream ? 'is-live' : ''}`}>
     <span>{track?.isStream ? 'LIVE' : time(scrub ?? position)}</span>
@@ -95,11 +98,12 @@ export function Player({ portal, expanded, setExpanded, onAdd }: { portal: Porta
     </ActionPopover>
   </div>;
   return <section className={`persistent-player ${expanded ? 'expanded' : 'collapsed'} ${session?.status || 'idle'}`} aria-label="Music player" data-testid="player">
+    {!expanded && spectrum('player-spectrum', 56, 0)}
     {expanded && <div className="sleeve-content"><button className="mobile-collapse text-button" onClick={() => setExpanded(false)}><CaretDownIcon size={22} />Back to queue</button>
-      <div className="sleeve-main"><div className="sleeve-artwork"><Artwork track={track} large /></div>{identity}<div className="player-context"><p className="player-destination"><UsersIcon size={18} aria-hidden="true" /><span>{session?.voiceChannel ? <>Audio in <strong>{session.voiceChannel.name}</strong></> : 'Audio plays in Discord'}</span></p>{permissionReason && <p className="player-permission" id={reasonId}><WarningCircleIcon size={18} aria-hidden="true" /><span>{permissionReason}</span></p>}{session?.status === 'recovering' && <p className="player-state warm-text" role="status">Recovering your place. Playback controls will return when it’s ready.</p>}{session?.status === 'paused' && <p className="player-state warm-text">Paused · right here when you’re ready</p>}</div></div>
+      <div className="sleeve-main"><div className="sleeve-artwork"><Artwork track={track} large />{spectrum('sleeve-spectrum', 40)}</div>{identity}<div className="player-context"><p className="player-destination"><UsersIcon size={18} aria-hidden="true" /><span>{session?.voiceChannel ? <>Audio in <strong>{session.voiceChannel.name}</strong></> : 'Audio plays in Discord'}</span></p>{permissionReason && <p className="player-permission" id={reasonId}><WarningCircleIcon size={18} aria-hidden="true" /><span>{permissionReason}</span></p>}{session?.status === 'recovering' && <p className="player-state warm-text" role="status">Recovering your place. Playback controls will return when it’s ready.</p>}{session?.status === 'paused' && <p className="player-state warm-text">Paused · right here when you’re ready</p>}</div></div>
       <div className="sleeve-queue"><Queue portal={portal} compact onAdd={onAdd} /></div>
     </div>}
-    <div className="player-footer">{!expanded && <div className="compact-identity"><button ref={identityTriggerRef} type="button" className="player-expand-trigger" aria-label={track ? `Open player for ${track.title}` : 'Open player details'} aria-expanded={false} onClick={() => { openedFromIdentity.current = true; setExpanded(true); }}><Artwork track={track} /><span className="compact-title"><span className="compact-track-title" title={track?.title}>{track?.title || 'Your next good vibe'}</span><span className="compact-track-meta" title={track ? `${track.author} · ${track.source}` : undefined}>{metadata}</span></span></button><span className="compact-favorite">{favorite}</span></div>}
+    <div className="player-footer">{!expanded && <div className="compact-identity"><button ref={identityTriggerRef} type="button" className="player-expand-trigger" aria-label={track ? `Open player for ${track.title}` : 'Open player details'} aria-expanded={false} onClick={() => { openedFromIdentity.current = true; setExpanded(true); }}><Artwork track={track} /><span className="compact-title"><span className="compact-track-title" title={track?.title}>{track?.title || 'Nothing playing'}</span><span className="compact-track-meta" title={track ? `${track.author} · ${track.source}` : undefined}>{metadata}</span></span></button><span className="compact-favorite">{favorite}</span></div>}
       <div className="playback-cluster">{expanded ? <>{controls}{timeline}</> : <>{timeline}{controls}</>}</div>
       {extras}
       <button ref={expandTriggerRef} className="expand-button" aria-expanded={expanded} aria-label={expanded ? 'Back to queue' : 'Open player'} onClick={() => { openedFromIdentity.current = false; setExpanded(!expanded); }}>{expanded ? <CaretDownIcon size={29} /> : <CaretUpIcon size={29} />}<span>{expanded ? 'Back to queue' : 'Open player'}</span></button>

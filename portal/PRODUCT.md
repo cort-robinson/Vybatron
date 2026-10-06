@@ -36,17 +36,20 @@ use are equally complete, commonly while Discord is already open in a dim room.
 - Useful permission, offline, empty, loading, conflict, and recovery states.
 - Reconnect fetches fresh state. Never replay mutations; a 409 requires a deliberate retry.
 - Show real source artwork and Discord avatars. Fallback artwork is honest and bundled.
-- Artwork-tinted motion is decorative, optional, and quiet while browsing. Respect reduced
+- Artwork-derived light and the spectrum are decorative and generated, never measured audio;
+  they are optional and quiet while browsing. Respect reduced
   motion, paused/recovering states, hidden tabs, and hidden views.
 - Private API/auth/music data never enter persistent browser caches. Local storage holds
   only ambient preference and last guild selection; authority always comes from the server.
 
 ## Brand and accessibility
 
-Confident, musical, welcoming. The approved Aurora Queue and Luminous Sleeve are
-complementary states. Midnight navy, cyan controls, small magenta favorites, amber
-pause/recovery. Familiar icons, legible type, visible focus, semantic forms, keyboard
-queue moves, and touch controls matter more than novelty.
+Confident, musical, welcoming. The portal is an album-reactive receiver: the current
+cover relights the room and drives the single accent, a decorative VFD-style spectrum
+shows the session is alive, and Archivo's wide cuts give names and numerals a faceplate
+voice. Rose favorites and amber pause/recovery stay fixed regardless of artwork.
+Familiar icons, legible type, visible focus, semantic forms, keyboard queue moves, and
+touch controls matter more than novelty.
 
 ## Delivery boundary
 

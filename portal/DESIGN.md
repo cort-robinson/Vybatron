@@ -1,217 +1,139 @@
 ---
 name: Vybertron Portal
-description: A private shared listening space with Aurora Queue and Luminous Sleeve states.
+description: An album-reactive receiver for a shared Discord listening session.
 colors:
-  ground: "#09121f"
-  surface: "#101e2d"
-  line: "#27394d"
-  muted: "#a7bdd8"
-  text: "#f5f7fc"
-  cyan: "#00c8ff"
-  magenta: "#f20aa7"
+  ground: "dynamic, OKLCH L .14 tinted toward the cover's lead hue; default #0d0f14"
+  accent: "dynamic, cover lead hue at OKLCH L .81, C .09-.17; default #5fdcd2"
+  glow-1: "dynamic, cover lead hue at L .46"
+  glow-2: "dynamic, second cover hue at L .38"
+  glow-3: "dynamic, third cover hue at L .32"
+  text: "#f5f4f8"
+  text-soft: "#e2e0e8"
+  muted: "#aaa8b5"
+  line: "rgb(255 255 255 / .09)"
+  line-strong: "rgb(255 255 255 / .15)"
+  primary-ink: "#0a0b0f"
+  favorite: "#ff5c8d"
   amber: "#ffb84d"
-  red: "#ed4245"
-  primary-ink: "#051522"
-  primary-hover: "#39d6ff"
-  secondary: "#142739"
-  secondary-hover: "#1c354d"
-  secondary-ink: "#e8f2ff"
-  field: "#111f2f"
-  field-line: "#40536c"
-  danger: "#bc3039"
-  danger-hover: "#d73a45"
+  red: "#ef5156"
+  danger: "#c2333c"
 typography:
-  headline:
-    fontFamily: "Manrope Variable, sans-serif"
-    fontSize: "36px"
+  display:
+    fontFamily: "Archivo Variable, sans-serif"
+    fontStretch: "116%"
     fontWeight: 800
-    lineHeight: 1.2
-    letterSpacing: "-0.025em"
-  title:
-    fontFamily: "Manrope Variable, sans-serif"
-    fontSize: "22px"
-    fontWeight: 750
-    lineHeight: 1.35
-    letterSpacing: "-0.015em"
-  track-title:
-    fontFamily: "Manrope Variable, sans-serif"
-    fontSize: "16px"
-    fontWeight: 750
+    letterSpacing: "-0.03em"
+  wordmark:
+    fontFamily: "Archivo Variable, sans-serif"
+    fontStretch: "125%"
+    fontWeight: 800
+    letterSpacing: "0.06em"
+    textTransform: uppercase
   body:
-    fontFamily: "Manrope Variable, sans-serif"
+    fontFamily: "Archivo Variable, sans-serif"
     fontSize: "16px"
-    fontWeight: 500
+    fontWeight: 450
     lineHeight: 1.6
-  button:
-    fontFamily: "Manrope Variable, sans-serif"
-    fontSize: "16px"
-    fontWeight: 750
+  numerals:
+    fontFamily: "Archivo Variable, sans-serif"
+    fontStretch: "116%"
+    fontVariantNumeric: tabular-nums
 rounded:
-  artwork: "3px"
-  row: "4px"
-  text-button: "7px"
-  chip: "8px"
-  control: "9px"
-  menu: "10px"
-  sleeve: "15px"
-  circle: "50%"
-spacing:
-  tight: "7px"
-  compact: "9px"
+  row: "14px"
+  artwork: "8px"
   control: "12px"
-  content: "20px"
-  section: "24px"
-components:
-  button-primary:
-    backgroundColor: "{colors.cyan}"
-    textColor: "{colors.primary-ink}"
-    typography: "{typography.button}"
-    rounded: "{rounded.control}"
-    padding: "11px 20px"
-  button-primary-hover:
-    backgroundColor: "{colors.primary-hover}"
-  button-secondary:
-    backgroundColor: "{colors.secondary}"
-    textColor: "{colors.secondary-ink}"
-    typography: "{typography.button}"
-    rounded: "{rounded.control}"
-    padding: "11px 20px"
-  button-secondary-hover:
-    backgroundColor: "{colors.secondary-hover}"
-  button-danger:
-    backgroundColor: "{colors.danger}"
-    textColor: "white"
-    typography: "{typography.button}"
-    rounded: "{rounded.control}"
-    padding: "11px 20px"
-  button-danger-hover:
-    backgroundColor: "{colors.danger-hover}"
-  input:
-    backgroundColor: "{colors.field}"
-    textColor: "{colors.text}"
-    rounded: "{rounded.control}"
-    padding: "11px 13px"
-  icon-button:
-    textColor: "{colors.muted}"
-    rounded: "{rounded.control}"
-    size: "44px"
-  pill:
-    textColor: "{colors.muted}"
-    rounded: "{rounded.chip}"
-    padding: "6px 9px"
+  menu: "14px"
+  sleeve: "18px"
+  panel: "20px"
+  dialog: "22px"
+  pill: "999px"
 ---
 
 # Design System: Vybertron Portal
 
 ## Overview
 
-**Creative North Star: "Aurora Queue and Luminous Sleeve"**
+**Creative North Star: "The receiver that lights up with the record."**
 
-Aurora Queue and Luminous Sleeve are complementary expressions of one private listening space. Midnight navy carries open, legible rows; cyan makes control easy to find, magenta marks personal favorites, and amber makes pause and recovery understandable.
+The portal is a hi-fi receiver for a shared Discord session. The current cover relights
+the room: three soft light pools and the single accent are derived from the artwork, and
+they glide to the next cover's colors when the track changes. A VFD-style segmented
+spectrum glows behind the player deck and under the expanded cover. Smoked-glass chrome
+lets the room light through without letting content ghost through.
 
-Real current-track artwork creates a localized, softened atmosphere around the expanded sleeve. The persistent player survives navigation and transforms between compact and expanded composition. Audio stays in Discord; decorative movement never implies measured sound or beat synchronization.
+Audio never reaches the browser, so the spectrum and lighting are generated per track,
+never measured. They make no sync claim and carry no text that implies one.
 
-**Key Characteristics:**
-- Open rows and quiet tonal separation.
-- One current-track identity, timeline, and control cluster.
-- Real artwork, restrained luminous depth, and familiar Phosphor icons.
-- Desktop and portrait phone compositions with explicit permission and connection states.
+## Color
 
-## Colors
-
-The palette combines midnight depth with clear luminous controls and small, meaningful state accents. The frontmatter records canonical source values; translucent variants belong to individual materials, not a second palette.
-
-### Primary
-
-- **Control Cyan:** primary actions, selected navigation, progress, focus, and active repeat controls.
-
-### Secondary
-
-- **Favorite Magenta:** filled hearts and the brand icon; it marks personal attachment rather than playback state.
-
-### Tertiary
-
-- **Recovery Amber:** Warm filter indicator, paused transport, saved-session recovery, and offline attention.
-- **Error Red:** unavailable status indicator. Destructive buttons use the deeper danger color and explicit confirmation copy; readable errors use pale red or warm text.
-
-### Neutral
-
-- **Midnight Ground:** page and ambient background.
-- **Surface Navy:** artwork fallback and layered containers.
-- **Slate Line:** row separators and boundaries.
-- **Muted Blue:** metadata, helper text, and inactive controls.
-- **Soft White:** main text. Field and secondary-control colors preserve visible distinctions from the ground.
-
-**The State Color Rule.** Cyan denotes actions and selected controls; magenta denotes favorites; amber denotes Warm, pause, and recovery. Pair status color with readable text or a familiar icon.
+- **Accent (dynamic):** primary actions, selected navigation, progress, elapsed time,
+  focus rings, active toggles, and the spectrum. Derived in `src/art.ts` from the cover's
+  most prominent chromatic hue, fixed at OKLCH L .81 so dark ink on accent and accent on
+  ground both clear WCAG AA. Monochrome covers produce a quiet near-white accent. Covers
+  whose host blocks CORS fall back to the default teal; the blurred cover itself still
+  tints the expanded view.
+- **Ground and glows (dynamic):** a graphite ground faintly tinted toward the cover, with
+  three cover-hued radial light pools behind everything. Browse state keeps them dim
+  enough for muted text; the expanded sleeve brightens them.
+- **Fixed state colors:** rose for favorites, amber for pause, Warm, recovery, and
+  offline attention, red for unavailable and destructive actions. These never follow the
+  artwork, so state stays recognizable with any cover.
+- Colors are registered `@property <color>` values transitioned on `:root`; the
+  spectrum canvas eases toward the same accent.
 
 ## Typography
 
-**Display Font:** Manrope Variable, sans-serif.
-**Body Font:** Manrope Variable, sans-serif.
-
-The variable family supplies precise, compact hierarchy without a separate display face. Phosphor icons accompany readable labels or accessible names; they are not font glyphs.
-
-### Hierarchy
-
-- **Headline:** page headings use the frontmatter headline role; intermediate desktop reduces them to (30px), phone to (25px).
-- **Title:** section headings use the title role, reducing to (19px) on phone. Current compact identity uses (17px, 750); queue titles use the track-title role.
-- **Expanded identity:** desktop uses (clamp(27px, 3.2vw, 44px), 800, line-height 1.3); phone uses (clamp(24px, 6.2vw, 34px)), with (22px) at the narrowest breakpoint.
-- **Body:** explanatory text commonly uses the body role; queue author metadata uses (14px) on desktop and phone. Descriptions are constrained to roughly 47 to 70 characters per line depending on context.
-- **Label:** buttons use the button role; navigation is (15px, 650) on desktop, (14px) on phone. Numeric durations use tabular figures. Small utility captions in the existing build are not a general-purpose type minimum.
-
-**The Single Identity Rule.** Render the current song once per player state, beside its favorite action when that action is visible. Expansion transforms the existing player rather than creating another now-playing strip.
+Archivo Variable, self-hosted, one family across two widths. Display headings, the
+expanded track title, and the uppercase wordmark use expanded widths (116-125%) for a
+faceplate voice. Body and list text stay at normal width. Timeline, durations, indexes,
+and counts use expanded tabular numerals; elapsed time is accent-colored like a display
+readout. Queue column labels are the only small uppercase text. Minimums are unchanged:
+16px primary and 14px secondary text.
 
 ## Layout
 
-Desktop uses a fixed sidebar (clamp(226px, 17.45vw, 260px)), topbar (114px), and bottom player (154px). Main content starts beside the sidebar with open horizontal queue rows; page padding is (32px 24px 70px 37px). Queue columns align index, drag affordance, artwork/title, requester, duration, favorite, and options.
+Geometry is unchanged from the October 5 repair: fixed sidebar, 114px topbar, 154px
+persistent player on desktop; top server header, 64px bottom navigation, and 108px compact
+player at 1023px and below. The expanded sleeve keeps its 52:48 artwork and Up Next grid.
+The cover and its spectrum share one container-query size (`--cover`), so the display
+strip always matches the cover width. Short landscape phones hide the sleeve spectrum.
 
-Expanded desktop content occupies the space between topbar and player, in a (52:48) artwork/Up Next grid with a (32px) gap. Cover sizing is bounded by available width and viewport height. Desktop adjustments at (1330px) and (1100px) reduce spacing and metadata density without adding another player.
+## Materials and depth
 
-At (1023px) and below, the sidebar becomes a top server header (112px plus safe-area inset), navigation becomes a fixed bottom bar (64px plus safe-area inset), and the compact player sits immediately above it (108px). Rows drop desktop columns, requester, drag handle, and duration; menu actions preserve keyboard reorder controls. Search remains reachable through Add music. Phone expansion reserves a fixed control area for timeline, transport, volume and filter; the cover and centered identity use the remaining height with a scrollable upper pane when needed; the side-by-side Up Next pane is hidden and Back to queue returns to it. Current favorite is hidden in the compact phone state and visible beside the title when expanded. At (360px), narrower padding and smaller identity/transport accommodate the supported minimum body width (320px).
+- **Chrome:** sidebar, player deck, expanded footer, and the Up Next panel use the ground
+  at 62-74% opacity with a 28px backdrop blur. Elements that contain fixed-position
+  descendants (the phone header, the landscape expanded footer) drop the blur so they do
+  not become containing blocks.
+- **Rows:** open rows with faint hairline separators and a rounded hover fill; no cards.
+- **Shadows:** offset and soft. The sleeve cover casts a shadow tinted by glow-1; primary
+  controls carry an accent-tinted lift on hover.
 
-Spacing is contextual rather than a strict arithmetic scale: recurring compact gaps, control padding, and section spacing are recorded in frontmatter. Preserve the spacious queue and denser secondary forms rather than boxing every row.
+## Spectrum
 
-## Elevation & Depth
+`src/components/Spectrum.tsx` draws segmented columns on a canvas: lit segments with a soft
+phosphor blur, a falling peak cap, and dim ghost segments (sleeve and sign-in only; the
+player deck omits ghosts so it does not read as stripes behind text). Motion is seeded from
+the track id and combines per-band oscillation, a slow swell, and irregular low-band
+transients; it is not tempo-locked. It runs at about 30fps only while playing, connected,
+visible, ambient motion is on, and reduced motion is off. Pause or disconnect decays to a
+one-segment baseline and stops drawing. Without motion it renders one still frame.
 
-Depth combines translucent navy surfaces, fine borders, and diffuse cool light. Rows remain open and mostly flat; menus and dialogs gain structural shadows. The sleeve cover and player carry controlled luminous depth, while blurred actual artwork supplies localized atmosphere behind the sleeve.
+## Motion
 
-### Shadow Vocabulary
-
-- **Player:** `0 -5px 26px #00c8ff12` anchors the persistent desktop rail.
-- **Sleeve:** `0 10px 52px #207cf340` lifts the desktop cover; phone uses `0 8px 45px #207cf34d`.
-- **Menu:** `0 13px 35px #020a15bb` separates actionable overlays.
-- **Dialog:** `0 20px 85px #000916cc` supports modal focus; backdrop uses (8px) blur.
-- **Primary hover:** `0 5px 24px #00c8ff23` is a restrained interaction response.
-
-**The Artwork Atmosphere Rule.** Tint the expanded sleeve with its actual current artwork. Keep atmosphere behind content, localized around the cover, and independent of playback authority.
-
-Ambient artwork drifts over (30s), aurora over (24s), both ease-in-out and alternating. Immersive artwork is localized beside the desktop sidebar with (24px) blur and (.34) opacity; phone uses (18px) blur and (.36) opacity. Subtle lowers expanded artwork to (.16). Off hides artwork tint and retains a static subdued aurora. Movement requires live connection, playing state, visible document, enabled preference, and no reduced-motion preference. Paused/recovering/hidden/disconnected states settle. Reduced motion removes ambient animation and spatial transitions while retaining static pending feedback and readable busy labels. Player clock updates suspend while hidden and resume when visible.
-
-## Shapes
-
-Gently curved controls use the control radius; rows and small artwork remain tighter. Circular avatars and the main play control provide recognizable focal forms. Menus use the menu radius, large sleeve covers and dialogs use the sleeve radius, and the Warm filter is a pill (25px). Fine borders, rather than heavy framing, separate queue and library content.
+One authored moment: the room relighting on track change (accent 1.2s, glows 2.2s). Light
+pools drift over 38-58s only while playing. The sleeve rises in once, and menus, dialogs, and
+toasts use short ease-out entrances. Reduced motion removes drift, spatial entrances, and
+hover lifts while keeping color changes and the static pending mark.
 
 ## Components
 
-### Buttons
+Buttons are 12px-radius; primary uses accent with dark ink. The filter control and pills are
+full-round. Inputs use a faint white field and a 1px line that brightens on hover and turns
+accent on focus. Navigation selection is a soft fill with an accent icon and a short accent
+indicator: vertical on desktop, a bottom bar on phone. Menus and dialogs sit on a raised
+ground with a strong line and a deep shadow.
 
-Primary cyan buttons carry the main action; secondary navy buttons support reversible choices; deeper red buttons confirm destruction. Standard buttons are at least (45px) high; icon buttons are (44px) square before contextual responsive adjustments. Text buttons are transparent, muted, and at least (44px) high. Hover uses tonal brightening; active buttons move (1px) and icon buttons scale (.94). Focus is a cyan (2px) outline offset (4px). Disabled buttons use opacity (.4) and a not-allowed cursor; do not use that visual state without a real disabled attribute and useful reason nearby or in the control title.
-
-### Chips
-
-The outlined Taking turns pill uses muted text, the line color, compact padding, and the chip radius. It reports fair-queue state rather than acting as an invented filter. Library tab counts are small neutral badges; selected tabs use a cyan underline.
-
-### Cards / Containers
-
-The server selector is a compact tonal card with a fine line and control-radius corners. Shared mixes are artwork-led open tiles, not raised dashboard cards; their cover radius is (10px), and hover brightens imagery over (200ms). Menus and modal dialogs use the depth vocabulary above. Native modal dialogs restore previous focus when closed and support Escape.
-
-### Inputs / Fields
-
-Fields use the field background, field-line border (1px), control radius, and frontmatter padding, with a (44px) minimum height. Placeholder text stays muted and fully opaque. Focus uses the shared cyan outline and caret. Disabled inputs/selects use opacity (.65); ranges use (.45). Search wrappers preserve the border while the inner field is transparent. Error feedback is a readable inline alert or toast with useful text and retry where available, rather than an undocumented red field-border convention.
-
-### Navigation
-
-Desktop selection combines cyan icon/text, tonal fill, and a leading (5px) cyan rail. Phone uses icon-over-label buttons with a lower (3px) marker. The same Session, My Music, and Server destinations remain available; navigating collapses the sleeve but keeps the mounted persistent player and current session. Account access moves from the desktop sidebar into Server settings on phone.
+## Behavior
 
 ### Persistent player and shared queue
 
@@ -233,46 +155,14 @@ Implementation evidence is source-only: `web/src/styles.css`, `App.tsx`, all sou
 
 ### Do:
 - **Do** preserve the single player across Session, My Music, and Server navigation.
+- **Do** derive the accent and room light from the actual cover, with a working fallback.
+- **Do** keep favorites, pause/recovery, and destructive states on fixed colors.
 - **Do** use server-projected capabilities and fresh state to decide whether an action is available.
-- **Do** retain inputs and show useful recovery, conflict, offline, empty, and error messages.
-- **Do** use source artwork with the bundled fallback and one coherent Phosphor icon family.
-- **Do** settle ambient motion on pause, recovery, disconnection, hidden tabs, and reduced motion.
+- **Do** settle the spectrum and light drift on pause, recovery, disconnection, hidden tabs, and reduced motion.
 
 ### Don't:
-- **Don't** introduce browser audio, measured spectrum, amplitude, or beat-sync claims.
-- **Don't** use client display names, roles, or voice assumptions as permission authority.
-- **Don't** replay an uncertain or stale mutation after reconnect.
+- **Don't** label the spectrum as live, measured, or synced audio, or tempo-lock it.
+- **Don't** add `backdrop-filter` to an element that contains fixed-position descendants.
+- **Don't** let room light rise behind reading text in browse state; brighten it only in the sleeve.
 - **Don't** duplicate current identity, timeline, or transport between compact and expanded states.
-- **Don't** make bright accent washes compete with track text or disabled-state explanations.
-
-
-## October 5 UI repair
-
-The approved visual world remains Aurora Queue plus Luminous Sleeve. Typography
-uses 16px primary text and 14px secondary/status text; no miniature phone labels.
-Touch controls have separate 44px targets. Compact artwork/title opens the same
-player; long titles cannot overlap transport. Expanded artwork takes the space
-left after identity, context and controls. Short phones and landscape keep the
-transport visible, using a compact sleeve when vertical space is limited.
-
-One main landmark remains present during expansion. Header search opens on
-activation, focuses the query, and returns focus without reopening. Shared
-popover behavior handles first-action focus, Escape, outside dismissal and Tab.
-Voice destination is primary; the status describes the bot session rather than
-claiming the viewer is listening. Permission explanations remain in the sleeve.
-
-Everyday radio and voting live in the player disclosure. Personal preferences
-are available to members; server defaults, activity and diagnostics remain
-admin-only. Less common command forms are explicitly Advanced controls.
-Favorites, history and mixes are searchable and paged. Inactive panes retain
-form drafts without mounting their heavy list subtrees. Queue paging preserves
-absolute source positions, fresh revisions and selected item tokens.
-
-Opaque navigation/player chrome and reading surfaces prevent ghost text and
-bright aurora behind controls. Reduced motion keeps a deliberate static pending
-mark plus labels and busy state, rather than globally disabling all feedback.
-The decorative background and responsive fallback cover use compressed WebP;
-original compositions and hashes are recorded in public/assets/PROVENANCE.md.
-
-This is a design record. Exact-source tests, rendered evidence and release
-verification are recorded separately in docs/portal-ui-repair.md.
+- **Don't** replay an uncertain or stale mutation after reconnect.

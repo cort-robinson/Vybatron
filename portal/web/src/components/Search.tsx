@@ -41,7 +41,7 @@ export function Search({ portal, open, onClose, query, setQuery }: { portal: Por
   const enabled = portal.can('add') && !portal.pending.length;
   const controllable = portal.can('control') && !portal.pending.length;
   if (!open) return null;
-  return <Dialog title="Add a little atmosphere" onClose={onClose} className="search-dialog" initialFocusRef={input}>
+  return <Dialog title="Add music" onClose={onClose} className="search-dialog" initialFocusRef={input}>
     <p className="dialog-intro">Find a song, artist, or album. Paste a supported public track or playlist link to import it.</p>
     <form onSubmit={event => { event.preventDefault(); void search(); }} className="search-form"><label className="search-field"><MagnifyingGlassIcon size={22} /><span className="sr-only">Music search</span><input ref={input} type="search" aria-label="Music search" value={query} maxLength={maxLength} onChange={event => setQuery(event.target.value)} placeholder="Songs, artists, or a public music link…" /></label>
       <button type="submit" className="button primary" disabled={searching || !query.trim() || portal.connection !== 'live'}>{searching ? <span className="spinner" /> : <MagnifyingGlassIcon size={20} />}Search</button></form>

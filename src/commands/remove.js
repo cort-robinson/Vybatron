@@ -2,7 +2,8 @@ import { SlashCommandBuilder } from 'discord.js';
 import { requireControl } from '../utils/guards.js';
 import { ephemeralText } from '../utils/messages.js';
 import { removeQueuedTrack } from '../utils/operations.js';
-import { refresh, withControllerLink } from '../utils/player-controller.js';
+import { withControllerLink } from '../utils/player-controller.js';
+import { directControlPresentation } from '../utils/presentation-updates.js';
 import { safeText } from '../utils/presentation.js';
 
 export const data = new SlashCommandBuilder()
@@ -24,7 +25,7 @@ export async function execute(interaction) {
     ));
   }
   const track = await removeQueuedTrack(player, position);
-  await refresh(interaction.client, player);
+  await directControlPresentation(interaction, player);
   return interaction.reply(ephemeralText(withControllerLink(
     `Removed **${safeText(track.info?.title, { maxLength: 140 })}** from position ${position}.`,
     interaction,

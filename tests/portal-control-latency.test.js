@@ -63,6 +63,24 @@ test('actual direct handlers reduce full policy latency before playback and reta
   });
 });
 
+test('queue and transport controls authorize once at their native guard and once for disclosure', async t => {
+  const cases = {
+    skip: [{}, 'skip'], skipto: [{ position: 2 }, 'skip'], loop: [{ mode: 'track' }, 'loop'], shuffle: [{}, 'shuffle'],
+    remove: [{ position: 1 }, 'splice'], move: [{ from: 1, to: 2 }, 'splice'], clear: [{}, 'splice'],
+  };
+  for (const [name, [options, write]] of Object.entries(cases)) await t.test(name, async t => {
+    const f = await harness(t);
+    let phasesAtWrite;
+    const before = f.calls.length;
+    const push = f.calls.push.bind(f.calls);
+    f.calls.push = (...items) => { if (items.includes(write)) phasesAtWrite ??= f.phases.length; return push(...items); };
+    const result = await f.run({ command: name, options, expectedRevision: f.revisions.revision('100') });
+    assert.equal(result.ok, true); assert.ok(f.calls.length > before, 'the real handler wrote playback state');
+    assert.equal(phasesAtWrite, 1, 'one fresh authority precedes the write');
+    assert.equal(f.phases.length, 2); assert.ok(f.phases.every(phase => phase.options.fresh === true));
+  });
+});
+
 test('lane wait retires authority and denies membership, visibility, and DJ revocation before any write', async t => {
   for (const kind of ['membership', 'visibility', 'DJ']) await t.test(kind, async t => {
     const f = await harness(t);
@@ -189,7 +207,7 @@ test('Stop takes over a waiting direct control without reviving the old player',
     delay(1000).then(() => assert.fail('Stop waited for the direct-control lane'))]);
   assert.equal(stopped.ok, true); assert.equal(f.manager.getPlayer('100'), undefined);
   release.resolve(); await Promise.all([lane, pending]);
-  assert.deepEqual(f.calls, ['stopPlaying', 'destroy']); assert.equal(f.phases.length, 4, 'Stop keeps every policy phase');
+  assert.deepEqual(f.calls, ['stopPlaying', 'destroy']); assert.equal(f.phases.length, 2, 'Stop authorizes at its native guard and again for final disclosure');
 });
 
 test('catalog commands retain fresh authority after a real asynchronous lookup', async t => {

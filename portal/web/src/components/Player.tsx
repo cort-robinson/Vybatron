@@ -9,7 +9,7 @@ import { Queue } from './Queue';
 import { Spectrum } from './Spectrum';
 
 export function Player({ portal, expanded, setExpanded, onAdd, accent, animate }: { portal: Portal; expanded: boolean; setExpanded: (value: boolean) => void; onAdd: () => void; accent: string; animate: boolean }) {
-  const { snapshot, bootstrap, can, run, receivedAt, connection, pending, library } = portal;
+  const { snapshot, bootstrap, can, run, receivedAt, connection, pending, syncing, library } = portal;
   const session = snapshot?.session;
   const track = session?.current || null;
   const [clock, setClock] = useState(Date.now());
@@ -53,7 +53,7 @@ export function Player({ portal, expanded, setExpanded, onAdd, accent, animate }
   const active = session?.status === 'playing';
   const blockedTitle = !can('control') ? portal.blockedReason : pending.length ? 'Waiting for confirmation. Playback controls are temporarily unavailable.' : undefined;
   const permissionReason = !can('control') ? portal.blockedReason : session?.reason;
-  const controlDescription = [permissionReason ? reasonId : '', pending.length ? confirmationId : ''].filter(Boolean).join(' ') || undefined;
+  const controlDescription = [permissionReason ? reasonId : '', pending.length || syncing ? confirmationId : ''].filter(Boolean).join(' ') || undefined;
   // Observation and request settlement are independent. Only accepted live state
   // supplies the icon; the hook alone owns pending and the duplicate-write lock.
   const pendingObservation = !snapshot ? 'Playback state unavailable. ' : connection !== 'live' ? 'Last known playback. ' : session?.status === 'playing' ? 'Playing. ' : session?.status === 'paused' ? 'Paused. ' : '';
@@ -72,7 +72,8 @@ export function Player({ portal, expanded, setExpanded, onAdd, accent, animate }
       style={{ '--range-progress': `${Math.min(100, ((scrub ?? position) / (duration || 1)) * 100)}%` } as React.CSSProperties}
       onChange={event => setScrub(Number(event.target.value))} onPointerUp={seek} onKeyUp={event => { if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown'].includes(event.key)) seek(); }} onBlur={seek} />
     <span>{track?.isStream ? 'Streaming' : time(duration)}</span>
-  </div><div className="player-confirmation" id={confirmationId} role="status" aria-live="polite" aria-atomic="true">{!!pending.length && <><span className="spinner" aria-hidden="true" /><span className="sr-only">{pendingObservation}</span><span>Waiting for confirmation</span><span className="sr-only">. {connection !== 'live' ? portal.blockedReason : 'Playback controls are temporarily unavailable.'}</span></>}</div></div>;
+  </div><div className="player-confirmation" id={confirmationId} role="status" aria-live="polite" aria-atomic="true">{pending.length ? <><span className="spinner" aria-hidden="true" /><span className="sr-only">{pendingObservation}</span><span>Waiting for confirmation</span><span className="sr-only">. {connection !== 'live' ? portal.blockedReason : 'Playback controls are temporarily unavailable.'}</span></>
+    : syncing ? <><span className="spinner" aria-hidden="true" /><span>Syncing with Discord…</span></> : null}</div></div>;
   const controls = <div className="transport" role="group" aria-label="Playback controls" aria-describedby={controlDescription} aria-busy={!!pending.length}>
     <IconButton label="Shuffle queue" disabled={!controllable || !session?.queue.length} title={blockedTitle} onClick={() => void control({ command: 'shuffle' })}><ShuffleIcon size={24} /></IconButton>
     <IconButton label="Restart current song" disabled={!seekable} title={blockedTitle} onClick={() => void control({ command: 'seek', options: { timestamp: '00:00' } })}><SkipBackIcon size={27} weight="fill" /></IconButton>
@@ -115,6 +116,6 @@ export function Player({ portal, expanded, setExpanded, onAdd, accent, animate }
       <button ref={expandTriggerRef} className="expand-button" aria-expanded={expanded} aria-label={expanded ? 'Back to queue' : 'Open player'} onClick={() => { openedFromIdentity.current = false; setExpanded(!expanded); }}>{expanded ? <CaretDownIcon size={29} /> : <CaretUpIcon size={29} />}<span>{expanded ? 'Back to queue' : 'Open player'}</span></button>
     </div>
     {confirmStop && <Confirm title="Stop this listening session?" detail="Stops playback in Discord, clears the queue, and discards the saved checkpoint. Your favorites and shared mixes stay saved." action="Stop and discard" busy={pending.includes('stop:')} onClose={() => setConfirmStop(false)} onConfirm={() => { void run({ command: 'stop' }, 'control').then(ok => { if (ok) setConfirmStop(false); }); }} />}
-    {confirmClear && <Confirm title="Clear the upcoming queue?" detail={`Removes ${session?.queue.length || 0} queued songs. The current song keeps its position and playback state in Discord.`} action="Clear queue" busy={pending.includes('clear:')} onClose={() => setConfirmClear(false)} onConfirm={() => { void control({ command: 'clear' }).then(ok => { if (ok) setConfirmClear(false); }); }} />}
+    {confirmClear && <Confirm title="Clear the upcoming queue?" detail={`Removes ${session?.queue.length || 0} queued songs. The current song keeps its position and playback state in Discord.`} action="Clear queue" onClose={() => setConfirmClear(false)} onConfirm={() => { setConfirmClear(false); void control({ command: 'clear' }); }} />}
   </section>;
 }

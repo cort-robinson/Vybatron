@@ -13,10 +13,11 @@ import { commandAuthorityPhase } from './timing.js';
 const ALLOWED = new Set(['play', 'playnext', 'pause', 'resume', 'seek', 'skip', 'skipto', 'stop', 'clear', 'remove', 'move', 'shuffle', 'loop', 'volume', 'filter', 'voteskip', 'radio', 'replay', 'session', 'favorite', 'mix', 'settings', 'queue', 'nowplaying', 'history', 'help']);
 const CONFLICTING = new Set(['playnext', 'seek', 'skip', 'skipto', 'clear', 'remove', 'move', 'shuffle', 'replay']);
 // These handlers perform no admission work that needs guild authority. Their
-// first full access check belongs inside the bounded mutation lane. Mutating
-// variants always await the native guard before reading protected state; move
-// preflight authority to that fresh boundary rather than reusing an early grant.
-const DIRECT_CONTROLS = new Set(['pause', 'resume', 'seek', 'filter', 'volume']);
+// first await is the native requireControl guard, which takes fresh authority
+// inside the bounded mutation lane before reading protected state. An earlier
+// admission or preflight grant would only repeat the same round back to back.
+const DIRECT_CONTROLS = new Set(['pause', 'resume', 'seek', 'filter', 'volume', 'skip', 'skipto', 'loop', 'shuffle',
+  'remove', 'move', 'clear', 'radio', 'voteskip', 'stop']);
 const ROOT_KEYS = new Set(['actorId', 'command', 'subcommand', 'options', 'expectedRevision', 'expectedTrackId', 'expectedHistoryId', 'expectedMixVersion']);
 const object = value => value && typeof value === 'object' && !Array.isArray(value);
 const publicName = (command, name) => command === 'skipto' && name === 'index' ? 'position' : command === 'replay' && name === 'position' ? 'index' : name;

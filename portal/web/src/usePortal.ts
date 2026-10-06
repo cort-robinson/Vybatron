@@ -1,10 +1,21 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api, ApiError, errorMessage } from './api';
 import type { Bootstrap, Capability, Command, Connection, GuildSnapshot, Library, SnapshotOrdering } from './types';
+import { applyIntents, createIntent, isOptimistic, needsRevision, sameTracks, slotOf, stillTargets, trackIdentities, type Intent } from './optimistic';
 
 export interface Notice { id: number; kind: 'success' | 'error' | 'info'; message: string }
-const conflicting = new Set(['playnext', 'pause', 'resume', 'seek', 'skip', 'skipto', 'clear', 'remove', 'move', 'shuffle', 'loop', 'filter', 'volume', 'session', 'radio', 'replay']);
+// Non-optimistic commands that still bind to the session the user saw.
+const conflicting = new Set(['playnext', 'session', 'replay']);
 const freshnessMs = 25_000;
+// Show a quiet syncing hint only when the bot is noticeably slow to confirm.
+const syncingAfterMs = 700;
+const maxQueued = 8;
+interface Entry {
+  body: Command; capability: Capability; key: string; epoch: number; guildId: string;
+  intent: Intent | null; resolve: (value: boolean) => void;
+  // Verified state when clicked, and whether this device's own predictions were showing.
+  clickRevision: string; clickView: GuildSnapshot; overPredictions: boolean;
+}
 const retryDelay = (attempt: number, error?: unknown) => Math.max(Math.min(1000 * 2 ** Math.min(attempt, 5), 30_000), error instanceof ApiError ? error.retryAfterMs : 0);
 const orderingOf = (snapshot: GuildSnapshot | null): SnapshotOrdering | null => {
   const stamp = snapshot?.ordering;
@@ -24,6 +35,8 @@ export function usePortal() {
   const [connection, setConnection] = useState<Connection>('connecting');
   const [connectionError, setConnectionError] = useState('');
   const [pending, setPending] = useState<string[]>([]);
+  const [intents, setIntents] = useState<Intent[]>([]);
+  const [syncing, setSyncing] = useState(false);
   const [notice, setNotice] = useState<Notice | null>(null);
   const fresh = useRef(false);
   const verifiedAt = useRef(0);
@@ -33,6 +46,9 @@ export function usePortal() {
   const generation = useRef(0);
   const stateVersion = useRef(0);
   const pendingRef = useRef(new Set<string>());
+  const queueRef = useRef<Entry[]>([]);
+  const sendingRef = useRef<Entry | null>(null);
+  const intentId = useRef(0);
   const refreshRef = useRef<() => Promise<void>>(async () => {});
   const libraryRefreshRef = useRef<() => Promise<void>>(async () => {});
   const reconnectRef = useRef<() => void>(() => {});
@@ -86,6 +102,8 @@ export function usePortal() {
     activeGuild.current = guildId; fresh.current = false; current.current = null; lossVersion.current++;
     setSnapshot(null); setLibrary(null); setLibraryError(''); setConnectionError('');
     setConnection('connecting'); pendingRef.current.clear(); setPending([]);
+    for (const entry of queueRef.current.splice(0)) entry.resolve(false);
+    setIntents([]);
     if (!guildId || auth !== 'ready') return;
     try { localStorage.setItem('vybertron.guild', guildId); } catch { /* Preference only. */ }
     const abort = new AbortController();
@@ -311,34 +329,81 @@ export function usePortal() {
   const blockedReason = connection !== 'live' ? 'Reconnect for fresh state before making changes.'
     : snapshot?.session.reason || 'Join the music voice channel. Playback controls may require the DJ role.';
 
-  const run = useCallback(async (body: Command, capability: Capability): Promise<boolean> => {
-    // Check refs at click time, not a render-time closure, so offline clicks cannot escape.
-    if (!can(capability) || !bootstrap || !current.current) { notify(blockedReason, 'error'); return false; }
-    const id = activeGuild.current; const epoch = generation.current;
-    const key = `${body.command}:${body.subcommand || ''}`;
-    if (pendingRef.current.has(key) || (pendingRef.current.size && body.command !== 'stop')) return false;
-    const command = { ...body };
-    if (conflicting.has(body.command) || (body.command === 'mix' && body.subcommand === 'save') || (body.command === 'favorite' && body.subcommand === 'add')) {
-      command.expectedRevision = body.expectedRevision ?? current.current.revision;
+  const view = useMemo(() => snapshot ? applyIntents(snapshot, receivedAt, intents) : { snapshot, receivedAt }, [snapshot, receivedAt, intents]);
+  const syncQueue = useCallback(() => {
+    setIntents(queueRef.current.flatMap(entry => entry.intent ? [entry.intent] : []));
+    setPending([...pendingRef.current]);
+  }, []);
+  useEffect(() => {
+    if (!intents.length) { setSyncing(false); return; }
+    const wait = Math.min(...intents.map(intent => intent.createdAt)) + syncingAfterMs - Date.now();
+    if (wait <= 0) { setSyncing(true); return; }
+    setSyncing(false);
+    const timer = setTimeout(() => setSyncing(true), wait);
+    return () => clearTimeout(timer);
+  }, [intents]);
+
+  // Settle unsent entries from `from` onward. They were built on predictions
+  // that no longer hold; nothing unsent is ever replayed later.
+  const discard = useCallback((from: number, message?: string) => {
+    const queue = queueRef.current;
+    let start = Math.max(0, from);
+    if (queue[start] && queue[start] === sendingRef.current) start++;
+    for (const entry of queue.splice(start)) { if (!entry.intent) pendingRef.current.delete(entry.key); entry.resolve(false); }
+    syncQueue();
+    if (message) notify(message, 'error');
+  }, [notify, syncQueue]);
+
+  const send = useCallback(async (entry: Entry): Promise<boolean> => {
+    const { body, guildId: id, epoch, intent } = entry;
+    const settled = () => epoch === generation.current && activeGuild.current === id;
+    const verified = current.current;
+    if (!settled()) return false;
+    const behind = () => queueRef.current.indexOf(entry) + 1;
+    if (!can(entry.capability) || !bootstrap || !verified) {
+      discard(behind(), fresh.current ? 'Your change was not sent because your playback access changed. Review the session and try again.'
+        : 'Reconnect for fresh state before making changes.');
+      return false;
     }
-    pendingRef.current.add(key); setPending([...pendingRef.current]);
+    const command = { ...body };
+    if (intent) {
+      // Queue edits must still target the tracks the user acted on.
+      if (!stillTargets(intent, verified)) { discard(behind(), 'The queue changed before your change was sent. Review it and try again.'); return false; }
+      delete command.expectedRevision;
+      if (needsRevision(command)) command.expectedRevision = verified.revision;
+      intent.sent = true;
+    } else {
+      if (conflicting.has(body.command) || (body.command === 'mix' && body.subcommand === 'save') || (body.command === 'favorite' && body.subcommand === 'add')) {
+        command.expectedRevision = body.expectedRevision ?? entry.clickRevision;
+      }
+      // Clicked while this device's own playback changes were still settling:
+      // if they landed exactly as shown, the user's target is still current.
+      if (entry.overPredictions && command.expectedRevision === entry.clickRevision && verified.revision !== entry.clickRevision
+        && sameTracks(trackIdentities(entry.clickView), trackIdentities(verified))) command.expectedRevision = verified.revision;
+    }
     const startedVersion = stateVersion.current;
     const startedLoss = lossVersion.current;
     const startedOrdering = orderingOf(current.current);
     try {
       const result = await api.command(id, bootstrap.csrfToken, command);
-      if (epoch !== generation.current || activeGuild.current !== id) return false;
+      if (!settled()) return false;
       await completeCommandRef.current(result.snapshot, startedVersion, startedLoss, startedOrdering);
-      if (epoch !== generation.current || activeGuild.current !== id) return false;
+      if (!settled()) return false;
       if (!fresh.current || !current.current) {
+        discard(behind());
         notify('The action completed. Reconnect for fresh state before making another change.', 'info');
         return false; // Keep the form draft while the confirmed result cannot be reconciled.
       }
-      notify(result.message || 'Done.', 'success');
+      // A playback change is already on screen; only other actions confirm.
+      if (!intent) notify(result.message || 'Done.', 'success');
       if (['favorite', 'mix', 'replay', 'session', 'settings'].includes(body.command)) void libraryRefreshRef.current();
       return true;
     } catch (error) {
-      if (epoch !== generation.current) return false;
+      if (!settled()) return false;
+      // Roll back this rejected change at once, with everything queued on top
+      // of it, rather than after the recovery read below.
+      entry.intent = null;
+      discard(behind());
       if (error instanceof ApiError && error.status === 401) expireAuth();
       else if (error instanceof ApiError && error.status === 409) {
         await Promise.all([refreshRef.current(), libraryRefreshRef.current()]);
@@ -353,10 +418,68 @@ export function usePortal() {
         }
       }
       return false;
-    } finally {
-      if (epoch === generation.current) { pendingRef.current.delete(key); setPending([...pendingRef.current]); }
     }
-  }, [bootstrap, can, notify, blockedReason, expireAuth]);
+  }, [bootstrap, can, discard, notify, expireAuth]);
+
+  // One command reaches the bot at a time, in the order the user made them.
+  const pump = useCallback(async () => {
+    if (sendingRef.current) return;
+    const entry = queueRef.current[0];
+    if (!entry) return;
+    sendingRef.current = entry;
+    let ok = false;
+    try { ok = await send(entry); }
+    finally {
+      sendingRef.current = null;
+      if (entry.epoch === generation.current) {
+        const index = queueRef.current.indexOf(entry);
+        if (index >= 0) queueRef.current.splice(index, 1);
+        if (!entry.intent) pendingRef.current.delete(entry.key);
+        // Predictions queued behind a confirmed change were built on its result.
+        const revision = current.current?.revision;
+        if (ok && revision) for (const next of queueRef.current) if (next.intent) next.intent.baseRevision = revision;
+        syncQueue();
+      }
+      entry.resolve(ok);
+      void pump();
+    }
+  }, [send, syncQueue]);
+
+  const run = useCallback(async (body: Command, capability: Capability): Promise<boolean> => {
+    // Check refs at click time, not a render-time closure, so offline clicks cannot escape.
+    if (!can(capability) || !bootstrap || !current.current) { notify(blockedReason, 'error'); return false; }
+    const id = activeGuild.current; const epoch = generation.current; const verified = current.current;
+    const key = `${body.command}:${body.subcommand || ''}`;
+    // Ordinary actions still hold one at a time; Stop keeps its urgent exception.
+    if (pendingRef.current.has(key) || (pendingRef.current.size && body.command !== 'stop')) return false;
+    const predictions = () => queueRef.current.flatMap(entry => entry.intent ? [entry.intent] : []);
+    const shown = applyIntents(verified, receivedAt, predictions());
+    const entry: Entry = { body, capability, key, epoch, guildId: id, intent: null, resolve: () => {},
+      clickRevision: verified.revision, clickView: shown.snapshot, overPredictions: predictions().length > 0 };
+    if (body.command === 'stop') {
+      // Stop cancels queued work on the bot too; never send it afterwards.
+      discard(0);
+      pendingRef.current.add(key); setPending([...pendingRef.current]);
+      try { return await send(entry); }
+      finally { if (epoch === generation.current) { pendingRef.current.delete(key); setPending([...pendingRef.current]); } }
+    }
+    if (isOptimistic(body)) {
+      // The newest choice for a set-state control replaces an unsent older one.
+      const slot = slotOf(body);
+      const replaced = slot ? queueRef.current.find(queued => queued.intent?.slot === slot && !queued.intent.sent) : undefined;
+      if (replaced) { queueRef.current.splice(queueRef.current.indexOf(replaced), 1); replaced.resolve(true); }
+      const base = applyIntents(verified, receivedAt, predictions());
+      entry.intent = createIntent(++intentId.current, body, base.snapshot, verified, base.receivedAt, Date.now());
+      if (!entry.intent) { syncQueue(); return true; } // Already the state the user asked for.
+      if (queueRef.current.length >= maxQueued) { syncQueue(); notify('Give Discord a moment to catch up before making more changes.', 'info'); return false; }
+    }
+    return await new Promise<boolean>(resolve => {
+      entry.resolve = resolve;
+      queueRef.current.push(entry);
+      if (!entry.intent) pendingRef.current.add(key);
+      syncQueue(); void pump();
+    });
+  }, [bootstrap, can, notify, blockedReason, receivedAt, discard, send, pump, syncQueue]);
 
   const logout = async () => {
     if (!bootstrap) return;
@@ -364,9 +487,11 @@ export function usePortal() {
     catch (error) { notify(errorMessage(error), 'error'); }
   };
   const selectGuild = (id: string) => { if (id === activeGuild.current) return; fresh.current = false; activeGuild.current = id; setGuildId(id); };
-  return { bootstrap, auth, authError, loadBootstrap, guildId, selectGuild, snapshot, receivedAt, library, libraryError,
-    refreshLibrary: () => libraryRefreshRef.current(), connection, connectionError,
-    reconnect: () => reconnectRef.current(), pending, can, blockedReason, run, notice, notify,
+  // snapshot/receivedAt include this device's unconfirmed playback predictions;
+  // verified is the last authorized bot state and the only permission source.
+  return { bootstrap, auth, authError, loadBootstrap, guildId, selectGuild, snapshot: view.snapshot, receivedAt: view.receivedAt, verified: snapshot,
+    library, libraryError, refreshLibrary: () => libraryRefreshRef.current(), connection, connectionError,
+    reconnect: () => reconnectRef.current(), pending, syncing, can, blockedReason, run, notice, notify,
     dismissNotice: () => setNotice(null), logout };
 }
 export type Portal = ReturnType<typeof usePortal>;

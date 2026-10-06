@@ -151,7 +151,7 @@ test('player action popover dismisses by Escape, outside activation, and complet
   await expect.poll(() => fixture.commands.at(-1)?.command).toBe('radio');
 });
 
-test('short offline sleeve keeps transport visible and reduced motion leaves intentional pending feedback', async ({ page }) => {
+test('short offline sleeve keeps transport visible and reduced motion leaves intentional syncing feedback', async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 568 });
   await page.emulateMedia({ reducedMotion: 'reduce' });
   const fixture = await mockPortal(page);
@@ -164,10 +164,10 @@ test('short offline sleeve keeps transport visible and reduced motion leaves int
   await expect(pending).toBeVisible();
   const feedback = await pending.evaluate(element => ({ animation: getComputedStyle(element).animationName, border: getComputedStyle(element).borderTopStyle }));
   expect(feedback).toEqual({ animation: 'none', border: 'dotted' });
-  await expect(page.getByRole('group', { name: 'Playback controls' })).toHaveAttribute('aria-busy', 'true');
-  await expect(page.getByTestId('player').getByText('Waiting for confirmation', { exact: true })).toBeVisible();
+  // A slow confirmation is shown quietly; the player itself stays usable.
+  await expect(page.getByRole('group', { name: 'Playback controls' })).not.toHaveAttribute('aria-busy', 'true');
+  await expect(page.getByTestId('player').getByText('Syncing with Discord…', { exact: true })).toBeVisible();
   await expect(page.getByTestId('player').locator('.play-button .spinner')).toHaveCount(0);
-  await expect(page.getByTestId('player').getByRole('button', { name: 'Pause playback' })).toBeDisabled();
   await expect(page.getByTestId('player').getByRole('button', { name: 'Resume playback' })).toBeEnabled();
   await streamAction(page, 'disconnect');
   const resume = page.getByTestId('player').getByRole('button', { name: 'Resume playback' });

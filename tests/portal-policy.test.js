@@ -123,30 +123,33 @@ test('fresh playback verification retains reserved Stop capacity while ordinary 
   release.resolve(); assert.ok((await settled).every(result => result.status === 'fulfilled'));
 });
 
-test('partial permission-read admission fails safely and recovers after rate pressure releases', { timeout: 5000 }, async t => {
-  const f = await portalFixture(t); const release = deferred(); const memberStarted = deferred();
+test('a saturated pool refuses a whole authorization round before any read starts and recovers after pressure releases', { timeout: 5000 }, async t => {
+  const f = await portalFixture(t); const release = deferred();
   const fetchUser = f.client.users.fetch.bind(f.client.users);
   const fetchMember = f.guild.members.fetch.bind(f.guild.members);
+  const fetchGuild = f.client.rest.get.bind(f.client.rest);
+  const fetchChannel = f.guild.channels.fetch.bind(f.guild.channels);
+  let started = 0;
   f.client.users.fetch = async id => {
     if (Number(id) >= 1000) { await release.promise; return { id, bot: false }; }
-    return fetchUser(id);
+    started++; return fetchUser(id);
   };
-  f.guild.members.fetch = async () => { memberStarted.resolve(); await release.promise; throw new Error('Discord read failed behind a saturated route'); };
-  // Hold 126 exact user-read slots and leave two for the verification actor.
-  // Its operator identity and raw guild fit, so the second wave (members with
-  // channels) exercises partial admission rather than failing earlier.
+  f.guild.members.fetch = async (...args) => { started++; return fetchMember(...args); };
+  f.client.rest.get = async (...args) => { started++; return fetchGuild(...args); };
+  f.guild.channels.fetch = async (...args) => { started++; return fetchChannel(...args); };
+  // Hold 126 exact user-read slots. The in-voice operator actor's round needs
+  // six (user, guild, actor, bot and two channels), so no partial round starts.
   const actors = Array.from({ length: 126 }, (_, index) => String(1000 + index));
   const policy = createPortalPolicy(f.client, { operatorIds: [...actors, '200'] });
   t.after(() => { release.resolve(); policy.close(); });
   const ordinary = actors.map(actor => policy.identity(actor));
   const settled = Promise.allSettled(ordinary);
   await assert.rejects(policy.guild('200', '100', undefined, { fresh: true }), { status: 429 });
-  await memberStarted.promise;
+  await delay(20); assert.equal(started, 0);
   release.resolve(); assert.ok((await settled).every(result => result.status === 'fulfilled'));
-  f.guild.members.fetch = fetchMember;
   const context = await policy.guild('200', '100', undefined, { fresh: true });
   requirePlayback(context, f.client);
-  assert.equal(context.member.id, '200');
+  assert.equal(context.member.id, '200'); assert.equal(started, 5);
   assert.deepEqual(f.calls, []);
 });
 

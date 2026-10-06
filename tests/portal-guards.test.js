@@ -12,7 +12,7 @@ import { execute as queue } from '../src/commands/queue.js';
 import { execute as nowplaying } from '../src/commands/nowplaying.js';
 import { execute as history } from '../src/commands/history.js';
 import { withGuildMutation } from '../src/utils/requests.js';
-import { createPortalPolicy } from '../src/portal/policy.js';
+import { createPortalPolicy, READ_ADMISSIONS } from '../src/portal/policy.js';
 
 const slash = (f, command, action, values = {}) => ({
   client: f.client, guildId: '100', guild: f.guild, user: f.users.get('200'), member: f.members.get('200'), commandName: command,
@@ -257,21 +257,22 @@ test('stalled Discord requests remain coalesced after individual deadlines inste
   await policy.identity('200'); assert.equal(calls, 2, 'settled identity is not cached'); policy.close();
 });
 
-test('underlying Discord read admission is bounded across snapshot and fresh command reads, with two urgent slots', async t => {
+test('underlying Discord read admission is bounded across snapshot and fresh command reads, with reserved urgent slots', async t => {
   const f = await portalFixture(t); const release = deferred(); let calls = 0;
   f.client.users.fetch = async id => { calls++; await release.promise; return { id, bot: false }; };
   // Fill exact underlying-read admissions, not identity invocation counts.
   // Operator identities use one user read; non-operator width-two identity
   // reservations are covered separately in portal-identity-latency.test.js.
   const actors = Array.from({ length: 128 }, (_, index) => String(1000 + index));
-  const policy = createPortalPolicy(f.client, { operatorIds: [...actors, '200', '201'] });
+  const urgentActors = Array.from({ length: READ_ADMISSIONS.urgent }, (_, index) => String(2000 + index));
+  const policy = createPortalPolicy(f.client, { operatorIds: [...actors, ...urgentActors, '200', '202'] });
   t.after(() => { release.resolve(); policy.close(); });
   const pending = actors.map((actor, index) => policy.identity(actor, { fresh: index % 2 === 0 }));
   const settled = Promise.allSettled(pending);
   await delay(20); assert.equal(calls, 128);
   await assert.rejects(policy.identity('200', { fresh: true }), { status: 429 });
-  const urgent = [policy.identity('200', { fresh: true, urgent: true }), policy.identity('201', { fresh: true, urgent: true })];
-  await delay(20); assert.equal(calls, 130);
+  const urgent = urgentActors.map(actor => policy.identity(actor, { fresh: true, urgent: true }));
+  await delay(20); assert.equal(calls, 128 + READ_ADMISSIONS.urgent);
   await assert.rejects(policy.identity('202', { fresh: true, urgent: true }), { status: 429 });
   release.resolve();
   assert.ok((await settled).every(result => result.status === 'fulfilled'));

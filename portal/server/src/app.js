@@ -70,6 +70,9 @@ export async function createPortalServer(config, testOptions = {}) {
   const anonymousLimiter = new RateLimiter(limits.rateKeys, now);
   const pendingOAuth = new Map(); const streams = new Set(); const commandReaders = new Set();
   let processing = 0; let stops = 0; let closing = false;
+  // Production follows the bot's change feed; test servers opt in explicitly.
+  const followChanges = Object.keys(testOptions).length ? testOptions.changeFeed === true : true;
+  const feedController = new AbortController(); let feedLive = false; let following;
 
   function sessionFor(req) {
     const token = cookie(req, SESSION_COOKIE); const session = store.get(token);
@@ -119,7 +122,7 @@ export async function createPortalServer(config, testOptions = {}) {
 
   async function events(req, res, guildId, token, session, signal) {
     if (streams.size >= limits.streams || [...streams].filter(stream => stream.sessionKey === session.key).length >= limits.streamsPerSession) throw busy();
-    const record = { sessionKey: session.key, guildId, close: null, wake: null }; streams.add(record);
+    const record = { sessionKey: session.key, guildId, close: null, wake: null, reschedule: null }; streams.add(record);
     let pollTimer; let heartbeatTimer; let drainTimer; let drainWait; let ended = false; let writing = false; let unblock;
     const began = now(); let failures = 0; let reading = true; let pendingWake = false;
     const pollController = new AbortController();
@@ -167,9 +170,13 @@ export async function createPortalServer(config, testOptions = {}) {
     const schedule = () => {
       if (ended) return;
       const wait = Math.min(limits.pollRetryMaxMs, limits.pollMs * 2 ** Math.min(failures, 10));
+      // The feed wakes this stream on change; polling then only bounds how long
+      // Discord-side revocation can stay unobserved.
+      const base = feedLive && !failures ? limits.pollFeedMs : limits.pollMs;
       clearTimeout(pollTimer);
-      pollTimer = setTimeout(tick, pendingWake && !failures ? 0 : Math.max(limits.pollMs, wait)); pollTimer.unref();
+      pollTimer = setTimeout(tick, pendingWake && !failures ? 0 : Math.max(base, wait)); pollTimer.unref();
     };
+    record.reschedule = () => { if (!ended && !reading && !failures) schedule(); };
     record.wake = () => {
       if (ended || pendingWake) return;
       // One bounded notification per stream. A read consumes it only when it
@@ -233,6 +240,31 @@ export async function createPortalServer(config, testOptions = {}) {
       pollController.abort();
       res.off('close', close); throw error;
     } finally { reading = false; schedule(); }
+  }
+
+  async function followFeed() {
+    let instance = ''; let after = ''; let failures = 0;
+    const signal = feedController.signal;
+    while (!closing && !signal.aborted) {
+      try {
+        const data = await transport.changes(instance, after, signal);
+        if (closing) return;
+        // A reset, new bot instance or recovered feed may have missed changes.
+        const all = data.reset || data.instanceId !== instance || !feedLive;
+        const changed = new Set(data.guildIds);
+        feedLive = true; failures = 0; instance = data.instanceId; after = data.sequence;
+        for (const stream of streams) if (all || changed.has(stream.guildId)) stream.wake();
+      } catch {
+        if (closing || signal.aborted) return;
+        if (feedLive) { feedLive = false; for (const stream of streams) stream.reschedule(); }
+        const wait = Math.min(limits.changesRetryMaxMs, 1000 * 2 ** Math.min(failures++, 10));
+        await new Promise(resolve => {
+          const timer = setTimeout(done, wait); timer.unref();
+          function done() { clearTimeout(timer); signal.removeEventListener('abort', done); resolve(); }
+          signal.addEventListener('abort', done, { once: true });
+        });
+      }
+    }
   }
 
   const server = http.createServer({ maxHeaderSize: limits.headerBytes }, async (req, res) => {
@@ -416,16 +448,20 @@ export async function createPortalServer(config, testOptions = {}) {
     server,
     listen: () => new Promise((resolve, reject) => {
       server.once('error', reject);
-      server.listen(config.port, config.host, () => { server.off('error', reject); resolve(server.address()); });
+      server.listen(config.port, config.host, () => {
+        server.off('error', reject);
+        if (followChanges && !following) following = followFeed();
+        resolve(server.address());
+      });
     }),
     async close() {
-      closing = true; for (const stream of streams) stream.close();
+      closing = true; feedController.abort(); for (const stream of streams) stream.close();
       transport.close();
       const stopped = new Promise(resolve => server.close(resolve)); server.closeAllConnections();
-      await stopped; await store.close(); pendingOAuth.clear();
+      await stopped; await following; await store.close(); pendingOAuth.clear();
     },
     // Resource counts contain no identity, credentials, or music data.
-    resourceCounts: () => ({ streams: streams.size, requests: processing + commandReaders.size + stops,
+    resourceCounts: () => ({ feedLive, streams: streams.size, requests: processing + commandReaders.size + stops,
       ordinaryRequests: processing, commandReaders: commandReaders.size, stops, upstream: transport.active,
       ordinaryUpstream: transport.ordinary, stopUpstream: transport.stops, pendingOAuth: pendingOAuth.size }),
   };

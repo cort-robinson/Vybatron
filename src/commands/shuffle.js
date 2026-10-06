@@ -2,7 +2,8 @@ import { SlashCommandBuilder } from 'discord.js';
 import { requireControl } from '../utils/guards.js';
 import { ephemeralText } from '../utils/messages.js';
 import { shuffleQueue } from '../utils/operations.js';
-import { refresh, withControllerLink } from '../utils/player-controller.js';
+import { withControllerLink } from '../utils/player-controller.js';
+import { directControlPresentation } from '../utils/presentation-updates.js';
 
 export const data = new SlashCommandBuilder()
   .setName('shuffle')
@@ -16,7 +17,7 @@ export async function execute(interaction) {
     return interaction.reply(ephemeralText('Add at least two queued tracks before shuffling.'));
   }
   await shuffleQueue(player);
-  await refresh(interaction.client, player);
+  await directControlPresentation(interaction, player);
   return interaction.reply(ephemeralText(withControllerLink(
     `Shuffled ${player.queue.tracks.length} queued tracks.`,
     interaction,

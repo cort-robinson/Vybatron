@@ -211,6 +211,11 @@ browser access or CORS. Portal sets the trusted session's actorId itself.
 - GET `/v1/guilds/:guildId/diagnostics?actorId=...` -> Diagnostics.
 - GET `/v1/guilds/:guildId/activity?actorId=...` -> Activity.
 - GET `/health` (still authenticated) -> `{ready:boolean}`.
+- GET `/v1/changes?instance=...&after=...` -> `{instanceId:string,sequence:number,reset:boolean,guildIds:string[]}`.
+  Private wake-up long poll (held up to 20 s). Carries guild IDs only, never
+  actor, track or permission data; consumers must perform their own fresh
+  authorized read for each woken stream. An unknown instance or expired cursor
+  returns `reset:true`. See [instant controls](portal-instant-controls.md).
 - GET `/v1/latency?actorId=...` -> private maintainer-only direct-control timings:
   `{retentionSeconds:900,capacity:32,records:[{at:number,command:pause|resume|seek|filter|volume,success:boolean,totalMs:number,readyForMutationMs:number|null,authorization:{count:number,ms:number},playback:{count:number,ms:number},presentation:{count:number,ms:number}}]}`.
   Requires fresh verified maintainer identity in addition to bridge authentication.
@@ -235,9 +240,9 @@ browser access or CORS. Portal sets the trusted session's actorId itself.
   A failed phase freezes pending sibling fields, which may have count but zero
   wait time. Publication, phase exit, expiry and shutdown exclude late updates.
   Active traces older than 15 minutes cannot publish a new completed record.
-  Fresh observed stream state is distinct from a command acknowledgment: the
-  player can display an independently authorized live icon while visibly waiting
-  for confirmation, but ordinary controls remain locked until actual settlement.
+  The browser predicts playback controls immediately and reconciles them with
+  these authorized results; see [instant controls](portal-instant-controls.md).
+  Non-playback actions remain locked until actual settlement.
 
 Same response/error shapes. HTTP bridge failures are contained and never fatal
 to audio. A private loopback test harness/fixtures must prove capabilities,

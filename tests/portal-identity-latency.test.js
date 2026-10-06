@@ -1,9 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
 import { setImmediate as tick, setTimeout as delay } from 'node:timers/promises';
 import { PermissionsBitField, PermissionFlagsBits as P } from 'discord.js';
-import { createPortalPolicy, requirePlayback } from '../src/portal/policy.js';
+import { createPortalPolicy, requirePlayback, READ_ADMISSIONS } from '../src/portal/policy.js';
 import { portalFixture, deferred } from './portal-fixtures.js';
 
 function gate() {
@@ -15,50 +14,24 @@ function identityFixture(t, options = {}) {
   const user = { id: '200', bot: false, username: 'Fresh user' };
   const owner = { id: '900' };
   const counts = { user: 0, application: 0 };
+  // Guild inputs share the identity round. Hold them until teardown so the
+  // identity decision alone settles each case; no grant can be derived early.
+  const held = deferred(); t.after(() => held.resolve(null));
+  const server = { members: { fetch: () => held.promise, fetchMe: () => held.promise } };
   const client = { isReady: () => true, library: {}, runtimeState: { draining: false },
     users: { async fetch(id, options) { counts.user++; assert.equal(options.force, true); return id === user.id ? user : { id, bot: false }; } },
     application: { async fetch() { counts.application++; return { owner }; } },
-    guilds: { cache: new Map([['100', {}]]), fetch: () => assert.fail('failed identity must not start guild work') },
+    guilds: { cache: new Map([['100', server]]) }, rest: { get: () => held.promise },
   };
   const policy = createPortalPolicy(client, options); t.after(() => policy.close());
   return { client, policy, user, owner, counts };
 }
 
-// Load the actual module with only its identity body restored to the reviewed
-// sequential baseline. All admission, guild and channel code stays identical.
-async function serialPolicy() {
-  const url = new URL('../src/portal/policy.js', import.meta.url);
-  const source = await readFile(url, 'utf8');
-  const start = source.indexOf('  const identity = async');
-  const end = source.indexOf('  const guild = async', start);
-  assert.ok(start >= 0 && end > start);
-  const baseline = `  const identity = async (actorId, { fresh = false, urgent = false } = {}) => {
-    ready();
-    if (!validId(actorId)) fail(400, 'invalid_actor', 'A valid session actor is required.');
-    const user = await read('user', \`user:\${actorId}\`, async () => detachUser(await client.users.fetch(actorId, { force: true })), fresh, urgent);
-    if (!user || user.id !== actorId || user.bot) fail(403, 'forbidden', 'This account cannot use the portal.');
-    let maintainer = operators.has(actorId);
-    if (!maintainer) {
-      const ownerId = await read('application', 'application', async () => {
-        const { owner } = await client.application.fetch();
-        return owner?.ownerId || owner?.id;
-      }, fresh, urgent);
-      maintainer = actorId === ownerId;
-    }
-    return { user, maintainer };
-  };
-`;
-  // Resolve package imports through this test; data URLs have no package base.
-  const resolved = (source.slice(0, start) + baseline + source.slice(end)).replace(/from '([^']+)'/g, (match, specifier) =>
-    `from '${specifier.startsWith('.') ? new URL(specifier, url).href : import.meta.resolve(specifier)}'`);
-  return (await import(`data:text/javascript;base64,${Buffer.from(resolved).toString('base64')}`)).createPortalPolicy;
-}
-
-test('ordinary authority settles identity, then overlaps guild, members and channels, with identical fetch counts', async t => {
-  const sequential = await serialPolicy();
-  const results = [];
-  for (const factory of [sequential, createPortalPolicy]) {
+test('authority starts identity, guild, members and in-voice session channels as one round with unchanged fetch counts', async t => {
+  for (const voice of [true, false]) await t.test(voice ? 'actor in Gateway voice' : 'actor outside Gateway voice', async t => {
     const f = await portalFixture(t); let active = 0, maximum = 0;
+    // A Gateway voice channel is the only signal that lets session channels join the round.
+    if (!voice) f.members.get('200').voice.channel = null;
     const events = [], counts = {};
     for (const [target, method, label] of [
       [f.client.users, 'fetch', 'user'], [f.client.application, 'fetch', 'application'],
@@ -73,24 +46,23 @@ test('ordinary authority settles identity, then overlaps guild, members and chan
         finally { active--; events.push(`end:${label}`); }
       };
     }
-    const policy = factory(f.client); t.after(() => policy.close());
+    const policy = createPortalPolicy(f.client); t.after(() => policy.close());
     const start = performance.now(); const context = await policy.guild('200', '100', undefined, { fresh: true });
     const elapsed = Math.round(performance.now() - start);
-    requirePlayback(context, f.client); assert.equal(context.admin, false); assert.notEqual(context.user, f.users.get('200'));
-    assert.ok(maximum <= 5, `at most five overlapped reads, saw ${maximum}`); assert.equal(active, 0);
-    results.push({ counts, events, elapsed });
-  }
-  assert.deepEqual(results[0].counts, { user: 1, application: 1, guild: 1, member: 1, bot: 1, channel: 2 });
-  assert.deepEqual(results[1].counts, results[0].counts);
-  assert.ok(results[0].events.indexOf('start:application') > results[0].events.indexOf('end:user'));
-  assert.ok(results[1].events.indexOf('start:application') < results[1].events.indexOf('end:user'));
-  for (const result of results) {
-    // Identity settles before any guild, member or channel read starts.
-    const firstGuildWave = Math.min(...['start:guild', 'start:member', 'start:bot', 'start:channel'].map(event => result.events.indexOf(event)));
-    for (const end of ['end:user', 'end:application']) assert.ok(result.events.indexOf(end) < firstGuildWave, `${end} precedes guild work`);
-  }
-  assert.ok(results[1].elapsed < results[0].elapsed, 'overlapped identity is faster than the sequential identity baseline');
-  t.diagnostic(`35 ms injected routes: sequential identity ${results[0].elapsed} ms; overlapped identity ${results[1].elapsed} ms / two waves; seven fetches each`);
+    if (voice) requirePlayback(context, f.client);
+    assert.equal(context.admin, false); assert.notEqual(context.user, f.users.get('200')); assert.equal(active, 0);
+    assert.deepEqual(counts, { user: 1, application: 1, guild: 1, member: 1, bot: 1, channel: 2 });
+    const firstEnd = events.findIndex(event => event.startsWith('end:'));
+    for (const label of ['user', 'application', 'guild', 'member', 'bot']) assert.ok(events.indexOf(`start:${label}`) < firstEnd, `${label} joins the first round`);
+    if (voice) {
+      assert.ok(events.indexOf('start:channel') < firstEnd, 'session channels join the first round');
+      assert.equal(maximum, 7);
+    } else {
+      assert.ok(events.indexOf('start:channel') > events.indexOf('end:member'), 'channels wait for verified membership');
+      assert.equal(maximum, 5);
+    }
+    t.diagnostic(`35 ms injected routes: ${voice ? 'one' : 'two'} network round(s) in ${elapsed} ms; seven fetches, maximum width ${maximum}`);
+  });
 });
 
 test('readiness and actor-ID validation reject before either identity read starts', async t => {
@@ -178,20 +150,25 @@ test('overlapping ordinary identities share pending inputs; fresh identities and
   assert.deepEqual(f.counts, { user: 4, application: 4 });
 });
 
-test('no guild work starts while identity is pending; fresh role revocation and Gateway voice movement still deny playback', async t => {
-  const f = await portalFixture(t), owner = deferred(), channels = deferred(), entered = deferred();
-  t.after(() => { owner.resolve({ owner: { id: '900' } }); channels.resolve(); });
+test('identity and guild inputs share one round; fresh role revocation and Gateway voice movement still deny playback', async t => {
+  const f = await portalFixture(t), owner = deferred(), guildGate = deferred(), channels = deferred(), entered = deferred();
+  t.after(() => { owner.resolve({ owner: { id: '900' } }); guildGate.resolve(); channels.resolve(); });
   const policy = createPortalPolicy(f.client); t.after(() => policy.close());
   await f.library.updateGuild('100', data => { data.settings.djRoleId = '500'; });
   f.members.get('200').roles.cache.set('500', f.roles.get('500'));
   f.client.application.fetch = () => owner.promise;
   const fetchGuild = f.client.rest.get.bind(f.client.rest); let guildReads = 0;
-  f.client.rest.get = async (...args) => { guildReads++; return fetchGuild(...args); };
+  // The inventory is produced when Discord answers, not when the request starts.
+  f.client.rest.get = async (...args) => { guildReads++; await guildGate.promise; return fetchGuild(...args); };
   const fetchChannel = f.guild.channels.fetch.bind(f.guild.channels);
-  f.guild.channels.fetch = async (...args) => { entered.resolve(); await channels.promise; return fetchChannel(...args); };
-  const reading = policy.guild('200', '100', undefined, { fresh: true }); await tick();
-  assert.equal(guildReads, 0); assert.equal(f.memberFetches, 0); assert.equal(f.channelReads.length, 0);
-  f.roles.delete('500'); owner.resolve({ owner: { id: '900' } }); await entered.promise;
+  let channelStarted = false;
+  f.guild.channels.fetch = async (...args) => { channelStarted = true; entered.resolve(); await channels.promise; return fetchChannel(...args); };
+  let settled = false;
+  const reading = policy.guild('200', '100', undefined, { fresh: true }).finally(() => { settled = true; }); await tick();
+  assert.equal(guildReads, 1); assert.equal(f.memberFetches, 1); assert.equal(channelStarted, true, 'in-voice session channels join the round');
+  f.roles.delete('500'); guildGate.resolve(); await tick(); await tick();
+  assert.equal(settled, false, 'no grant before the pending identity input settles');
+  owner.resolve({ owner: { id: '900' } }); await entered.promise;
   f.members.get('200').permissions = new PermissionsBitField([P.ManageGuild]);
   f.members.get('200').roles.cache.set('500', { id: '500' });
   f.members.get('200').voice.channel = f.channels.get('301'); channels.resolve();
@@ -202,16 +179,19 @@ test('no guild work starts while identity is pending; fresh role revocation and 
   assert.deepEqual(f.calls, []);
 });
 
-test('128 underlying ordinary reads retain admissions after five-second timeouts; urgent identity and guild work fit two reserved slots', { timeout: 9000 }, async t => {
+test('128 underlying ordinary reads retain admissions after five-second timeouts; a full urgent round fits the reserve', { timeout: 9000 }, async t => {
   const f = await portalFixture(t), release = deferred(), urgentRelease = deferred();
   t.after(() => { release.resolve(); urgentRelease.resolve(); });
   const operators = Array.from({ length: 128 }, (_, index) => String(1000 + index));
   const policy = createPortalPolicy(f.client, { operatorIds: operators }); t.after(() => policy.close());
   const fetchUser = f.client.users.fetch.bind(f.client.users), fetchOwner = f.client.application.fetch.bind(f.client.application);
+  // Each held urgent identity consumes two reserved admissions (user + owner).
+  const urgentActors = ['200', '201', '202', '901'];
+  assert.equal(urgentActors.length * 2, READ_ADMISSIONS.urgent);
   let heldCalls = 0, urgentUsers = 0, urgentOwners = 0;
   f.client.users.fetch = async (id, options) => {
     if (operators.includes(id)) { heldCalls++; await release.promise; return { id, bot: false }; }
-    if (id === '200') { urgentUsers++; await urgentRelease.promise; }
+    if (urgentActors.includes(id)) { urgentUsers++; await urgentRelease.promise; }
     return fetchUser(id, options);
   };
   f.client.application.fetch = async () => { urgentOwners++; await urgentRelease.promise; return fetchOwner(); };
@@ -220,19 +200,19 @@ test('128 underlying ordinary reads retain admissions after five-second timeouts
   const ordinary = operators.map(id => policy.identity(id));
   const timedOut = Promise.allSettled(ordinary); await tick(); assert.equal(heldCalls, 128);
   await assert.rejects(policy.identity('200', { fresh: true }), { status: 429 });
-  const urgent = policy.identity('200', { fresh: true, urgent: true });
-  const urgentTimeout = assert.rejects(urgent, /too long/); await tick();
-  assert.equal(urgentUsers, 1); assert.equal(urgentOwners, 1);
-  await assert.rejects(policy.identity('201', { fresh: true, urgent: true }), { status: 429 }, 'both reserved admissions are held');
+  const urgent = urgentActors.map(id => policy.identity(id, { fresh: true, urgent: true }));
+  const urgentTimeouts = Promise.all(urgent.map(reading => assert.rejects(reading, /too long/))); await tick();
+  assert.equal(urgentUsers, 4); assert.equal(urgentOwners, 4);
+  await assert.rejects(policy.identity('900', { fresh: true, urgent: true }), { status: 429 }, 'every reserved admission is held');
   const outcomes = await timedOut;
-  await urgentTimeout;
+  await urgentTimeouts;
   assert.ok(outcomes.every(result => result.status === 'rejected' && /too long/.test(result.reason.message)));
   await assert.rejects(policy.identity('200', { fresh: true }), { status: 429 }, 'timeouts must not release underlying admissions');
   const shared = policy.identity(operators[0]); const sharedOutcome = Promise.allSettled([shared]); await tick();
   assert.equal(heldCalls, 128, 'a timed-out pending read still coalesces');
   await assert.rejects(policy.identity(operators[0], { fresh: true }), { status: 429 });
-  await assert.rejects(policy.identity('201', { fresh: true, urgent: true }), { status: 429 }, 'urgent timeouts must retain both underlying admissions');
-  urgentRelease.resolve(); await tick();
+  await assert.rejects(policy.identity('900', { fresh: true, urgent: true }), { status: 429 }, 'urgent timeouts must retain their underlying admissions');
+  urgentRelease.resolve(); await tick(); await tick();
   let active = 0, maximum = 0;
   for (const [target, method] of [[f.client.users, 'fetch'], [f.client.application, 'fetch'], [f.client.rest, 'get'],
     [f.guild.members, 'fetch'], [f.guild.members, 'fetchMe'], [f.guild.channels, 'fetch']]) {
@@ -242,8 +222,10 @@ test('128 underlying ordinary reads retain admissions after five-second timeouts
       try { await tick(); return await original(...args); } finally { active--; }
     };
   }
+  // Stop's whole round (identity, guild, members and two session channels) fits the reserve.
   const context = await policy.guild('200', '100', undefined, { fresh: true, urgent: true });
-  requirePlayback(context, f.client); assert.equal(maximum, 2); assert.equal(context.channels.size, 2); assert.deepEqual(f.calls, []);
+  requirePlayback(context, f.client); assert.equal(maximum, 7); assert.ok(maximum <= READ_ADMISSIONS.urgent);
+  assert.equal(context.channels.size, 2); assert.deepEqual(f.calls, []);
   release.resolve(); assert.equal((await sharedOutcome)[0].status, 'fulfilled');
   assert.equal((await policy.identity(operators[0], { fresh: true })).user.id, operators[0]); assert.equal(heldCalls, 129);
 });

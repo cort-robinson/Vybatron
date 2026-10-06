@@ -36,6 +36,10 @@ export class Transport {
     // capped above, and each of the fixed upstream origins retains at most four.
     const options = { keepAlive: true, maxSockets: limits.upstream, maxFreeSockets: Math.min(4, limits.upstream) };
     this.httpAgent = new http.Agent(options); this.httpsAgent = new https.Agent(options);
+    // The held change long poll gets its own single socket so it never waits
+    // behind, or occupies, the bounded protected-request pool.
+    const feed = { keepAlive: true, maxSockets: 1, maxFreeSockets: 1 };
+    this.feedAgents = { http: new http.Agent(feed), https: new https.Agent(feed) };
   }
 
   async request(url, { method = 'GET', headers = {}, body, signal, timeout = this.limits.upstreamMs, stop = false } = {}) {
@@ -43,36 +47,54 @@ export class Transport {
       ? this.stops >= this.stopCapacity : this.ordinary >= this.limits.upstream - this.stopCapacity)) throw busy();
     this.active++; if (stop && this.stopCapacity > 0) this.stops++; else this.ordinary++;
     try {
-      return await new Promise((resolve, reject) => {
-        const target = new URL(url); const secure = target.protocol === 'https:';
-        const req = (secure ? https : http).request(target, {
-          method, headers: { Accept: 'application/json', 'Accept-Encoding': 'identity', ...headers,
-            ...(body !== undefined && { 'Content-Length': Buffer.byteLength(body) }) },
-          agent: secure ? this.httpsAgent : this.httpAgent, signal, maxHeaderSize: this.limits.headerBytes,
-        }, response => {
-          let size = 0; const chunks = [];
-          // Settle the terminal validation error before destroying the socket:
-          // the resulting transport error must not replace its classification.
-          const fail = () => { reject(new InvalidUpstreamResponse()); response.destroy(); req.destroy(); };
-          const length = Number(response.headers['content-length']);
-          if (length > this.limits.upstreamBytes || response.headers['content-encoding'] ||
-              !/^application\/json(?:\s*;.*)?$/i.test(response.headers['content-type'] || '')) { fail(); return; }
-          response.on('data', chunk => { size += chunk.length; if (size > this.limits.upstreamBytes) fail(); else chunks.push(chunk); });
-          response.on('error', () => reject(unavailable()));
-          response.on('end', () => {
-            try {
-              const data = JSON.parse(Buffer.concat(chunks).toString('utf8'));
-              if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error();
-              resolve({ status: response.statusCode, data });
-            } catch { reject(new InvalidUpstreamResponse()); }
-          });
-        });
-        const timer = setTimeout(() => req.destroy(new Error('Upstream timeout')), timeout); timer.unref();
-        req.once('close', () => clearTimeout(timer));
-        req.once('error', () => reject(unavailable()));
-        req.end(body);
-      });
+      return await this.send(url, { method, headers, body, signal, timeout });
     } finally { this.active--; if (stop && this.stopCapacity > 0) this.stops--; else this.ordinary--; }
+  }
+
+  send(url, { method = 'GET', headers = {}, body, signal, timeout = this.limits.upstreamMs, feed = false } = {}) {
+    return new Promise((resolve, reject) => {
+      const target = new URL(url); const secure = target.protocol === 'https:';
+      const agent = feed ? this.feedAgents[secure ? 'https' : 'http'] : secure ? this.httpsAgent : this.httpAgent;
+      const req = (secure ? https : http).request(target, {
+        method, headers: { Accept: 'application/json', 'Accept-Encoding': 'identity', ...headers,
+          ...(body !== undefined && { 'Content-Length': Buffer.byteLength(body) }) },
+        agent, signal, maxHeaderSize: this.limits.headerBytes,
+      }, response => {
+        let size = 0; const chunks = [];
+        // Settle the terminal validation error before destroying the socket:
+        // the resulting transport error must not replace its classification.
+        const fail = () => { reject(new InvalidUpstreamResponse()); response.destroy(); req.destroy(); };
+        const length = Number(response.headers['content-length']);
+        if (length > this.limits.upstreamBytes || response.headers['content-encoding'] ||
+            !/^application\/json(?:\s*;.*)?$/i.test(response.headers['content-type'] || '')) { fail(); return; }
+        response.on('data', chunk => { size += chunk.length; if (size > this.limits.upstreamBytes) fail(); else chunks.push(chunk); });
+        response.on('error', () => reject(unavailable()));
+        response.on('end', () => {
+          try {
+            const data = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+            if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error();
+            resolve({ status: response.statusCode, data });
+          } catch { reject(new InvalidUpstreamResponse()); }
+        });
+      });
+      const timer = setTimeout(() => req.destroy(new Error('Upstream timeout')), timeout); timer.unref();
+      req.once('close', () => clearTimeout(timer));
+      req.once('error', () => reject(unavailable()));
+      req.end(body);
+    });
+  }
+
+  // Private wake-up cursor from the bot. It returns guild IDs only; streams
+  // still perform their own fresh authorized reads after being woken.
+  async changes(instance, after, signal) {
+    const url = new URL('/v1/changes', this.config.botUrl);
+    url.searchParams.set('instance', instance); url.searchParams.set('after', String(after));
+    const result = await this.send(url, { headers: { Authorization: `Bearer ${this.config.bridgeToken}` }, signal, timeout: this.limits.changesMs, feed: true });
+    const data = result.data;
+    if (result.status !== 200 || typeof data.instanceId !== 'string' || data.instanceId.length > 64 || !Number.isSafeInteger(data.sequence) || data.sequence < 0
+      || typeof data.reset !== 'boolean' || !Array.isArray(data.guildIds) || data.guildIds.length > 256
+      || !data.guildIds.every(id => typeof id === 'string' && /^\d{1,20}$/.test(id))) throw new InvalidUpstreamResponse();
+    return data;
   }
 
   sharedRead(url, options, signal) {
@@ -162,5 +184,6 @@ export class Transport {
   close() {
     for (const pending of this.sharedReads.values()) pending.controller.abort();
     this.sharedReads.clear(); this.httpAgent.destroy(); this.httpsAgent.destroy();
+    this.feedAgents.http.destroy(); this.feedAgents.https.destroy();
   }
 }

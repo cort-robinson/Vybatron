@@ -13,8 +13,10 @@ test('an exact command result already verified by SSE avoids another snapshot GE
     await page.getByRole('button', { name: 'Pause playback' }).click();
     await expect.poll(() => server.heldCommands.size).toBe(1);
     server.broadcast();
-    await expect(page.getByRole('button', { name: 'Resume playback' })).toBeDisabled();
+    // The prediction is on screen and usable while the reply is held.
+    await expect(page.getByRole('button', { name: 'Resume playback' })).toBeEnabled();
     server.releaseCommandReplies();
+    await expect(page.getByTestId('player').getByText('Syncing with Discord…')).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Resume playback' })).toBeEnabled();
     expect(server.snapshotReads).toHaveLength(reads);
     expect(server.commands).toHaveLength(1);
@@ -107,9 +109,10 @@ test('a pre-mutation SSE frame cannot discard a slow pause command result', asyn
     await expect(page.getByTitle('Frame produced before pause', { exact: true })).toBeVisible();
     server.releaseCommandExecution();
     await expect(page.getByRole('button', { name: 'Resume playback' })).toBeEnabled();
-    expect(server.snapshotReads).toHaveLength(reads + 1);
-    expect(server.commands).toEqual([{ command: 'pause', expectedRevision: revision }]);
+    await expect.poll(() => server.snapshotReads.length).toBe(reads + 1);
+    expect(server.commands).toEqual([{ command: 'pause' }]);
     expect(server.state.snapshot.session.status).toBe('paused');
+    expect(server.state.snapshot.revision).not.toBe(revision);
   } finally { await page.close(); await server.close(); }
 });
 
@@ -128,7 +131,7 @@ test('a delayed command snapshot cannot replace a later Discord state', async ({
     server.releaseCommandReplies();
     await expect(page.getByRole('button', { name: 'Pause playback' })).toBeEnabled();
     await expect(page.getByTestId('player').getByText('Later Discord selection', { exact: true })).toBeVisible();
-    expect(server.snapshotReads).toHaveLength(reads + 1);
+    await expect.poll(() => server.snapshotReads.length).toBe(reads + 1);
     expect(server.commands).toHaveLength(1);
   } finally { await page.close(); await server.close(); }
 });
@@ -146,7 +149,8 @@ test('a slow GET started during a command is replaced by a read after completion
     expect([...server.capturedSnapshots.values()][0].session.status).toBe('playing');
     server.releaseCommandExecution();
     await expect.poll(() => server.snapshotReads.length).toBe(reads + 2);
-    await expect(page.getByRole('button', { name: 'Pause playback' })).toBeDisabled();
+    // The confirming read is pending: the prediction stays, but controls wait for fresh state.
+    await expect(page.getByRole('button', { name: 'Resume playback' })).toBeDisabled();
     server.releaseSnapshotReads(true);
     await expect(page.getByRole('button', { name: 'Resume playback' })).toBeEnabled();
     expect(server.commands).toHaveLength(1);
@@ -270,7 +274,7 @@ for (const status of [401, 403, 404]) {
       await page.getByRole('button', { name: 'Pause playback' }).click();
       await expect.poll(() => server.heldCommands.size).toBe(1);
       await page.getByRole('button', { name: 'My Music', exact: true }).click();
-      await expect(page.getByRole('button', { name: 'Remove favorite Evening Light' })).toBeDisabled();
+      await expect(page.getByRole('button', { name: 'Remove favorite Evening Light' })).toBeVisible();
       server.denyAccess(status);
       if (status === 401) await expect(page.getByRole('link', { name: /Continue with Discord/ })).toBeVisible();
       else await expect(page.getByText('You no longer have access to this listening space.', { exact: true }).first()).toBeVisible();
@@ -337,7 +341,7 @@ test('a silent stream expires freshness and accepts recovery GET state without a
     server.releaseSnapshotReads();
     await expect(page.getByRole('button', { name: 'Resume playback' })).toBeEnabled();
     await expect.poll(() => server.streams.size).toBe(1);
-    expect(server.snapshotReads).toHaveLength(reads + 1);
+    await expect.poll(() => server.snapshotReads.length).toBe(reads + 1);
     expect(server.commands).toHaveLength(0);
   } finally { await page.close(); await server.close(); }
 });

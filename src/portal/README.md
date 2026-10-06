@@ -47,13 +47,18 @@ completed profiles, ownership and permission results are never cached. Commands
 always start separate fresh reads, including their post-lookup checks. Underlying
 reads retain their admission slot after an individual caller times out, until
 Discord settles, preventing stalled reads multiplying on every poll. The pool
-holds at most 128 underlying reads plus two reserved urgent slots. Four concurrent
-same-account snapshots share each relevant individual channel and authority
-input while they overlap; spaced polls or different actors still fetch their
-own current account/member state. Member/role reads run together after the guild
-refresh, followed by bot membership and bounded individual channel reads. All
-inputs settle and gateway readiness is checked again before permissions are
-evaluated; deadlines and the 128+2 admission cap are unchanged.
+holds at most 128 underlying reads plus eight reserved urgent slots, enough for
+one complete Stop authorization round; a round is admitted whole or refused.
+Four concurrent same-account snapshots share each relevant individual channel and
+authority input while they overlap; spaced polls or different actors still fetch
+their own current account/member state. User, application owner, raw guild/role
+inventory, actor member and bot member are independent routes and start
+together as one round. When Gateway already places the actor in one of the
+guild's voice channels, the session channel reads join that round; the channel
+set is recomputed after binding and any newly referenced channel is fetched
+fresh. A failed round submits no further channel batches. All inputs settle and
+gateway readiness is checked again before permissions are evaluated. No
+completed input or grant is reused.
 Fresh role inventories evict deleted roles from discord.js's cache before its
 member/channel permission getters run. Permission inputs are detached as each
 fresh response settles, before other member/role/bot/channel awaits: guild owner,
@@ -92,9 +97,9 @@ foreign and mismatched channels are absent and fail closed.
 Ordinary individual channel reads share a global four-read pool and are
 submitted in batches of at most four. Four permits the common four-distinct-ID
 case to complete in one channel round; two would require another network wait.
-Stop has a separate two-read pool, submits at most two at once and starts channel
-work only after bot-member verification, preserving its two reserved admissions
-even when 128 ordinary reads are stalled. Timed-out reads retain their network
+Stop has a separate two-read pool and submits at most two channel reads at once,
+so its full round fits the eight reserved admissions even when 128 ordinary
+reads are stalled. Timed-out reads retain their network
 and admission slots until actual settlement. These pools do not preempt Discord's
 own REST FIFO/global limits. No Discord rate bucket is hardcoded or bypassed.
 
@@ -184,4 +189,8 @@ source binding, overflow access and reserved Stop admission. Automated/source
 checks are separate from the root-owned live pilot/audio, secure provisioning
 and deployment release gates.
 
-Web Pause/Resume/Seek/Filter/Volume await the actual playback API and schedule owned, bounded cosmetic writers. Their timing records report zero awaited presentation spans; native Pause/Resume retain awaited controller and voice-status spans. Background writer settlement is excluded from command timing and never represents audible delivery. Terminal Stop and idle paths retire presentation ownership immediately and do not await cosmetic REST settlement before destroying playback.
+Web Pause/Resume/Seek/Filter/Volume, and Loop/Shuffle/Remove/Move/Clear/Radio-on, await the actual playback API and schedule owned, bounded cosmetic writers. Their timing records report zero awaited presentation spans; native Pause/Resume retain awaited controller and voice-status spans. Background writer settlement is excluded from command timing and never represents audible delivery. Terminal Stop and idle paths retire presentation ownership immediately and do not await cosmetic REST settlement before destroying playback.
+
+Every handler whose first await is the native `requireControl` guard (those controls plus Skip, Skip-to, Voteskip and Stop) takes its only pre-write authority at that in-lane guard, followed by a fresh final disclosure.
+
+`changes.js` serves the private `GET /v1/changes` wake-up long poll for the portal API: guild IDs and a cursor only, driven by Lavalink player events, a 250 ms local revision scan while a consumer is active, and Gateway voice/channel/role/guild updates. See [instant controls](../../docs/portal-instant-controls.md).

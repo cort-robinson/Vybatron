@@ -33,24 +33,24 @@ test('a reply captured after an overlapping live frame completes pause without a
   try {
     await connected(page, server);
     const reads = server.snapshotReads.length; const events = server.eventReads.length;
-    const revision = server.state.snapshot.revision;
     server.holdCommandExecution(); server.holdCommandReplies();
     await pause(page).click(); await expect.poll(() => server.commands.length).toBe(1);
     stamp(server.state.snapshot, 3); server.state.snapshot.session.queue[0].title = 'Frame captured before pause'; server.broadcast();
     await expect(page.getByTitle('Frame captured before pause', { exact: true })).toBeVisible();
-    await expect(pause(page)).toBeDisabled();
+    // The prediction stays on screen and usable over an older live frame.
+    await expect(resume(page)).toBeEnabled();
     expect(server.state.snapshot.session.status).toBe('playing');
     stamp(server.state.snapshot, 4); server.releaseCommandExecution();
     await expect.poll(() => server.heldCommands.size).toBe(1);
     const reply = [...server.heldCommands.values()][0];
     expect(reply.ordering).toEqual({ instanceId: instance, sequence: 4 });
     expect(reply.session.status).toBe('paused');
-    await expect(pause(page)).toBeDisabled(); // Pending until the actual HTTP reply.
+    await expect(resume(page)).toBeEnabled();
     server.releaseCommandReplies();
     await expect(resume(page)).toBeEnabled();
     expect(server.snapshotReads).toHaveLength(reads); expect(server.eventReads).toHaveLength(events);
     expect(server.streams.size).toBe(1);
-    expect(server.commands).toEqual([{ command: 'pause', expectedRevision: revision }]);
+    expect(server.commands).toEqual([{ command: 'pause' }]);
   } finally { await page.close(); await server.close(); }
 });
 
@@ -66,8 +66,7 @@ test('an older delayed reply keeps a later Discord selection and capabilities wi
     server.state.snapshot.session.current!.title = 'Later Discord selection';
     server.state.snapshot.session.canControl = false; server.state.snapshot.session.reason = 'Playback controls require the DJ role.';
     server.broadcast(); await expect(playerTitle(page, 'Later Discord selection')).toBeVisible();
-    server.releaseCommandReplies();
-    await expect(page.getByRole('status').filter({ hasText: 'Accepted by the loopback HTTP fixture.' })).toBeVisible();
+    await deliverRetiredReply(page, server);
     await expect(playerTitle(page, 'Later Discord selection')).toBeVisible(); await expect(pause(page)).toBeDisabled();
     expect(server.snapshotReads).toHaveLength(reads); expect(server.eventReads).toHaveLength(events);
     expect(server.streams.size).toBe(1); expect(server.commands).toHaveLength(1);
@@ -87,7 +86,7 @@ for (const sequence of [1, 2]) {
       expect(server.snapshotReads).toHaveLength(reads); expect(server.eventReads).toHaveLength(events);
       await page.clock.fastForward(5_001);
       await expect(pause(page)).toBeDisabled(); await expect.poll(() => server.capturedSnapshots.size).toBe(1);
-      expect(server.snapshotReads).toHaveLength(reads + 1); expect(server.commands).toHaveLength(0);
+      await expect.poll(() => server.snapshotReads.length).toBe(reads + 1); expect(server.commands).toHaveLength(0);
       stamp(server.state.snapshot, 3); server.releaseSnapshotReads(); await expect(pause(page)).toBeEnabled();
     } finally { await page.close(); await server.close(); }
   });
@@ -100,7 +99,10 @@ test('an equal delayed command reply does not extend the live-frame freshness le
     const reads = server.snapshotReads.length; const events = server.eventReads.length;
     server.holdCommandReplies(); stamp(server.state.snapshot, 3);
     await pause(page).click(); await expect.poll(() => server.heldCommands.size).toBe(1);
-    server.broadcast(); await expect(resume(page)).toBeDisabled();
+    // The prediction shows Resume at once, so wait for the live frame itself
+    // before moving the clock; its acceptance starts the freshness lease.
+    server.state.snapshot.session.queue[0].title = 'Live frame before reply'; server.broadcast();
+    await expect(page.getByTitle('Live frame before reply', { exact: true })).toBeVisible(); await expect(resume(page)).toBeEnabled();
     await page.clock.fastForward(20_000); server.releaseCommandReplies(); await expect(resume(page)).toBeEnabled();
     expect(server.snapshotReads).toHaveLength(reads); expect(server.eventReads).toHaveLength(events);
     server.holdSnapshotReads(); await page.clock.fastForward(5_001);
@@ -117,12 +119,12 @@ test('a bridge lifetime change requires GET and cannot make an earlier command r
     await pause(page).click(); await expect.poll(() => server.heldCommands.size).toBe(1);
     stamp(server.state.snapshot, 1, nextInstance); server.state.snapshot.session.status = 'playing';
     server.state.snapshot.session.current!.title = 'New bridge lifetime'; server.holdSnapshotReads(); server.broadcast();
-    await expect.poll(() => server.capturedSnapshots.size).toBe(1); await expect(pause(page)).toBeDisabled();
+    await expect.poll(() => server.capturedSnapshots.size).toBe(1); await expect(resume(page)).toBeDisabled();
     await expect(playerTitle(page, 'New bridge lifetime')).toHaveCount(0);
     server.releaseSnapshotReads(); await expect(playerTitle(page, 'New bridge lifetime')).toBeVisible();
     server.holdSnapshotReads(); server.releaseCommandReplies();
     await expect.poll(() => server.snapshotReads.length).toBe(reads + 2);
-    await expect(pause(page)).toBeDisabled();
+    await expect(resume(page)).toBeDisabled();
     server.releaseSnapshotReads(); await expect(pause(page)).toBeEnabled();
     await expect(playerTitle(page, 'New bridge lifetime')).toBeVisible(); expect(server.commands).toHaveLength(1);
   } finally { await page.close(); await server.close(); }
@@ -135,9 +137,9 @@ test('an ordered command from a different instance requires fresh GET even witho
     server.holdCommandReplies(); stamp(server.state.snapshot, 1, nextInstance);
     await pause(page).click(); await expect.poll(() => server.heldCommands.size).toBe(1);
     server.holdSnapshotReads(); server.releaseCommandReplies();
-    await expect.poll(() => server.capturedSnapshots.size).toBe(1); await expect(pause(page)).toBeDisabled();
+    await expect.poll(() => server.capturedSnapshots.size).toBe(1); await expect(resume(page)).toBeDisabled();
     server.releaseSnapshotReads(); await expect(resume(page)).toBeEnabled();
-    expect(server.snapshotReads).toHaveLength(reads + 1); expect(server.commands).toHaveLength(1);
+    await expect.poll(() => server.snapshotReads.length).toBe(reads + 1); expect(server.commands).toHaveLength(1);
   } finally { await page.close(); await server.close(); }
 });
 
@@ -167,11 +169,11 @@ test('ordered reply after a 503 stream loss cannot restore controls before a new
     await connected(page, server); const reads = server.snapshotReads.length;
     server.holdCommandReplies(); stamp(server.state.snapshot, 3);
     await pause(page).click(); await expect.poll(() => server.heldCommands.size).toBe(1);
-    server.applicationError(503); await expect(pause(page)).toBeDisabled();
+    server.applicationError(503); await expect(resume(page)).toBeDisabled();
     server.holdSnapshotReads(); server.releaseCommandReplies();
-    await expect.poll(() => server.capturedSnapshots.size).toBe(1); await expect(pause(page)).toBeDisabled();
+    await expect.poll(() => server.capturedSnapshots.size).toBe(1); await expect(resume(page)).toBeDisabled();
     stamp(server.state.snapshot, 4); server.releaseSnapshotReads(); await expect(resume(page)).toBeEnabled();
-    expect(server.snapshotReads).toHaveLength(reads + 1); expect(server.commands).toHaveLength(1);
+    await expect.poll(() => server.snapshotReads.length).toBe(reads + 1); expect(server.commands).toHaveLength(1);
   } finally { await page.close(); await server.close(); }
 });
 
@@ -183,7 +185,7 @@ test('an ordered live frame after loss requires a fresh read rather than reopeni
     server.holdSnapshotReads(); stamp(server.state.snapshot, 3); server.state.snapshot.session.status = 'paused'; server.broadcast();
     await expect.poll(() => server.capturedSnapshots.size).toBe(1); await expect(pause(page)).toBeDisabled();
     server.releaseSnapshotReads(); await expect(resume(page)).toBeEnabled();
-    expect(server.snapshotReads).toHaveLength(reads + 1); expect(server.commands).toHaveLength(0);
+    await expect.poll(() => server.snapshotReads.length).toBe(reads + 1); expect(server.commands).toHaveLength(0);
   } finally { await page.close(); await server.close(); }
 });
 
@@ -199,7 +201,7 @@ test('visibility refresh during an ordered command retires the captured GET and 
     stamp(server.state.snapshot, 3); server.releaseCommandExecution();
     await expect.poll(() => server.snapshotReads.length).toBe(reads + 2);
     await expect.poll(() => [...server.capturedSnapshots.values()].every(snapshot => snapshot.session.status === 'paused')).toBe(true);
-    await expect(pause(page)).toBeDisabled(); server.releaseSnapshotReads(true); await expect(resume(page)).toBeEnabled();
+    await expect(resume(page)).toBeDisabled(); server.releaseSnapshotReads(true); await expect(resume(page)).toBeEnabled();
     expect(server.commands).toHaveLength(1);
   } finally { await page.close(); await server.close(); }
 });
@@ -214,11 +216,11 @@ test('a completed visibility read cannot erase the loss fence of an outstanding 
     server.state.snapshot.session.current!.title = 'State verified by visibility GET';
     await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
     await expect(playerTitle(page, 'State verified by visibility GET')).toBeVisible();
-    expect(server.snapshotReads).toHaveLength(reads + 1);
+    await expect.poll(() => server.snapshotReads.length).toBe(reads + 1);
     server.holdSnapshotReads(); server.releaseCommandReplies();
-    await expect.poll(() => server.capturedSnapshots.size).toBe(1); await expect(pause(page)).toBeDisabled();
+    await expect.poll(() => server.capturedSnapshots.size).toBe(1); await expect(resume(page)).toBeDisabled();
     server.releaseSnapshotReads(); await expect(pause(page)).toBeEnabled();
-    expect(server.snapshotReads).toHaveLength(reads + 2); expect(server.commands).toHaveLength(1);
+    await expect.poll(() => server.snapshotReads.length).toBe(reads + 2); expect(server.commands).toHaveLength(1);
   } finally { await page.close(); await server.close(); }
 });
 
@@ -309,9 +311,9 @@ test('native artist radio keeps its lifecycle and pending reply while ordered SS
     expect([...server.heldCommands.values()][0].session.radio).toBe(true);
     stamp(server.state.snapshot, 4); server.broadcast(); await page.getByRole('button', { name: 'More playback controls' }).click();
     const off = page.getByRole('button', { name: 'Turn artist radio off', exact: true });
-    await expect(off).toBeDisabled(); server.releaseCommandReplies(); await expect(off).toBeEnabled();
+    await expect(off).toBeEnabled(); server.releaseCommandReplies(); await expect(off).toBeEnabled();
     await page.keyboard.press('Escape'); await expect(off).toHaveCount(0);
-    expect(server.commands).toEqual([{ command: 'radio', subcommand: 'on', expectedRevision: 'revision-1' }]);
+    expect(server.commands).toEqual([{ command: 'radio', subcommand: 'on' }]);
     expect(server.snapshotReads).toHaveLength(reads); expect(server.eventReads).toHaveLength(events); expect(server.streams.size).toBe(1);
   } finally { await page.close(); await server.close(); }
 });
@@ -335,9 +337,9 @@ for (const { label, value } of unknownStamps) {
       Object.assign(reply, { ordering: value }); reply.session.current!.title = 'Unverified command response';
       server.holdSnapshotReads(); server.releaseCommandReplies();
       await expect.poll(() => server.capturedSnapshots.size).toBe(1);
-      await expect(playerTitle(page, 'Unverified command response')).toHaveCount(0); await expect(pause(page)).toBeDisabled();
+      await expect(playerTitle(page, 'Unverified command response')).toHaveCount(0); await expect(resume(page)).toBeDisabled();
       server.releaseSnapshotReads(); await expect(resume(page)).toBeEnabled();
-      expect(server.snapshotReads).toHaveLength(reads + 1); expect(server.commands).toHaveLength(1);
+      await expect.poll(() => server.snapshotReads.length).toBe(reads + 1); expect(server.commands).toHaveLength(1);
     } finally { await page.close(); await server.close(); }
   });
 }
@@ -351,7 +353,7 @@ test('a malformed SSE stamp disables writes and independently refreshes instead 
     await expect(pause(page)).toBeDisabled(); await expect(playerTitle(page, 'Malformed frame')).toHaveCount(0);
     await expect.poll(() => server.capturedSnapshots.size).toBe(1);
     stamp(server.state.snapshot, 3); server.releaseSnapshotReads(); await expect(pause(page)).toBeEnabled();
-    expect(server.snapshotReads).toHaveLength(reads + 1); expect(server.commands).toHaveLength(0);
+    await expect.poll(() => server.snapshotReads.length).toBe(reads + 1); expect(server.commands).toHaveLength(0);
   } finally { await page.close(); await server.close(); }
 });
 
@@ -363,7 +365,7 @@ test('legacy snapshots without ordering keep the conservative overlap fallback',
     server.state.snapshot.session.queue[0].title = 'Legacy overlapping frame'; server.broadcast();
     await expect(page.getByTitle('Legacy overlapping frame', { exact: true })).toBeVisible();
     server.releaseCommandExecution(); await expect(resume(page)).toBeEnabled();
-    expect(server.snapshotReads).toHaveLength(reads + 1); expect(server.commands).toHaveLength(1);
+    await expect.poll(() => server.snapshotReads.length).toBe(reads + 1); expect(server.commands).toHaveLength(1);
   } finally { await page.close(); await server.close(); }
 });
 
@@ -380,8 +382,8 @@ for (const status of [403, 409, 503]) {
       server.holdSnapshotReads(); await pause(page).click(); await expect.poll(() => server.capturedSnapshots.size).toBe(1);
       await expect(pause(page)).toBeDisabled(); server.releaseSnapshotReads(); await expect(pause(page)).toBeEnabled();
       await expect(page.getByRole('alert')).toBeVisible();
-      expect(server.snapshotReads).toHaveLength(reads + 1);
-      expect(bodies).toEqual([{ command: 'pause', expectedRevision: 'revision-1' }]);
+      await expect.poll(() => server.snapshotReads.length).toBe(reads + 1);
+      expect(bodies).toEqual([{ command: 'pause' }]);
     } finally { await page.close(); await server.close(); }
   });
 }

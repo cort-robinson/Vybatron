@@ -42,9 +42,13 @@ creates source-left/browser-right comparisons. See `../design-qa.md` for the bou
   invalidates this device's session while Discord playback continues.
 - Real credentialed EventSource; a reconnect performs GET snapshot before enabling
   commands. In-flight reads from before a disconnect cannot re-enable mutations.
-- Conflicting commands carry the revision from the visible intent. A 409 reads
-  both snapshot and library before presenting deliberate retry guidance. Older
-  library reads are discarded. Mutations are never replayed automatically.
+- Playback controls apply to the player immediately and are sent in order
+  through one per-guild queue; set-state controls coalesce, and queue edits are
+  sent only while verified state still shows the targeted tracks
+  ([instant controls](../../docs/portal-instant-controls.md)). Other conflicting
+  commands carry the revision from the visible intent. A 409 reads both snapshot
+  and library before presenting deliberate retry guidance. Older library reads
+  are discarded. Mutations are never replayed automatically.
 - API errors clear protected data after 401/403/404. A temporary connection failure
   retains a read-only session projection while disabling commands.
 - The service worker caches a versioned static shell only. No API, auth, external

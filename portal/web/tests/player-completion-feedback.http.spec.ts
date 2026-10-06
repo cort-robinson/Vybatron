@@ -8,6 +8,7 @@ const stamp = (snapshot: GuildSnapshot, sequence: number) => { snapshot.ordering
 const player = (page: Page) => page.getByTestId('player');
 const action = (page: Page, playing: boolean) => player(page).getByRole('button', { name: playing ? 'Pause playback' : 'Resume playback', exact: true });
 const confirmation = (page: Page) => player(page).locator('.player-confirmation');
+const syncing = (page: Page) => confirmation(page).getByText('Syncing with Discord…', { exact: true });
 
 async function connected(page: Page, server: Fixture, playing = true) {
   server.state.snapshot.session.status = playing ? 'playing' : 'paused';
@@ -21,20 +22,6 @@ async function connected(page: Page, server: Fixture, playing = true) {
   await page.evaluate(() => document.fonts.ready);
 }
 
-async function pendingObservation(page: Page, playing: boolean) {
-  const button = action(page, playing);
-  await expect(button).toBeDisabled();
-  await expect(button.locator('svg')).toHaveCount(1);
-  await expect(button.locator('.spinner')).toHaveCount(0);
-  await expect(confirmation(page)).toContainText(playing ? 'Playing.' : 'Paused.');
-  await expect(confirmation(page).getByText('Waiting for confirmation', { exact: true })).toBeVisible();
-  await expect(player(page).getByRole('group', { name: 'Playback controls' })).toHaveAttribute('aria-busy', 'true');
-  await expect(page.locator('.toast.success')).toHaveCount(0);
-  const id = await confirmation(page).getAttribute('id');
-  expect((await button.getAttribute('aria-describedby'))?.split(' ')).toContain(id);
-  expect(await confirmation(page).evaluate(element => element.closest('[aria-busy="true"]') === null)).toBe(true);
-}
-
 async function bounds(locator: Locator, page: Page) {
   await expect(locator).toBeVisible();
   const box = (await locator.boundingBox())!; const viewport = page.viewportSize()!;
@@ -44,69 +31,52 @@ async function bounds(locator: Locator, page: Page) {
   return box;
 }
 
-test('held execution never predicts pause, and an observed state never acknowledges the held request', async ({ page }) => {
-  const server = await startHttpFixture();
+test('a same-turn double activation predicts once and sends exactly one write', async ({ page }) => {
+  const server = await startHttpFixture({ orderedCommands: true });
   try {
     await connected(page, server);
-    const initialIcon = await action(page, true).locator('svg').innerHTML();
     const reads = server.snapshotReads.length; const events = server.eventReads.length;
     server.holdCommandExecution(); server.holdCommandReplies();
-    // Two same-turn activations exercise the hook's synchronous pendingRef fence,
-    // before a disabled render can serve as the duplicate-write protection.
+    // Both activations see the same render: the second is already satisfied by the first prediction.
     await action(page, true).evaluate(button => { (button as HTMLButtonElement).click(); (button as HTMLButtonElement).click(); });
+    await expect(action(page, false)).toBeEnabled();
     await expect.poll(() => server.commands.length).toBe(1);
-    await pendingObservation(page, true);
     stamp(server.state.snapshot, 3); server.broadcast();
-    await pendingObservation(page, true);
+    await expect(action(page, false)).toBeEnabled();
     server.releaseCommandExecution(); await expect.poll(() => server.heldCommands.size).toBe(1);
-    expect(server.state.snapshot.session.status).toBe('paused');
-    await pendingObservation(page, true); // No new accepted observation yet.
-    expect(await action(page, true).locator('svg').innerHTML()).toBe(initialIcon);
     stamp(server.state.snapshot, 4); server.broadcast();
-    await pendingObservation(page, false);
-    server.releaseCommandReplies(); await expect(action(page, false)).toBeEnabled();
-    await expect(confirmation(page)).toBeEmpty();
-    expect(server.commands).toEqual([{ command: 'pause', expectedRevision: 'revision-1' }]);
+    server.releaseCommandReplies();
+    await expect(syncing(page)).toHaveCount(0);
+    await expect(action(page, false)).toBeEnabled(); await expect(confirmation(page)).toBeEmpty();
+    expect(server.commands).toEqual([{ command: 'pause' }]);
     expect(server.snapshotReads).toHaveLength(reads); expect(server.eventReads).toHaveLength(events);
   } finally { await page.close(); await server.close(); }
 });
 
 for (const playing of [true, false]) {
-  for (const equal of [true, false]) {
-    test(`${playing ? 'Pause' : 'Resume'} observation keeps confirmation pending; ${equal ? 'equal' : 'older'} reply only settles the lock`, async ({ page }) => {
-      const server = await startHttpFixture();
-      try {
-        await connected(page, server, playing);
-        await page.getByRole('button', { name: 'Open player', exact: true }).click();
-        const reads = server.snapshotReads.length; const events = server.eventReads.length;
-        server.holdCommandReplies(); stamp(server.state.snapshot, 3);
-        const initialIcon = await action(page, playing).locator('svg').innerHTML();
-        await action(page, playing).click(); await expect.poll(() => server.heldCommands.size).toBe(1);
-        await pendingObservation(page, playing);
-        if (!equal) stamp(server.state.snapshot, 4);
-        server.broadcast(); await pendingObservation(page, !playing);
-        expect(await action(page, !playing).locator('svg').innerHTML()).not.toBe(initialIcon);
-        const text = await confirmation(page).textContent();
-        // Repeated equal frames and newer position-only frames leave the
-        // live-region text unchanged, without changing the equal-reply case.
-        stamp(server.state.snapshot, equal ? 3 : 5); server.state.snapshot.session.positionMs += 1000; server.broadcast();
-        await expect(confirmation(page)).toHaveText(text!);
-        for (const label of ['Restart current song', 'Skip current song', 'Shuffle queue']) await expect(player(page).getByRole('button', { name: label, exact: true })).toBeDisabled();
-        for (const label of ['Playback position', 'Volume']) await expect(player(page).getByRole('slider', { name: label, exact: true })).toBeDisabled();
-        await expect(player(page).getByRole('combobox', { name: 'Audio filter' })).toBeDisabled();
-        await action(page, !playing).dispatchEvent('click'); await action(page, !playing).press('Enter');
-        expect(server.commands).toHaveLength(1);
-        server.releaseCommandReplies(); await expect(action(page, !playing)).toBeEnabled();
-        await expect(confirmation(page)).toBeEmpty();
-        await expect(page.locator('.toast.success')).toBeVisible();
-        expect(server.commands).toHaveLength(1); expect(server.snapshotReads).toHaveLength(reads); expect(server.eventReads).toHaveLength(events);
-      } finally { await page.close(); await server.close(); }
-    });
-  }
+  test(`${playing ? 'Pause' : 'Resume'} keeps the whole player usable while confirmation is pending`, async ({ page }) => {
+    const server = await startHttpFixture({ orderedCommands: true });
+    try {
+      await connected(page, server, playing);
+      await page.getByRole('button', { name: 'Open player', exact: true }).click();
+      server.holdCommandReplies(); stamp(server.state.snapshot, 3);
+      await action(page, playing).click(); await expect.poll(() => server.heldCommands.size).toBe(1);
+      await expect(action(page, !playing)).toBeEnabled();
+      for (const label of ['Restart current song', 'Skip current song', 'Shuffle queue']) await expect(player(page).getByRole('button', { name: label, exact: true })).toBeEnabled();
+      for (const label of ['Playback position', 'Volume']) await expect(player(page).getByRole('slider', { name: label, exact: true })).toBeEnabled();
+      await expect(player(page).getByRole('combobox', { name: 'Audio filter' })).toBeEnabled();
+      await expect(player(page).getByRole('group', { name: 'Playback controls' })).not.toHaveAttribute('aria-busy', 'true');
+      server.releaseCommandReplies(); await expect(action(page, !playing)).toBeEnabled();
+      await expect(confirmation(page)).toBeEmpty();
+      // The change was visible at once; no success toast repeats it.
+      await expect(page.locator('.toast.success')).toHaveCount(0);
+      expect(server.commands).toHaveLength(1);
+    } finally { await page.close(); await server.close(); }
+  });
 }
 
 test('newer Discord state and permission reason win over the original command target', async ({ page }) => {
-  const server = await startHttpFixture();
+  const server = await startHttpFixture({ orderedCommands: true });
   try {
     await connected(page, server); server.holdCommandReplies(); stamp(server.state.snapshot, 3);
     await action(page, true).click(); await expect.poll(() => server.heldCommands.size).toBe(1);
@@ -114,8 +84,9 @@ test('newer Discord state and permission reason win over the original command ta
     server.state.snapshot.session.current!.title = 'New shared selection';
     server.state.snapshot.session.canControl = false; server.state.snapshot.session.reason = 'Playback controls require the DJ role.';
     server.broadcast(); await expect(player(page).getByText('New shared selection', { exact: true })).toBeVisible();
-    await pendingObservation(page, true);
-    await expect(action(page, true)).toHaveAttribute('title', 'Playback controls require the DJ role.');
+    // Permissions only ever come from verified state, even under a prediction.
+    await expect(action(page, false)).toBeDisabled();
+    await expect(action(page, false)).toHaveAttribute('title', 'Playback controls require the DJ role.');
     server.releaseCommandReplies(); await expect(confirmation(page)).toBeEmpty();
     await expect(action(page, true)).toBeDisabled();
     await expect(player(page).getByText('New shared selection', { exact: true })).toBeVisible();
@@ -123,48 +94,42 @@ test('newer Discord state and permission reason win over the original command ta
   } finally { await page.close(); await server.close(); }
 });
 
-test('connection loss labels observation as last known and a held reply cannot restore freshness or replay', async ({ page }) => {
-  const server = await startHttpFixture();
+test('connection loss disables controls and a held reply cannot restore freshness or replay', async ({ page }) => {
+  const server = await startHttpFixture({ orderedCommands: true });
   try {
     await connected(page, server); server.holdCommandReplies(); stamp(server.state.snapshot, 3);
     await action(page, true).click(); await expect.poll(() => server.heldCommands.size).toBe(1);
-    server.broadcast(); await pendingObservation(page, false);
     server.applicationError(503);
-    await expect(confirmation(page)).toContainText('Last known playback.');
-    await expect(confirmation(page)).not.toContainText('Paused.');
     await expect(action(page, false)).toHaveAttribute('title', 'Reconnect for fresh state before making changes.');
+    await expect(action(page, false)).toBeDisabled();
     server.holdSnapshotReads(); server.releaseCommandReplies();
     await expect.poll(() => server.capturedSnapshots.size).toBe(1);
     await expect(action(page, false)).toBeDisabled();
-    await expect(confirmation(page).getByText('Waiting for confirmation', { exact: true })).toBeVisible();
     stamp(server.state.snapshot, 4); server.releaseSnapshotReads();
     await expect(action(page, false)).toBeEnabled(); await expect(confirmation(page)).toBeEmpty();
     expect(server.commands).toHaveLength(1);
   } finally { await page.close(); await server.close(); }
 });
 
-test('authoritative revocation retires protected observation and delayed high-sequence reply cannot revive it', async ({ page }) => {
-  const server = await startHttpFixture();
+test('authoritative revocation retires protected state and a delayed high-sequence reply cannot revive it', async ({ page }) => {
+  const server = await startHttpFixture({ orderedCommands: true });
   try {
     await connected(page, server); server.holdCommandReplies(); stamp(server.state.snapshot, 900);
     await action(page, true).click(); await expect.poll(() => server.heldCommands.size).toBe(1);
-    server.broadcast(); await pendingObservation(page, false);
     server.applicationError(403);
     await expect(player(page).getByText('Evening Light', { exact: true })).toHaveCount(0);
-    await expect(confirmation(page)).not.toContainText('Paused.');
-    await expect(confirmation(page)).toContainText('Playback state unavailable.');
-    server.releaseCommandReplies(); await expect(confirmation(page)).toBeEmpty();
+    server.releaseCommandReplies(); await page.waitForTimeout(300);
     await expect(player(page).getByText('Evening Light', { exact: true })).toHaveCount(0);
-    await expect(action(page, false)).toBeDisabled(); expect(server.commands).toHaveLength(1);
+    await expect(action(page, false)).toBeDisabled();
+    expect(server.commands).toHaveLength(1);
   } finally { await page.close(); await server.close(); }
 });
 
-test('failure after paused observation retains observed state, shows uncertainty and never rolls back or replays', async ({ page }) => {
-  const server = await startHttpFixture();
+test('an uncertain failure drops the prediction, reports it may have completed and shows fresh state without replay', async ({ page }) => {
+  const server = await startHttpFixture({ orderedCommands: true });
   try {
     await connected(page, server); server.holdCommandReplies(); stamp(server.state.snapshot, 3);
     await action(page, true).click(); await expect.poll(() => server.heldCommands.size).toBe(1);
-    server.broadcast(); await pendingObservation(page, false);
     server.holdSnapshotReads();
     // Complete the actual held HTTP response with failure, without replacing the
     // EventSource, hook or fixture implementation.
@@ -173,22 +138,24 @@ test('failure after paused observation retains observed state, shows uncertainty
     response.end(JSON.stringify({ error: { code: 'unavailable', message: 'Confirmation is unavailable.' } }));
     await expect(page.getByRole('alert')).toContainText('this action may have completed');
     await expect.poll(() => server.capturedSnapshots.size).toBe(1);
-    await expect(action(page, false)).toBeDisabled(); await expect(action(page, true)).toHaveCount(0);
-    await expect(confirmation(page)).toContainText('Last known playback.');
+    // Until fresh state arrives the last verified state is shown read-only.
+    await expect(action(page, true)).toBeDisabled();
     stamp(server.state.snapshot, 4); server.releaseSnapshotReads();
+    // The bot did pause; the fresh read, not the prediction, shows that.
     await expect(action(page, false)).toBeEnabled(); await expect(confirmation(page)).toBeEmpty();
     await expect(page.locator('.toast.success')).toHaveCount(0); expect(server.commands).toHaveLength(1);
   } finally { await page.close(); await server.close(); }
 });
 
 test('confirmation covers a pending favorite while urgent Stop retains its deliberate exception', async ({ page }) => {
-  const server = await startHttpFixture();
+  const server = await startHttpFixture({ orderedCommands: true });
   try {
     await connected(page, server);
     const favorite = player(page).getByRole('button', { name: 'Remove current song from favorites' });
     await expect(favorite).toBeEnabled(); server.holdCommandReplies();
     await favorite.click(); await expect.poll(() => server.heldCommands.size).toBe(1);
-    await pendingObservation(page, true);
+    await expect(confirmation(page).getByText('Waiting for confirmation', { exact: true })).toBeVisible();
+    await expect(action(page, true)).toBeDisabled();
     await player(page).getByRole('button', { name: 'More playback controls' }).click();
     await player(page).getByRole('button', { name: 'Stop and discard session', exact: true }).click();
     await page.getByRole('button', { name: 'Stop and discard', exact: true }).click();
@@ -196,7 +163,6 @@ test('confirmation covers a pending favorite while urgent Stop retains its delib
     expect(server.commands.map(command => command.command)).toEqual(['favorite', 'stop']);
     stamp(server.state.snapshot, 4); server.broadcast();
     await expect(player(page).getByText('Evening Light', { exact: true })).toHaveCount(0);
-    await expect(confirmation(page)).not.toContainText('Playing.');
     await expect(confirmation(page).getByText('Waiting for confirmation', { exact: true })).toBeVisible();
     server.releaseCommandReplies(); await expect(confirmation(page)).toBeEmpty();
     expect(server.commands).toHaveLength(2);
@@ -204,17 +170,18 @@ test('confirmation covers a pending favorite while urgent Stop retains its delib
 });
 
 for (const viewport of [{ width: 1440, height: 900 }, { width: 320, height: 568 }, { width: 390, height: 844 }, { width: 844, height: 390 }]) {
-  test(`bounded pending layout and screenshots ${viewport.width}x${viewport.height}`, async ({ page }, testInfo) => {
-    const server = await startHttpFixture();
+  test(`bounded syncing layout and screenshots ${viewport.width}x${viewport.height}`, async ({ page }, testInfo) => {
+    const server = await startHttpFixture({ orderedCommands: true });
     try {
       await page.setViewportSize(viewport); await page.emulateMedia({ reducedMotion: 'reduce' });
       await connected(page, server); server.holdCommandReplies();
       const initialHeight = (await player(page).boundingBox())!.height;
-      await action(page, true).click(); await expect.poll(() => server.heldCommands.size).toBe(1);
-      await pendingObservation(page, true);
-      expect((await player(page).boundingBox())!.height).toBe(initialHeight);
       server.state.snapshot.session.current!.title = 'Evening Light — a long live performance with extended artist credits';
-      stamp(server.state.snapshot, 3); server.broadcast(); await pendingObservation(page, false);
+      stamp(server.state.snapshot, 3); server.broadcast();
+      await expect(player(page).getByText(server.state.snapshot.session.current!.title).first()).toBeVisible();
+      await action(page, true).click(); await expect.poll(() => server.heldCommands.size).toBe(1);
+      await expect(syncing(page)).toBeVisible();
+      expect((await player(page).boundingBox())!.height).toBe(initialHeight);
       for (const expanded of [false, true]) {
         if (expanded) await page.getByRole('button', { name: 'Open player', exact: true }).click();
         const feedback = await bounds(confirmation(page), page);
@@ -224,15 +191,14 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 320, height: 568 
         expect(seek.width).toBeGreaterThanOrEqual(44); expect(seek.height).toBeGreaterThanOrEqual(44);
         expect(seek.x + seek.width).toBeLessThanOrEqual(feedback.x + 1);
         expect(feedback.y + feedback.height <= button.y + 1 || button.y + button.height <= feedback.y + 1).toBe(true);
-        await expect.poll(() => action(page, false).evaluate(element => getComputedStyle(element).backgroundColor)).toBe('rgb(255, 184, 77)');
         if (viewport.width < 1024) {
           const nav = (await page.locator('.navigation').boundingBox())!;
           expect(feedback.y + feedback.height).toBeLessThanOrEqual(nav.y + 1);
         }
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
         expect(await confirmation(page).locator('.spinner').evaluate(element => getComputedStyle(element).animationName)).toBe('none');
-        const path = testInfo.outputPath(`player-completion-${viewport.width}x${viewport.height}-${expanded ? 'expanded' : 'collapsed'}.png`);
-        await page.screenshot({ path }); await testInfo.attach(`pending ${expanded ? 'expanded' : 'collapsed'}`, { path, contentType: 'image/png' });
+        const path = testInfo.outputPath(`player-syncing-${viewport.width}x${viewport.height}-${expanded ? 'expanded' : 'collapsed'}.png`);
+        await page.screenshot({ path }); await testInfo.attach(`syncing ${expanded ? 'expanded' : 'collapsed'}`, { path, contentType: 'image/png' });
       }
       server.releaseCommandReplies(); await expect(action(page, false)).toBeEnabled();
       await expect(confirmation(page)).toBeEmpty();

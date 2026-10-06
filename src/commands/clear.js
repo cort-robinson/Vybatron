@@ -1,7 +1,8 @@
 import { SlashCommandBuilder } from 'discord.js';
 import { requireControl } from '../utils/guards.js';
 import { ephemeralText } from '../utils/messages.js';
-import { refresh, withControllerLink } from '../utils/player-controller.js';
+import { withControllerLink } from '../utils/player-controller.js';
+import { directControlPresentation } from '../utils/presentation-updates.js';
 
 export const data = new SlashCommandBuilder()
   .setName('clear')
@@ -13,7 +14,7 @@ export async function execute(interaction) {
   const count = player.queue.tracks.length;
   if (!count) return interaction.reply(ephemeralText('There are no upcoming tracks to clear.'));
   await player.queue.splice(0, count);
-  await refresh(interaction.client, player);
+  await directControlPresentation(interaction, player);
   return interaction.reply(ephemeralText(withControllerLink(
     `Cleared ${count} upcoming ${count === 1 ? 'track' : 'tracks'}.`, interaction, player
   )));

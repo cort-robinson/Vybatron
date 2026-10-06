@@ -7,7 +7,8 @@ import { fileURLToPath } from 'node:url';
 import type { Command, Configuration, GuildSnapshot } from '../src/types';
 import { fixtureState, selectedCommandError } from './fixtures';
 
-export async function startHttpFixture(options: { initialSnapshotFailures?: number; initialBootstrapFailures?: number; pollMs?: number } = {}) {
+// orderedCommands models the bridge stamping each command reply's snapshot with a newer sequence.
+export async function startHttpFixture(options: { initialSnapshotFailures?: number; initialBootstrapFailures?: number; pollMs?: number; orderedCommands?: boolean } = {}) {
   const state = fixtureState(); const commands: Command[] = []; const requests: string[] = [];
   const guildSnapshots = new Map([[state.snapshot.guild.id, state.snapshot]]);
   const configurations = new Map([[state.configuration.guildId, state.configuration]]);
@@ -25,6 +26,7 @@ export async function startHttpFixture(options: { initialSnapshotFailures?: numb
   let commandGate: Promise<void> | undefined; let releaseCommandGate: (() => void) | undefined;
   let snapshotFailures = options.initialSnapshotFailures || 0; let bootstrapFailures = options.initialBootstrapFailures || 0;
   let failureStatus = 503; let retryAfter = ''; let accessStatus = 0; let commandRevision = 0;
+  let commandFailures = 0; let commandFailureStatus = 403;
   const snapshotReads: number[] = []; const eventReads: number[] = [];
   const directory = resolve(fileURLToPath(new URL('../dist/', import.meta.url)));
   const json = (response: ServerResponse, body: unknown, status = 200) => { response.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); response.end(JSON.stringify(body)); };
@@ -70,12 +72,21 @@ export async function startHttpFixture(options: { initialSnapshotFailures?: numb
       let body = ''; for await (const chunk of request) { body += chunk; if (body.length > 8192) { json(response, {}, 413); return; } }
       const command = JSON.parse(body) as Command; commands.push(command);
       if (commandGate) await commandGate;
+      if (commandFailures > 0) { commandFailures--; json(response, { error: { code: 'forbidden', message: 'Your current Discord permissions or voice state do not allow this action.' } }, commandFailureStatus); return; }
       if (command.expectedRevision && command.expectedRevision !== state.snapshot.revision) { json(response, { error: { code: 'stale_revision', message: 'The session changed.' } }, 409); return; }
       const selectionError = selectedCommandError(state.library, command);
       if (selectionError) { json(response, { error: selectionError }, selectionError.status); return; }
       if (command.command === 'favorite' && command.subcommand === 'remove') state.library.favorites.splice(Number(command.options?.index) - 1, 1);
-      if (command.command === 'pause') state.snapshot.session.status = 'paused';
-      if (command.command === 'resume') state.snapshot.session.status = 'playing';
+      const session = state.snapshot.session; const values = command.options || {};
+      if (command.command === 'pause') session.status = 'paused';
+      if (command.command === 'resume') session.status = 'playing';
+      if (command.command === 'volume') session.volume = Number(values.level);
+      if (command.command === 'filter') session.filter = String(values.preset);
+      if (command.command === 'loop') session.repeat = values.mode as typeof session.repeat;
+      if (command.command === 'skip' && session.queue.length) session.current = session.queue.shift()!;
+      if (command.command === 'remove') session.queue.splice(Number(values.position) - 1, 1);
+      if (command.command === 'move') session.queue.splice(Number(values.to) - 1, 0, session.queue.splice(Number(values.from) - 1, 1)[0]);
+      if (command.command === 'clear') session.queue = [];
       if (command.command === 'stop') { state.snapshot.session.status = 'idle'; state.snapshot.session.current = null; state.snapshot.session.queue = []; }
       if (command.command === 'settings' && state.snapshot.settings) {
         const settings = state.snapshot.settings; const values = command.options || {};
@@ -85,6 +96,7 @@ export async function startHttpFixture(options: { initialSnapshotFailures?: numb
         if (command.subcommand === 'fairqueue') settings.fairQueue = !!values.enabled;
       }
       state.snapshot.revision = `http-command-revision-${++commandRevision}`;
+      if (options.orderedCommands && state.snapshot.ordering) state.snapshot.ordering = { ...state.snapshot.ordering, sequence: state.snapshot.ordering.sequence + 1 };
       const snapshot = structuredClone(state.snapshot);
       if (holdCommands) { heldCommands.set(response, snapshot); response.on('close', () => heldCommands.delete(response)); }
       else json(response, { ok: true, message: 'Accepted by the loopback HTTP fixture.', snapshot }); return;
@@ -136,6 +148,7 @@ export async function startHttpFixture(options: { initialSnapshotFailures?: numb
     holdCommandExecution: () => { commandGate = new Promise(resolve => { releaseCommandGate = resolve; }); },
     releaseCommandExecution: () => { commandGate = undefined; releaseCommandGate?.(); },
     holdCommandReplies: () => { holdCommands = true; },
+    failNextCommands: (count: number, status = 403) => { commandFailures = count; commandFailureStatus = status; },
     releaseCommandReplies: () => { holdCommands = false; for (const [response, snapshot] of heldCommands) json(response, { ok: true, message: 'Accepted by the loopback HTTP fixture.', snapshot }); heldCommands.clear(); },
     holdLibraryReads: () => { holdLibrary = true; },
     releaseLibraryReads: () => { holdLibrary = false; for (const response of heldLibraries) json(response, state.library); heldLibraries.clear(); },

@@ -2,7 +2,8 @@ import { flushSync } from 'react-dom';
 
 // One motion vocabulary for state changes. View Transitions carry continuity (the cover
 // travels between deck and sleeve, views slide along the nav's axis); styles.css owns
-// which elements are named for each kind. Unsupported browsers change state instantly.
+// which elements are named for each kind. Reduced motion and unsupported browsers change
+// state instantly; the CSS keeps its short fades for those paths.
 export type MotionKind = 'expand' | 'collapse' | 'view' | 'tab';
 export type MotionDirection = 'forward' | 'back';
 
@@ -13,11 +14,10 @@ export const prefersReducedMotion = () => matchMedia('(prefers-reduced-motion: r
 
 export function transition(kind: MotionKind, update: () => void, direction: MotionDirection = 'forward') {
   const doc = document as TransitionDocument;
-  if (!doc.startViewTransition || document.hidden) { update(); return; }
+  if (!doc.startViewTransition || document.hidden || prefersReducedMotion()) { update(); return; }
   const root = document.documentElement;
   const token = ++generation;
-  // Reduced motion keeps a short whole-page crossfade: nothing is named, so nothing travels.
-  root.dataset.motion = prefersReducedMotion() ? 'reduced' : kind;
+  root.dataset.motion = kind;
   root.dataset.direction = direction;
   doc.startViewTransition(() => flushSync(update)).finished.catch(() => undefined).finally(() => {
     if (token !== generation) return;

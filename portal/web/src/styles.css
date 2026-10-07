@@ -846,8 +846,6 @@ picture.artwork { display: block; overflow: hidden; }
 /* Tabs and the phone nav run horizontally, so their views slide sideways. */
 :root[data-motion='tab'] { --vt-x: 24px; --vt-y: 0px; }
 @media (max-width: 1023px) { :root { --vt-x: 28px; --vt-y: 0px; } }
-:root[data-motion='reduced']::view-transition-old(root) { animation-duration: 120ms; }
-:root[data-motion='reduced']::view-transition-new(root) { animation-duration: 200ms; }
 @media (prefers-reduced-motion: reduce) {
   .nav-indicator { view-transition-name: none; }
   html { scroll-behavior: auto; }

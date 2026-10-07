@@ -10,6 +10,7 @@ FORM: album-reactive receiver; spectrum and lighting are decorative and generate
 @property --glow-1 { syntax: '<color>'; inherits: true; initial-value: #1d5a5e; }
 @property --glow-2 { syntax: '<color>'; inherits: true; initial-value: #3d2c6b; }
 @property --glow-3 { syntax: '<color>'; inherits: true; initial-value: #1c2c55; }
+@property --range-progress { syntax: '<percentage>'; inherits: true; initial-value: 0%; }
 @property --tabs-fade { syntax: '<length>'; inherits: false; initial-value: 0px; }
 :root {
   font-family: 'Archivo Variable', sans-serif;
@@ -160,9 +161,13 @@ svg { flex-shrink: 0; }
 .navigation { display: flex; flex-direction: column; margin: 22px -6px 0; gap: 2px; }
 .navigation button { display: flex; align-items: center; gap: 16px; background: transparent; color: var(--muted); font-size: 15px; font-weight: 650; text-align: left; min-height: 54px; padding: 14px 18px; position: relative; border-radius: 12px; transition: background-color 160ms, color 160ms; }
 .navigation button:hover { background: var(--hover-surface); color: var(--text); }
-.navigation button.selected { background: var(--selected-surface); color: var(--text); }
-.navigation button.selected svg { color: var(--accent); }
-.navigation button.selected::before { content: ''; position: absolute; left: 0; top: 50%; height: 22px; margin-top: -11px; width: 3px; border-radius: 3px; background: var(--accent); }
+.navigation button.selected { color: var(--text); }
+.navigation button.selected svg { color: var(--accent); transition: color 240ms var(--ease-out); }
+.navigation button svg { transition: color 160ms; }
+/* The selection is one object that glides between destinations during a view change. */
+.navigation button { isolation: isolate; }
+.nav-indicator { position: absolute; inset: 0; z-index: -1; border-radius: inherit; background: var(--selected-surface); pointer-events: none; }
+.nav-indicator::before { content: ''; position: absolute; left: 0; top: 50%; height: 22px; margin-top: -11px; width: 3px; border-radius: 3px; background: var(--accent); }
 .sidebar-session { margin-top: 30px; padding: 16px 12px 0; border-top: 1px solid var(--line); color: var(--muted); font-size: 14px; display: flex; flex-direction: column; gap: 9px; }
 .sidebar-session > strong { display: flex; gap: 8px; align-items: center; font-size: 15px; color: var(--text); font-weight: 700; }
 .listeners { display: flex; flex-direction: column; gap: 8px; }
@@ -295,6 +300,8 @@ picture.artwork { display: block; overflow: hidden; }
 .player-confirmation:empty { display: none; }
 .player-confirmation .spinner { width: 14px; height: 14px; flex-shrink: 0; }
 .compact-progress, .mobile-add { display: none; }
+/* Glide the passive progress hairline between clock ticks instead of stepping. */
+.compact-progress { transition: --range-progress 500ms linear; }
 .compact-identity { grid-column: 1; grid-row: 2; display: flex; align-items: center; gap: 8px; min-width: 0; }
 .player-expand-trigger { display: flex; align-items: center; gap: 16px; padding: 0; min-width: 0; min-height: 44px; flex: 1; text-align: left; background: transparent; border-radius: 10px; }
 .player-expand-trigger:hover .compact-track-title { color: var(--accent); }
@@ -336,6 +343,10 @@ picture.artwork { display: block; overflow: hidden; }
 .range::-webkit-slider-runnable-track { height: 4px; border-radius: 4px; background: linear-gradient(to right, var(--accent) 0 var(--range-progress), var(--range-track) var(--range-progress) 100%); }
 .range::-webkit-slider-thumb { appearance: none; width: 14px; height: 14px; margin-top: -5px; border-radius: 50%; background: var(--range-thumb); border: none; box-shadow: 0 0 0 4px var(--accent-soft), 0 2px 6px rgb(0 0 0 / .5); transition: transform 160ms var(--ease-out); }
 .range:hover:not(:disabled)::-webkit-slider-thumb { transform: scale(1.2); }
+.range:active:not(:disabled)::-webkit-slider-thumb { transform: scale(1.4); }
+.range::-moz-range-thumb { transition: transform 160ms var(--ease-out); }
+.range:hover:not(:disabled)::-moz-range-thumb { transform: scale(1.2); }
+.range:active:not(:disabled)::-moz-range-thumb { transform: scale(1.4); }
 .range::-moz-range-track { height: 4px; border-radius: 4px; background: var(--range-track); }
 .range::-moz-range-progress { background: var(--accent); height: 4px; border-radius: 4px; }
 .range::-moz-range-thumb { background: var(--range-thumb); height: 14px; width: 14px; border: 0; border-radius: 50%; box-shadow: 0 0 0 4px var(--accent-soft); }
@@ -355,6 +366,7 @@ picture.artwork { display: block; overflow: hidden; }
 .filter-control.warm .filter-dot { background: var(--amber); }
 .player-more { position: relative; flex-shrink: 0; }
 .player-more > .menu-panel { top: auto; bottom: 54px; width: 288px; max-height: min(390px, calc(100dvh - 120px)); overflow-y: auto; animation-name: menu-up; }
+@keyframes fade-in { from { opacity: 0; } }
 @keyframes menu-up { from { opacity: 0; transform: translateY(4px) scale(.98); } }
 .expand-button { grid-column: 4; grid-row: 1 / -1; width: 80px; height: 100%; min-height: 44px; border-left: 1px solid var(--line); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 0 0 0 8px; background: transparent; color: var(--text-soft); transition: color 160ms; }
 .expand-button:hover { color: var(--accent); }
@@ -368,6 +380,13 @@ picture.artwork { display: block; overflow: hidden; }
 .expanded .player-footer, .sleeve-content { pointer-events: auto; }
 .sleeve-content { margin-left: var(--sidebar); min-height: 0; display: grid; grid-template-columns: minmax(0, 52fr) minmax(0, 48fr); padding: 24px 32px; gap: 32px; animation: sleeve-in 520ms var(--ease-out); }
 @keyframes sleeve-in { from { opacity: 0; transform: translateY(18px); } }
+@supports (view-transition-name: none) {
+  /* The cover travels on its own; rising its container would shift where the cover lands. */
+  .sleeve-content { animation: none; }
+  .sleeve-main > .player-identity, .sleeve-main > .player-context, .sleeve-queue { animation: sleeve-in 520ms var(--ease-out) both; }
+  .sleeve-main > .player-context { animation-delay: 40ms; }
+  .sleeve-queue { animation-delay: 90ms; }
+}
 .sleeve-main { min-width: 0; min-height: 0; height: 100%; display: grid; grid-template-rows: minmax(0, 1fr) auto auto; gap: 16px; justify-items: center; }
 .sleeve-artwork { --spectrum: 52px; --cover: min(100cqw, 100cqh - var(--spectrum) - 12px); container-type: size; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; width: 100%; height: 100%; min-height: 0; min-width: 0; }
 .sleeve-artwork > .artwork { display: block; width: var(--cover); height: var(--cover); aspect-ratio: 1; object-fit: cover; border-radius: 18px; box-shadow: var(--shadow-sleeve); }
@@ -387,7 +406,7 @@ picture.artwork { display: block; overflow: hidden; }
 .tabs button { padding: 3px 0 15px; min-height: 44px; color: var(--muted); background: none; position: relative; display: flex; gap: 10px; align-items: center; font-size: 16px; font-weight: 700; transition: color 160ms; }
 .tabs button:hover { color: var(--text); }
 .tabs button[aria-selected='true'] { color: var(--text); }
-.tabs button[aria-selected='true']::after { content: ''; position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; border-radius: 2px; background: var(--accent); }
+.tabs .tab-indicator { position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; padding: 0; border-radius: 2px; background: var(--accent); pointer-events: none; }
 .tabs button > span { background: var(--secondary); color: var(--text-soft); font-size: 14px; padding: 1px 8px; border-radius: 999px; font-variant-numeric: tabular-nums; }
 .library-track-list > li, .history-list > li { display: flex; align-items: center; gap: 18px; min-height: 86px; border-bottom: 1px solid var(--line-soft); padding: 12px 0; }
 .library-track-list .artwork, .history-list .artwork { width: 58px; height: 58px; }
@@ -563,8 +582,8 @@ picture.artwork { display: block; overflow: hidden; }
   .navigation { position: fixed; bottom: 0; left: 0; right: 0; height: var(--nav); display: flex; flex-direction: row; justify-content: space-around; align-items: stretch; margin: 0; padding: 0 max(8px, env(safe-area-inset-right, 0px)) env(safe-area-inset-bottom, 0px) max(8px, env(safe-area-inset-left, 0px)); border-top: 1px solid var(--line); background: var(--chrome); backdrop-filter: var(--chrome-blur); -webkit-backdrop-filter: var(--chrome-blur); z-index: 60; }
   .navigation button { margin: 0; border-radius: 0; padding: 6px 8px 9px; flex: 1; min-width: 0; align-items: center; justify-content: center; flex-direction: column; gap: 2px; font-size: 14px; min-height: 44px; }
   .navigation button svg { width: 24px; height: 24px; }
-  .navigation button.selected { background: none; }
-  .navigation button.selected::before { left: 30%; right: 30%; width: auto; top: auto; bottom: 4px; height: 3px; margin-top: 0; border-radius: 3px; }
+  .nav-indicator { background: none; }
+  .nav-indicator::before { left: 30%; right: 30%; width: auto; top: auto; bottom: 4px; height: 3px; margin-top: 0; border-radius: 3px; }
   .account, .sidebar-session { display: none; }
   .portal-main { margin: 0; }
   /* One header row carries server, status, room, and Add music; the page title stays for assistive tech only. */
@@ -794,14 +813,55 @@ picture.artwork { display: block; overflow: hidden; }
   .expanded .transport { gap: 4px; }
   .player-more > .menu-panel { position: fixed; top: calc(var(--mobile-header) + 8px); bottom: calc(var(--nav) + 8px); right: max(16px, env(safe-area-inset-right, 0px)); width: 300px; max-height: none; }
 }
+/* Continuity. Each transition kind names only the elements that travel for it; everything else
+   crossfades with the page. Exits are quicker than entrances. */
+:root { --vt-x: 0px; --vt-y: 14px; --vt-sign: 1; }
+:root[data-direction='back'] { --vt-sign: -1; }
+/* A sheet-like curve: travel reads as one continuous glide rather than a snap and a long tail. */
+::view-transition-group(*) { animation-duration: 480ms; animation-timing-function: cubic-bezier(.32, .72, 0, 1); }
+::view-transition-old(root) { animation-duration: 180ms; }
+::view-transition-new(root) { animation-duration: 300ms; }
+:root[data-motion='expand'] .player-expand-trigger > .artwork, :root[data-motion='expand'] .sleeve-artwork > .artwork,
+:root[data-motion='collapse'] .player-expand-trigger > .artwork, :root[data-motion='collapse'] .sleeve-artwork > .artwork { view-transition-name: player-cover; }
+:root[data-motion='expand'] .transport .play-button, :root[data-motion='collapse'] .transport .play-button { view-transition-name: player-play; }
+:root[data-motion='collapse']::view-transition-group(*) { animation-duration: 360ms; }
+::view-transition-old(player-cover), ::view-transition-new(player-cover) { height: 100%; object-fit: cover; }
+.nav-indicator { view-transition-name: nav-indicator; }
+::view-transition-group(nav-indicator) { animation-duration: 380ms; }
+:root[data-motion='view'] .surface-stage { view-transition-name: surface; }
+:root[data-motion='tab'] .tab-indicator { view-transition-name: tab-indicator; }
+:root[data-motion='tab'] [role='tabpanel'] { view-transition-name: tab-panel; }
+/* Fixed chrome stays above sliding content; otherwise lifted panels would paint over the deck. */
+:root[data-motion='view'] .persistent-player, :root[data-motion='tab'] .persistent-player { view-transition-name: player-deck; }
+:root[data-motion='view'] .navigation, :root[data-motion='tab'] .navigation { view-transition-name: navigation; }
+::view-transition-old(player-deck), ::view-transition-old(navigation) { display: none; }
+::view-transition-new(player-deck), ::view-transition-new(navigation) { animation: none; }
+/* The outgoing view clears almost before the incoming one starts, so text never stacks. */
+::view-transition-old(surface), ::view-transition-old(tab-panel) { animation: surface-out 110ms linear both; }
+::view-transition-new(surface), ::view-transition-new(tab-panel) { animation: surface-in 360ms var(--ease-out) 70ms both; }
+::view-transition-group(surface), ::view-transition-group(tab-panel) { animation-duration: 340ms; }
+::view-transition-group(tab-indicator) { animation-duration: 320ms; }
+@keyframes surface-out { to { opacity: 0; transform: translate(calc(var(--vt-x) * var(--vt-sign) * -.5), calc(var(--vt-y) * var(--vt-sign) * -.5)); } }
+@keyframes surface-in { from { opacity: 0; transform: translate(calc(var(--vt-x) * var(--vt-sign)), calc(var(--vt-y) * var(--vt-sign))); } }
+/* Tabs and the phone nav run horizontally, so their views slide sideways. */
+:root[data-motion='tab'] { --vt-x: 24px; --vt-y: 0px; }
+@media (max-width: 1023px) { :root { --vt-x: 28px; --vt-y: 0px; } }
+:root[data-motion='reduced']::view-transition-old(root) { animation-duration: 120ms; }
+:root[data-motion='reduced']::view-transition-new(root) { animation-duration: 200ms; }
 @media (prefers-reduced-motion: reduce) {
+  .nav-indicator { view-transition-name: none; }
   html { scroll-behavior: auto; }
   :root { transition-duration: 300ms; }
   .light, .ambient-scene.moving .light, .ambient-scene.moving.immersive .artwork-field { animation: none; transform: none; }
-  .sleeve-content, .menu-panel, .dialog[open], .toast { animation: none; }
+  .menu-panel, .dialog[open], .toast { animation: none; }
+  /* The sleeve still arrives, as a fade rather than a rise. */
+  .sleeve-content, .sleeve-main > .player-identity, .sleeve-main > .player-context, .sleeve-queue { animation: none; }
+  .sleeve-content { animation: fade-in 200ms ease-out; }
+  .compact-progress { transition: none; }
   .button, .icon-button, .transport .play-button, .player-expand-trigger > .artwork, .mix-art .artwork { transition-property: background-color, color, border-color, box-shadow; }
   .button:active:not(:disabled), .icon-button:active:not(:disabled), .transport .play-button:hover:not(:disabled), .player-expand-trigger:hover > .artwork, .mix-open:hover .artwork { transform: none; }
-  .switch > span::after, .range::-webkit-slider-thumb { transition: none; }
+  .switch > span::after, .range::-webkit-slider-thumb, .range::-moz-range-thumb { transition: none; }
+  .range:active:not(:disabled)::-webkit-slider-thumb, .range:active:not(:disabled)::-moz-range-thumb { transform: none; }
   /* A deliberate static pending mark; accompanying status text and aria-busy stay. */
   .spinner { animation: none; border-right-color: currentColor; border-style: dotted; }
 }

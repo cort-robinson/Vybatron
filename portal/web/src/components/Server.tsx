@@ -5,6 +5,7 @@ import type { Activity, Capability, Command, CommandOption, Configuration, Diagn
 import type { Portal } from '../usePortal';
 import { date, totalTime } from '../format';
 import { Confirm, Empty, ErrorState, Loading } from './ui';
+import { transition } from '../motion';
 
 export type AmbientMode = 'on' | 'subtle' | 'off';
 export interface InstallPrompt extends Event { prompt: () => Promise<void>; userChoice: Promise<{ outcome: string }> }
@@ -49,8 +50,9 @@ export function ServerView({ portal, ambient, setAmbient, installPrompt, install
     return ok;
   };
   const tabs = ['settings', ...(snapshot?.guild.admin ? ['activity', 'diagnostics'] : []), 'commands'] as const;
+  const selectTab = (next: typeof tab) => { if (next !== tab) transition('tab', () => setTab(next), tabs.indexOf(next) < tabs.indexOf(tab) ? 'back' : 'forward'); };
   return <div className="server-view" hidden={!active}><div className="tabs" role="tablist" aria-label="Server sections">{tabs.map(t => <button key={t} id={`server-tab-${t}`} role="tab" aria-selected={tab === t} aria-controls={`server-panel-${t}`} tabIndex={tab === t ? 0 : -1}
-    onClick={() => setTab(t as typeof tab)} onKeyDown={event => { if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return; event.preventDefault(); const index = tabs.indexOf(tab); const next = event.key === 'Home' ? tabs[0] : event.key === 'End' ? tabs[tabs.length - 1] : tabs[(index + (event.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length]; setTab(next as typeof tab); document.getElementById(`server-tab-${next}`)?.focus(); }}>{t === 'settings' ? admin ? 'Settings' : 'Preferences' : t === 'activity' ? 'Activity' : t === 'diagnostics' ? 'Diagnostics' : 'Advanced controls'}</button>)}</div>
+    onClick={() => selectTab(t as typeof tab)} onKeyDown={event => { if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return; event.preventDefault(); const index = tabs.indexOf(tab); const next = event.key === 'Home' ? tabs[0] : event.key === 'End' ? tabs[tabs.length - 1] : tabs[(index + (event.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length]; selectTab(next as typeof tab); document.getElementById(`server-tab-${next}`)?.focus(); }}>{tab === t && <span className="tab-indicator" aria-hidden="true" />}{t === 'settings' ? admin ? 'Settings' : 'Preferences' : t === 'activity' ? 'Activity' : t === 'diagnostics' ? 'Diagnostics' : 'Advanced controls'}</button>)}</div>
     <section role="tabpanel" id={`server-panel-${tab}`} aria-labelledby={`server-tab-${tab}`}>
       {active && tab === 'settings' && <><div className="section-heading"><div><h2>{admin ? 'Your listening space' : 'Your preferences'}</h2><p className="section-description">{admin ? 'Defaults for everyone listening in this server.' : 'These choices apply to this device.'}</p></div></div>
         {!admin ? null : !settings ? <div className="permission-note"><ShieldCheckIcon size={23} /><div><strong>Server settings need Manage Server permission.</strong><p>You can still add music, save favorites, and use the controls your voice and DJ access allow.</p></div></div> : <div className="settings-list">

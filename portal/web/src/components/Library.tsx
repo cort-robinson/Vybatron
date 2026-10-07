@@ -5,6 +5,7 @@ import type { Track } from '../types';
 import { date, time, totalTime } from '../format';
 import { Artwork, Confirm, Empty, ErrorState, IconButton, Loading } from './ui';
 import { Pagination } from './Pagination';
+import { transition } from '../motion';
 import './library.css';
 
 const sections = ['favorites', 'mixes', 'history'] as const;
@@ -68,6 +69,7 @@ export function LibraryView({ portal, active = true }: { portal: Portal; active?
       setMixName(previous => mixKey(previous) === mixKey(name) ? '' : previous); setConfirm(null);
     }
   };
+  const selectTab = (next: Section) => { if (next !== tab) transition('tab', () => setTab(next), sections.indexOf(next) < sections.indexOf(tab) ? 'back' : 'forward'); };
   const openMix = (id: string) => { setSelected(selected === id ? null : id); setMixQuery(''); setMixPage(0); };
   const noMatches = <Empty title={`No matching ${label}`} description={tab === 'mixes' ? 'Try a mix name, song, or artist.' : 'Try a song, artist, or source.'}
     action={<button type="button" className="button secondary" onClick={clearSearch}>Clear search</button>} />;
@@ -80,8 +82,8 @@ export function LibraryView({ portal, active = true }: { portal: Portal; active?
         if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
         event.preventDefault(); const index = sections.indexOf(tab);
         const next = event.key === 'Home' ? sections[0] : event.key === 'End' ? sections[2] : sections[(index + (event.key === 'ArrowRight' ? 1 : 2)) % sections.length];
-        setTab(next); document.getElementById(`tab-${next}`)?.focus();
-      }} onClick={() => setTab(section)}>{section === 'favorites' ? 'Favorites' : section === 'mixes' ? 'Shared mixes' : 'History'}{library && <span>{library[section].length.toLocaleString()}</span>}</button>)}
+        selectTab(next); document.getElementById(`tab-${next}`)?.focus();
+      }} onClick={() => selectTab(section)}>{tab === section && <span className="tab-indicator" aria-hidden="true" />}{section === 'favorites' ? 'Favorites' : section === 'mixes' ? 'Shared mixes' : 'History'}{library && <span>{library[section].length.toLocaleString()}</span>}</button>)}
   </div>
   {libraryError ? <ErrorState message={libraryError} retry={() => void portal.refreshLibrary()} /> : !library ? <Loading label="Loading your music…" /> : <section role="tabpanel" id={`panel-${tab}`} aria-labelledby={`tab-${tab}`}>
     <div className="section-heading"><div><h2 className="sr-only">{tab === 'favorites' ? 'Favorites' : tab === 'mixes' ? 'Shared mixes' : 'Listening history'}</h2>

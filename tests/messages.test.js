@@ -11,6 +11,7 @@ import {
   remainingQueueDuration,
 } from '../src/utils/messages.js';
 import { trackIdentity } from '../src/utils/presentation.js';
+import { config, assertConfig, readConfig } from '../src/config.js';
 
 function makeTrack(index) {
   return {
@@ -50,14 +51,18 @@ test('player payload uses semantic status, timestamp, and native controls', () =
   assert.match(json.description, /Up next/);
   assert.match(json.description, /Track 1/);
   assert.match(json.footer.text, /Volume 80%/);
-  assert.equal(playing.components.length, 2);
+  assert.equal(playing.components.length, 3);
   assert.deepEqual(
     playing.components[0].components.map((component) => component.data.label),
     ['Pause', 'Skip', 'View queue', 'Stop', 'Favorite']
   );
   assert.deepEqual(
     playing.components[1].components.map((component) => component.data.label),
-    ['Shuffle', 'Loop: off', 'Seek', 'Refresh', 'Open track']
+    ['Shuffle', 'Loop: off', 'Seek', 'Refresh']
+  );
+  assert.deepEqual(
+    playing.components[2].components.map((component) => component.data.label),
+    ['Open track']
   );
   assert.equal(playing.components[1].components[2].data.disabled, false);
   const playerIds = playing.components
@@ -244,5 +249,26 @@ test('unavailable and paused presentation reject invalid reported positions with
     player.playing = false;
     const queue = buildQueuePayload(player).embeds[0].data;
     assert.doesNotMatch(queue.description, /in ~/);
+  }
+});
+
+test('player links to the web portal when its origin is configured', (t) => {
+  const previous = config.portalOrigin;
+  t.after(() => { config.portalOrigin = previous; });
+  config.portalOrigin = 'https://vybertron.example.ts.net';
+  for (const state of ['playing', 'ended']) {
+    const payload = buildPlayerPayload(state === 'ended' ? null : makePlayer(1), { state });
+    const portal = payload.components.at(-1).components[0].data;
+    assert.equal(portal.label, 'Open web player');
+    assert.equal(portal.url, 'https://vybertron.example.ts.net');
+    assert.ok(payload.components.every((row) => row.components.length <= 5));
+  }
+});
+
+test('PORTAL_ORIGIN must be a bare HTTPS origin', () => {
+  const base = { DISCORD_BOT_TOKEN: 't', CLIENT_ID: '12345678901234567', LAVALINK_PASSWORD: 'p', VYBERTRON_DATA_DIR: process.cwd() };
+  assert.doesNotThrow(() => assertConfig(readConfig({ ...base, PORTAL_ORIGIN: 'https://vybertron.example.ts.net' })));
+  for (const bad of ['http://vybertron.example.ts.net', 'https://vybertron.example.ts.net/', 'javascript:alert(1)', 'not a url']) {
+    assert.throws(() => assertConfig(readConfig({ ...base, PORTAL_ORIGIN: bad })), /PORTAL_ORIGIN/);
   }
 });

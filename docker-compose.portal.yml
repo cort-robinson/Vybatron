@@ -6,6 +6,7 @@ services:
       PORTAL_BRIDGE_HOST: 0.0.0.0
       PORTAL_BRIDGE_PORT: "3010"
       PORTAL_BRIDGE_TOKEN: ${PORTAL_BRIDGE_TOKEN:-}
+      PORTAL_ORIGIN: ${PORTAL_ORIGIN:-}
     networks:
       - vybertron
       - portal-bridge

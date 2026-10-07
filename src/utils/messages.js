@@ -23,6 +23,7 @@ import {
   trackIdentity,
 } from './presentation.js';
 import { getAudioPreset } from './filters.js';
+import { config } from '../config.js';
 
 export const COLORS = Object.freeze({
   // Restrained from the app icon: electric cyan carries active product state,
@@ -142,13 +143,20 @@ function playerComponents(player, state, track) {
       .setDisabled(!active && !recovering)
   );
 
+  // Both control rows are full, so outbound links share their own row.
+  const linkRow = new ActionRowBuilder();
+  if (config.portalOrigin) {
+    linkRow.addComponents(
+      new ButtonBuilder().setLabel('Open web player').setStyle(ButtonStyle.Link).setURL(config.portalOrigin)
+    );
+  }
   const trackUrl = safeUrl(track?.info?.uri, { maxLength: 512 });
   if (trackUrl) {
-    utilityRow.addComponents(
+    linkRow.addComponents(
       new ButtonBuilder().setLabel('Open track').setStyle(ButtonStyle.Link).setURL(trackUrl)
     );
   }
-  return [playbackRow, utilityRow];
+  return linkRow.components.length ? [playbackRow, utilityRow, linkRow] : [playbackRow, utilityRow];
 }
 
 export function buildSeekModal(player) {

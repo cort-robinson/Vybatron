@@ -7,6 +7,7 @@ import { time, timestamp } from '../format';
 import { ActionPopover, Artwork, Confirm, IconButton } from './ui';
 import { Queue } from './Queue';
 import { Spectrum } from './Spectrum';
+import { pulse } from '../motion';
 
 export function Player({ portal, expanded, setExpanded, onAdd, accent, animate }: { portal: Portal; expanded: boolean; setExpanded: (value: boolean) => void; onAdd: () => void; accent: string; animate: boolean }) {
   const { snapshot, bootstrap, can, run, receivedAt, connection, pending, syncing, library } = portal;
@@ -17,6 +18,7 @@ export function Player({ portal, expanded, setExpanded, onAdd, accent, animate }
   const [volumeDraft, setVolumeDraft] = useState<number | null>(null);
   const [confirmStop, setConfirmStop] = useState(false);
   const [confirmClear, setConfirmClear] = useState(false);
+  const playerRef = useRef<HTMLElement>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
   const identityTriggerRef = useRef<HTMLButtonElement>(null);
   const expandTriggerRef = useRef<HTMLButtonElement>(null);
@@ -43,6 +45,23 @@ export function Player({ portal, expanded, setExpanded, onAdd, accent, animate }
     return () => { document.removeEventListener('visibilitychange', visibility); clearInterval(timer); };
   }, [track?.id, session?.status, connection]);
   useEffect(() => { setScrub(null); setVolumeDraft(null); setClock(Date.now()); }, [track?.id, snapshot?.guild.id]);
+  // Acknowledge state that changes under the controls, whoever changed it: a new song settles
+  // into the deck, the play mark swaps, repeat cycles, and a saved heart lifts once.
+  const saved = (library?.favorites.some(t => t.id === track?.id)) ?? false;
+  const observed = useRef({ track: track?.id, status: session?.status, repeat: session?.repeat, saved });
+  useEffect(() => {
+    const previous = observed.current; const player = playerRef.current;
+    observed.current = { track: track?.id, status: session?.status, repeat: session?.repeat, saved };
+    if (!player) return;
+    const find = (selector: string) => player.querySelectorAll(selector);
+    if (previous.track !== track?.id) {
+      if (previous.track && track) pulse(find('.player-expand-trigger > .artwork, .sleeve-artwork > .artwork, .compact-title, .player-identity'), [{ opacity: .35, transform: 'translateY(6px) scale(.97)' }, { opacity: 1, transform: 'none' }], 420);
+      return;
+    }
+    if (previous.status !== session?.status && previous.status && ['playing', 'paused'].includes(session?.status || '')) pulse(find('.play-button svg'), [{ opacity: 0, transform: 'scale(.55)' }, { opacity: 1, transform: 'none' }], 240);
+    if (previous.repeat !== session?.repeat && previous.repeat) pulse(find('.repeat-control svg'), [{ transform: 'rotate(-180deg) scale(.7)', opacity: .4 }, { transform: 'none', opacity: 1 }], 360);
+    if (!previous.saved && saved) pulse(find('.favorite svg'), [{ transform: 'scale(1)' }, { transform: 'scale(1.28)', offset: .35 }, { transform: 'scale(1)' }], 420);
+  }, [track?.id, session?.status, session?.repeat, saved]);
   const duration = session?.durationMs || track?.durationMs || 0;
   const position = Math.min(duration || Infinity, Math.max(0, (session?.positionMs || 0) + (session?.status === 'playing' && connection === 'live' ? Math.max(0, clock - receivedAt) : 0)));
   const controllable = can('control') && !pending.length;
@@ -80,7 +99,7 @@ export function Player({ portal, expanded, setExpanded, onAdd, accent, animate }
     <IconButton className={`play-button ${session?.status === 'paused' || session?.status === 'recovering' ? 'settled' : ''}`} label={active ? 'Pause playback' : 'Resume playback'} disabled={!controllable || !track || !['playing', 'paused'].includes(session?.status || '')} title={blockedTitle} aria-describedby={controlDescription}
       onClick={() => void control({ command: active ? 'pause' : 'resume' })}>{active ? <PauseIcon size={31} weight="fill" /> : <PlayIcon size={31} weight="fill" />}</IconButton>
     <IconButton label="Skip current song" disabled={!controllable || !track} title={blockedTitle} onClick={() => void control({ command: 'skip' })}><SkipForwardIcon size={27} weight="fill" /></IconButton>
-    <IconButton label={`Repeat: ${session?.repeat || 'off'}. Change repeat mode`} className={session?.repeat !== 'off' && session?.repeat ? 'active-control' : ''} disabled={!controllable || !track} title={blockedTitle}
+    <IconButton label={`Repeat: ${session?.repeat || 'off'}. Change repeat mode`} className={`repeat-control ${session?.repeat !== 'off' && session?.repeat ? 'active-control' : ''}`} disabled={!controllable || !track} title={blockedTitle}
       onClick={() => void control({ command: 'loop', options: { mode: session?.repeat === 'off' ? 'track' : session?.repeat === 'track' ? 'queue' : 'off' } })}>{session?.repeat === 'track' ? <RepeatOnceIcon size={25} /> : <RepeatIcon size={25} />}</IconButton>
   </div>;
   const extras = <div className="player-extras">
@@ -102,7 +121,7 @@ export function Player({ portal, expanded, setExpanded, onAdd, accent, animate }
       </>}
     </ActionPopover>
   </div>;
-  return <section className={`persistent-player ${expanded ? 'expanded' : 'collapsed'} ${session?.status || 'idle'}`} aria-label="Music player" data-testid="player">
+  return <section ref={playerRef} className={`persistent-player ${expanded ? 'expanded' : 'collapsed'} ${session?.status || 'idle'}`} aria-label="Music player" data-testid="player">
     {!expanded && spectrum('player-spectrum', 56, 0)}
     {expanded && <div className="sleeve-content"><button className="mobile-collapse text-button" onClick={() => setExpanded(false)}><CaretDownIcon size={22} />Back to queue</button>
       <div className="sleeve-main"><div className="sleeve-artwork"><Artwork track={track} large />{spectrum('sleeve-spectrum', 40)}</div>{identity}<div className="player-context">{permissionReason && <p className="player-permission" id={reasonId}><WarningCircleIcon size={18} aria-hidden="true" /><span>{permissionReason}</span></p>}{connection === 'live' && session?.status === 'recovering' && <p className="player-state warm-text" role="status">Recovering your place. Playback controls will return when it’s ready.</p>}{session?.status === 'paused' && <p className="player-state warm-text">{connection === 'live' ? 'Paused · right here when you’re ready' : 'Last known: paused'}</p>}</div></div>

@@ -104,6 +104,8 @@ test('desktop sleeve keeps artwork left, Up Next right, and identity readable wi
   const player = page.getByTestId('player');
   const heading = player.getByRole('heading', { name: longTitle, exact: true });
   await visibleBounds(heading, page);
+  // Measure the settled sleeve, not its entrance rise.
+  await player.evaluate(element => Promise.all(element.getAnimations({ subtree: true }).filter(animation => animation.effect?.getTiming().iterations !== Infinity).map(animation => animation.finished.catch(() => undefined))));
   const artist = await visibleBounds(player.locator('.player-identity p'), page);
   const sleeve = await player.locator('.sleeve-main').boundingBox();
   expect(artist.y + artist.height).toBeLessThanOrEqual(sleeve!.y + sleeve!.height + 1);

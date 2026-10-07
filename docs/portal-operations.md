@@ -28,6 +28,8 @@ frontend builds on the 2 GiB VPS while music and recovery probes are running.
    HTTPS hostname becomes `PORTAL_ORIGIN`, without a trailing slash. Verify
    MagicDNS, HTTPS and the Funnel capability in the tailnet; do not expose a
    filesystem or the bot bridge. Background configuration survives restarts.
+   The bot also reads `PORTAL_ORIGIN` to add an "Open web player" link to the
+   Discord player.
 3. In the existing Vybertron Discord application, register exactly
    `${PORTAL_ORIGIN}/auth/discord/callback` as an OAuth redirect. Copy its OAuth
    client secret into the VPS private environment file, never into chat, Git,

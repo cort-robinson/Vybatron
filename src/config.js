@@ -22,6 +22,7 @@ export function readConfig(environment = process.env) {
     dataDir: environment.VYBERTRON_DATA_DIR ?? resolve('data'),
     healthPort: integer(environment.VYBERTRON_HEALTH_PORT, 3000),
     shutdownTimeoutMs: integer(environment.VYBERTRON_SHUTDOWN_TIMEOUT_MS, 10_000),
+    portalOrigin: environment.PORTAL_ORIGIN || null,
     portalBridge: {
       token: environment.PORTAL_BRIDGE_TOKEN || null,
       host: environment.PORTAL_BRIDGE_HOST || '127.0.0.1',
@@ -41,6 +42,17 @@ export const config = readConfig();
 function required(value, name) {
   if (typeof value !== 'string' || !value.trim()) throw new Error(`Missing ${name} in environment`);
   if (/[\r\n\u0000]/.test(value)) throw new Error(`Invalid ${name} in environment`);
+}
+
+// The player links here, so accept only a bare HTTPS origin (or local HTTP for development).
+function isPortalOrigin(value) {
+  try {
+    const url = new URL(value);
+    const local = ['localhost', '127.0.0.1'].includes(url.hostname);
+    return (url.protocol === 'https:' || (local && url.protocol === 'http:')) && url.origin === value;
+  } catch {
+    return false;
+  }
 }
 
 function boundedInteger(value, name, min, max) {
@@ -64,6 +76,7 @@ export function assertConfig(cfg = config) {
   if (cfg.dataDir !== undefined && (typeof cfg.dataDir !== 'string' || !isAbsolute(cfg.dataDir) || /[\r\n\u0000]/.test(cfg.dataDir))) {
     throw new Error('Invalid VYBERTRON_DATA_DIR in environment');
   }
+  if (cfg.portalOrigin && !isPortalOrigin(cfg.portalOrigin)) throw new Error('Invalid PORTAL_ORIGIN in environment');
   if (cfg.portalBridge?.token) {
     if (!/^[^\s\u0000]{32,512}$/.test(cfg.portalBridge.token)) throw new Error('Invalid PORTAL_BRIDGE_TOKEN in environment');
     boundedInteger(cfg.portalBridge.port, 'PORTAL_BRIDGE_PORT', 1, 65535);

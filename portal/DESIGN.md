@@ -150,6 +150,15 @@ The player has one identity, one timeline, and one transport in either compositi
 
 Upcoming rows exclude the current track. Drag reorder captures guild and revision; row menus offer Move up/down and removals. Queue favorite saves use a one-based position and snapshot revision, separate from voice-bound playback controls. The compact expanded queue and the phone queue move the favorite into the row menu. Player More exposes Clear upcoming queue with confirmation that the current song, position, and playback state continue; Stop separately confirms clearing playback and discarding the checkpoint.
 
+### Server favorites
+
+My Music's fourth tab shows two ranked lists, On repeat and Forgotten gems, each with Play all
+(primary) and Shuffle (secondary) that queue the whole list through `top play` under canAdd.
+Rows are open rows with an expanded tabular rank (the top three in accent), artwork, title,
+artist, and a muted play count; no requester ever appears. The tab fetches stats when opened
+and on Refresh, never with live snapshots. An unavailable store shows the standard error with
+Try again; the rest of My Music keeps working.
+
 ### Permission, connection, and recovery states
 
 API projections are authoritative: canAdd, canControl, canVote, saved-session canResume, guild admin, and mix canEdit drive availability. Current/queued favorite saves and visible-session mix saves use library access outside voice with a fresh source revision. Ordinary queue additions use canAdd; play-next and history replay require canControl and a fresh revision, including in supplemental forms. Administration never grants a visual bypass of same-voice/DJ rules. Pending mutations disable competing actions, while Stop retains its urgent path.

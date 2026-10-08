@@ -7,6 +7,7 @@ A shared soundtrack for Discord, with a player that stays out of the way and an 
 - **Stream recovery:** fresh track resolution, bounded retries, stale-event protection, source circuit breakers, and a watchdog that checks real server-reported progress.
 - **Voice recovery:** complete gateway handshakes in either event order, resumable audio sessions, and fresh Discord voice credentials when a session cannot resume.
 - **Your music:** personal favorites, shared server mixes, recent history and replay, and explicit session restore after a restart.
+- **Server favorites:** On repeat and Forgotten gems lists built from what your server actually plays, queued in one action with `/top play` or the portal.
 - **Web portal:** Discord sign-in, a live shared queue, an expanding artwork player, private favorites and server management on desktop or phone. Audio continues in Discord.
 - **Listen together:** optional fair queue, majority vote skip, a DJ role, and server volume defaults.
 - **Make it sound right:** Original, Bass, Warm, Clarity, Nightcore, Slow, and Mono presets. Each preset replaces previous effects.
@@ -42,17 +43,18 @@ Start with `/help`. Join a voice channel and use `/play` with a song and artist,
 | `/favorite add/list/play/remove/clear` | Global private favorites across supported servers; Clear requires confirmation |
 | `/mix save/list/load/delete` | Save up to 100 tracks in a shared mix; owner or server manager can change it |
 | `/history`, `/replay` | Browse recent tracks and queue one to replay next |
+| `/top show/play` | Browse or queue this server's favorites: On repeat or Forgotten gems, optionally shuffled |
 | `/radio on/off` | Enable or disable artist discovery for the current session |
 | `/session show/resume/discard` | Preview or explicitly restore a checkpoint kept for 72 hours |
 | `/settings show/volume/fairqueue/djrole/musicchannel/reset` | Server defaults and portal controller channel; requires server owner or Manage Server |
 
-Controls require the bot's voice channel and honor a configured DJ role. Listeners can still add music, save personal favorites, and vote to skip. Voice access is checked again when a long import finishes. Favorites hold 1,000 tracks per account, shared mixes hold 100 tracks each with 25 mixes per server, and the upcoming queue holds 500 tracks. Migrated favorite overflow is retained and returns to the active shelf as space opens. Played history retains the latest 100 tracks per server for up to 30 days, with original channel visibility enforced.
+Controls require the bot's voice channel and honor a configured DJ role. Listeners can still add music, save personal favorites, and vote to skip. Voice access is checked again when a long import finishes. Favorites hold 1,000 tracks per account, shared mixes hold 100 tracks each with 25 mixes per server, and the upcoming queue holds 500 tracks. Migrated favorite overflow is retained and returns to the active shelf as space opens. Played history retains the latest 100 tracks per server for up to 30 days, with original channel visibility enforced. Server favorites count plays from the past year (up to 10,000 per server) and show each person only plays from voice channels they can see. Repeat requests by one person and early skips count less.
 
 The bot leaves after five minutes with an empty queue, or one minute after the last listener leaves its voice channel. It never automatically rejoins a saved voice session at startup; `/session resume` requires joining the saved channel. An intentional Stop discards that session checkpoint. Favorites and mixes survive Stop and container rebuilds.
 
 ## Setup
 
-Use Node **22.12 or newer** for native development; the Docker runtime is pinned to Node 22. The Compose stack includes the bot, Lavalink 4.2.2, YouTube cipher service, and WARP. The audio images and YouTube plugin are pinned to the stack verified for this release.
+Use Node **22.13 or newer** for native development (play statistics use the built-in `node:sqlite` module); the Docker runtime is pinned to Node 22. The Compose stack includes the bot, Lavalink 4.2.2, YouTube cipher service, and WARP. The audio images and YouTube plugin are pinned to the stack verified for this release.
 
 1. Create a bot in the [Discord Developer Portal](https://discord.com/developers/applications).
 2. Invite it with `bot` and `applications.commands` scopes. Grant View Channel, Send Messages, Embed Links, Connect, and Speak. Set Voice Channel Status is optional.
@@ -88,7 +90,9 @@ For native development, publish the audio port on the **warp** service in a loca
 
 Compose mounts `bot-data` at `/app/data`. The library contains public catalog references and server/user IDs needed for ownership; it never saves audio, encoded tracks, cookies, or bot/provider tokens. Sources are freshly resolved when loading saved music. Failed writes leave the previous library intact, and invalid persisted data stops startup instead of silently replacing it.
 
-Back up `bot-data` before moving the VPS. Normal rebuilds preserve it; deleting the volume removes favorites, mixes, settings, and checkpoints. Native mode uses `data/library.json`; set an absolute `VYBERTRON_DATA_DIR` to change it.
+Play statistics are kept separately in `stats.sqlite` next to the library: server, song, voice channel, time, who requested it (or that the bot queued it), and whether it finished or was skipped early. Who was merely listening is never recorded. The store is bounded to one year, 10,000 plays per server and 16 MiB, and imports existing history once. If it cannot be opened or written, playback continues and stats show as unavailable; the file is left in place for inspection. Listeners can clear their own request stats from the portal API, which anonymizes their requests everywhere.
+
+Back up `bot-data` before moving the VPS. Normal rebuilds preserve it; deleting the volume removes favorites, mixes, settings, checkpoints, and play statistics. Native mode uses `data/library.json`; set an absolute `VYBERTRON_DATA_DIR` to change it.
 
 ## Web portal
 

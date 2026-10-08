@@ -111,6 +111,28 @@ scopes, fresh individual reads, input preservation, and revocation fences.
 `Activity = { items:{id:string,at:number,actor:{id,displayName},action:string,
   detail:string}[] }` (admin-only, 24h, bounded, successful queue/settings only).
 
+`StatEntry = { track: Track, plays: number, lastPlayedAt: number }`
+
+`Stats = {
+  serverFavorites: { onRepeat: StatEntry[], forgottenGems: StatEntry[] },
+  personal: { window: '7d'|'30d'|'90d'|'365d'|'all',
+    topTracks: StatEntry[],
+    topArtists: { name: string, plays: number, lastPlayedAt: number, track: Track }[],
+    rediscover: { index: number, track: Track, requests: number, lastRequestedAt: number|null }[] }
+}`
+
+Play statistics ([ADR-0006](adr/0006-play-statistics-store-and-song-identity.md)). Every
+list holds at most 25 entries (topArtists 10). Only plays in voice channels the actor can
+currently see contribute to serverFavorites, topTracks and topArtists; a nonmember sees empty
+guild lists. Server lists never identify requesters, and their Track.requestedBy is null.
+`plays` counts visible plays that were not early skips; On repeat uses the last 90 days and
+Forgotten gems the window 60-120 days ago. Personal lists use only the actor's own requests:
+topTracks/topArtists in this guild within `window` (default `30d`); `rediscover` lists the
+actor's global favorites not requested anywhere in 30 days, previously requested songs first.
+Its one-based `index` and `track.id` are the `favorite/play` index and `expectedTrackId`.
+Stats are optional: an unavailable store returns 503 `stats_unavailable` and nothing else
+changes. Fetch on demand; stats are not part of snapshots or the change feed.
+
 ## Public browser endpoints (portal API task)
 
 - GET `/health`: credential-free portal responsiveness/readiness, never music data.
@@ -127,6 +149,10 @@ scopes, fresh individual reads, input preservation, and revocation fences.
 - POST `/api/guilds/:guildId/commands` -> command result below.
 - GET `/api/guilds/:guildId/diagnostics` -> Diagnostics (admin only).
 - GET `/api/guilds/:guildId/activity` -> Activity (admin only).
+- GET `/api/guilds/:guildId/stats?window=7d|30d|90d|365d|all` -> Stats. Only `window` is
+  accepted; omitted means `30d`.
+- POST `/api/stats/requests/clear` -> `{ok:true,cleared:number}`. Same-origin + CSRF, no body.
+  Anonymizes the signed-in listener's recorded requests in every server; server totals remain.
 - GET `/api/guilds/:guildId/events`: credentialed same-origin SSE. `event:snapshot`
   carries GuildSnapshot. Heartbeat comments. Permission/session loss closes
   stream; state-unavailable must not replay writes. Bound connections, polling,
@@ -149,7 +175,11 @@ the command reply; never raw Discord interaction/token objects or embeds with se
 Core playback command names and options: play/playnext(query), pause/resume,
 seek(timestamp), skip/skipto(position), stop, clear, remove(position), move(from,to),
 shuffle, loop(mode:off|track|queue), volume(level), filter(preset), voteskip,
-radio subcommand on/off, replay(index), session resume/discard.
+radio subcommand on/off, replay(index), session resume/discard. Server favorites:
+top show(list?: on-repeat|forgotten-gems, page?: 1-3) and top play(list?, shuffle?: boolean).
+`top play` is an ordinary addition (canAdd rules, no revision) that resolves the actor's
+visible list fresh inside the mutation lane and enqueues it through the normal path,
+respecting the 500-track queue limit.
 Library: favorite add(position?)/list/play(index)/remove(index)/clear(confirm), mix
 save(name,replace)/list/load(name)/delete(name). Existing `/favorite` becomes
 global; library edits outside voice allowed with channel-aware source validation.
@@ -210,6 +240,10 @@ browser access or CORS. Portal sets the trusted session's actorId itself.
 - POST `/v1/guilds/:guildId/commands` body `{actorId,...validated command body}`.
 - GET `/v1/guilds/:guildId/diagnostics?actorId=...` -> Diagnostics.
 - GET `/v1/guilds/:guildId/activity?actorId=...` -> Activity.
+- GET `/v1/guilds/:guildId/stats?actorId=...&window=...` -> Stats (history channel scope,
+  including the guild's most recent 50 voice channels with plays).
+- POST `/v1/stats/requests/clear?actorId=...` -> `{ok:true,cleared:number}`. Requires a fresh
+  verified identity; no guild grant is involved.
 - GET `/health` (still authenticated) -> `{ready:boolean}`.
 - GET `/v1/changes?instance=...&after=...` -> `{instanceId:string,sequence:number,reset:boolean,guildIds:string[]}`.
   Private wake-up long poll (held up to 20 s). Carries guild IDs only, never

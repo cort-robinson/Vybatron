@@ -18,6 +18,10 @@ const CONFLICTING = new Set(['playnext', 'seek', 'skip', 'skipto', 'clear', 'rem
 // admission or preflight grant would only repeat the same round back to back.
 const DIRECT_CONTROLS = new Set(['pause', 'resume', 'seek', 'filter', 'volume', 'skip', 'skipto', 'loop', 'shuffle',
   'remove', 'move', 'clear', 'radio', 'voteskip', 'stop']);
+// Audible controls take their pre-mutation authority from the Gateway cache
+// when the policy can vouch for it, so the playback write isn't held behind a
+// Discord REST round. Queue edits, Stop and the final disclosure stay fresh.
+const GATEWAY_CONTROLS = new Set(['pause', 'resume', 'seek', 'filter', 'volume', 'skip', 'skipto']);
 const ROOT_KEYS = new Set(['actorId', 'command', 'subcommand', 'options', 'expectedRevision', 'expectedTrackId', 'expectedHistoryId', 'expectedMixVersion']);
 const object = value => value && typeof value === 'object' && !Array.isArray(value);
 const publicName = (command, name) => command === 'skipto' && name === 'index' ? 'position' : command === 'replay' && name === 'position' ? 'index' : name;
@@ -161,7 +165,8 @@ export async function executePortalCommand(client, policy, revisions, commandMap
   const command = validateCommand(body, commandMap);
   const nativePreflight = DIRECT_CONTROLS.has(command.command)
     && (command.command !== 'filter' || command.values.preset !== undefined);
-  const freshContext = (phase = 'native') => commandAuthorityPhase(phase, () => policy.guild(body.actorId, guildId, undefined, { fresh: true, urgent: command.command === 'stop',
+  const freshContext = (phase = 'native') => commandAuthorityPhase(phase, () => (phase === 'native' && GATEWAY_CONTROLS.has(command.command)
+    && policy.gatewayGuild?.(body.actorId, guildId)) || policy.guild(body.actorId, guildId, undefined, { fresh: true, urgent: command.command === 'stop',
     channelScope: ['history', 'replay'].includes(command.command) ? 'history' : 'session',
     channelIds: command.command === 'settings' && command.subcommand === 'musicchannel' && command.values.channel ? [command.values.channel] : [] }));
   let context = null;

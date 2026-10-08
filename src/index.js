@@ -11,7 +11,9 @@ import { startPortalBridge } from './portal/index.js';
 assertConfig();
 
 export const client = new Client({
-  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildVoiceStates],
+  // GuildMembers keeps cached member roles and timeouts current, so the portal
+  // can authorize audible controls without a Discord REST round.
+  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildVoiceStates, GatewayIntentBits.GuildMembers],
 });
 
 initLavalink(client);

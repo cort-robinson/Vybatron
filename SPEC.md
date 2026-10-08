@@ -2,7 +2,7 @@
 
 ## Goal and architecture
 
-A reliable shared Discord music experience on desktop and mobile. Node >=22.12, ESM, discord.js14, exactly pinned lavalink-client2.10.3, and Lavalink4.2.2 with DAVE voice support. Guilds and GuildVoiceStates intents only. Slash commands and Discord components only.
+A reliable shared Discord music experience on desktop and mobile. Node >=22.12, ESM, discord.js14, exactly pinned lavalink-client2.10.3, and Lavalink4.2.2 with DAVE voice support. Guilds, GuildVoiceStates and GuildMembers intents only (GuildMembers keeps portal control authority current). Slash commands and Discord components only.
 
 Lavalink is the sole audio engine. `player.queue` is the sole live queue. Music libraries store catalog references; they never introduce a parallel live queue or retain playable encodings. The bot uses standard server filters and does not download or save audio.
 

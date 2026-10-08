@@ -39,8 +39,8 @@ which accounted for the 2-5 s outliers.
   bearer-authenticated long poll that returns only `{instanceId, sequence,
   reset, guildIds}`. Lavalink player events and a 250 ms local revision scan
   (queue edits, volume, loop and filters have no event) detect changes, as do
-  Gateway voice joins/moves and channel, role and guild updates. Member role
-  edits need the privileged members intent and stay on polling. The scan runs
+  Gateway voice joins/moves, channel, role and guild updates, and member role,
+  timeout and removal events. The scan runs
   only while a consumer polled within the last minute.
 - `portal/server`: one follower long-polls the feed on its own socket, outside
   the protected request pool. Each wake makes the stream do its own fresh
@@ -75,6 +75,30 @@ which accounted for the 2-5 s outliers.
 This deliberately replaces the earlier rule that the player must never predict
 playback state. Prediction is display-only: the bot still authorizes and
 executes every write, and the screen converges on verified state.
+
+## Gateway authority for audible controls
+
+Pause, resume, seek, volume, filter, skip and skip-to no longer wait on a
+Discord REST round before the playback write. With the GuildMembers intent,
+Gateway push events keep every authorization input current: guild owner, role
+definitions, the actor's roles and timeout, channel overwrites and voice state.
+`policy.gatewayGuild` builds the same detached, request-local authority view
+from that cache, and the same native guard and portal checks (membership,
+same voice channel, channel visibility, DJ role) run against it. It is
+event-sourced state, not a time-based cache, and grants no maintainer access.
+
+It returns nothing, and the command takes the fresh REST round as before, when
+the cache can't be trusted: no members intent, the guild's shard not Ready
+(missed events replay on resume), or a missing actor, bot member or @everyone
+role. Stop, queue edits, settings, library actions and every final disclosure
+keep fresh REST authority.
+
+The trade-off: a permission change takes effect when its Gateway event
+arrives (normally well under a second) rather than at the next REST read.
+
+Public Funnel adds about 35 ms to a warm request (76 ms through the public
+ingress vs 41 ms direct over the tailnet, with the portal answering in 8 ms
+locally, measured 2026-10-07). It is not worth replacing.
 
 ## Local evidence
 

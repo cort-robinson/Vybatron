@@ -51,10 +51,13 @@ test('server favorites tab joins keyboard tab navigation', async ({ page }) => {
   // Keys pressed while a view transition runs land on the outgoing snapshot.
   await page.waitForFunction(() => !document.documentElement.dataset.motion);
   await page.getByRole('tab', { name: /Favorites/ }).first().focus();
+  const settled = () => page.waitForFunction(() => !document.documentElement.dataset.motion);
   await page.keyboard.press('End');
   await expect(page.getByRole('tab', { name: 'Server favorites' })).toBeFocused();
+  await settled();
   await page.keyboard.press('ArrowRight');
   await expect(page.getByRole('tab', { name: /^Favorites/ })).toBeFocused();
+  await settled();
   await page.keyboard.press('ArrowLeft');
   await expect(page.getByRole('tab', { name: 'Server favorites' })).toHaveAttribute('aria-selected', 'true');
 });

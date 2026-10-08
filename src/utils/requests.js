@@ -71,7 +71,7 @@ function activityState(interaction) {
   const name = interaction.commandName;
   const action = interaction.options?.getSubcommand?.(false);
   const queueEdit = ['play', 'playnext', 'clear', 'remove', 'move', 'shuffle', 'skip', 'skipto', 'stop', 'replay', 'voteskip'].includes(name)
-    || (name === 'mix' && action === 'load') || (name === 'session' && ['resume', 'discard'].includes(action))
+    || (name === 'mix' && action === 'load') || (name === 'radio' && action === 'promote') || (name === 'session' && ['resume', 'discard'].includes(action))
     || /^(?:queue:.*:jump:|history:.*:replay:|player:v1:(?:skip|shuffle|stop-confirm)$)/.test(interaction.customId || '');
   if (name !== 'settings' && !queueEdit) return null;
   const player = interaction.client.lavalink?.getPlayer(interaction.guildId);

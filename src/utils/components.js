@@ -132,7 +132,7 @@ async function handlePlayerComponent(interaction, action, expectedIdentity = nul
       return interaction.reply(ephemeralText('Nothing is playing.'));
     }
     await interaction.deferUpdate();
-    await skipCurrent(controlledPlayer);
+    await skipCurrent(controlledPlayer, interaction.client);
     return null;
   }
 

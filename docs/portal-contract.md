@@ -36,7 +36,10 @@ music storage is not shared with bot music JSON. Auth cookies/tokens remain serv
 
 `Track = { id: string, title: string, author: string, uri: string|null,
   source: string, durationMs: number, artworkUrl: string|null, isStream: boolean,
-  requestedBy: {id, displayName, avatarUrl: string|null}|null }`
+  requestedBy: {id, displayName, avatarUrl: string|null}|null, suggested?: boolean }`
+
+`suggested` appears on session tracks only (current, queue, suggestions): true for
+smart-autoplay picks, whose `requestedBy` is the bot. Library tracks omit it.
 
 Track ids are public-reference identities, NEVER encoded Lavalink tracks. All
 fields are bounded safe projections. No signed media URLs, credentials, raw
@@ -55,22 +58,26 @@ runtime objects and credential-bearing data. Maintain existing command meanings.
   session: {
     status: 'idle'|'playing'|'paused'|'recovering'|'unavailable',
     voiceChannel: {id,name}|null, textChannel: {id,name}|null,
-    current: Track|null, queue: Track[], positionMs: number, durationMs: number,
+    current: Track|null, queue: Track[], suggestions: Track[], positionMs: number, durationMs: number,
     volume: number, filter: string, repeat: 'off'|'track'|'queue',
-    radio: boolean, fairQueue: boolean,
+    radio: boolean, autoplay: 'off'|'on'|'listening', fairQueue: boolean,
     listeners: {id,displayName,avatarUrl:string|null}[],
     canAdd: boolean, canControl: boolean, canVote: boolean, reason: string|null
   },
   savedSession: {exists:boolean, savedAt:number|null, positionMs:number,
     paused:boolean, trackCount:number, voiceChannel:{id,name}|null,
     canResume:boolean},
-  settings: {volume:number,fairQueue:boolean,djRoleId:string|null,
+  settings: {volume:number,fairQueue:boolean,autoplay:'off'|'on'|'listening',djRoleId:string|null,
     musicTextChannelId:string|null}|null,
   channels: {id,name,type:'voice'|'text'}[], roles:{id,name}[]
 }`
 
 If session channel is not visible, expose an idle/empty projection and a safe
 reason; do not reveal restricted channel ids/name/tracks/listeners/checkpoint.
+`suggestions` holds at most three autoplay picks waiting after the queue (ADR-0007);
+they are not queue positions and are empty when hidden or inactive. `radio` is
+whether autoplay is active for the session (server `autoplay` mode or a /radio
+override). Clients must treat missing `suggestions`/`autoplay` as empty/off.
 Settings/channels/roles include only authorized fields; settings null for basic
 members. Snapshot channels are the relevant, freshly verified session channels;
 the complete settings catalog is discovered separately on demand. Revision changes on queue/current identity and relevant state changes,
@@ -149,11 +156,14 @@ the command reply; never raw Discord interaction/token objects or embeds with se
 Core playback command names and options: play/playnext(query), pause/resume,
 seek(timestamp), skip/skipto(position), stop, clear, remove(position), move(from,to),
 shuffle, loop(mode:off|track|queue), volume(level), filter(preset), voteskip,
-radio subcommand on/off, replay(index), session resume/discard.
+radio on(track?)/off/promote(position)/remove(position)/less(position?), replay(index),
+session resume/discard. radio promote/remove/less carry `expectedTrackId` (the
+selected suggestion, or the current autoplay pick for less without a position);
+promote is an ordinary addition (the pick stays bot-requested and `suggested`), the others need playback control.
 Library: favorite add(position?)/list/play(index)/remove(index)/clear(confirm), mix
 save(name,replace)/list/load(name)/delete(name). Existing `/favorite` becomes
 global; library edits outside voice allowed with channel-aware source validation.
-Settings: volume(value), fairqueue(enabled), djrole(role), reset; add musicchannel
+Settings: volume(value), fairqueue(enabled), autoplay(mode:off|on|listening), djrole(role), reset; add musicchannel
 subcommand with option channel, validating same-guild bot-readable/writable text
 channel. Keep public command schemas in bootstrap updated.
 

@@ -11,7 +11,7 @@ import { plainText } from './utils/presentation.js';
 import { clearTrackPresence, updateTrackPresence } from './utils/presence.js';
 import { clearVoiceStatus, updateVoiceStatus } from './utils/voice-status.js';
 import { recordPlaybackFailure, recordPlaybackProgress } from './utils/playback-health.js';
-import { fillRadioQueue } from './utils/radio.js';
+import { fillRadioQueue, refreshSuggestions } from './utils/radio.js';
 import {
   createPlaybackRecovery,
   HardenedPlayer,
@@ -194,7 +194,7 @@ export function initLavalink(client) {
       onEmptyQueue: {
         autoPlayFunction: async (player, lastTrack) => {
           try { await fillRadioQueue(player, lastTrack, client); } catch (error) {
-            console.error('[Lavalink] radio lookup failed.');
+            console.error('[Lavalink] autoplay lookup failed.');
           }
         },
       },
@@ -258,7 +258,12 @@ export function initLavalink(client) {
   });
   client.on('voiceStateUpdate', (oldState) => handleVoiceStateUpdate(client, oldState));
 
-  lavalink.on('trackStart', (player, track) => void handleTrackStart(client, player, track));
+  lavalink.on('trackStart', (player, track) => {
+    void handleTrackStart(client, player, track);
+    // Prepare autoplay picks near the end of the human queue. Bounded, and a
+    // failed lookup can never affect the track that just started.
+    void refreshSuggestions(player, client).catch(() => console.error('[Lavalink] autoplay lookup failed.'));
+  });
   lavalink.on('playerUpdate', (_previous, player) => {
     if (lavalink.playbackWatchdog.observe(player)) recordPlaybackProgress(client, player);
   });

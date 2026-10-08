@@ -1,3 +1,5 @@
+import { autoplayActive, noteSkip, queueNextSuggestion } from './radio.js';
+
 export async function togglePlayback(player) {
   const wasPaused = player.paused;
   if (wasPaused) await player.resume();
@@ -5,11 +7,15 @@ export async function togglePlayback(player) {
   return wasPaused ? 'resumed' : 'paused';
 }
 
-export async function skipCurrent(player) {
+// Skipping an autoplay pick counts as "less like this". With no human queue,
+// the next prepared suggestion plays; otherwise autoplay may look one up.
+export async function skipCurrent(player, client = null) {
   const track = player.queue.current;
   if (!track) return null;
+  noteSkip(player, track);
+  if (!player.queue.tracks.length && client) await queueNextSuggestion(player, client);
   if (player.queue.tracks.length > 0) await player.skip();
-  else await player.stopPlaying(true, false);
+  else await player.stopPlaying(true, Boolean(client && autoplayActive(client, player)));
   return track;
 }
 

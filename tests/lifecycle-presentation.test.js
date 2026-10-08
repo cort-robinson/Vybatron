@@ -88,7 +88,7 @@ test('urgent native radio-off finishes behind stalled cosmetics without completi
       isAutocomplete: () => false, isMessageComponent: () => false,
       isModalSubmit: () => false, isChatInputCommand: () => true,
       async deferReply() { this.deferred = true; acknowledged++; },
-      async editReply(payload) { replied++; assert.match(payload.content, /Artist radio is off/); },
+      async editReply(payload) { replied++; assert.match(payload.content, /Autoplay is off/); },
       async reply() { assert.fail('urgent command must acknowledge before execution'); },
     }));
     await Promise.all(calls);

@@ -41,9 +41,9 @@ export function buildHelpPayload(client, requestedTopic = 'start', ownerId = 'an
       .addFields(
         { name: 'Personal favorites', value: '`/favorite add` saves the current track. Use `/favorite list`, `/favorite play`, `/favorite remove`, or `/favorite clear` to manage your library.' },
         { name: 'Shared guild mixes', value: '`/mix save` captures the current track and queue. `/mix list` finds saved mixes; `/mix load` brings one back. `/mix delete` removes one.' },
-        { name: 'Opt-in discovery', value: '`/radio on` adds related music when your queue runs out. `/radio off` returns to the music you chose. Recommendations depend on enabled source capabilities.' },
+        { name: 'Keep the music going', value: '`/radio on` plays related songs after your queue runs out; add a song or link to start from it. Songs people queue always play first. `/radio promote`, `/radio remove`, and `/radio less` manage suggestions; `/radio off` stops for this session.' },
         { name: 'Pick up later', value: '`/session show` inspects a saved session; `/session resume` restores it in your voice channel. `/session discard` clears it.' },
-        { name: 'Make this server feel right', value: '`/settings show` displays guild defaults. Configure volume, fair queue, and the DJ role with `/settings`; `/settings reset` restores defaults.' },
+        { name: 'Make this server feel right', value: '`/settings show` displays guild defaults. Configure volume, fair queue, autoplay, and the DJ role with `/settings`; `/settings reset` restores defaults.' },
       );
   } else {
     embed.setDescription(sourceDescription(client))

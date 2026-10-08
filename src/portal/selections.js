@@ -22,6 +22,10 @@ export function assertFavoriteSelection(track, expectedId) {
   if (!track || publicTrackId(track) !== expectedId) fail(409, 'favorite_changed', 'Your favorites changed. Refresh your library before trying again.');
 }
 
+export function assertSuggestionSelection(track, expectedId) {
+  if (!track || publicTrackId(track) !== expectedId) fail(409, 'suggestion_changed', 'The suggestions changed. Refresh the queue before trying again.');
+}
+
 export function assertHistorySelection(item, expectedId) {
   if (!item || item.id !== expectedId) fail(409, 'history_changed', 'Your visible history changed. Refresh your library before replaying.');
 }

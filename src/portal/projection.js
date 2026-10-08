@@ -3,7 +3,7 @@ import { plainText } from '../utils/presentation.js';
 import { catalogUrl, LIBRARY_LIMITS, validId } from '../utils/library.js';
 import { savedSession } from '../utils/sessions.js';
 import { AUDIO_PRESETS, getAudioPreset } from '../utils/filters.js';
-import { radioState } from '../utils/radio.js';
+import { autoplayActive, autoplayMode, isAutoplayTrack, radioState, suggestions } from '../utils/radio.js';
 import { isPlaybackRecovering } from '../playback-recovery.js';
 import { getControllerRecord } from '../utils/player-controller.js';
 import { seekRevision } from '../utils/operations.js';
@@ -33,7 +33,8 @@ export function actorProjection(user) {
   if (!validId(user?.id)) return null;
   return { id: user.id, displayName: plainText(user.displayName || user.globalName || user.username, { maxLength: 80 }), avatarUrl: safeImage(user.displayAvatarURL?.() || user.avatarUrl) };
 }
-export function trackProjection(track) {
+// Session tracks carry `suggested`: true for autoplay picks, whose requester is the bot.
+export function trackProjection(track, suggested) {
   const info = track?.info || track || {};
   const referenceUri = catalogUrl(info.uri);
   const uri = referenceUri?.length <= 512 ? referenceUri : null;
@@ -43,8 +44,9 @@ export function trackProjection(track) {
   const youtubeId = uri?.startsWith('https://www.youtube.com/watch?') ? new URL(uri).searchParams.get('v') : null;
   return { id, title: plainText(info.title, { fallback: 'Unknown track', maxLength: 180 }), author: plainText(info.author, { fallback: 'Unknown artist', maxLength: 120 }), uri, source,
     durationMs: boundedNumber(info.duration), artworkUrl: safeImage(info.artworkUrl) || (youtubeId ? `https://i.ytimg.com/vi/${youtubeId}/hqdefault.jpg` : null),
-    isStream: Boolean(info.isStream), requestedBy: actorProjection(track?.requester) };
+    isStream: Boolean(info.isStream), requestedBy: actorProjection(track?.requester), ...(suggested === undefined ? {} : { suggested: Boolean(suggested) }) };
 }
+export function suggestionProjection(player) { return suggestions(player).map(track => trackProjection(track, true)); }
 export function guildProjection(context) { return { id: context.guild.id, name: plainText(context.guild.name, { maxLength: 100 }), iconUrl: safeImage(context.guild.iconURL?.()), admin: context.admin }; }
 export const FILTERS = Object.entries(AUDIO_PRESETS).map(([id, preset]) => ({ id, label: preset.label, description: preset.description }));
 
@@ -74,7 +76,8 @@ export function createRevisions(client) {
       (player?.queue?.tracks || []).map(track => [objectId(track), trackProjection(track).id]), player?.voiceChannelId, player?.textChannelId,
       Boolean(player?.paused), Boolean(player?.playing), Boolean(isPlaybackRecovering(player)), player?.volume, player?.repeatMode, getAudioPreset(player).label,
       seekRevision(player),
-      Boolean(radioState(player).enabled), guild.settings, guild.mixes, guild.history.map(item => item.id),
+      Boolean(radioState(player).enabled), radioState(player).override, autoplayActive(client, player), suggestionProjection(player).map(track => track.id),
+      Boolean(current && isAutoplayTrack(player, current)), guild.settings, guild.mixes, guild.history.map(item => item.id),
       checkpoint ? [checkpoint.voiceChannelId, checkpoint.textChannelId, checkpoint.tracks, checkpoint.paused, checkpoint.volume, checkpoint.repeatMode] : null];
     return createHash('sha256').update(JSON.stringify(signature)).digest('hex').slice(0, 32);
   };
@@ -109,16 +112,17 @@ export function snapshotProjection(client, context, revision, ordering) {
   const configuration = configurationProjection(context);
   return { guild: guildProjection(context), revision, ...(ordering ? { ordering } : {}),
     session: { status, voiceChannel: allowed ? channelProjection(context.channels.get(player?.voiceChannelId)) : null, textChannel: allowed ? channelProjection(context.channels.get(player?.textChannelId)) : null,
-      current: current ? trackProjection(current) : null, queue: allowed ? (player?.queue?.tracks || []).slice(0, LIBRARY_LIMITS.queue).map(trackProjection) : [],
+      current: current ? trackProjection(current, isAutoplayTrack(player, current)) : null, queue: allowed ? (player?.queue?.tracks || []).slice(0, LIBRARY_LIMITS.queue).map(track => trackProjection(track, isAutoplayTrack(player, track))) : [],
+      suggestions: allowed && player ? suggestionProjection(player) : [],
       positionMs: current ? boundedNumber(status === 'playing' ? player.position : player.lastPosition ?? player.position, 0, boundedNumber(current.info?.duration) || Number.MAX_SAFE_INTEGER) : 0,
       durationMs: current ? boundedNumber(current.info?.duration) : 0, volume: allowed ? boundedNumber(player?.volume, settings.volume, 100) : 100,
       filter: allowed ? FILTERS.find(filter => filter.label === preset.label)?.id || 'custom' : 'off', repeat: allowed && ['off', 'track', 'queue'].includes(player?.repeatMode) ? player.repeatMode : 'off',
-      radio: allowed && Boolean(player && radioState(player).enabled), fairQueue: allowed && settings.fairQueue, listeners,
+      radio: allowed && Boolean(player && autoplayActive(client, player)), autoplay: autoplayMode(client, id), fairQueue: allowed && settings.fairQueue, listeners,
       canAdd, canControl: Boolean(allowed && player && sameVoice && djAccess(context, client)), canVote: Boolean(allowed && current && sameVoice), reason },
     savedSession: { exists: Boolean(savedVisible), savedAt: savedVisible ? saved.savedAt : null, positionMs: savedVisible ? saved.position : 0, paused: savedVisible ? saved.paused : false,
       trackCount: savedVisible ? saved.tracks.length : 0, voiceChannel: savedVisible ? channelProjection(context.channels.get(saved.voiceChannelId)) : null,
       canResume: Boolean(savedVisible && voice?.id === saved.voiceChannelId && botVoiceAccess && writable(context, context.channels.get(saved.textChannelId)) && djAccess(context, client) && !(player?.queue?.current || player?.queue?.tracks?.length)) },
-    settings: context.admin ? { volume: boundedNumber(settings.volume, 100, 100), fairQueue: Boolean(settings.fairQueue), djRoleId: settings.djRoleId || null, musicTextChannelId: settings.musicTextChannelId || null } : null,
+    settings: context.admin ? { volume: boundedNumber(settings.volume, 100, 100), fairQueue: Boolean(settings.fairQueue), autoplay: autoplayMode(client, id), djRoleId: settings.djRoleId || null, musicTextChannelId: settings.musicTextChannelId || null } : null,
     channels: configuration.channels, roles: configuration.roles };
 }
 
@@ -130,7 +134,7 @@ export function activityProjection(client, guildId) {
 
 export function libraryProjection(client, context) {
   const guild = client.library.readGuild(context.guild.id);
-  return { favorites: client.library.favorites(context.user.id).slice(0, LIBRARY_LIMITS.favorites).map(trackProjection),
-    mixes: context.member ? Object.entries(guild.mixes).slice(0, LIBRARY_LIMITS.mixes).map(([name, mix]) => ({ id: name, name, ownerId: mix.ownerId, version: mixVersion(mix), tracks: mix.tracks.map(trackProjection), canEdit: mix.ownerId === context.user.id || context.guildAdmin })) : [],
+  return { favorites: client.library.favorites(context.user.id).slice(0, LIBRARY_LIMITS.favorites).map(track => trackProjection(track)),
+    mixes: context.member ? Object.entries(guild.mixes).slice(0, LIBRARY_LIMITS.mixes).map(([name, mix]) => ({ id: name, name, ownerId: mix.ownerId, version: mixVersion(mix), tracks: mix.tracks.map(track => trackProjection(track)), canEdit: mix.ownerId === context.user.id || context.guildAdmin })) : [],
     history: guild.history.filter(item => visibleHistory(context, item)).map(item => ({ id: item.id, playedAt: item.playedAt, voiceChannel: channelProjection(context.channels.get(item.voiceChannelId)), track: trackProjection(item.track) })) };
 }

@@ -148,8 +148,9 @@ automated feature coverage does not imply that every item was manually toured.
    responsive during an import, disconnect, and permit a fresh `/play`.
 4. Favorite a playing track, save/load a small mix, and use History/Replay.
    Private menus should work on both desktop and mobile.
-5. Enable radio with humans present, let a short queue end, and confirm one
-   related track follows. Disable radio before finishing the test.
+5. Turn on autoplay (`/radio on`) with humans present and let a short queue end.
+   Confirm a related track follows, the portal shows Suggested after the queue, and
+   skipping a pick replaces it. Turn autoplay off before finishing the test.
 6. During the controlled listening session, interrupt only the
    candidate's Lavalink control socket and confirm recovery at the last reported
    position with the upcoming queue intact. Terminal failure must show Audio

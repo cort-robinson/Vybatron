@@ -296,22 +296,22 @@ test('native history Refresh preserves a healthy ordered stream and playback con
   } finally { await page.close(); await server.close(); }
 });
 
-test('native artist radio keeps its lifecycle and pending reply while ordered SSE overlaps', async ({ page }) => {
+test('native autoplay toggle keeps its lifecycle and pending reply while ordered SSE overlaps', async ({ page }) => {
   const server = await startHttpFixture();
   try {
     await connected(page, server); const reads = server.snapshotReads.length; const events = server.eventReads.length;
     server.holdCommandExecution(); server.holdCommandReplies();
     await page.getByRole('button', { name: 'More playback controls' }).click();
-    await page.getByRole('button', { name: 'Turn artist radio on', exact: true }).click();
+    await page.getByRole('button', { name: 'Turn autoplay on', exact: true }).click();
     await expect.poll(() => server.commands.length).toBe(1);
-    await expect(page.getByRole('button', { name: 'Turn artist radio on', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Turn autoplay on', exact: true })).toHaveCount(0);
     // This HTTP fixture does not implement radio. Supply the native execution
     // outcome before it captures the real, gated command response.
     server.state.snapshot.session.radio = true; stamp(server.state.snapshot, 3); server.releaseCommandExecution();
     await expect.poll(() => server.heldCommands.size).toBe(1);
     expect([...server.heldCommands.values()][0].session.radio).toBe(true);
     stamp(server.state.snapshot, 4); server.broadcast(); await page.getByRole('button', { name: 'More playback controls' }).click();
-    const off = page.getByRole('button', { name: 'Turn artist radio off', exact: true });
+    const off = page.getByRole('button', { name: 'Turn autoplay off', exact: true });
     await expect(off).toBeEnabled(); server.releaseCommandReplies(); await expect(off).toBeEnabled();
     await page.keyboard.press('Escape'); await expect(off).toHaveCount(0);
     expect(server.commands).toEqual([{ command: 'radio', subcommand: 'on' }]);

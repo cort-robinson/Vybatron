@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowClockwiseIcon, HeartIcon, PlayIcon, PlusIcon, TrashIcon, VinylRecordIcon } from '@phosphor-icons/react';
+import { ArrowClockwiseIcon, HeartIcon, PlayIcon, PlusIcon, RadioIcon, TrashIcon, VinylRecordIcon } from '@phosphor-icons/react';
 import type { Portal } from '../usePortal';
 import type { Track } from '../types';
 import { date, time, totalTime } from '../format';
@@ -7,6 +7,7 @@ import { Artwork, Confirm, Empty, ErrorState, IconButton, Loading } from './ui';
 import { Pagination } from './Pagination';
 import { ServerFavorites } from './ServerFavorites';
 import { transition } from '../motion';
+import { radioLabel, startRadioCommand } from '../radio';
 import './library.css';
 
 const sections = ['favorites', 'mixes', 'history', 'server'] as const;
@@ -104,6 +105,7 @@ export function LibraryView({ portal, active = true }: { portal: Portal; active?
       {!library.favorites.length ? <Empty title="A place for your repeat favorites" description="Tap the heart on the current song to keep it here. Only you can see this shelf." icon={<HeartIcon size={30} />} /> : !favorites.length ? noMatches : <ul className="library-track-list" aria-label="Favorite songs">{favorites.slice(offset, offset + pageSize).map(({ track, index }) => <li key={`${track.id}:${index}`}>
         <Artwork track={track} /><div className="track-text"><strong dir="auto" title={track.title}>{track.title}</strong><span dir="auto">{track.author} · {track.source}</span></div><span className="track-duration">{track.isStream ? 'Live' : time(track.durationMs)}</span>
         <IconButton label={`Queue favorite ${track.title}`} disabled={!addable} title={!addable ? portal.blockedReason : undefined} onClick={() => void run({ command: 'favorite', subcommand: 'play', options: { index: index + 1 }, expectedTrackId: track.id }, 'add')}><PlusIcon size={23} /></IconButton>
+        <RadioButton portal={portal} track={track} />
         <IconButton className="favorite active" label={`Remove favorite ${track.title}`} disabled={!editable} onClick={() => void run({ command: 'favorite', subcommand: 'remove', options: { index: index + 1 }, expectedTrackId: track.id }, 'library')}><HeartIcon size={23} weight="fill" /></IconButton>
       </li>)}</ul>}
       <Pagination label="favorites" page={currentPage} total={favorites.length} pageSize={pageSize} onPageChange={page => setPages(previous => ({ ...previous, favorites: page }))} />
@@ -137,6 +139,7 @@ export function LibraryView({ portal, active = true }: { portal: Portal; active?
       {!library.history.length ? <Empty title="Your server’s story starts here" description="Songs appear after they play in a visible voice channel." /> : !history.length ? noMatches : <ul className="history-list" aria-label="Recently played songs">{history.slice(offset, offset + pageSize).map(({ entry, index }) => <li key={entry.id}>
         <Artwork track={entry.track} /><div className="track-text"><strong dir="auto" title={entry.track.title}>{entry.track.title}</strong><span dir="auto">{entry.track.author}{entry.voiceChannel ? ` · ${entry.voiceChannel.name}` : ''}</span></div><time dateTime={new Date(entry.playedAt).toISOString()}>{date(entry.playedAt)}</time>
         <IconButton label={`Replay ${entry.track.title}`} disabled={!controllable} title={!controllable ? portal.blockedReason : undefined} onClick={() => void run({ command: 'replay', options: { index: index + 1 }, expectedHistoryId: entry.id, expectedRevision: snapshot?.revision }, 'control')}><PlusIcon size={23} /></IconButton>
+        <RadioButton portal={portal} track={entry.track} />
       </li>)}</ul>}
       <Pagination label="listening history" page={currentPage} total={history.length} pageSize={pageSize} onPageChange={page => setPages(previous => ({ ...previous, history: page }))} />
       {!controllable && <p className="library-note">{portal.blockedReason}</p>}
@@ -150,4 +153,12 @@ export function LibraryView({ portal, active = true }: { portal: Portal; active?
       else void run(confirm.kind === 'favorites' ? { command: 'favorite', subcommand: 'clear', options: { confirm: true } } : { command: 'mix', subcommand: 'delete', options: { name: confirm.name }, expectedMixVersion: confirm.version }, 'library').then(ok => { if (ok) setConfirm(null); });
     }} />}
   </div>;
+}
+
+// Seeds autoplay from a saved song. Needs a live session and playback control.
+function RadioButton({ portal, track }: { portal: Portal; track: Track }) {
+  const command = startRadioCommand(track);
+  const enabled = !!command && portal.can('control') && !portal.pending.length;
+  return <IconButton className="radio-start" label={radioLabel(track)} disabled={!enabled} title={!command ? 'This song has no public source reference' : !enabled ? portal.blockedReason : radioLabel(track)}
+    onClick={() => { if (command) void portal.run(command, 'control'); }}><RadioIcon size={22} /></IconButton>;
 }

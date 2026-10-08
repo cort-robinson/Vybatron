@@ -159,7 +159,7 @@ export function startPortalBridge(client, {
           // Membership may disappear during a slow import. Recheck before data.
           const fresh = await policy.guild(actorId, guildId);
           if (!fresh.member) fail(403, 'membership_required', 'Join this server to search its music catalog.');
-          result = { tracks: (found?.tracks || []).slice(0, 50).map(trackProjection), notice: found?.spotifyImport ? 'Spotify catalog results are matched to playable recordings.' : found?.tracks?.length ? null : 'No playable matches were found.' };
+          result = { tracks: (found?.tracks || []).slice(0, 50).map(track => trackProjection(track)), notice: found?.spotifyImport ? 'Spotify catalog results are matched to playable recordings.' : found?.tracks?.length ? null : 'No playable matches were found.' };
         }
         return json(response, 200, result, maxResponseBytes);
       } finally { inFlight--; if (admitted === 'stop') stopInFlight--; if (admitted === 'ordinary') ordinaryInFlight--; }

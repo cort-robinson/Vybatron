@@ -8,7 +8,10 @@ export interface Track {
   id: string; title: string; author: string; uri: string | null; source: string;
   durationMs: number; artworkUrl: string | null; isStream: boolean;
   requestedBy: { id: string; displayName: string; avatarUrl: string | null } | null;
+  // Session tracks only: true for autoplay picks, which the bot requested.
+  suggested?: boolean;
 }
+export type AutoplayMode = 'off' | 'on' | 'listening';
 export interface CommandOption {
   name: string; description?: string; type: number; required?: boolean;
   choices?: { name: string; value: string | number }[]; options?: CommandOption[];
@@ -29,8 +32,11 @@ export interface GuildSnapshot {
     status: 'idle' | 'playing' | 'paused' | 'recovering' | 'unavailable';
     voiceChannel: { id: string; name: string } | null; textChannel: { id: string; name: string } | null;
     current: Track | null; queue: Track[]; positionMs: number; durationMs: number;
+    // Autoplay picks waiting after the queue (suggested: true). Not part of the queue.
+    suggestions: Track[];
     volume: number; filter: string; repeat: 'off' | 'track' | 'queue';
-    radio: boolean; fairQueue: boolean;
+    // radio: autoplay is active for this session (server mode or /radio override).
+    radio: boolean; autoplay: AutoplayMode; fairQueue: boolean;
     listeners: { id: string; displayName: string; avatarUrl: string | null }[];
     canAdd: boolean; canControl: boolean; canVote: boolean; reason: string | null;
   };
@@ -38,7 +44,7 @@ export interface GuildSnapshot {
     exists: boolean; savedAt: number | null; positionMs: number; paused: boolean;
     trackCount: number; voiceChannel: { id: string; name: string } | null; canResume: boolean;
   };
-  settings: { volume: number; fairQueue: boolean; djRoleId: string | null; musicTextChannelId: string | null } | null;
+  settings: { volume: number; fairQueue: boolean; autoplay: AutoplayMode; djRoleId: string | null; musicTextChannelId: string | null } | null;
   channels: Channel[]; roles: { id: string; name: string }[];
 }
 export interface Library {

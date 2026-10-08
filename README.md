@@ -12,7 +12,7 @@ A shared soundtrack for Discord, with a player that stays out of the way and an 
 - **Web portal:** Discord sign-in, a live shared queue, an expanding artwork player, private favorites and server management on desktop or phone. Audio continues in Discord.
 - **Listen together:** optional fair queue, majority vote skip, a DJ role, and server volume defaults.
 - **Make it sound right:** Original, Bass, Warm, Clarity, Nightcore, Slow, and Mono presets. Each preset replaces previous effects.
-- **Keep discovering:** opt-in artist radio adds related recordings only after the human-requested queue runs out.
+- **Keep the music going:** smart autoplay plays related songs from YouTube's "up next" mix after the human-requested queue runs out. Seeds drift with what's been playing, recent server plays and near-duplicates are skipped, and skipping a pick plays less like it. Servers choose off, on, or on only while someone is listening; `/radio` overrides it for a session.
 - **One shared player:** artwork, progress, speed-aware timing, recovery state, Favorite, queue browsing, Seek, and confirmed Stop. Private confirmations keep the channel quiet.
 - **Reliable operations:** durable atomic library writes, a non-root container, bounded memory/logs, graceful shutdown, health diagnostics, and exact-commit deployment with rollback.
 
@@ -46,9 +46,10 @@ Start with `/help`. Join a voice channel and use `/play` with a song and artist,
 | `/history`, `/replay` | Browse recent tracks and queue one to replay next |
 | `/top show/play` | Browse or queue this server's favorites: On repeat or Forgotten gems, optionally shuffled |
 | `/mymix show/play` | Browse or queue your personal playlists: Your mix, top tracks (with a time range), Rediscover, or an artist mix |
-| `/radio on/off` | Enable or disable artist discovery for the current session |
+| `/radio on [track]/off` | Turn autoplay on or off for this session; `track` starts it from a chosen song or link |
+| `/radio promote/remove/less <position>` | Move a suggestion into the queue (any listener in voice; it stays an autoplay pick), remove it, or hear less like it; `/radio less` without a position skips the current autoplay pick |
 | `/session show/resume/discard` | Preview or explicitly restore a checkpoint kept for 72 hours |
-| `/settings show/volume/fairqueue/djrole/musicchannel/reset` | Server defaults and portal controller channel; requires server owner or Manage Server |
+| `/settings show/volume/fairqueue/autoplay/djrole/musicchannel/reset` | Server defaults and portal controller channel; requires server owner or Manage Server |
 
 Controls require the bot's voice channel and honor a configured DJ role. Listeners can still add music, save personal favorites, and vote to skip. Voice access is checked again when a long import finishes. Favorites hold 1,000 tracks per account, shared mixes hold 100 tracks each with 25 mixes per server, and the upcoming queue holds 500 tracks. Migrated favorite overflow is retained and returns to the active shelf as space opens. Played history retains the latest 100 tracks per server for up to 30 days, with original channel visibility enforced. Server favorites count plays from the past year (up to 10,000 per server) and show each person only plays from voice channels they can see. Repeat requests by one person and early skips count less. Personal playlists use only your own requests in channels you can see (artist mixes add anonymous server plays by that artist) and are computed when you ask, so clearing your request stats empties them at once. The Stop confirmation offers Save as mix, which keeps the session's played songs, current song and queue as a shared mix.
 

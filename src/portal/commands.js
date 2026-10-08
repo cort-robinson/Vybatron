@@ -7,7 +7,8 @@ import { mixKey } from '../utils/library-actions.js';
 import { fail, PortalError } from './errors.js';
 import { requirePlayback, visible, visibleHistory, visibleSession, writable } from './policy.js';
 import { snapshotProjection } from './projection.js';
-import { assertFavoriteSelection, assertHistorySelection, assertMixSelection } from './selections.js';
+import { assertFavoriteSelection, assertHistorySelection, assertMixSelection, assertSuggestionSelection } from './selections.js';
+import { suggestions } from '../utils/radio.js';
 import { commandAuthorityPhase } from './timing.js';
 
 const ALLOWED = new Set(['play', 'playnext', 'pause', 'resume', 'seek', 'skip', 'skipto', 'stop', 'clear', 'remove', 'move', 'shuffle', 'loop', 'volume', 'filter', 'voteskip', 'radio', 'replay', 'session', 'favorite', 'mix', 'settings', 'queue', 'nowplaying', 'history', 'help', 'top', 'mymix']);
@@ -25,8 +26,11 @@ const GATEWAY_CONTROLS = new Set(['pause', 'resume', 'seek', 'filter', 'volume',
 const ROOT_KEYS = new Set(['actorId', 'command', 'subcommand', 'options', 'expectedRevision', 'expectedTrackId', 'expectedHistoryId', 'expectedMixVersion']);
 // Ordinary additions follow canAdd rules: same voice, no DJ role, no revision.
 const isAddition = ({ command, subcommand }) => command === 'play' || (command === 'favorite' && subcommand === 'play')
-  || (command === 'mix' && subcommand === 'load') || (['top', 'mymix'].includes(command) && subcommand === 'play');
+  || (command === 'mix' && subcommand === 'load') || (['top', 'mymix'].includes(command) && subcommand === 'play') || (command === 'radio' && subcommand === 'promote');
 const object = value => value && typeof value === 'object' && !Array.isArray(value);
+// Suggestion edits carry the selected track's public id, like favorites.
+const SUGGESTION_ACTIONS = new Set(['promote', 'remove', 'less']);
+// Promoting a suggestion is an ordinary queue addition, not a DJ control.
 const publicName = (command, name) => command === 'skipto' && name === 'index' ? 'position' : command === 'replay' && name === 'position' ? 'index' : name;
 
 function publicOption(option) {
@@ -47,7 +51,7 @@ export function validateCommand(body, commandMap) {
   if (!object(body) || Object.keys(body).some(key => !ROOT_KEYS.has(key)) || !ALLOWED.has(body.command) || !commandMap.has(body.command)) fail(400, 'invalid_command', 'Choose a supported command.');
   if (body.expectedRevision !== undefined && (typeof body.expectedRevision !== 'string' || !/^[a-f0-9]{32}$/.test(body.expectedRevision))) fail(400, 'invalid_revision', 'Use the revision from the latest snapshot.');
   const selections = [
-    ['expectedTrackId', body.command === 'favorite' && ['play', 'remove'].includes(body.subcommand), /^[a-f0-9]{24}$/],
+    ['expectedTrackId', (body.command === 'favorite' && ['play', 'remove'].includes(body.subcommand)) || (body.command === 'radio' && SUGGESTION_ACTIONS.has(body.subcommand)), /^[a-f0-9]{24}$/],
     ['expectedHistoryId', body.command === 'replay', /^[^\u0000-\u001f\u007f]{1,40}$/],
     ['expectedMixVersion', body.command === 'mix' && body.subcommand === 'delete', /^[a-f0-9]{32}$/],
   ];
@@ -99,6 +103,10 @@ function assertCommandSelection(client, context, command) {
   if (command.command === 'replay') {
     const history = client.library.readGuild(context.guild.id).history.filter(item => visibleHistory(context, item));
     assertHistorySelection(history[(command.values.position || 1) - 1], command.expectedHistoryId);
+  }
+  if (command.command === 'radio' && ['promote', 'remove'].includes(command.subcommand)
+    || (command.command === 'radio' && command.subcommand === 'less' && command.values.position)) {
+    assertSuggestionSelection(suggestions(client.lavalink?.getPlayer(context.guild.id))[command.values.position - 1], command.expectedTrackId);
   }
   if (command.command === 'mix' && command.subcommand === 'delete') {
     assertMixAccess(context, client.library.readGuild(context.guild.id).mixes[mixKey(command.values.name)], command.expectedMixVersion);
@@ -208,6 +216,7 @@ export async function executePortalCommand(client, policy, revisions, commandMap
     portalUnavailable() { fail(503, 'maintenance', 'Playback is briefly updating. Try again shortly.'); },
     portalAssertRevision: assertRevision,
     portalAssertFavorite(track) { assertFavoriteSelection(track, command.expectedTrackId); },
+    portalAssertSuggestion(track) { assertSuggestionSelection(track, command.expectedTrackId); },
     portalAssertHistory(item) { assertHistorySelection(item, command.expectedHistoryId); },
     portalAssertMix(mix) { assertMixAccess(context, mix, command.expectedMixVersion); },
     portalPlayerCreated() { if (baseline) baseline = revisions.revision(guildId); },

@@ -17,8 +17,8 @@ export function recordSkipVote(player, userId, humanIds) {
   const needed = Math.floor(humans.size / 2) + 1;
   return { duplicate, count: state.voters.size, needed, passed: state.voters.size >= needed, track };
 }
-export async function voteToSkip(player, userId, humanIds) {
+export async function voteToSkip(player, userId, humanIds, client = null) {
   const result = recordSkipVote(player, userId, humanIds);
-  if (result.passed) { votes.delete(player); await skipCurrent(player); }
+  if (result.passed) { votes.delete(player); await skipCurrent(player, client); }
   return result;
 }

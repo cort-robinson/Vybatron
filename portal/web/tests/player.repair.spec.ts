@@ -148,7 +148,7 @@ test('player action popover dismisses by Escape, outside activation, and complet
   await page.getByRole('heading', { name: 'Shared Queue', exact: true }).click();
   await expect(player.locator('.player-more > .menu-panel')).toHaveCount(0);
   await more.click();
-  await player.getByRole('button', { name: 'Turn artist radio on', exact: true }).click();
+  await player.getByRole('button', { name: 'Turn autoplay on', exact: true }).click();
   await expect(player.locator('.player-more > .menu-panel')).toHaveCount(0);
   await expect.poll(() => fixture.commands.at(-1)?.command).toBe('radio');
 });

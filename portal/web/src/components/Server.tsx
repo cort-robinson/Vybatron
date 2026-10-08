@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ArrowClockwiseIcon, CheckCircleIcon, ClockIcon, DownloadSimpleIcon, GearSixIcon, ShieldCheckIcon, WarningCircleIcon } from '@phosphor-icons/react';
 import { api, ApiError, errorMessage } from '../api';
-import type { Activity, Capability, Command, CommandOption, Configuration, Diagnostics } from '../types';
+import type { Activity, AutoplayMode, Capability, Command, CommandOption, Configuration, Diagnostics } from '../types';
 import type { Portal } from '../usePortal';
 import { date, totalTime } from '../format';
 import { Confirm, Empty, ErrorState, Loading } from './ui';
@@ -11,6 +11,13 @@ export type AmbientMode = 'on' | 'subtle' | 'off';
 export interface InstallPrompt extends Event { prompt: () => Promise<void>; userChoice: Promise<{ outcome: string }> }
 const discordIdPattern = '[0-9]{1,20}';
 const isDiscordId = (value: string) => /^[0-9]{1,20}$/.test(value);
+
+// Describes what the selected autoplay mode does, not the setting in general.
+const AUTOPLAY_HELP: Record<AutoplayMode, string> = {
+  off: 'The session ends when the queue runs out. Listeners can still turn autoplay on for a session from the player menu.',
+  on: 'Related songs keep playing after the queue ends. Songs people add always play first.',
+  listening: 'Related songs keep playing after the queue ends, but only while someone in voice isn’t deafened.',
+};
 
 export function ServerView({ portal, ambient, setAmbient, installPrompt, install, active = true }: { active?: boolean; portal: Portal; ambient: AmbientMode; setAmbient: (value: AmbientMode) => void; installPrompt: InstallPrompt | null; install: () => void }) {
   const [tab, setTab] = useState<'settings' | 'activity' | 'diagnostics' | 'commands'>('settings');
@@ -66,6 +73,9 @@ export function ServerView({ portal, ambient, setAmbient, installPrompt, install
           </form>
           <form className="setting-row" onSubmit={event => { event.preventDefault(); void save('volume', { value: Number(volume) }, 'volume'); }}><div><label htmlFor="default-volume">Default volume</label><p>Starting volume for new sessions.</p></div><div className="setting-action"><input id="default-volume" className="number-input" type="number" min="0" max="100" step="1" value={volume} disabled={!editable} onChange={event => { dirty.current.volume = true; setVolume(event.target.value); }} /><span>%</span><button className="button secondary" disabled={!editable || !volume || Number(volume) < 0 || Number(volume) > 100}>Save</button></div></form>
           <div className="setting-row"><div><h3>Fair queue</h3><p>Take turns between listeners, keeping each person’s songs in order.</p></div><button role="switch" aria-checked={settings.fairQueue} className="switch" aria-label="Fair queue" disabled={!editable} onClick={() => void save('fairqueue', { enabled: !settings.fairQueue })}><span />{settings.fairQueue ? 'On' : 'Off'}</button></div>
+          <div className="setting-row"><div><label htmlFor="autoplay-mode">Autoplay</label><p id="autoplay-help">{AUTOPLAY_HELP[settings.autoplay || 'off']}</p></div>
+            <div className="setting-action"><select id="autoplay-mode" aria-describedby="autoplay-help" value={settings.autoplay || 'off'} disabled={!editable} onChange={event => void save('autoplay', { mode: event.target.value })}>
+              <option value="off">Off</option><option value="on">On</option><option value="listening">While someone is listening</option></select></div></div>
           <form className="setting-row" onSubmit={event => { event.preventDefault(); if (validRole) void save('djrole', role ? { role } : {}, 'role'); }}>
             <div><label htmlFor="dj-role">{roles.length ? 'DJ role' : 'DJ role ID'}</label><p>Limits playback controls to this role. Everyone, managers included, must be in the voice channel.</p>{!roles.length && <p id="dj-role-help">Role names are unavailable for this account. Paste a Discord role ID using digits only, or leave blank for everyone in voice.</p>}</div>
             <div className="setting-action">{roles.length ? <select id="dj-role" value={role} disabled={!editable} onChange={event => { dirty.current.role = true; setRole(event.target.value); }}><option value="">Everyone in voice</option>{role && !roles.some(r => r.id === role) && <option value={role}>Role ID: {role}</option>}{roles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}</select> : <input id="dj-role" className="discord-id-input" type="text" inputMode="numeric" pattern={discordIdPattern} maxLength={20} aria-describedby="dj-role-help" value={role} disabled={!editable} onChange={event => { dirty.current.role = true; setRole(event.target.value); }} />}<button className="button secondary" disabled={!editable || !validRole}>Save</button></div>

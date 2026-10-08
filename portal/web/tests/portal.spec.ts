@@ -46,7 +46,7 @@ test('one player transforms, stays across navigation, and sends scoped core comm
   await expect(page.getByRole('heading', { name: 'Favorites', exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Pause playback' })).toBeEnabled();
   await page.getByRole('button', { name: 'More playback controls' }).click();
-  await page.getByRole('button', { name: 'Turn artist radio on' }).click();
+  await page.getByRole('button', { name: 'Turn autoplay on' }).click();
   await expect.poll(() => fixture.commands.at(-1)?.command).toBe('radio');
   await page.getByRole('button', { name: 'More playback controls' }).click();
   await page.getByRole('button', { name: 'Stop and discard session' }).click();

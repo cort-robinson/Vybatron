@@ -5,6 +5,7 @@ related:
   - src/components/Queue.tsx
   - src/components/Library.tsx
   - src/components/Server.tsx
+  - src/components/Home.tsx
 mode: Operate
 ---
 
@@ -21,6 +22,8 @@ use one-based visible positions and their captured server revision. Permission a
 connection failures explain the next useful action, preserve draft inputs, and
 never queue stale commands for replay.
 
+Home, the landing view, uses sideways-scrolling shelves of artwork cards and playlist tiles
+with Play, Shuffle and Add on every item; it explains each empty or blocked shelf.
 The browsing state uses open rows and ample dark space; desktop expansion uses
 large artwork on the left and Up Next on the right. Phone expansion uses art,
 identity, timeline, transport, volume/filter, and persistent bottom navigation.

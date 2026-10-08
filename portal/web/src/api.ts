@@ -47,7 +47,9 @@ export const api = {
   }, 95_000), // The API's bounded public-import deadline is 90 seconds.
   stats: async (id: string, window: StatsWindow = '30d', signal?: AbortSignal) => {
     const data = await request<Stats>(`${guildPath(id)}/stats?window=${window}`, { signal });
-    const lists = [data.serverFavorites?.onRepeat, data.serverFavorites?.forgottenGems, data.personal?.topTracks, data.personal?.topArtists, data.personal?.rediscover];
+    const lists: unknown[] = [data.serverFavorites?.onRepeat, data.serverFavorites?.forgottenGems, data.personal?.topTracks, data.personal?.topArtists, data.personal?.rediscover];
+    const playlists = data.personal?.playlists;
+    if (!Array.isArray(playlists) || playlists.length > 6 || playlists.some(list => !Array.isArray(list?.tracks) || list.tracks.length > 25)) lists.push(undefined);
     if (lists.some(list => !Array.isArray(list) || list.length > 25)) throw new ApiError(503, 'invalid_response', 'Listening stats are unavailable. Try refreshing them.');
     return data;
   },

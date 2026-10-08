@@ -1,6 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import type { Command } from '../src/types';
-import { mockPortal, streamAction } from './fixtures';
+import { mockPortal, streamAction, gotoSession } from './fixtures';
 
 async function refreshLibrary(page: Page) {
   const response = page.waitForResponse(response => response.url().endsWith('/library') && response.status() === 200);
@@ -13,7 +13,7 @@ test('every dedicated favorite action binds the displayed song, including both q
   const [night, slow, golden] = fixture.state.snapshot.session.queue;
   const current = fixture.state.snapshot.session.current!;
   fixture.state.library.favorites.push(slow, golden);
-  await page.goto('/');
+  await gotoSession(page);
   await page.getByRole('button', { name: 'Remove current song from favorites' }).click();
   await expect(page.getByRole('button', { name: 'Save current song to favorites' })).toBeEnabled();
   expect(fixture.commands[0]).toEqual({ command: 'favorite', subcommand: 'remove', options: { index: 2 }, expectedTrackId: current.id });
@@ -145,7 +145,7 @@ for (const action of ['favorite/play', 'favorite/remove', 'replay', 'mix/delete'
 }
 
 test('schema selection clears across actions and rejects unknown library indexes', async ({ page }) => {
-  const fixture = await mockPortal(page); await page.goto('/');
+  const fixture = await mockPortal(page); await gotoSession(page);
   await page.getByRole('button', { name: 'Server', exact: true }).click(); await page.getByRole('tab', { name: 'Advanced controls' }).click();
   await page.getByLabel('Command', { exact: true }).selectOption('favorite');
   await page.getByRole('combobox', { name: 'Action', exact: true }).selectOption('play');

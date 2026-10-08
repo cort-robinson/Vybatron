@@ -48,6 +48,8 @@ test('server favorites respect add permission and explain empty and failed state
 test('server favorites tab joins keyboard tab navigation', async ({ page }) => {
   await mockPortal(page);
   await page.goto('/'); await page.getByRole('button', { name: 'My Music', exact: true }).click();
+  // Keys pressed while a view transition runs land on the outgoing snapshot.
+  await page.waitForFunction(() => !document.documentElement.dataset.motion);
   await page.getByRole('tab', { name: /Favorites/ }).first().focus();
   await page.keyboard.press('End');
   await expect(page.getByRole('tab', { name: 'Server favorites' })).toBeFocused();

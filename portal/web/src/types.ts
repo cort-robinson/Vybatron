@@ -57,7 +57,15 @@ export interface Stats {
     topArtists: { name: string; plays: number; lastPlayedAt: number; track: Track }[];
     // index is the one-based favorites position; track.id is its expectedTrackId.
     rediscover: { index: number; track: Track; requests: number; lastRequestedAt: number | null }[];
+    // Generated on read from the viewer's own requests and favorites.
+    playlists: AutoPlaylist[];
   };
+}
+export type PlaylistKind = 'mix' | 'top' | 'rediscover' | 'artist';
+export interface AutoPlaylist {
+  id: string; kind: PlaylistKind; title: string; artist: string | null; tracks: Track[];
+  // Your mix picks new songs at this time (Monday 00:00 UTC); null when live.
+  refreshesAt: number | null;
 }
 export interface Diagnostics {
   botReady: boolean; audioReady: boolean; uptimeSeconds: number; recoveryState: string; lastError: string | null;
@@ -72,4 +80,4 @@ export interface Command {
 export interface CommandResult { ok: true; message: string; snapshot: GuildSnapshot }
 export type Connection = 'connecting' | 'refreshing' | 'live' | 'offline';
 export type Capability = 'add' | 'control' | 'vote' | 'library' | 'admin' | 'resume';
-export type Surface = 'session' | 'music' | 'server';
+export type Surface = 'home' | 'session' | 'music' | 'server';

@@ -1,0 +1,115 @@
+.home-view { min-width: 0; display: flex; flex-direction: column; gap: 48px; padding-bottom: 12px; }
+.home-view > .permission-note { margin-bottom: -20px; }
+
+/* Shelves: a heading line, then one row that scrolls sideways. */
+.home-shelf { min-width: 0; }
+.home-shelf-header { display: flex; align-items: flex-end; justify-content: space-between; gap: 14px 28px; flex-wrap: wrap; margin-bottom: 18px; }
+.home-shelf-header > div:first-child { min-width: 0; flex: 1 1 320px; }
+.home-shelf-header h2 { font-size: 24px; font-stretch: var(--wide); letter-spacing: -0.02em; text-wrap: balance; }
+.home-shelf-header p { margin-top: 6px; max-width: 64ch; color: var(--muted); font-size: 14px; line-height: 1.6; }
+.home-shelf-actions { display: flex; gap: 10px; flex-shrink: 0; }
+.home-shelf-actions .button { min-height: 44px; padding: 9px 16px; font-size: 14px; }
+.home-empty { max-width: 64ch; padding: 18px 0 4px; border-top: 1px solid var(--line); color: var(--muted); font-size: 14px; line-height: 1.65; }
+
+.shelf-row {
+  --card: 156px;
+  display: grid; grid-auto-flow: column; grid-auto-columns: var(--card); gap: 20px;
+  margin-inline: -4px; padding: 4px 4px 14px;
+  overflow-x: auto; overscroll-behavior-x: contain; scroll-snap-type: x proximity; scroll-padding-inline: 4px;
+  scrollbar-width: thin; scrollbar-color: var(--scrollbar) transparent;
+}
+.shelf-row-wide { --card: 248px; gap: 24px; }
+.shelf-row > li { scroll-snap-align: start; min-width: 0; }
+.shelf-row::-webkit-scrollbar { height: 6px; }
+.shelf-row::-webkit-scrollbar-thumb { background: var(--scrollbar); border-radius: 6px; }
+
+.shelf-art { position: relative; }
+.shelf-art .artwork { display: block; width: 100%; height: auto; aspect-ratio: 1; border-radius: 10px; object-fit: cover; }
+.shelf-rank {
+  position: absolute; left: 8px; bottom: 8px; min-width: 30px; padding: 2px 8px; border-radius: 999px;
+  background: rgb(8 9 12 / .78); color: var(--text-soft); font-size: 14px; font-weight: 700; font-stretch: var(--wide);
+  font-variant-numeric: tabular-nums; text-align: center;
+}
+.shelf-rank.lead { color: var(--accent); }
+.shelf-card-body { display: flex; align-items: flex-start; gap: 4px; margin-top: 11px; }
+.shelf-card-body .track-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.shelf-card-body .track-text strong,
+.shelf-card-body .track-text > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.shelf-card-body .track-text strong { font-size: 15px; }
+.shelf-card-body .track-text > span { color: var(--muted); font-size: 14px; }
+.shelf-card-body small { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
+.shelf-card-body .icon-button { flex-shrink: 0; width: 44px; min-width: 44px; min-height: 44px; margin: -6px -8px 0 0; color: var(--accent); }
+
+/* The session in progress, or a saved one waiting to resume. */
+.continue-feature {
+  display: grid; grid-template-columns: 88px minmax(0, 1fr) auto; align-items: center; gap: 20px;
+  margin-bottom: 22px; padding: 16px 20px 16px 16px; border-radius: 16px;
+  background: color-mix(in oklab, var(--accent) 7%, var(--surface));
+  box-shadow: 0 18px 38px -26px color-mix(in oklab, var(--accent) 45%, black);
+}
+.continue-art { width: 88px; height: 88px; border-radius: 10px; object-fit: cover; }
+.continue-art-saved { display: grid; place-items: center; background: var(--accent-soft); color: var(--accent); }
+.continue-text { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.continue-state { color: var(--accent); font-size: 14px; font-weight: 600; }
+.continue-text strong { font-size: 20px; font-stretch: var(--wide); letter-spacing: -0.02em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.continue-text > span:not(.continue-state) { color: var(--text-soft); font-size: 14px; overflow-wrap: anywhere; }
+.continue-text .continue-hint { color: var(--muted); }
+.continue-feature .button { min-height: 44px; padding: 9px 18px; font-size: 14px; }
+
+/* Your mixes: a cover collage with the playlist's own actions. */
+.playlist-tile { display: flex; flex-direction: column; }
+.playlist-cover { aspect-ratio: 1; border-radius: 14px; overflow: hidden; background: var(--surface); }
+.playlist-cover .artwork { display: block; width: 100%; height: 100%; border-radius: 0; object-fit: cover; }
+.playlist-cover.collage { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 2px; }
+.playlist-body { display: flex; flex-direction: column; flex: 1; margin-top: 14px; }
+.playlist-body h3 { font-size: 18px; font-stretch: var(--wide); letter-spacing: -0.02em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.playlist-meta { margin-top: 3px; color: var(--text-soft); font-size: 14px; font-variant-numeric: tabular-nums; }
+.playlist-detail { margin-top: 6px; color: var(--muted); font-size: 14px; line-height: 1.5; }
+.mix-range { display: block; margin-top: 10px; }
+.mix-range select { width: 100%; min-height: 40px; font-size: 14px; }
+.playlist-actions { display: flex; align-items: center; gap: 8px; margin-top: auto; padding-top: 14px; }
+.playlist-actions .button { flex: 1; min-height: 44px; padding: 9px 14px; font-size: 14px; }
+.playlist-actions .icon-button { width: 44px; min-width: 44px; min-height: 44px; border: 1px solid var(--field-line); border-radius: 12px; }
+
+.home-unavailable { display: flex; align-items: flex-start; gap: 14px; flex-wrap: wrap; padding: 18px 20px; border-radius: 16px; background: var(--surface); }
+.home-unavailable > svg { flex-shrink: 0; color: var(--amber); margin-top: 2px; }
+.home-unavailable > div { flex: 1 1 280px; min-width: 0; }
+.home-unavailable p { margin-top: 4px; color: var(--muted); font-size: 14px; line-height: 1.6; }
+
+.home-privacy { display: flex; align-items: flex-end; justify-content: space-between; gap: 18px 32px; flex-wrap: wrap; padding-top: 26px; border-top: 1px solid var(--line); }
+.home-privacy > div:first-child { flex: 1 1 360px; min-width: 0; }
+.home-privacy h2 { font-size: 18px; font-stretch: var(--wide); letter-spacing: -0.02em; }
+.home-privacy p { margin-top: 8px; max-width: 72ch; color: var(--muted); font-size: 14px; line-height: 1.65; }
+.home-privacy .button { min-height: 44px; font-size: 14px; }
+.danger-outline { color: var(--error-text); }
+.danger-outline:hover:not(:disabled) { border-color: color-mix(in oklab, var(--red) 60%, transparent); }
+
+/* Save session as mix, standalone or inside the Stop confirmation. */
+.session-mix-field { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; color: var(--text-soft); font-size: 14px; }
+.session-mix-field input { font-size: 16px; }
+.field-hint { color: var(--muted); font-size: 14px; line-height: 1.55; }
+.field-hint.error-text { color: var(--error-text); }
+.stop-keep { margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--line); }
+.stop-keep h3 { font-size: 16px; margin-bottom: 8px; }
+.confirm-dialog.stop-dialog { width: 600px; }
+.stop-dialog .form-actions { flex-wrap: wrap; }
+.session-mix-dialog .session-mix-field { margin-top: 18px; }
+.queue-heading-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.queue-heading-actions .text-button { display: inline-flex; align-items: center; gap: 7px; font-size: 14px; }
+
+@media (max-width: 960px) {
+  .home-view { gap: 40px; }
+  .home-shelf-header h2 { font-size: 21px; }
+  .home-shelf-actions { width: 100%; }
+  .home-shelf-actions .button { flex: 1; }
+  .shelf-row { --card: 136px; gap: 14px; margin-inline: -16px; padding-inline: 16px; scroll-padding-inline: 16px; }
+  .shelf-row-wide { --card: 220px; }
+  .continue-feature { grid-template-columns: 64px minmax(0, 1fr); gap: 14px; padding: 14px; }
+  .continue-art { width: 64px; height: 64px; }
+  .continue-text strong { font-size: 17px; }
+  .continue-feature .button { grid-column: 1 / -1; }
+  .stop-dialog .form-actions .button { flex: 1 1 100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .shelf-row { scroll-behavior: auto; scroll-snap-type: none; }
+}

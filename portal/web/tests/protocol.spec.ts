@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { gotoSession } from './fixtures';
 import { startHttpFixture } from './http-fixture';
 
 test('HTTP 409 reads both snapshot and library before a deliberate selected-item retry', async ({ page }) => {
@@ -30,7 +31,7 @@ test('HTTP 409 reads both snapshot and library before a deliberate selected-item
 test('real HTTP EventSource disconnect reacquires a snapshot and never replays a mutation', async ({ page }) => {
   const server = await startHttpFixture();
   try {
-    await page.goto(server.origin); await expect(page.getByRole('button', { name: 'Pause playback' })).toBeEnabled();
+    await gotoSession(page, server.origin); await expect(page.getByRole('button', { name: 'Pause playback' })).toBeEnabled();
     await expect.poll(() => server.streams.size).toBe(1);
     await page.getByRole('button', { name: 'Add music', exact: true }).click(); await page.getByRole('searchbox', { name: 'Music search' }).fill('native SSE input stays here');
     server.disconnectAndHold();
@@ -52,7 +53,7 @@ test('real HTTP EventSource disconnect reacquires a snapshot and never replays a
 test('production PWA caches only static files, leaves API/auth on the network, and signs out cleanly', async ({ browser }) => {
   const server = await startHttpFixture(); const context = await browser.newContext({ serviceWorkers: 'allow' }); const page = await context.newPage();
   try {
-    await page.goto(server.origin); await expect(page.getByRole('button', { name: 'Pause playback' })).toBeEnabled();
+    await gotoSession(page, server.origin); await expect(page.getByRole('button', { name: 'Pause playback' })).toBeEnabled();
     await expect.poll(() => page.evaluate(() => !!navigator.serviceWorker.controller)).toBe(true);
     const cached = await page.evaluate(async () => { const keys = await caches.keys(); return (await Promise.all(keys.map(async key => (await (await caches.open(key)).keys()).map(request => new URL(request.url).pathname)))).flat(); });
     expect(cached).toContain('/index.html'); expect(cached.some(path => /^\/(api|auth|test-art)(\/|$)/.test(path))).toBe(false);

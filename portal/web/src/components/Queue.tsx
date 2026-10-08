@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import { ArrowDownIcon, ArrowUpIcon, DotsThreeIcon, HeartIcon, ListNumbersIcon, PlayIcon, PlusIcon, TrashIcon, DotsSixVerticalIcon } from '@phosphor-icons/react';
+import { ArrowDownIcon, ArrowUpIcon, DotsThreeIcon, HeartIcon, ListNumbersIcon, PlayIcon, PlusIcon, TrashIcon, DotsSixVerticalIcon, VinylRecordIcon } from '@phosphor-icons/react';
 import type { Track } from '../types';
 import type { Portal } from '../usePortal';
 import { time, totalTime } from '../format';
 import { ActionPopover, Artwork, Avatar, Empty, IconButton } from './ui';
 import { Pagination } from './Pagination';
+import { SaveSessionDialog } from './SessionMix';
 import './queue.css';
 
 export function Queue({ portal, compact = false, onAdd }: { portal: Portal; compact?: boolean; onAdd: () => void }) {
@@ -12,6 +13,7 @@ export function Queue({ portal, compact = false, onAdd }: { portal: Portal; comp
   const queue = snapshot?.session.queue || [];
   const [page, setPage] = useState(0);
   const [dropIndex, setDropIndex] = useState<number | null>(null);
+  const [saveSession, setSaveSession] = useState(false);
   const drag = useRef<{ index: number; revision: string; guildId: string } | null>(null);
   const controllable = can('control') && !pending.length;
   const editable = can('library') && !pending.length;
@@ -32,8 +34,12 @@ export function Queue({ portal, compact = false, onAdd }: { portal: Portal; comp
   };
   return <section className={`queue ${compact ? 'queue-compact' : ''}`} aria-label="Shared queue">
     <div className="section-heading"><div className="heading-line"><h2>Up Next</h2>{queue.length > 0 && <span className="count">{queue.length} {queue.length === 1 ? 'song' : 'songs'}{queue.length ? ` · ${totalTime(duration)}${queue.some(t => t.isStream) ? ' + live' : ''}` : ''}</span>}</div>
-      {!compact && snapshot?.session.fairQueue && <span className="pill"><ListNumbersIcon size={16} />Taking turns</span>}
+      {!compact && (snapshot?.session.fairQueue || snapshot?.session.current) && <div className="queue-heading-actions">
+        {snapshot?.session.fairQueue && <span className="pill"><ListNumbersIcon size={16} />Taking turns</span>}
+        {snapshot?.session.current && <button type="button" className="text-button" disabled={!editable} onClick={() => setSaveSession(true)}><VinylRecordIcon size={19} />Save session as mix</button>}
+      </div>}
     </div>
+    {saveSession && <SaveSessionDialog portal={portal} onClose={() => setSaveSession(false)} />}
     {!queue.length ? <Empty title="Nothing queued yet" description={snapshot?.session.current ? 'The next song is up to you. Add a track or let artist radio keep things going.' : snapshot?.savedSession.exists ? 'Resume your saved session above, or add a song to start fresh.' : 'Search for a song or drop a public music link. Everyone listens together in Discord.'}
       action={<button className="button primary" disabled={!can('add')} title={!can('add') ? portal.blockedReason : undefined} onClick={onAdd}><PlusIcon size={19} />Add music</button>} /> : <>
       {!compact && <div className="queue-columns" aria-hidden="true"><span>#</span><span /><span>Song</span><span>Added by</span><span>Length</span><span /><span /></div>}

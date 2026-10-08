@@ -37,7 +37,12 @@ export function fixtureState() {
   const stats: Stats = { serverFavorites: {
     onRepeat: tracks.slice(0, 4).map((item, index) => ({ track: item, plays: 9 - index * 2, lastPlayedAt: 1_791_147_600_000 - index * 86_400_000 })),
     forgottenGems: [{ track: current, plays: 6, lastPlayedAt: 1_784_000_000_000 }] },
-    personal: { window: '30d', topTracks: [], topArtists: [], rediscover: [] } };
+    personal: { window: '30d', topTracks: [], topArtists: [], rediscover: [{ index: 1, track: tracks[0], requests: 3, lastRequestedAt: 1_784_000_000_000 }], playlists: [
+      { id: 'your-mix', kind: 'mix', title: 'Your mix', artist: null, refreshesAt: 1_791_590_400_000, tracks: [tracks[2], current, tracks[0], tracks[3], tracks[1]] },
+      { id: 'top-tracks', kind: 'top', title: 'Your top tracks', artist: null, refreshesAt: null, tracks: [current, tracks[1]] },
+      { id: 'rediscover', kind: 'rediscover', title: 'Rediscover', artist: null, refreshesAt: null, tracks: [tracks[0]] },
+      { id: 'artist-1', kind: 'artist', title: 'Solara mix', artist: 'Solara', refreshesAt: null, tracks: [tracks[0], tracks[3]] },
+    ] } };
   return { snapshot, configuration, bootstrap, library, diagnostics, activity, stats };
 }
 // Model the selected-item HTTP contract independently of the browser's capture logic.
@@ -65,7 +70,7 @@ export async function mockPortal(page: Page, options: { signedOut?: boolean; bas
     Object.assign(state.snapshot.session, { status: 'idle', current: null, queue: [], listeners: [], voiceChannel: null, textChannel: null, canAdd: false, canControl: false, canVote: false, reason: 'Join this server to control playback.' });
   }
   if (options.saved) { state.snapshot.session.status = 'idle'; state.snapshot.session.current = null; state.snapshot.session.queue = []; state.snapshot.savedSession = { exists: true, savedAt: 1_791_147_600_000, positionMs: 107_000, paused: true, trackCount: 5, voiceChannel: { id: 'voice', name: 'General' }, canResume: true }; }
-  const commands: Command[] = []; const requests: string[] = [];
+  const commands: Command[] = []; const requests: string[] = []; const requestClears: string[] = [];
   const logouts: { method: string; body: string | null; contentType: string | null; csrfToken: string | null }[] = [];
   let signedOut = !!options.signedOut;
   let conflict = false; let snapshotDelay = 0; let libraryFailure = false; let snapshotFailure = 0;
@@ -103,6 +108,13 @@ export async function mockPortal(page: Page, options: { signedOut?: boolean; bas
     else if (path.endsWith('/diagnostics')) await route.fulfill(reply(state.diagnostics));
     else if (path.endsWith('/activity')) await route.fulfill(reply(state.activity));
     else if (path.endsWith('/stats')) await route.fulfill(reply(state.stats));
+    else if (path === '/api/stats/requests/clear') {
+      if (route.request().method() !== 'POST' || route.request().headers()['x-csrf-token'] !== 'local-test-csrf') throw new Error('Clearing stats needs a CSRF-checked POST');
+      requestClears.push(path);
+      const cleared = state.stats.personal.topTracks.length + 4;
+      state.stats.personal = { ...state.stats.personal, topTracks: [], topArtists: [], playlists: state.stats.personal.playlists.filter(list => list.kind !== 'artist').map(list => list.kind === 'rediscover' ? list : { ...list, tracks: [] }) };
+      await route.fulfill(reply({ ok: true, cleared }));
+    }
     else if (path.endsWith('/commands')) {
       const body = route.request().postDataJSON() as Command; commands.push(body);
       if (route.request().headers()['x-csrf-token'] !== 'local-test-csrf') throw new Error('Missing CSRF token');
@@ -154,7 +166,7 @@ export async function mockPortal(page: Page, options: { signedOut?: boolean; bas
     if (logout.method !== 'POST' || logout.body !== null || logout.contentType !== null || logout.csrfToken !== 'local-test-csrf') { await route.fulfill({ status: 400, json: { error: { code: 'invalid_logout', message: 'Logout requires a bodyless CSRF-protected POST.' } } }); return; }
     signedOut = true; await route.fulfill({ json: { ok: true } });
   });
-  return { state, commands, requests, logouts, conflictNext: () => { conflict = true; }, uncertainNext: () => { uncertain = true; }, delayCommand: (ms: number) => { commandDelay = ms; }, delaySnapshot: (ms: number) => { snapshotDelay = ms; }, delayLibrary: (ms: number) => { libraryDelay = ms; }, failLibrary: () => { libraryFailure = true; }, denySnapshot: (status: number) => { snapshotFailure = status; } };
+  return { state, commands, requests, requestClears, logouts, conflictNext: () => { conflict = true; }, uncertainNext: () => { uncertain = true; }, delayCommand: (ms: number) => { commandDelay = ms; }, delaySnapshot: (ms: number) => { snapshotDelay = ms; }, delayLibrary: (ms: number) => { libraryDelay = ms; }, failLibrary: () => { libraryFailure = true; }, denySnapshot: (status: number) => { snapshotFailure = status; } };
 }
 
 export async function streamAction(page: Page, action: 'disconnect' | 'reconnect', data?: GuildSnapshot) {
@@ -162,4 +174,11 @@ export async function streamAction(page: Page, action: 'disconnect' | 'reconnect
     const test = (window as unknown as { portalTest: { emit: (data: unknown) => void; disconnect: () => void; reconnect: () => void } }).portalTest;
     if (data) test.emit(data); else test[action]();
   }, { action, data });
+}
+// Home is the landing view; queue-focused tests start from the Session view.
+export async function gotoSession(page: Page, path = '/') {
+  await page.goto(path);
+  await page.getByRole('button', { name: 'Session', exact: true }).click();
+  // Pointer input goes to the document root until the view transition settles.
+  await page.waitForFunction(() => !document.documentElement.dataset.motion);
 }

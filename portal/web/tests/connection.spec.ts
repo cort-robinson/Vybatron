@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
+import { gotoSession } from './fixtures';
 import { startHttpFixture } from './http-fixture';
 
 type Fixture = Awaited<ReturnType<typeof startHttpFixture>>;
@@ -45,7 +46,7 @@ test('same revision with changed permissions cannot use the exact-result shortcu
 });
 
 async function connected(page: Page, server: Fixture) {
-  await page.goto(server.origin);
+  await gotoSession(page, server.origin);
   await expect(page.getByRole('button', { name: 'Pause playback' })).toBeEnabled();
   await expect.poll(() => server.streams.size).toBe(1);
   server.state.snapshot.session.queue[0].title = 'Stream-confirmed Night Drive';
@@ -56,7 +57,7 @@ async function connected(page: Page, server: Fixture) {
 test('startup snapshot 503 recovers with bounded reads instead of remaining Connecting', async ({ page }) => {
   const server = await startHttpFixture({ initialSnapshotFailures: 2 });
   try {
-    await page.goto(server.origin);
+    await gotoSession(page, server.origin);
     await expect(page.getByRole('button', { name: 'Resume playback' })).toBeDisabled();
     await expect(page.getByText('Live updates paused', { exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Pause playback' })).toBeEnabled();
@@ -84,7 +85,7 @@ test('429 read recovery respects Retry-After without creating extra streams', as
   const server = await startHttpFixture();
   try {
     server.failNextSnapshotReads(1, 429, '3');
-    await page.goto(server.origin);
+    await gotoSession(page, server.origin);
     await expect(page.getByText('Live updates paused', { exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'Reconnect', exact: true }).click();
     await page.evaluate(() => { window.dispatchEvent(new Event('online')); document.dispatchEvent(new Event('visibilitychange')); });

@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { mockPortal, streamAction } from './fixtures';
+import { mockPortal, streamAction, gotoSession } from './fixtures';
 
 async function largeQueue(page: Page, count = 500) {
   const fixture = await mockPortal(page);
@@ -7,14 +7,14 @@ async function largeQueue(page: Page, count = 500) {
   fixture.state.snapshot.session.queue = Array.from({ length: count }, (_, index) => ({
     ...seed, id: (index + 1).toString(16).padStart(24, '0'), title: `Queued song ${index + 1}`,
   }));
-  await page.goto('/');
+  await gotoSession(page);
   await expect(page.getByRole('button', { name: 'Pause playback' })).toBeEnabled();
   return fixture;
 }
 
 for (const dismissal of ['Escape', 'Close', 'backdrop'] as const) {
   test(`header search gives the input focus and stays dismissed after ${dismissal}`, async ({ page }) => {
-    await mockPortal(page); await page.goto('/');
+    await mockPortal(page); await gotoSession(page);
     const trigger = page.locator('.header-search');
     await expect(trigger).toHaveJSProperty('tagName', 'BUTTON');
     await trigger.focus();
@@ -40,7 +40,7 @@ for (const dismissal of ['Escape', 'Close', 'backdrop'] as const) {
 }
 
 test('Add music search keeps native dialog tab containment and returns to its own trigger', async ({ page }) => {
-  await mockPortal(page); await page.goto('/');
+  await mockPortal(page); await gotoSession(page);
   const trigger = page.getByRole('button', { name: 'Add music', exact: true }).first();
   await trigger.click();
   const input = page.getByRole('searchbox', { name: 'Music search' });
@@ -61,7 +61,7 @@ test('Add music search keeps native dialog tab containment and returns to its ow
 });
 
 test('queue disclosure focuses its first action and returns focus on Escape and outside text', async ({ page }) => {
-  const fixture = await mockPortal(page); await page.goto('/');
+  const fixture = await mockPortal(page); await gotoSession(page);
   const trigger = page.getByRole('button', { name: 'Song options for Night Drive' });
   await trigger.click();
   const controls = await trigger.getAttribute('aria-controls');
@@ -81,7 +81,7 @@ test('queue disclosure focuses its first action and returns focus on Escape and 
 });
 
 test('queue disclosure preserves outside control focus and uses the next logical Tab target', async ({ page }) => {
-  await mockPortal(page); await page.goto('/');
+  await mockPortal(page); await gotoSession(page);
   const trigger = page.getByRole('button', { name: 'Song options for Night Drive' });
   await trigger.click();
   await page.keyboard.press('Shift+Tab');
@@ -99,7 +99,7 @@ test('queue disclosure preserves outside control focus and uses the next logical
 });
 
 test('an unavailable queue disclosure remains keyboard dismissible without enabling mutations', async ({ page }) => {
-  const fixture = await mockPortal(page, { outsideVoice: true }); await page.goto('/');
+  const fixture = await mockPortal(page, { outsideVoice: true }); await gotoSession(page);
   const trigger = page.getByRole('button', { name: 'Song options for Night Drive' });
   await trigger.click();
   const panel = page.locator('.queue .menu-panel');
@@ -191,7 +191,7 @@ test('queue pagination clamps a shorter queue and a compact queue renders only f
 test('phone queue keeps readable metadata, one forty-four pixel row menu, and favorites inside it at 390 and 320 widths', async ({ page }) => {
   const fixture = await mockPortal(page);
   fixture.state.snapshot.session.queue[0].title = 'A very long live performance title with guests and a bonus encore that keeps going';
-  await page.goto('/');
+  await gotoSession(page);
   const row = page.locator('.queue .track-row').first();
   for (const width of [390, 320]) {
     await page.setViewportSize({ width, height: 844 });
@@ -213,7 +213,7 @@ test('missing and failed source covers use responsive variants and fresh source 
   fixture.state.snapshot.session.queue[0].artworkUrl = 'https://example.com/broken-cover.jpg';
   fixture.state.snapshot.session.queue[1].artworkUrl = null;
   await page.route('https://example.com/broken-cover.jpg', route => route.fulfill({ status: 404, body: '' }));
-  await page.goto('/');
+  await gotoSession(page);
   const rows = page.locator('.queue .track-row');
   for (const index of [0, 1]) {
     const cover = rows.nth(index).locator('picture.artwork');

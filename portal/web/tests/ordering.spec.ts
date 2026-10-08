@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
+import { gotoSession } from './fixtures';
 import type { GuildSnapshot } from '../src/types';
 import { startHttpFixture } from './http-fixture';
 
@@ -12,7 +13,7 @@ const playerTitle = (page: Page, title: string) => page.getByTestId('player').ge
 
 async function connected(page: Page, server: Fixture, ordered = true) {
   if (ordered) stamp(server.state.snapshot, 1);
-  await page.goto(server.origin);
+  await gotoSession(page, server.origin);
   await expect(pause(page)).toBeEnabled();
   await expect.poll(() => server.streams.size).toBe(1);
   if (ordered) stamp(server.state.snapshot, 2);

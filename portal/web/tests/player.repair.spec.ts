@@ -1,5 +1,5 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
-import { mockPortal, streamAction } from './fixtures';
+import { mockPortal, streamAction, gotoSession } from './fixtures';
 
 const longTitle = 'Evening Light — a very long live performance title with extended artist credits, a remastered collection name, and a full recording description';
 
@@ -26,7 +26,7 @@ for (const width of [320, 390]) {
       await page.setViewportSize({ width, height: 844 });
       const fixture = await mockPortal(page, { outsideVoice });
       fixture.state.snapshot.session.current!.title = longTitle;
-      await page.goto('/');
+      await gotoSession(page);
       await waitForPlayer(page);
       const player = page.getByTestId('player');
       const identity = player.getByRole('button', { name: `Open player for ${longTitle}`, exact: true });
@@ -69,7 +69,7 @@ for (const viewport of [{ width: 320, height: 568 }, { width: 390, height: 844 }
     await page.setViewportSize(viewport);
     const fixture = await mockPortal(page);
     fixture.state.snapshot.session.current!.title = longTitle;
-    await page.goto('/');
+    await gotoSession(page);
     await waitForPlayer(page);
     await page.getByRole('button', { name: 'Open player', exact: true }).click();
     const player = page.getByTestId('player');
@@ -98,7 +98,7 @@ test('desktop sleeve keeps artwork left, Up Next right, and identity readable wi
   await page.setViewportSize({ width: 1440, height: 900 });
   const fixture = await mockPortal(page);
   fixture.state.snapshot.session.current!.title = longTitle;
-  await page.goto('/');
+  await gotoSession(page);
   await waitForPlayer(page);
   await page.getByRole('button', { name: 'Open player', exact: true }).click();
   const player = page.getByTestId('player');
@@ -122,7 +122,7 @@ test('expanded permission explanation keeps the voice destination in view and le
   fixture.state.snapshot.session.voiceChannel!.name = 'Chill Lounge';
   fixture.state.snapshot.session.textChannel!.name = 'music-commands';
   fixture.state.snapshot.session.reason = 'Join Chill Lounge to add music or use playback controls.';
-  await page.goto('/');
+  await gotoSession(page);
   await waitForPlayer(page);
   await page.getByRole('button', { name: 'Open player', exact: true }).click();
   const player = page.getByTestId('player');
@@ -135,7 +135,7 @@ test('expanded permission explanation keeps the voice destination in view and le
 
 test('player action popover dismisses by Escape, outside activation, and completed action', async ({ page }) => {
   const fixture = await mockPortal(page);
-  await page.goto('/');
+  await gotoSession(page);
   await waitForPlayer(page);
   const player = page.getByTestId('player');
   const more = player.getByRole('button', { name: 'More playback controls' });
@@ -157,7 +157,7 @@ test('short offline sleeve keeps transport visible and reduced motion leaves int
   await page.setViewportSize({ width: 320, height: 568 });
   await page.emulateMedia({ reducedMotion: 'reduce' });
   const fixture = await mockPortal(page);
-  await page.goto('/');
+  await gotoSession(page);
   await waitForPlayer(page);
   await page.getByRole('button', { name: 'Open player', exact: true }).click();
   fixture.delayCommand(1500);
@@ -181,7 +181,7 @@ test('short offline sleeve keeps transport visible and reduced motion leaves int
 test('phone sleeve centers the empty cover icon and rings the whole filter pill', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await mockPortal(page, { saved: true });
-  await page.goto('/');
+  await gotoSession(page);
   await waitForPlayer(page);
   const player = page.getByTestId('player');
   await player.getByRole('button', { name: 'Open player', exact: true }).click();

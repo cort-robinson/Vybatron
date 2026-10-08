@@ -1,4 +1,5 @@
 import { expect, test, type Page, type Locator } from '@playwright/test';
+import { gotoSession } from './fixtures';
 import type { GuildSnapshot } from '../src/types';
 import { startHttpFixture } from './http-fixture';
 
@@ -13,7 +14,7 @@ const syncing = (page: Page) => confirmation(page).getByText('Syncing with Disco
 async function connected(page: Page, server: Fixture, playing = true) {
   server.state.snapshot.session.status = playing ? 'playing' : 'paused';
   stamp(server.state.snapshot, 1);
-  await page.goto(server.origin);
+  await gotoSession(page, server.origin);
   await expect(action(page, playing)).toBeEnabled();
   await expect.poll(() => server.streams.size).toBe(1);
   stamp(server.state.snapshot, 2);

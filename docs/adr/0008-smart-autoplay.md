@@ -28,7 +28,8 @@ real audio (250 non-zero PCM frames each) from three mix entries with the reposi
   anything played in the server in the last 24 hours (library history), anything in
   this session (current, queue, previous, suggestions), and session exclusions. Light
   near-duplicate keys (normalized artist + title, minus "Official Video"/"Lyrics"/"Topic"
-  noise, plus "Artist - Title" uploads) catch other uploads of the same recording.
+  noise, plus "Artist - Title" uploads) and the ADR-0006 song key catch other uploads
+  of the same recording.
 - **Human queue first:** picks wait in an in-memory buffer of at most three
   suggestions, never in `player.queue`. One pick enters the queue only when the human
   queue is empty (the SDK's empty-queue hook, or a skip with nothing queued), so

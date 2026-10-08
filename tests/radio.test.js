@@ -124,6 +124,8 @@ test('near-duplicate recordings and recently played server music are filtered', 
   assert.ok(nearKeys(song('topic000001', { author: 'Bee Gees - Topic', title: 'Stayin\' Alive' })).some(key => nearKeys(official).includes(key)));
   assert.ok(nearKeys(song('channel0001', { author: 'beegees', title: 'Bee Gees - Stayin\' Alive [Lyrics]' })).some(key => nearKeys(official).includes(key)));
   assert.ok(!nearKeys(song('other000001', { author: 'Bee Gees', title: 'Night Fever' })).some(key => nearKeys(official).includes(key)));
+  // A multi-artist Topic credit and the lead artist's own upload are one song.
+  assert.ok(nearKeys(song('topic000002', { author: 'The Kid LAROI, Justin Bieber - Topic', title: 'Stay' })).some(key => nearKeys(song('solo0000001', { author: 'The Kid LAROI', title: 'Stay (Official Audio)' })).includes(key)));
 
   const playedEarlier = song('server00001', { author: 'Kool & The Gang', title: 'Celebration' });
   const history = [{ playedAt: Date.now() - 60_000, track: trackReference(playedEarlier) }];

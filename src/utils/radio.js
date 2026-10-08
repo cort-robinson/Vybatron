@@ -1,4 +1,5 @@
 import { plainText } from './presentation.js';
+import { songKey } from './song-identity.js';
 import { withTimeout, enqueueTracks } from './enqueue.js';
 import { acquirePlaybackRequest } from './maintenance.js';
 import { setNotice } from './player-controller.js';
@@ -72,6 +73,8 @@ export function nearKeys(track) {
   const keys = new Set([compact(artist) + compact(title)]);
   // "Artist - Title" uploads from channels whose name differs from the artist.
   if (/\s[-–—]\s/.test(title)) keys.add(compact(title));
+  // The play-stats song identity (ADR-0006) also folds credit lists to the lead artist.
+  keys.add(`song:${songKey(value)}`);
   return [...keys].filter(key => key.length > 2);
 }
 

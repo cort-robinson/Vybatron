@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { gotoSession } from './fixtures';
 import type { GuildSnapshot } from '../src/types';
 import { startHttpFixture } from './http-fixture';
 
@@ -13,7 +14,7 @@ const titles = (page: Page) => page.locator('.queue:not(.queue-compact) .track-r
 
 async function connected(page: Page, server: Fixture) {
   stamp(server.state.snapshot);
-  await page.goto(server.origin);
+  await gotoSession(page, server.origin);
   await expect(play(page, true)).toBeEnabled();
   await expect.poll(() => server.streams.size).toBe(1);
 }

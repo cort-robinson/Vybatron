@@ -18,7 +18,7 @@ export async function execute(interaction) {
     return interaction.reply(ephemeralText('Nothing is playing. Add something with /play.'));
   }
 
-  await skipCurrent(player);
+  await skipCurrent(player, interaction.client);
   const suffix = player.queue.tracks.length === 0 ? ' The queue is now empty.' : '';
   return interaction.reply(ephemeralText(withControllerLink(
     `Skipped **${safeText(skipped.info.title, { maxLength: 140 })}**.${suffix}`,

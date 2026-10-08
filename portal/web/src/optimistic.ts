@@ -25,8 +25,11 @@ export interface Intent {
   createdAt: number;
 }
 
-export const isOptimistic = (command: Command) => OPTIMISTIC.has(command.command);
-export const slotOf = (command: Command) => SLOTS[command.command] || null;
+// Only the plain autoplay toggle is a set-state control. Seeding from a chosen
+// song and editing suggestions are ordinary requests that wait for the bot.
+const radioToggle = (command: Command) => command.subcommand === 'off' || (command.subcommand === 'on' && !command.options?.track);
+export const isOptimistic = (command: Command) => OPTIMISTIC.has(command.command) && (command.command !== 'radio' || radioToggle(command));
+export const slotOf = (command: Command) => isOptimistic(command) ? SLOTS[command.command] || null : null;
 export const needsRevision = (command: Command) => STRUCTURAL.has(command.command);
 const identities = (snapshot: GuildSnapshot) => ({ current: snapshot.session.current?.id || null, queue: snapshot.session.queue.map(track => track.id) });
 const sameTracks = (a: { current: string | null; queue: string[] }, b: { current: string | null; queue: string[] }) =>

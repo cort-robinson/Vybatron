@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
-import { mockPortal, streamAction } from './fixtures';
+import { mockPortal, streamAction, gotoSession } from './fixtures';
 
 test('signed-out portal uses Discord OAuth and exposes no demo player', async ({ page }) => {
   await mockPortal(page, { signedOut: true }); await page.goto('/');
@@ -11,7 +11,7 @@ test('signed-out portal uses Discord OAuth and exposes no demo player', async ({
 
 for (const viewport of [{ width: 1280, height: 720 }, { width: 393, height: 852 }]) {
   test(`normal ${viewport.width}x${viewport.height} account sign-out sends no body and leaves playback running`, async ({ page }) => {
-    await page.setViewportSize(viewport); const fixture = await mockPortal(page); await page.goto('/');
+    await page.setViewportSize(viewport); const fixture = await mockPortal(page); await gotoSession(page);
     await expect(page.getByRole('button', { name: 'Pause playback' })).toBeEnabled();
     if (viewport.width > 960) {
       await page.getByRole('button', { name: 'Account options' }).click();
@@ -29,7 +29,7 @@ for (const viewport of [{ width: 1280, height: 720 }, { width: 393, height: 852 
 }
 
 test('one player transforms, stays across navigation, and sends scoped core commands', async ({ page }) => {
-  const fixture = await mockPortal(page); await page.goto('/');
+  const fixture = await mockPortal(page); await gotoSession(page);
   await expect(page.getByRole('button', { name: 'Pause playback' })).toBeEnabled();
   await expect(page.getByTestId('player').getByText('Evening Light', { exact: true })).toHaveCount(1);
   await page.getByRole('button', { name: 'Pause playback' }).click();
@@ -46,7 +46,7 @@ test('one player transforms, stays across navigation, and sends scoped core comm
   await expect(page.getByRole('heading', { name: 'Favorites', exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Pause playback' })).toBeEnabled();
   await page.getByRole('button', { name: 'More playback controls' }).click();
-  await page.getByRole('button', { name: 'Turn artist radio on' }).click();
+  await page.getByRole('button', { name: 'Turn autoplay on' }).click();
   await expect.poll(() => fixture.commands.at(-1)?.command).toBe('radio');
   await page.getByRole('button', { name: 'More playback controls' }).click();
   await page.getByRole('button', { name: 'Stop and discard session' }).click();
@@ -58,7 +58,7 @@ test('one player transforms, stays across navigation, and sends scoped core comm
 });
 
 test('disconnect preserves search input, gates writes, refreshes before deliberate retry', async ({ page }) => {
-  const fixture = await mockPortal(page); await page.goto('/');
+  const fixture = await mockPortal(page); await gotoSession(page);
   await expect(page.getByRole('button', { name: 'Pause playback' })).toBeEnabled();
   await page.getByRole('button', { name: 'Add music', exact: true }).first().click();
   await page.getByRole('searchbox', { name: 'Music search' }).fill('my long playlist draft');
@@ -76,7 +76,7 @@ test('disconnect preserves search input, gates writes, refreshes before delibera
 });
 
 test('a queue conflict refreshes authoritative order without replaying stale indices', async ({ page }) => {
-  const fixture = await mockPortal(page); await page.goto('/');
+  const fixture = await mockPortal(page); await gotoSession(page);
   await expect(page.getByRole('button', { name: 'Pause playback' })).toBeEnabled();
   fixture.conflictNext(); await page.getByRole('button', { name: 'Song options for Slow Motion' }).click();
   await page.getByRole('button', { name: 'Move up', exact: true }).click();
@@ -90,7 +90,7 @@ test('a queue conflict refreshes authoritative order without replaying stale ind
 });
 
 test('queued favorites work outside voice and confirmed clearing preserves the paused current song', async ({ page }) => {
-  const fixture = await mockPortal(page, { outsideVoice: true }); await page.goto('/');
+  const fixture = await mockPortal(page, { outsideVoice: true }); await gotoSession(page);
   await expect(page.getByRole('button', { name: 'Save Slow Motion to favorites' })).toBeEnabled();
   await expect(page.getByRole('button', { name: 'Pause playback' })).toBeDisabled();
   await page.getByRole('button', { name: 'Save Slow Motion to favorites' }).click();
@@ -112,7 +112,7 @@ test('queued favorites work outside voice and confirmed clearing preserves the p
 });
 
 test('uncertain command completion fetches fresh state and never retries the mutation', async ({ page }) => {
-  const fixture = await mockPortal(page); await page.goto('/');
+  const fixture = await mockPortal(page); await gotoSession(page);
   await expect(page.getByRole('button', { name: 'Pause playback' })).toBeEnabled();
   const reads = fixture.requests.filter(path => path === '/api/guilds/testing').length;
   fixture.uncertainNext();
@@ -131,7 +131,7 @@ test('uncertain command completion fetches fresh state and never retries the mut
 
 test('a public import may exceed a short read deadline without aborting or replaying', async ({ page }) => {
   test.setTimeout(40_000);
-  const fixture = await mockPortal(page); fixture.delayCommand(22_000); await page.goto('/');
+  const fixture = await mockPortal(page); fixture.delayCommand(22_000); await gotoSession(page);
   await expect(page.getByRole('button', { name: 'Pause playback' })).toBeEnabled();
   await page.getByRole('button', { name: 'Add music', exact: true }).first().click();
   await page.getByRole('searchbox', { name: 'Music search' }).fill('https://example.com/long-public-playlist');
@@ -143,7 +143,7 @@ test('a public import may exceed a short read deadline without aborting or repla
 });
 
 test('a GET started before going offline cannot enable writes after transport loss', async ({ page }) => {
-  const fixture = await mockPortal(page); await page.goto('/');
+  const fixture = await mockPortal(page); await gotoSession(page);
   await expect(page.getByRole('button', { name: 'Pause playback' })).toBeEnabled();
   const reads = fixture.requests.filter(path => path === '/api/guilds/testing').length;
   fixture.delaySnapshot(500);
@@ -161,7 +161,7 @@ test('a GET started before going offline cannot enable writes after transport lo
 });
 
 test('voice and DJ restrictions preserve library and voting access without admin data', async ({ page }) => {
-  const fixture = await mockPortal(page, { basic: true }); await page.goto('/');
+  const fixture = await mockPortal(page, { basic: true }); await gotoSession(page);
   await expect(page.getByRole('button', { name: 'Pause playback' })).toBeDisabled();
   await page.getByRole('button', { name: 'More playback controls' }).click();
   await page.getByRole('button', { name: 'Vote to skip', exact: true }).click();
@@ -177,7 +177,7 @@ test('voice and DJ restrictions preserve library and voting access without admin
 });
 
 test('play-next and history replay require DJ control and send the fresh revision from every entry point', async ({ page }) => {
-  const fixture = await mockPortal(page, { basic: true }); await page.goto('/');
+  const fixture = await mockPortal(page, { basic: true }); await gotoSession(page);
   await page.getByRole('button', { name: 'Add music', exact: true }).first().click();
   await page.getByRole('searchbox', { name: 'Music search' }).fill('Midnight City');
   await expect(page.getByRole('button', { name: 'Add to queue', exact: true })).toBeEnabled();
@@ -215,7 +215,7 @@ test('play-next and history replay require DJ control and send the fresh revisio
 });
 
 test('visible current favorites and mix saves remain available outside voice, including schema forms', async ({ page }) => {
-  const fixture = await mockPortal(page, { outsideVoice: true }); await page.goto('/');
+  const fixture = await mockPortal(page, { outsideVoice: true }); await gotoSession(page);
   await expect(page.getByRole('button', { name: 'Remove current song from favorites' })).toBeEnabled();
   await page.getByRole('button', { name: 'Remove current song from favorites' }).click();
   await expect(page.getByRole('button', { name: 'Save current song to favorites' })).toBeEnabled();
@@ -244,7 +244,7 @@ test('visible current favorites and mix saves remain available outside voice, in
 });
 
 test('maintainer settings accept known Discord IDs without revealing a private catalog', async ({ page }) => {
-  const fixture = await mockPortal(page, { maintainerOutsideGuild: true }); await page.goto('/');
+  const fixture = await mockPortal(page, { maintainerOutsideGuild: true }); await gotoSession(page);
   await page.getByRole('button', { name: 'Server', exact: true }).click();
   const channel = page.getByLabel('Music text channel ID', { exact: true }); const role = page.getByLabel('DJ role ID', { exact: true });
   const channelSave = channel.locator('..').getByRole('button', { name: 'Save', exact: true });
@@ -274,7 +274,7 @@ test('maintainer settings accept known Discord IDs without revealing a private c
 });
 
 test('library, shared mixes, history, settings, schema forms, activity and diagnostics use real endpoint shapes', async ({ page }) => {
-  const fixture = await mockPortal(page); await page.goto('/');
+  const fixture = await mockPortal(page); await gotoSession(page);
   await expect(page.getByRole('button', { name: 'Pause playback' })).toBeEnabled();
   await page.getByRole('button', { name: 'My Music', exact: true }).click();
   await page.getByRole('button', { name: 'Queue favorite Night Drive' }).click();
@@ -300,7 +300,7 @@ test('library, shared mixes, history, settings, schema forms, activity and diagn
 });
 
 test('saved-session recovery keeps checkpoint position and pause state', async ({ page }) => {
-  const fixture = await mockPortal(page, { saved: true }); await page.goto('/');
+  const fixture = await mockPortal(page, { saved: true }); await gotoSession(page);
   await expect(page.getByRole('button', { name: 'Resume session' })).toBeEnabled();
   await page.getByRole('button', { name: 'Resume session' }).click();
   await expect(page.getByRole('button', { name: 'Resume playback' })).toBeEnabled();
@@ -309,7 +309,7 @@ test('saved-session recovery keeps checkpoint position and pause state', async (
 });
 
 test('permission loss clears protected tracks and disconnected context', async ({ page }) => {
-  const fixture = await mockPortal(page); await page.goto('/');
+  const fixture = await mockPortal(page); await gotoSession(page);
   await expect(page.getByRole('button', { name: 'Pause playback' })).toBeEnabled();
   fixture.denySnapshot(403); await streamAction(page, 'reconnect');
   await expect(page.getByTestId('player').getByText('Evening Light', { exact: true })).toHaveCount(0);
@@ -318,7 +318,7 @@ test('permission loss clears protected tracks and disconnected context', async (
 });
 
 test('an HTTP-rejected SSE connection verifies session loss and clears the player', async ({ page }) => {
-  const fixture = await mockPortal(page); await page.goto('/');
+  const fixture = await mockPortal(page); await gotoSession(page);
   await expect(page.getByRole('button', { name: 'Pause playback' })).toBeEnabled();
   fixture.denySnapshot(401); await streamAction(page, 'disconnect');
   await expect(page.getByRole('link', { name: /Continue with Discord/ })).toBeVisible();
@@ -327,7 +327,7 @@ test('an HTTP-rejected SSE connection verifies session loss and clears the playe
 });
 
 test('phone player is singular, keyboard-accessible, responsive and reduced-motion safe', async ({ page }) => {
-  await page.setViewportSize({ width: 393, height: 852 }); await page.emulateMedia({ reducedMotion: 'reduce' }); await mockPortal(page); await page.goto('/');
+  await page.setViewportSize({ width: 393, height: 852 }); await page.emulateMedia({ reducedMotion: 'reduce' }); await mockPortal(page); await gotoSession(page);
   await expect(page.getByRole('button', { name: 'Pause playback' })).toBeEnabled(); await page.getByRole('button', { name: 'Open player', exact: true }).click();
   await expect(page.getByTestId('player').getByText('Evening Light', { exact: true })).toHaveCount(1);
   await expect(page.getByRole('slider', { name: 'Playback position' })).toHaveCount(1);

@@ -1,6 +1,6 @@
 # ADR-0004: Source resolution and playback behavior
 
-- Status: Accepted
+- Status: Accepted; the "No autoplay" clause is superseded by [ADR-0008](0008-smart-autoplay.md)
 - Date: 2026-07-08
 
 ## Context
@@ -19,7 +19,7 @@ Behavioral gaps in the old bot: it announced every track start *and* end (two me
 **Playback behavior:**
 - Control commands (`/skip`, `/stop`, `/volume`, `/shuffle`, `/pause`, `/resume`, `/skipto`) require the invoker to be in the bot's current voice channel.
 - Announce track start only (one "Now Playing" embed per song). No track-end messages.
-- No autoplay: when the queue empties, a 5-minute idle timer starts; on expiry the bot disconnects. The bot also disconnects when its voice channel becomes empty. `/stop` disconnects immediately.
+- ~~No autoplay~~ (superseded by ADR-0008, which adds opt-in smart autoplay): when the queue empties, a 5-minute idle timer starts; on expiry the bot disconnects. The bot also disconnects when its voice channel becomes empty. `/stop` disconnects immediately.
 - Volume range 0–100, default 100, not persisted across restarts (v1).
 
 ## Consequences

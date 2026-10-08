@@ -6,7 +6,7 @@ import { searchMusic } from '../utils/search.js';
 import { validatePlaybackQuery } from '../utils/query.js';
 import { withTimeout } from '../utils/enqueue.js';
 import { createPortalPolicy } from './policy.js';
-import { FILTERS, actorProjection, guildProjection, trackProjection, snapshotProjection, libraryProjection, activityProjection, configurationProjection, createRevisions } from './projection.js';
+import { FILTERS, actorProjection, guildProjection, trackProjection, snapshotProjection, libraryProjection, activityProjection, configurationProjection, createRevisions, statsProjection, STATS_WINDOW_IDS } from './projection.js';
 import { publicCommands, executePortalCommand } from './commands.js';
 import { fail, safeError } from './errors.js';
 import { createCommandTimings, commandTimingSpan } from './timing.js';
@@ -114,18 +114,31 @@ export function startPortalBridge(client, {
           }
           return json(response, 200, { viewer: { id: who.user.id, username: who.user.username.slice(0, 80), displayName: actorProjection(who.user).displayName, avatarUrl: actorProjection(who.user).avatarUrl, maintainer: who.maintainer }, guilds, filters: FILTERS, commands: publicCommands(commandMap) }, maxResponseBytes);
         }
-        const match = url.pathname.match(/^\/v1\/guilds\/(\d{1,22})(?:\/(library|search|commands|diagnostics|activity|configuration))?$/);
+        if (url.pathname === '/v1/stats/requests/clear' && request.method === 'POST') {
+          // Personal data across every server: identity only, never a guild grant.
+          const who = await policy.identity(url.searchParams.get('actorId'), { fresh: true });
+          if (!client.stats?.available) fail(503, 'stats_unavailable', 'Listening stats are unavailable right now. Playback is unaffected.');
+          let cleared;
+          try { cleared = client.stats.clearRequests(who.user.id); } catch { fail(503, 'stats_unavailable', 'Your request stats could not be cleared. Try again shortly.'); }
+          return json(response, 200, { ok: true, cleared }, maxResponseBytes);
+        }
+        const match = url.pathname.match(/^\/v1\/guilds\/(\d{1,22})(?:\/(library|search|commands|diagnostics|activity|configuration|stats))?$/);
         if (!match) fail(404, 'not_found', 'That bridge endpoint does not exist.');
         const [, guildId, resource] = match;
         if (resource === 'commands' && request.method === 'POST') return json(response, 200, await timings.run(body?.command,
           () => executePortalCommand(client, measuredPolicy, revisions, commandMap, guildId, body)), maxResponseBytes);
         if (request.method !== 'GET' || resource === 'commands') fail(400, 'invalid_method', 'That request method is unsupported.');
         const actorId = url.searchParams.get('actorId');
-        const channelScope = resource === 'library' ? 'history' : resource === 'configuration' ? 'configuration' : ['activity', 'diagnostics'].includes(resource) ? 'none' : 'session';
+        const channelScope = ['library', 'stats'].includes(resource) ? 'history' : resource === 'configuration' ? 'configuration' : ['activity', 'diagnostics'].includes(resource) ? 'none' : 'session';
         const context = await policy.guild(actorId, guildId, undefined, { channelScope });
         let result;
         if (!resource) result = snapshotProjection(client, context, revisions.revision(guildId), revisions.nextSnapshot());
         if (resource === 'library') result = libraryProjection(client, context);
+        if (resource === 'stats') {
+          const window = url.searchParams.get('window') || '30d';
+          if (!STATS_WINDOW_IDS.includes(window)) fail(400, 'invalid_window', 'Choose a supported stats window.');
+          result = statsProjection(client, context, window);
+        }
         if (resource === 'configuration') result = configurationProjection(context);
         if (resource === 'activity' || resource === 'diagnostics') {
           if (!context.admin) fail(403, 'admin_required', 'Manage Server permission is required.');
@@ -146,7 +159,7 @@ export function startPortalBridge(client, {
           // Membership may disappear during a slow import. Recheck before data.
           const fresh = await policy.guild(actorId, guildId);
           if (!fresh.member) fail(403, 'membership_required', 'Join this server to search its music catalog.');
-          result = { tracks: (found?.tracks || []).slice(0, 50).map(trackProjection), notice: found?.spotifyImport ? 'Spotify catalog results are matched to playable recordings.' : found?.tracks?.length ? null : 'No playable matches were found.' };
+          result = { tracks: (found?.tracks || []).slice(0, 50).map(track => trackProjection(track)), notice: found?.spotifyImport ? 'Spotify catalog results are matched to playable recordings.' : found?.tracks?.length ? null : 'No playable matches were found.' };
         }
         return json(response, 200, result, maxResponseBytes);
       } finally { inFlight--; if (admitted === 'stop') stopInFlight--; if (admitted === 'ordinary') ordinaryInFlight--; }

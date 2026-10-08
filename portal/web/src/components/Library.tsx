@@ -1,15 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowClockwiseIcon, HeartIcon, PlayIcon, PlusIcon, TrashIcon, VinylRecordIcon } from '@phosphor-icons/react';
+import { ArrowClockwiseIcon, HeartIcon, PlayIcon, PlusIcon, RadioIcon, TrashIcon, VinylRecordIcon } from '@phosphor-icons/react';
 import type { Portal } from '../usePortal';
 import type { Track } from '../types';
 import { date, time, totalTime } from '../format';
 import { Artwork, Confirm, Empty, ErrorState, IconButton, Loading } from './ui';
 import { Pagination } from './Pagination';
+import { ServerFavorites } from './ServerFavorites';
 import { transition } from '../motion';
+import { radioLabel, startRadioCommand } from '../radio';
 import './library.css';
 
-const sections = ['favorites', 'mixes', 'history'] as const;
+const sections = ['favorites', 'mixes', 'history', 'server'] as const;
 type Section = typeof sections[number];
+type ListSection = Exclude<Section, 'server'>;
+const sectionLabels: Record<Section, string> = { favorites: 'Favorites', mixes: 'Shared mixes', history: 'History', server: 'Server favorites' };
 const pageSize = 50;
 const initialQueries = { favorites: '', mixes: '', history: '' };
 const initialPages = { favorites: 0, mixes: 0, history: 0 };
@@ -57,12 +61,14 @@ export function LibraryView({ portal, active = true }: { portal: Portal; active?
     .filter(mix => matches(`${mix.name} ${mix.tracks.map(trackMetadata).join(' ')}`, queries.mixes)), [active, tab, library?.mixes, queries.mixes]);
   const mixTracks = useMemo(() => !active || tab !== 'mixes' ? [] : (selectedMix?.tracks || [])
     .map((track, index) => ({ track, index })).filter(({ track }) => matches(trackMetadata(track), mixQuery)), [active, tab, selectedMix?.tracks, mixQuery]);
+  // Server favorites are two short ranked lists with no search or paging.
+  const listTab: ListSection = tab === 'server' ? 'favorites' : tab;
   const total = tab === 'favorites' ? favorites.length : tab === 'history' ? history.length : mixes.length;
-  const currentPage = boundedPage(pages[tab], total);
+  const currentPage = boundedPage(pages[listTab], total);
   const currentMixPage = boundedPage(mixPage, mixTracks.length);
   const offset = currentPage * pageSize;
   const label = tab === 'favorites' ? 'favorites' : tab === 'history' ? 'listening history' : 'shared mixes';
-  const setQuery = (value: string) => { setQueries(previous => ({ ...previous, [tab]: value })); setPages(previous => ({ ...previous, [tab]: 0 })); };
+  const setQuery = (value: string) => { setQueries(previous => ({ ...previous, [listTab]: value })); setPages(previous => ({ ...previous, [listTab]: 0 })); };
   const clearSearch = () => { setQuery(''); searchRef.current?.focus(); };
   const save = async (name: string, replace: boolean, revision = snapshot?.revision) => {
     if (await run({ command: 'mix', subcommand: 'save', options: { name, replace }, expectedRevision: revision }, 'library')) {
@@ -81,23 +87,25 @@ export function LibraryView({ portal, active = true }: { portal: Portal; active?
       onKeyDown={event => {
         if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
         event.preventDefault(); const index = sections.indexOf(tab);
-        const next = event.key === 'Home' ? sections[0] : event.key === 'End' ? sections[2] : sections[(index + (event.key === 'ArrowRight' ? 1 : 2)) % sections.length];
+        const next = event.key === 'Home' ? sections[0] : event.key === 'End' ? sections[sections.length - 1] : sections[(index + (event.key === 'ArrowRight' ? 1 : sections.length - 1)) % sections.length];
         selectTab(next); document.getElementById(`tab-${next}`)?.focus();
-      }} onClick={() => selectTab(section)}>{tab === section && <span className="tab-indicator" aria-hidden="true" />}{section === 'favorites' ? 'Favorites' : section === 'mixes' ? 'Shared mixes' : 'History'}{library && <span>{library[section].length.toLocaleString()}</span>}</button>)}
+      }} onClick={() => selectTab(section)}>{tab === section && <span className="tab-indicator" aria-hidden="true" />}{sectionLabels[section]}{library && section !== 'server' && <span>{library[section].length.toLocaleString()}</span>}</button>)}
   </div>
-  {libraryError ? <ErrorState message={libraryError} retry={() => void portal.refreshLibrary()} /> : !library ? <Loading label="Loading your music…" /> : <section role="tabpanel" id={`panel-${tab}`} aria-labelledby={`tab-${tab}`}>
+  {tab === 'server' ? <section role="tabpanel" id="panel-server" aria-labelledby="tab-server"><ServerFavorites portal={portal} /></section>
+  : libraryError ? <ErrorState message={libraryError} retry={() => void portal.refreshLibrary()} /> : !library ? <Loading label="Loading your music…" /> : <section role="tabpanel" id={`panel-${tab}`} aria-labelledby={`tab-${tab}`}>
     <div className="section-heading"><div><h2 className="sr-only">{tab === 'favorites' ? 'Favorites' : tab === 'mixes' ? 'Shared mixes' : 'Listening history'}</h2>
       <p className="section-description">{tab === 'favorites' ? 'Your private songs, across every server.' : tab === 'mixes' ? `Saved for ${snapshot?.guild.name || 'this server'}. Up to 100 songs per mix.` : 'The latest 100 songs from the past 30 days, from sessions you can see.'}</p></div>
       {tab === 'history' && <IconButton label="Refresh listening history" onClick={() => void portal.refreshLibrary()}><ArrowClockwiseIcon size={21} /></IconButton>}
     </div>
     <div className="library-search"><label className="sr-only" htmlFor={`library-search-${tab}`}>Search {label}</label><div className="library-search-controls">
-      <input ref={searchRef} id={`library-search-${tab}`} type="search" dir="auto" value={queries[tab]} maxLength={200} placeholder={`Search ${label}`} onChange={event => setQuery(event.target.value)} />
-      {queries[tab] && <button type="button" className="text-button" onClick={clearSearch}>Clear search</button>}
+      <input ref={searchRef} id={`library-search-${tab}`} type="search" dir="auto" value={queries[listTab]} maxLength={200} placeholder={`Search ${label}`} onChange={event => setQuery(event.target.value)} />
+      {queries[listTab] && <button type="button" className="text-button" onClick={clearSearch}>Clear search</button>}
     </div></div>
     {tab === 'favorites' && <>
       {!library.favorites.length ? <Empty title="A place for your repeat favorites" description="Tap the heart on the current song to keep it here. Only you can see this shelf." icon={<HeartIcon size={30} />} /> : !favorites.length ? noMatches : <ul className="library-track-list" aria-label="Favorite songs">{favorites.slice(offset, offset + pageSize).map(({ track, index }) => <li key={`${track.id}:${index}`}>
         <Artwork track={track} /><div className="track-text"><strong dir="auto" title={track.title}>{track.title}</strong><span dir="auto">{track.author} · {track.source}</span></div><span className="track-duration">{track.isStream ? 'Live' : time(track.durationMs)}</span>
         <IconButton label={`Queue favorite ${track.title}`} disabled={!addable} title={!addable ? portal.blockedReason : undefined} onClick={() => void run({ command: 'favorite', subcommand: 'play', options: { index: index + 1 }, expectedTrackId: track.id }, 'add')}><PlusIcon size={23} /></IconButton>
+        <RadioButton portal={portal} track={track} />
         <IconButton className="favorite active" label={`Remove favorite ${track.title}`} disabled={!editable} onClick={() => void run({ command: 'favorite', subcommand: 'remove', options: { index: index + 1 }, expectedTrackId: track.id }, 'library')}><HeartIcon size={23} weight="fill" /></IconButton>
       </li>)}</ul>}
       <Pagination label="favorites" page={currentPage} total={favorites.length} pageSize={pageSize} onPageChange={page => setPages(previous => ({ ...previous, favorites: page }))} />
@@ -131,6 +139,7 @@ export function LibraryView({ portal, active = true }: { portal: Portal; active?
       {!library.history.length ? <Empty title="Your server’s story starts here" description="Songs appear after they play in a visible voice channel." /> : !history.length ? noMatches : <ul className="history-list" aria-label="Recently played songs">{history.slice(offset, offset + pageSize).map(({ entry, index }) => <li key={entry.id}>
         <Artwork track={entry.track} /><div className="track-text"><strong dir="auto" title={entry.track.title}>{entry.track.title}</strong><span dir="auto">{entry.track.author}{entry.voiceChannel ? ` · ${entry.voiceChannel.name}` : ''}</span></div><time dateTime={new Date(entry.playedAt).toISOString()}>{date(entry.playedAt)}</time>
         <IconButton label={`Replay ${entry.track.title}`} disabled={!controllable} title={!controllable ? portal.blockedReason : undefined} onClick={() => void run({ command: 'replay', options: { index: index + 1 }, expectedHistoryId: entry.id, expectedRevision: snapshot?.revision }, 'control')}><PlusIcon size={23} /></IconButton>
+        <RadioButton portal={portal} track={entry.track} />
       </li>)}</ul>}
       <Pagination label="listening history" page={currentPage} total={history.length} pageSize={pageSize} onPageChange={page => setPages(previous => ({ ...previous, history: page }))} />
       {!controllable && <p className="library-note">{portal.blockedReason}</p>}
@@ -144,4 +153,12 @@ export function LibraryView({ portal, active = true }: { portal: Portal; active?
       else void run(confirm.kind === 'favorites' ? { command: 'favorite', subcommand: 'clear', options: { confirm: true } } : { command: 'mix', subcommand: 'delete', options: { name: confirm.name }, expectedMixVersion: confirm.version }, 'library').then(ok => { if (ok) setConfirm(null); });
     }} />}
   </div>;
+}
+
+// Seeds autoplay from a saved song. Needs a live session and playback control.
+function RadioButton({ portal, track }: { portal: Portal; track: Track }) {
+  const command = startRadioCommand(track);
+  const enabled = !!command && portal.can('control') && !portal.pending.length;
+  return <IconButton className="radio-start" label={radioLabel(track)} disabled={!enabled} title={!command ? 'This song has no public source reference' : !enabled ? portal.blockedReason : radioLabel(track)}
+    onClick={() => { if (command) void portal.run(command, 'control'); }}><RadioIcon size={22} /></IconButton>;
 }

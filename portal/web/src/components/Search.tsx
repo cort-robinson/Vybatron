@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowBendUpRightIcon, LinkIcon, MagnifyingGlassIcon, PlusIcon, SparkleIcon } from '@phosphor-icons/react';
+import { ArrowBendUpRightIcon, LinkIcon, MagnifyingGlassIcon, PlusIcon, RadioIcon, SparkleIcon } from '@phosphor-icons/react';
 import { api, errorMessage } from '../api';
 import type { Track } from '../types';
 import type { Portal } from '../usePortal';
 import { time } from '../format';
 import { isLink, libraryMatches, suggestArtists, suggestTracks } from '../suggestions';
-import { Artwork, Dialog, Empty, ErrorState, Loading } from './ui';
+import { Artwork, Dialog, Empty, ErrorState, IconButton, Loading } from './ui';
+import { radioLabel } from '../radio';
 
 // Search as you type: wait for a short pause, reuse recent answers, and leave
 // links (slow public imports) to an explicit Search or direct add.
@@ -15,8 +16,9 @@ const CACHE_TTL_MS = 60_000;
 const CACHE_LIMIT = 30;
 type Result = { tracks: Track[]; notice: string | null };
 
-function ResultRow({ track, detail, enabled, blockedReason, onAdd }: { track: Track; detail: string; enabled: boolean; blockedReason: string; onAdd: (uri: string) => void }) {
-  return <li><Artwork track={track} /><div className="track-text"><strong>{track.title}</strong><span>{track.author} · {detail}</span></div><span className="result-length">{track.isStream ? 'Live' : time(track.durationMs)}</span><button className="button secondary add-result" aria-label={`Add ${track.title} to queue`} disabled={!enabled || !track.uri} title={!track.uri ? 'This result has no public source reference' : !enabled ? blockedReason : undefined} onClick={() => { if (track.uri) onAdd(track.uri); }}><PlusIcon size={19} /><span>Add</span></button></li>;
+function ResultRow({ track, detail, enabled, radioEnabled, blockedReason, onAdd, onRadio }: { track: Track; detail: string; enabled: boolean; radioEnabled: boolean; blockedReason: string; onAdd: (uri: string) => void; onRadio: (uri: string) => void }) {
+  return <li><Artwork track={track} /><div className="track-text"><strong>{track.title}</strong><span>{track.author} · {detail}</span></div><span className="result-length">{track.isStream ? 'Live' : time(track.durationMs)}</span>
+    <IconButton className="radio-start" label={radioLabel(track)} disabled={!radioEnabled || !track.uri} title={!track.uri ? 'This result has no public source reference' : !radioEnabled ? blockedReason : radioLabel(track)} onClick={() => { if (track.uri) onRadio(track.uri); }}><RadioIcon size={21} /></IconButton><button className="button secondary add-result" aria-label={`Add ${track.title} to queue`} disabled={!enabled || !track.uri} title={!track.uri ? 'This result has no public source reference' : !enabled ? blockedReason : undefined} onClick={() => { if (track.uri) onAdd(track.uri); }}><PlusIcon size={19} /><span>Add</span></button></li>;
 }
 
 export function Search({ portal, open, onClose, query, setQuery }: { portal: Portal; open: boolean; onClose: () => void; query: string; setQuery: (value: string) => void }) {
@@ -80,7 +82,8 @@ export function Search({ portal, open, onClose, query, setQuery }: { portal: Por
   const explore = (artist: string) => { setQuery(artist); input.current?.focus(); void search(artist); };
   const enabled = portal.can('add') && !portal.pending.length;
   const controllable = portal.can('control') && !portal.pending.length;
-  const row = (track: Track, detail: string, key: string) => <ResultRow key={key} track={track} detail={detail} enabled={enabled} blockedReason={portal.blockedReason} onAdd={uri => void add(false, uri)} />;
+  const radio = (uri: string) => portal.run({ command: 'radio', subcommand: 'on', options: { track: uri } }, 'control');
+  const row = (track: Track, detail: string, key: string) => <ResultRow key={key} track={track} detail={detail} enabled={enabled} radioEnabled={controllable} blockedReason={portal.blockedReason} onAdd={uri => void add(false, uri)} onRadio={uri => void radio(uri)} />;
   const stale = searching || (!!lastQuery && lastQuery !== typed);
   if (!open) return null;
   return <Dialog title="Add music" onClose={onClose} className="search-dialog" initialFocusRef={input}>

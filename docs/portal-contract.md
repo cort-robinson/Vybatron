@@ -36,7 +36,10 @@ music storage is not shared with bot music JSON. Auth cookies/tokens remain serv
 
 `Track = { id: string, title: string, author: string, uri: string|null,
   source: string, durationMs: number, artworkUrl: string|null, isStream: boolean,
-  requestedBy: {id, displayName, avatarUrl: string|null}|null }`
+  requestedBy: {id, displayName, avatarUrl: string|null}|null, suggested?: boolean }`
+
+`suggested` appears on session tracks only (current, queue, suggestions): true for
+smart-autoplay picks, whose `requestedBy` is the bot. Library tracks omit it.
 
 Track ids are public-reference identities, NEVER encoded Lavalink tracks. All
 fields are bounded safe projections. No signed media URLs, credentials, raw
@@ -55,22 +58,26 @@ runtime objects and credential-bearing data. Maintain existing command meanings.
   session: {
     status: 'idle'|'playing'|'paused'|'recovering'|'unavailable',
     voiceChannel: {id,name}|null, textChannel: {id,name}|null,
-    current: Track|null, queue: Track[], positionMs: number, durationMs: number,
+    current: Track|null, queue: Track[], suggestions: Track[], positionMs: number, durationMs: number,
     volume: number, filter: string, repeat: 'off'|'track'|'queue',
-    radio: boolean, fairQueue: boolean,
+    radio: boolean, autoplay: 'off'|'on'|'listening', fairQueue: boolean,
     listeners: {id,displayName,avatarUrl:string|null}[],
     canAdd: boolean, canControl: boolean, canVote: boolean, reason: string|null
   },
   savedSession: {exists:boolean, savedAt:number|null, positionMs:number,
     paused:boolean, trackCount:number, voiceChannel:{id,name}|null,
     canResume:boolean},
-  settings: {volume:number,fairQueue:boolean,djRoleId:string|null,
+  settings: {volume:number,fairQueue:boolean,autoplay:'off'|'on'|'listening',djRoleId:string|null,
     musicTextChannelId:string|null}|null,
   channels: {id,name,type:'voice'|'text'}[], roles:{id,name}[]
 }`
 
 If session channel is not visible, expose an idle/empty projection and a safe
 reason; do not reveal restricted channel ids/name/tracks/listeners/checkpoint.
+`suggestions` holds at most three autoplay picks waiting after the queue (ADR-0008);
+they are not queue positions and are empty when hidden or inactive. `radio` is
+whether autoplay is active for the session (server `autoplay` mode or a /radio
+override). Clients must treat missing `suggestions`/`autoplay` as empty/off.
 Settings/channels/roles include only authorized fields; settings null for basic
 members. Snapshot channels are the relevant, freshly verified session channels;
 the complete settings catalog is discovered separately on demand. Revision changes on queue/current identity and relevant state changes,
@@ -111,6 +118,39 @@ scopes, fresh individual reads, input preservation, and revocation fences.
 `Activity = { items:{id:string,at:number,actor:{id,displayName},action:string,
   detail:string}[] }` (admin-only, 24h, bounded, successful queue/settings only).
 
+`StatEntry = { track: Track, plays: number, lastPlayedAt: number }`
+
+`Stats = {
+  serverFavorites: { onRepeat: StatEntry[], forgottenGems: StatEntry[] },
+  personal: { window: '7d'|'30d'|'90d'|'365d'|'all',
+    topTracks: StatEntry[],
+    topArtists: { name: string, plays: number, lastPlayedAt: number, track: Track }[],
+    rediscover: { index: number, track: Track, requests: number, lastRequestedAt: number|null }[],
+    playlists: AutoPlaylist[] }
+}`
+
+`AutoPlaylist = { id: 'your-mix'|'top-tracks'|'rediscover'|'artist-1'|'artist-2'|'artist-3',
+  kind: 'mix'|'top'|'rediscover'|'artist', title: string, artist: string|null,
+  tracks: Track[], refreshesAt: number|null }`
+
+Play statistics ([ADR-0006](adr/0006-play-statistics-store-and-song-identity.md)). Every
+list holds at most 25 entries (topArtists 10). Only plays in voice channels the actor can
+currently see contribute to serverFavorites, topTracks and topArtists; a nonmember sees empty
+guild lists. Server lists never identify requesters, and their Track.requestedBy is null.
+`plays` counts visible plays that were not early skips; On repeat uses the last 90 days and
+Forgotten gems the window 60-120 days ago. Personal lists use only the actor's own requests:
+topTracks/topArtists in this guild within `window` (default `30d`); `rediscover` lists the
+actor's global favorites not requested anywhere in 30 days, previously requested songs first.
+Its one-based `index` and `track.id` are the `favorite/play` index and `expectedTrackId`.
+`playlists` are personal auto-playlists ([ADR-0007](adr/0007-personal-auto-playlists-computed-on-read.md)),
+computed on read and never stored: always `your-mix`, `top-tracks` (same `window`) and
+`rediscover`, then up to three `artist-N` mixes for the actor's top artists over 90 days.
+Each holds at most 25 tracks. Your mix blends the actor's 90-day top requests with their
+favorites using a weekly seed; `refreshesAt` is when it next changes (Monday 00:00 UTC), null
+for the others. Artist mixes add visible server plays by that artist without requesters.
+Stats are optional: an unavailable store returns 503 `stats_unavailable` and nothing else
+changes. Fetch on demand; stats are not part of snapshots or the change feed.
+
 ## Public browser endpoints (portal API task)
 
 - GET `/health`: credential-free portal responsiveness/readiness, never music data.
@@ -127,6 +167,10 @@ scopes, fresh individual reads, input preservation, and revocation fences.
 - POST `/api/guilds/:guildId/commands` -> command result below.
 - GET `/api/guilds/:guildId/diagnostics` -> Diagnostics (admin only).
 - GET `/api/guilds/:guildId/activity` -> Activity (admin only).
+- GET `/api/guilds/:guildId/stats?window=7d|30d|90d|365d|all` -> Stats. Only `window` is
+  accepted; omitted means `30d`.
+- POST `/api/stats/requests/clear` -> `{ok:true,cleared:number}`. Same-origin + CSRF, no body.
+  Anonymizes the signed-in listener's recorded requests in every server; server totals remain.
 - GET `/api/guilds/:guildId/events`: credentialed same-origin SSE. `event:snapshot`
   carries GuildSnapshot. Heartbeat comments. Permission/session loss closes
   stream; state-unavailable must not replay writes. Bound connections, polling,
@@ -149,11 +193,25 @@ the command reply; never raw Discord interaction/token objects or embeds with se
 Core playback command names and options: play/playnext(query), pause/resume,
 seek(timestamp), skip/skipto(position), stop, clear, remove(position), move(from,to),
 shuffle, loop(mode:off|track|queue), volume(level), filter(preset), voteskip,
-radio subcommand on/off, replay(index), session resume/discard.
+radio on(track?)/off/promote(position)/remove(position)/less(position?), replay(index),
+session resume/discard. radio promote/remove/less carry `expectedTrackId` (the
+selected suggestion, or the current autoplay pick for less without a position);
+promote is an ordinary addition (the pick stays bot-requested and `suggested`), the others need playback control.
+Server favorites:
+top show(list?: on-repeat|forgotten-gems, page?: 1-3) and top play(list?, shuffle?: boolean).
+`top play` is an ordinary addition (canAdd rules, no revision) that resolves the actor's
+visible list fresh inside the mutation lane and enqueues it through the normal path,
+respecting the 500-track queue limit. Personal playlists: mymix show(playlist?: mix|top|rediscover|artist,
+artist?: string<=100, window?: 7d|30d|90d|365d|all, page?: 1-3) and mymix play(playlist?, artist?, window?,
+shuffle?: boolean). `mymix play` follows the same canAdd rules as `top play` and resolves the
+actor's playlist fresh inside the lane; an artist mix is addressed by artist name (default: the
+actor's top artist), and `window` applies to top tracks.
 Library: favorite add(position?)/list/play(index)/remove(index)/clear(confirm), mix
-save(name,replace)/list/load(name)/delete(name). Existing `/favorite` becomes
+save(name,replace,session?)/list/load(name)/delete(name). `session: true` saves a session mix:
+songs already played this session (oldest first, each once), then the current song and queue,
+dropping the oldest played songs to fit 100 tracks; the usual mix limits and owner rules apply. Existing `/favorite` becomes
 global; library edits outside voice allowed with channel-aware source validation.
-Settings: volume(value), fairqueue(enabled), djrole(role), reset; add musicchannel
+Settings: volume(value), fairqueue(enabled), autoplay(mode:off|on|listening), djrole(role), reset; add musicchannel
 subcommand with option channel, validating same-guild bot-readable/writable text
 channel. Keep public command schemas in bootstrap updated.
 
@@ -210,6 +268,10 @@ browser access or CORS. Portal sets the trusted session's actorId itself.
 - POST `/v1/guilds/:guildId/commands` body `{actorId,...validated command body}`.
 - GET `/v1/guilds/:guildId/diagnostics?actorId=...` -> Diagnostics.
 - GET `/v1/guilds/:guildId/activity?actorId=...` -> Activity.
+- GET `/v1/guilds/:guildId/stats?actorId=...&window=...` -> Stats (history channel scope,
+  including the guild's most recent 50 voice channels with plays).
+- POST `/v1/stats/requests/clear?actorId=...` -> `{ok:true,cleared:number}`. Requires a fresh
+  verified identity; no guild grant is involved.
 - GET `/health` (still authenticated) -> `{ready:boolean}`.
 - GET `/v1/changes?instance=...&after=...` -> `{instanceId:string,sequence:number,reset:boolean,guildIds:string[]}`.
   Private wake-up long poll (held up to 20 s). Carries guild IDs only, never

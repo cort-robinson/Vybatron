@@ -72,8 +72,12 @@ export function createPortalPolicy(client, { operatorIds = [] } = {}) {
     const saved = savedSession(client.library, guildId);
     const ids = new Set([player?.voiceChannelId, player?.textChannelId, voiceId, saved?.voiceChannelId,
       saved?.textChannelId, client.library.settings(guildId).musicTextChannelId, ...channelIds].filter(validId));
-    if (includeHistory) for (const item of client.library.readGuild(guildId).history.slice(0, LIBRARY_LIMITS.history)) {
-      if (validId(item.voiceChannelId)) ids.add(item.voiceChannelId);
+    if (includeHistory) {
+      for (const item of client.library.readGuild(guildId).history.slice(0, LIBRARY_LIMITS.history)) {
+        if (validId(item.voiceChannelId)) ids.add(item.voiceChannelId);
+      }
+      // Play statistics name at most STATS_LIMITS.voiceChannels recent rooms.
+      for (const id of client.stats?.voiceChannelIds?.(guildId) || []) ids.add(id);
     }
     return ids;
   };

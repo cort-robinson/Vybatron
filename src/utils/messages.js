@@ -176,6 +176,22 @@ export function buildSeekModal(player) {
     .addComponents(new ActionRowBuilder().addComponents(timestamp));
 }
 
+export const SESSION_MIX_MODAL_ID = 'mix:v1:session-save';
+// Names a shared mix of this session: songs already played, the current song and the queue.
+export function buildSessionMixModal() {
+  const name = new TextInputBuilder()
+    .setCustomId('name')
+    .setLabel('Mix name')
+    .setPlaceholder('Late night drive')
+    .setStyle(TextInputStyle.Short)
+    .setRequired(true)
+    .setMaxLength(40);
+  return new ModalBuilder()
+    .setCustomId(SESSION_MIX_MODAL_ID)
+    .setTitle('Save this session as a mix')
+    .addComponents(new ActionRowBuilder().addComponents(name));
+}
+
 function playbackState(player) {
   return player?.paused ? 'paused' : player?.playing === false ? 'unavailable' : 'playing';
 }
@@ -402,12 +418,16 @@ export function buildQueuePayload(player, requestedPage = 0, ownerId = 'any') {
 
 export function buildStopConfirmationPayload() {
   return {
-    content: 'Stop playback, clear the queue, and disconnect?',
+    content: 'Stop playback, clear the queue, and disconnect? Save as mix keeps this session’s songs as a shared mix first.',
     components: [new ActionRowBuilder().addComponents(
       new ButtonBuilder()
         .setCustomId('player:v1:stop-confirm')
         .setLabel('Stop and disconnect')
         .setStyle(ButtonStyle.Danger),
+      new ButtonBuilder()
+        .setCustomId('player:v1:stop-save')
+        .setLabel('Save as mix…')
+        .setStyle(ButtonStyle.Secondary),
       new ButtonBuilder()
         .setCustomId('player:v1:stop-cancel')
         .setLabel('Cancel')

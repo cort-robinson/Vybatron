@@ -8,7 +8,9 @@ import { attachSessionSnapshots } from './sessions.js';
 export const LIBRARY_LIMITS = Object.freeze({ favorites: 1000, mixes: 25, mixTracks: 100, queue: 500, history: 100, activity: 200, bytes: 5 * 1024 * 1024, guilds: 1000 });
 export const HISTORY_RETENTION_MS = 30 * 24 * 60 * 60_000;
 export const ACTIVITY_RETENTION_MS = 24 * 60 * 60_000;
-export const DEFAULT_SETTINGS = Object.freeze({ volume: 100, fairQueue: false, djRoleId: null, musicTextChannelId: null });
+// Smart autoplay (ADR-0008): off, on, or on only while someone in voice is listening.
+export const AUTOPLAY_MODES = Object.freeze(['off', 'on', 'listening']);
+export const DEFAULT_SETTINGS = Object.freeze({ volume: 100, fairQueue: false, djRoleId: null, musicTextChannelId: null, autoplay: 'off' });
 const SOURCES = new Set(['youtube', 'soundcloud', 'spotify', 'bandcamp']);
 const PUBLIC_HOSTS = /^(?:(?:www|music|m)\.)?youtube\.com$|^youtu\.be$|^(?:(?:www|m|on)\.)?soundcloud\.com$|^(?:open\.)?spotify\.com$|^(?:[a-z0-9-]+\.)?bandcamp\.com$/i;
 
@@ -73,7 +75,9 @@ function validateDocument(value) {
     assertId(guildId);
     const settings = guild.settings;
     if (!legacy && guild.favorites !== undefined) throw new Error('Invalid guild favorites in global music library.');
-    if (!settings || !Number.isInteger(settings.volume) || settings.volume < 0 || settings.volume > 100 || typeof settings.fairQueue !== 'boolean' || (settings.djRoleId !== null && !validId(settings.djRoleId)) || (!legacy && settings.musicTextChannelId !== null && !validId(settings.musicTextChannelId))) throw new Error('Invalid saved server settings.');
+    if (!settings || !Number.isInteger(settings.volume) || settings.volume < 0 || settings.volume > 100 || typeof settings.fairQueue !== 'boolean' || (settings.djRoleId !== null && !validId(settings.djRoleId)) || (!legacy && settings.musicTextChannelId !== null && !validId(settings.musicTextChannelId))
+      // Documents saved before autoplay existed omit the field; migration adds it.
+      || (settings.autoplay !== undefined && !AUTOPLAY_MODES.includes(settings.autoplay))) throw new Error('Invalid saved server settings.');
     if (!guild.mixes || typeof guild.mixes !== 'object' || Array.isArray(guild.mixes) || (legacy && (!guild.favorites || typeof guild.favorites !== 'object' || Array.isArray(guild.favorites)))) throw new Error('Invalid saved music collections.');
     for (const [userId, tracks] of Object.entries(legacy ? guild.favorites : {})) {
       assertId(userId);
@@ -102,13 +106,20 @@ function validateDocument(value) {
   return value;
 }
 
+// Adds settings introduced within version 2 with their defaults. Existing
+// values are never changed, so older documents keep their behavior.
+function withCurrentSettings(document) {
+  for (const guild of Object.values(document.guilds)) guild.settings = { ...DEFAULT_SETTINGS, ...guild.settings };
+  return document;
+}
+
 export function migrateLibrary(value) {
   validateDocument(value);
-  if (value.version === 2) return value;
+  if (value.version === 2) return withCurrentSettings(value);
   const migrated = { version: 2, guilds: {}, favorites: {}, favoriteOverflow: {} };
   const merged = new Map();
   for (const [guildId, guild] of Object.entries(value.guilds)) {
-    migrated.guilds[guildId] = { ...guild, settings: { ...guild.settings, musicTextChannelId: null }, history: [], activity: [] };
+    migrated.guilds[guildId] = { ...guild, settings: { ...DEFAULT_SETTINGS, ...guild.settings, musicTextChannelId: null }, history: [], activity: [] };
     delete migrated.guilds[guildId].favorites;
     for (const [userId, tracks] of Object.entries(guild.favorites)) {
       if (!merged.has(userId)) merged.set(userId, new Map());
@@ -158,8 +169,9 @@ export class MusicLibrary {
     this.document = migrated;
     return this;
   }
+  guildIds() { return Object.keys(this.document.guilds); }
   readGuild(guildId) { assertId(guildId); const guild = structuredClone(this.document.guilds[guildId] || emptyGuild()); prune(guild); return guild; }
-  settings(guildId) { assertId(guildId); return { ...(this.document.guilds[guildId]?.settings || DEFAULT_SETTINGS) }; }
+  settings(guildId) { assertId(guildId); return { ...DEFAULT_SETTINGS, ...this.document.guilds[guildId]?.settings }; }
   favorites(userId) { assertId(userId); return structuredClone(this.document.favorites[userId] || []); }
   favoriteOverflowCount(userId) { assertId(userId); return this.document.favoriteOverflow[userId]?.length || 0; }
   async writeDocument(draft) {

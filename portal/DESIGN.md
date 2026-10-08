@@ -148,7 +148,38 @@ ground with a strong line and a deep shadow.
 
 The player has one identity, one timeline, and one transport in either composition. Current favorite sits beside the title when visible. Seek is disabled for streams, absent/zero duration, recovery/unavailable state, or lack of control permission. Paused transport uses amber. Controls and selected filter mirror the API snapshot; elapsed playback display interpolates only while playing with live state.
 
-Upcoming rows exclude the current track. Drag reorder captures guild and revision; row menus offer Move up/down and removals. Queue favorite saves use a one-based position and snapshot revision, separate from voice-bound playback controls. The compact expanded queue and the phone queue move the favorite into the row menu. Player More exposes Clear upcoming queue with confirmation that the current song, position, and playback state continue; Stop separately confirms clearing playback and discarding the checkpoint.
+Upcoming rows exclude the current track. Drag reorder captures guild and revision; row menus offer Move up/down and removals. Queue favorite saves use a one-based position and snapshot revision, separate from voice-bound playback controls. The compact expanded queue and the phone queue move the favorite into the row menu. Autoplay picks (`session.suggestions`) render after the queue as a separate Suggested group: same row geometry, an accent radio mark instead of a number, and "Autoplay pick" in place of the requester, which also marks promoted picks and the current pick. Rows offer Add to queue (a direct button on desktop; menu-only in the one-action-column layout at 1023px and below), Less like this, Start radio, and Remove suggestion. Queue, favorite, history, and search rows offer Start radio from this song. Player More toggles autoplay for the session and offers Less like this for the current pick. Player More exposes Save session as mix and Clear upcoming queue with confirmation that the current song, position, and playback state continue; Stop separately confirms clearing playback and discarding the checkpoint, and offers to save the session as a mix first.
+
+### Home
+
+Home is the landing surface, first in navigation. Five shelves in order: Continue listening,
+On repeat in this server, Your mixes, Rediscover, Forgotten gems, then a quiet "Your request
+stats" section with Clear my request stats. Each shelf is a wide heading, one sentence saying
+what it is, and one row that scrolls sideways with proximity snap (no snap under reduced motion).
+Track cards are square artwork, title, artist, a muted detail and an accent Add button; ranks on
+On repeat sit on the artwork (top three in accent). Playlist tiles in Your mixes use a 2x2 cover
+collage, a wide title, song count and length, a one-line explanation, Play (primary) and a
+Shuffle icon button; Your top tracks carries its time-range select. Continue listening leads
+with the live session (Open player) or a saved one (Resume session) on a softly accent-tinted
+panel, then recent history. Shelf-level Play all/Shuffle sit in the shelf header.
+
+Stats load only after the first snapshot, on Home activation and range changes, never with live
+snapshots. Every shelf has its own empty sentence explaining why it's empty; an unavailable store
+replaces the stats shelves with one amber notice while Continue listening keeps working; without
+canAdd one permission note explains why actions are disabled. Clearing request stats uses the
+standard confirmation, names what is cleared and what stays, then refetches.
+
+The Stop confirmation includes "Keep this session": a mix-name field and "Save mix, then stop".
+The queue heading and Player More menu offer Save session as mix on its own.
+
+### Server favorites
+
+My Music's fourth tab shows two ranked lists, On repeat and Forgotten gems, each with Play all
+(primary) and Shuffle (secondary) that queue the whole list through `top play` under canAdd.
+Rows are open rows with an expanded tabular rank (the top three in accent), artwork, title,
+artist, and a muted play count; no requester ever appears. The tab fetches stats when opened
+and on Refresh, never with live snapshots. An unavailable store shows the standard error with
+Try again; the rest of My Music keeps working.
 
 ### Permission, connection, and recovery states
 
@@ -163,7 +194,7 @@ Implementation evidence is source-only: `web/src/styles.css`, `App.tsx`, all sou
 ## Do's and Don'ts
 
 ### Do:
-- **Do** preserve the single player across Session, My Music, and Server navigation.
+- **Do** preserve the single player across Home, Session, My Music, and Server navigation.
 - **Do** derive the accent and room light from the actual cover, with a working fallback.
 - **Do** keep favorites, pause/recovery, and destructive states on fixed colors.
 - **Do** use server-projected capabilities and fresh state to decide whether an action is available.

@@ -146,7 +146,7 @@ test('configuration: a delayed old-guild response and a foreign DTO cannot repla
   try {
     const other = structuredClone(server.state.snapshot);
     other.guild = { id: 'other', name: 'Another listening space', iconUrl: null, admin: true }; other.revision = 'other-guild-revision';
-    other.settings = { volume: 37, fairQueue: false, musicTextChannelId: 'other-text', djRoleId: null };
+    other.settings = { volume: 37, fairQueue: false, autoplay: 'off', musicTextChannelId: 'other-text', djRoleId: null };
     other.channels = [{ id: 'other-text', name: 'other-current', type: 'text' }]; other.roles = [{ id: 'other-dj', name: 'Other snapshot DJs' }];
     const configuration: Configuration = { guildId: 'other', channels: [{ id: 'other-text', name: 'other-music', type: 'text' }], roles: [{ id: 'other-dj', name: 'Other DJs' }] };
     server.addGuild(other, configuration); server.holdConfigurationReads();

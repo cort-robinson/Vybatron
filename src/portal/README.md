@@ -75,8 +75,8 @@ settings and diagnostics, without a bot-permission channel-list bypass.
 The additive [channel-read contract](../../docs/portal-channel-read-contract.md)
 separates complete discovery from authorization. `session` (the default) reads
 only current player voice/text, actor voice, saved voice/text and configured
-music text IDs. `history` adds up to 100 persisted history source IDs for library,
-history and replay. Each musicchannel settings stage also includes its validated
+music text IDs. `history` adds up to 100 persisted history source IDs and the 50 most recent
+play-statistics voice channels for library, stats, history, replay and top. Each musicchannel settings stage also includes its validated
 new target ID. `none` is used only by the directory and read-only admin activity
 or diagnostics; it never projects music. Only explicit admin
 `GET /v1/guilds/:guildId/configuration?actorId=...` performs a fresh list read,

@@ -12,6 +12,7 @@ import path from 'node:path';
 import { createPortalServer } from '../server/src/app.js';
 import { loadConfig } from '../server/src/config.js';
 import { portalFixture } from '../../tests/portal-fixtures.js';
+import { PlayStats } from '../../src/utils/play-stats.js';
 
 const web = fileURLToPath(new URL('../web/', import.meta.url));
 const require = createRequire(path.join(web, 'package.json'));
@@ -35,6 +36,9 @@ async function cachedPaths(page) {
 
 test('production PWA installs under real CSP, serves an offline shell, and never caches private reads or writes', { timeout: 60_000 }, async t => {
   const bot = await portalFixture(t);
+  // Production runs with the play stats store; Home reads it on load.
+  bot.client.stats = await new PlayStats(':memory:', { logger: { error() {} } }).open();
+  t.after(() => bot.client.stats.close());
   // These synthetic Discord users have no avatar, so verification needs no CDN.
   for (const user of bot.users.values()) user.displayAvatarURL = () => null;
   // The real bot projection derives YouTube artwork from these fake track IDs.
@@ -198,6 +202,9 @@ test('production PWA installs under real CSP, serves an offline shell, and never
         const authStarts = count('GET', '/auth/discord');
         await page.getByRole('link', { name: /Continue with Discord/ }).click();
         await page.getByRole('button', { name: 'Pause playback' }).waitFor();
+        // Home is the landing view; the queued songs' artwork renders in Session.
+        await page.getByRole('button', { name: 'Session', exact: true }).click();
+        await page.locator('.queue .track-row').first().waitFor();
         await page.evaluate(() => Promise.allSettled([...document.images].map(image => image.decode())));
         assert.deepEqual([...artworkRequests].sort(), [...artworkUrls].sort());
         assert.equal(count('GET', '/auth/discord'), authStarts + 1);

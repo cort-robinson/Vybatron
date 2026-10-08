@@ -1,4 +1,4 @@
-import type { Bootstrap, GuildSnapshot, Library, Track, Command, CommandResult, Configuration, Diagnostics, Activity } from './types';
+import type { Bootstrap, GuildSnapshot, Library, Track, Command, CommandResult, Configuration, Diagnostics, Activity, Stats, StatsWindow } from './types';
 
 export class ApiError extends Error {
   constructor(public status: number, public code: string, message: string, public retryAfterMs = 0) { super(message); this.name = 'ApiError'; }
@@ -45,6 +45,17 @@ export const api = {
   command: (id: string, csrfToken: string, command: Command, signal?: AbortSignal) => request<CommandResult>(`${guildPath(id)}/commands`, {
     method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken }, body: JSON.stringify(command), signal,
   }, 95_000), // The API's bounded public-import deadline is 90 seconds.
+  stats: async (id: string, window: StatsWindow = '30d', signal?: AbortSignal) => {
+    const data = await request<Stats>(`${guildPath(id)}/stats?window=${window}`, { signal });
+    const lists: unknown[] = [data.serverFavorites?.onRepeat, data.serverFavorites?.forgottenGems, data.personal?.topTracks, data.personal?.topArtists, data.personal?.rediscover];
+    const playlists = data.personal?.playlists;
+    if (!Array.isArray(playlists) || playlists.length > 6 || playlists.some(list => !Array.isArray(list?.tracks) || list.tracks.length > 25)) lists.push(undefined);
+    if (lists.some(list => !Array.isArray(list) || list.length > 25)) throw new ApiError(503, 'invalid_response', 'Listening stats are unavailable. Try refreshing them.');
+    return data;
+  },
+  clearRequestStats: (csrfToken: string) => request<{ ok: true; cleared: number }>('/api/stats/requests/clear', {
+    method: 'POST', headers: { 'X-CSRF-Token': csrfToken },
+  }),
   diagnostics: (id: string, signal?: AbortSignal) => request<Diagnostics>(`${guildPath(id)}/diagnostics`, { signal }),
   activity: (id: string, signal?: AbortSignal) => request<Activity>(`${guildPath(id)}/activity`, { signal }),
   logout: (csrfToken: string) => request<{ ok: boolean }>('/auth/logout', {

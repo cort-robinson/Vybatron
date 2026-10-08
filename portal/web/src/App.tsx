@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ArrowClockwiseIcon, ArrowRightIcon, CaretDownIcon, DiscordLogoIcon, GearSixIcon, HeartIcon, MagnifyingGlassIcon, MusicNotesIcon, PlusIcon, UsersIcon, WarningCircleIcon, WaveformIcon, WifiSlashIcon, XIcon } from '@phosphor-icons/react';
+import { ArrowClockwiseIcon, ArrowRightIcon, CaretDownIcon, DiscordLogoIcon, GearSixIcon, HeartIcon, HouseIcon, MagnifyingGlassIcon, MusicNotesIcon, PlusIcon, UsersIcon, WarningCircleIcon, WaveformIcon, WifiSlashIcon, XIcon } from '@phosphor-icons/react';
 import type { Surface } from './types';
 import { usePortal } from './usePortal';
 import { publicUrl } from './api';
@@ -11,6 +11,7 @@ import { Player } from './components/Player';
 import { Queue } from './components/Queue';
 import { Search } from './components/Search';
 import { LibraryView } from './components/Library';
+import { Home } from './components/Home';
 import { ServerView, type AmbientMode, type InstallPrompt } from './components/Server';
 import { Recovery } from './components/Recovery';
 import { transition } from './motion';
@@ -19,12 +20,12 @@ function initialAmbient(): AmbientMode {
   try { const value = localStorage.getItem('vybertron.ambient'); return value === 'off' || value === 'subtle' || value === 'on' ? value : 'on'; } catch { return 'on'; }
 }
 const surfaces: { id: Surface; label: string; icon: typeof MusicNotesIcon }[] = [
-  { id: 'session', label: 'Session', icon: MusicNotesIcon }, { id: 'music', label: 'My Music', icon: HeartIcon }, { id: 'server', label: 'Server', icon: UsersIcon },
+  { id: 'home', label: 'Home', icon: HouseIcon }, { id: 'session', label: 'Session', icon: MusicNotesIcon }, { id: 'music', label: 'My Music', icon: HeartIcon }, { id: 'server', label: 'Server', icon: UsersIcon },
 ];
 
 export function App() {
   const portal = usePortal();
-  const [surface, setSurface] = useState<Surface>('session');
+  const [surface, setSurface] = useState<Surface>('home');
   const [expanded, setExpanded] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -97,7 +98,7 @@ export function App() {
   if (auth === 'signed-out' || auth === 'error') return <div className="auth-page">{background}<Brand /><main className="sign-in"><div className="signin-sleeve"><FallbackCover /></div><Spectrum className="signin-spectrum" seed="vybertron" color={palette.accent} mode="playing" animate={ambient !== 'off' && !reduced && !hidden} bands={36} /><h1>A better vibe together.</h1><p>Your shared queue and favorite songs,<br />controlled from any screen in your Discord server.</p>{auth === 'error' ? <ErrorState message={portal.authError} retry={() => void portal.loadBootstrap()} /> : <a className="button primary discord-signin" href="/auth/discord"><DiscordLogoIcon size={25} weight="fill" />Continue with Discord<ArrowRightIcon size={20} /></a>}<span className="signin-footnote">Audio plays in Discord, never in this browser.</span></main><footer className="auth-footer">Vybertron · Made for listening together</footer></div>;
   const viewer = bootstrap!.viewer;
   const noGuilds = !bootstrap!.guilds.length;
-  const heading = surface === 'session' ? 'Shared Queue' : surface === 'music' ? 'My Music' : 'Your Server';
+  const heading = surface === 'home' ? 'Home' : surface === 'session' ? 'Shared Queue' : surface === 'music' ? 'My Music' : 'Your Server';
   const room = snapshot?.session.voiceChannel; const listening = snapshot?.session.listeners.length || 0;
   // Voice room and listeners live once, in the server header; tabs name each page's sections.
   const place = room ? room.name : snapshot?.savedSession.voiceChannel ? `Saved in ${snapshot.savedSession.voiceChannel.name}` : 'Join a voice channel';
@@ -112,6 +113,7 @@ export function App() {
       {!noGuilds && connection !== 'live' && <div className={`connection-banner ${connection === 'offline' ? 'offline' : ''}`} role="status">{connection === 'offline' ? <WifiSlashIcon size={21} /> : <span className="spinner" />}<div><strong>{connection === 'offline' ? 'Live updates paused' : 'Getting fresh state'}</strong><span>{connection === 'offline' ? portal.connectionError || 'Reconnect before making changes. Discord playback continues.' : 'Controls return once the current session is verified.'}</span></div>{connection === 'offline' && <button className="text-button" onClick={portal.reconnect}><ArrowClockwiseIcon size={18} />Reconnect</button>}</div>}
       <main id="main-content" tabIndex={-1} className={expanded ? 'main-surface expanded-main' : 'main-surface page-content'}>{expanded && <h1 className="sr-only">Now playing</h1>}<div className="surface-stage" hidden={expanded}>{noGuilds ? <Empty title="No listening spaces available" description="Sign in with an account that belongs to a server where Vybertron is installed. The portal does not offer public bot installation." action={<button className="button secondary" onClick={() => void portal.loadBootstrap()}><ArrowClockwiseIcon size={18} />Refresh access</button>} /> : !snapshot ? connection === 'offline' ? <ErrorState message={portal.connectionError} retry={portal.reconnect} /> : <Loading /> : <>
         {surface === 'session' && !expanded && <><Recovery portal={portal} />{snapshot.session.reason && <div className="permission-note"><WarningCircleIcon size={20} /><span>{snapshot.session.reason}</span></div>}<Queue portal={portal} onAdd={openSearch} /></>}
+        <Home portal={portal} active={surface === 'home' && !expanded} onOpenPlayer={() => toggleExpanded(true)} />
         <LibraryView portal={portal} active={surface === 'music' && !expanded} />
         <ServerView portal={portal} active={surface === 'server' && !expanded} ambient={ambient} setAmbient={setAmbient} installPrompt={installPrompt} install={install} />
       </>}</div>{!noGuilds && <Player portal={portal} expanded={expanded} setExpanded={toggleExpanded} onAdd={openSearch} accent={palette.accent} animate={ambient !== 'off' && !reduced && !hidden} />}</main>

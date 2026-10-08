@@ -8,7 +8,10 @@ export interface Track {
   id: string; title: string; author: string; uri: string | null; source: string;
   durationMs: number; artworkUrl: string | null; isStream: boolean;
   requestedBy: { id: string; displayName: string; avatarUrl: string | null } | null;
+  // Session tracks only: true for autoplay picks, which the bot requested.
+  suggested?: boolean;
 }
+export type AutoplayMode = 'off' | 'on' | 'listening';
 export interface CommandOption {
   name: string; description?: string; type: number; required?: boolean;
   choices?: { name: string; value: string | number }[]; options?: CommandOption[];
@@ -29,8 +32,11 @@ export interface GuildSnapshot {
     status: 'idle' | 'playing' | 'paused' | 'recovering' | 'unavailable';
     voiceChannel: { id: string; name: string } | null; textChannel: { id: string; name: string } | null;
     current: Track | null; queue: Track[]; positionMs: number; durationMs: number;
+    // Autoplay picks waiting after the queue (suggested: true). Not part of the queue.
+    suggestions: Track[];
     volume: number; filter: string; repeat: 'off' | 'track' | 'queue';
-    radio: boolean; fairQueue: boolean;
+    // radio: autoplay is active for this session (server mode or /radio override).
+    radio: boolean; autoplay: AutoplayMode; fairQueue: boolean;
     listeners: { id: string; displayName: string; avatarUrl: string | null }[];
     canAdd: boolean; canControl: boolean; canVote: boolean; reason: string | null;
   };
@@ -38,13 +44,34 @@ export interface GuildSnapshot {
     exists: boolean; savedAt: number | null; positionMs: number; paused: boolean;
     trackCount: number; voiceChannel: { id: string; name: string } | null; canResume: boolean;
   };
-  settings: { volume: number; fairQueue: boolean; djRoleId: string | null; musicTextChannelId: string | null } | null;
+  settings: { volume: number; fairQueue: boolean; autoplay: AutoplayMode; djRoleId: string | null; musicTextChannelId: string | null } | null;
   channels: Channel[]; roles: { id: string; name: string }[];
 }
 export interface Library {
   favorites: Track[];
   mixes: { id: string; name: string; ownerId: string; version: string; tracks: Track[]; canEdit: boolean }[];
   history: { id: string; playedAt: number; voiceChannel: { id: string; name: string } | null; track: Track }[];
+}
+// Play statistics. Lists include only plays in voice channels the viewer can see.
+export interface StatEntry { track: Track; plays: number; lastPlayedAt: number }
+export type StatsWindow = '7d' | '30d' | '90d' | '365d' | 'all';
+export interface Stats {
+  serverFavorites: { onRepeat: StatEntry[]; forgottenGems: StatEntry[] };
+  personal: {
+    window: StatsWindow;
+    topTracks: StatEntry[];
+    topArtists: { name: string; plays: number; lastPlayedAt: number; track: Track }[];
+    // index is the one-based favorites position; track.id is its expectedTrackId.
+    rediscover: { index: number; track: Track; requests: number; lastRequestedAt: number | null }[];
+    // Generated on read from the viewer's own requests and favorites.
+    playlists: AutoPlaylist[];
+  };
+}
+export type PlaylistKind = 'mix' | 'top' | 'rediscover' | 'artist';
+export interface AutoPlaylist {
+  id: string; kind: PlaylistKind; title: string; artist: string | null; tracks: Track[];
+  // Your mix picks new songs at this time (Monday 00:00 UTC); null when live.
+  refreshesAt: number | null;
 }
 export interface Diagnostics {
   botReady: boolean; audioReady: boolean; uptimeSeconds: number; recoveryState: string; lastError: string | null;
@@ -59,4 +86,4 @@ export interface Command {
 export interface CommandResult { ok: true; message: string; snapshot: GuildSnapshot }
 export type Connection = 'connecting' | 'refreshing' | 'live' | 'offline';
 export type Capability = 'add' | 'control' | 'vote' | 'library' | 'admin' | 'resume';
-export type Surface = 'session' | 'music' | 'server';
+export type Surface = 'home' | 'session' | 'music' | 'server';

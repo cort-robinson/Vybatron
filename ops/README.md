@@ -121,7 +121,12 @@ Tests: `python3 -m unittest discover -s tests -p '*_test.py'` and `npm test`.
 
 The bot runs on a digest-pinned Node 22 image as the unprivileged `node` user,
 with a read-only filesystem, a small temporary filesystem, and rotating logs.
-`bot-data:/app/data` persists the library and recoverable listening sessions.
+`bot-data:/app/data` persists the library, recoverable listening sessions and
+`stats.sqlite` play statistics (bounded to 16 MiB; see ADR-0006). The stats store
+uses WAL while running and checkpoints to a single file on graceful shutdown, so
+copy the volume with the bot stopped. A damaged or newer `stats.sqlite` disables
+stats only (`stats_unavailable` in the log, `stats.available: false` in `/status`);
+move it aside while the bot is stopped to start fresh. Playback is unaffected.
 Back up that volume before migrating or replacing the VPS. Removing the volume
 removes saved data; a normal container rebuild preserves it.
 

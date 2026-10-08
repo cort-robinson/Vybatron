@@ -4,7 +4,9 @@ import {
   buildEmptyQueuePayload,
   buildQueuePayload,
   buildSeekModal,
+  buildSessionMixModal,
   buildStopConfirmationPayload,
+  SESSION_MIX_MODAL_ID,
   ephemeralText,
   textPayload,
 } from './messages.js';
@@ -77,6 +79,10 @@ async function handlePlayerComponent(interaction, action, expectedIdentity = nul
     return interaction.update({ content: 'Stop cancelled.', components: [] });
   }
 
+  // Saving a mix needs library access to the session, not shared controls;
+  // the modal submission checks it before writing.
+  if (action === 'stop-save') return interaction.showModal(buildSessionMixModal());
+
   if (action === 'queue') {
     return interaction.reply({
       ...buildQueuePayload(player, 0, interaction.user?.id),
@@ -132,7 +138,7 @@ async function handlePlayerComponent(interaction, action, expectedIdentity = nul
       return interaction.reply(ephemeralText('Nothing is playing.'));
     }
     await interaction.deferUpdate();
-    await skipCurrent(controlledPlayer);
+    await skipCurrent(controlledPlayer, interaction.client);
     return null;
   }
 
@@ -248,7 +254,7 @@ async function handleHistoryComponent(interaction, action, ownerId, session, pag
 
 export async function handleMessageComponent(interaction) {
   const customId = interaction.customId || '';
-  const playerMatch = /^player:v1:(toggle|skip|shuffle|loop|seek|queue|refresh|stop|stop-confirm|stop-cancel)$/.exec(customId);
+  const playerMatch = /^player:v1:(toggle|skip|shuffle|loop|seek|queue|refresh|stop|stop-confirm|stop-cancel|stop-save)$/.exec(customId);
   if (playerMatch) return handlePlayerComponent(interaction, playerMatch[1]);
 
   const favoriteMatch = /^player:v2:favorite:([a-f0-9]{12})$/.exec(customId);
@@ -299,6 +305,10 @@ export async function handleMessageComponent(interaction) {
 }
 
 export async function handleModalSubmit(interaction) {
+  if (interaction.customId === SESSION_MIX_MODAL_ID) {
+    const [{ saveMix }, { mixKey }] = await Promise.all([import('../commands/mix.js'), import('./library-actions.js')]);
+    return saveMix(interaction, mixKey(interaction.fields.getTextInputValue('name')), { session: true });
+  }
   const match = /^player:v1:seek-submit:([a-f0-9]{12})$/.exec(interaction.customId || '');
   if (!match) return null;
 

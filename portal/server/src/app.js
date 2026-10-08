@@ -399,10 +399,19 @@ export async function createPortalServer(config, testOptions = {}) {
           json(res, 200, { viewer: bootstrap.viewer, guilds: bootstrap.guilds, filters: bootstrap.filters,
             commands: bootstrap.commands, csrfToken: session.csrfToken }); return;
         }
-        const match = /^\/api\/guilds\/(\d{1,20})(?:\/(configuration|library|search|commands|diagnostics|activity|events))?$/.exec(pathname);
+        if (pathname === '/api/stats/requests/clear' && req.method === 'POST') {
+          // Clears the signed-in listener's own request history in every server.
+          queryOnly(url, []); checkCsrf(req, session);
+          limiter.check(`stats-clear:${session.key}`, 10);
+          const result = await transport.bridge('/v1/stats/requests/clear', session.actorId, { method: 'POST', signal: controller.signal });
+          if (!store.get(token)) throw unauthorized();
+          if (result?.ok !== true || !Number.isSafeInteger(result.cleared) || result.cleared < 0) throw unavailable();
+          json(res, 200, { ok: true, cleared: result.cleared }); return;
+        }
+        const match = /^\/api\/guilds\/(\d{1,20})(?:\/(configuration|library|search|commands|diagnostics|activity|events|stats))?$/.exec(pathname);
         if (!match) throw notFound();
         const [, guildId, resource] = match;
-        queryOnly(url, resource === 'search' ? ['query'] : []);
+        queryOnly(url, resource === 'search' ? ['query'] : resource === 'stats' ? ['window'] : []);
         const endpoint = `/v1/guilds/${guildId}${resource ? `/${resource}` : ''}`;
         if (req.method !== 'GET' || resource === 'commands') throw notFound();
         if (resource === 'events') { await events(req, res, guildId, token, session, controller.signal); return; }
@@ -411,6 +420,11 @@ export async function createPortalServer(config, testOptions = {}) {
           const value = url.searchParams.get('query');
           if (!value || value.length > 200 || /[\0-\x1f\x7f]/.test(value)) throw invalid();
           query.query = value;
+        }
+        if (resource === 'stats' && url.searchParams.has('window')) {
+          const window = url.searchParams.get('window');
+          if (!['7d', '30d', '90d', '365d', 'all'].includes(window)) throw invalid();
+          query.window = window;
         }
         const data = await transport.bridge(endpoint, session.actorId, { query, signal: controller.signal });
         if (!store.get(token)) throw unauthorized();

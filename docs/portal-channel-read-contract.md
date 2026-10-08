@@ -28,9 +28,11 @@ projection or mutation. Check the returned channel belongs to the target guild.
 Unknown/deleted channels remain absent and fail closed. A gateway drop also fails
 closed before evaluating the newly read data.
 
-`history` scope adds the latest bounded history's voice-channel IDs to the
-session scope. `/library` and history/replay commands use this scope so private
-history stays filtered using current channel authorization. Settings musicchannel
+`history` scope adds the latest bounded history's voice-channel IDs, plus the 50
+most recently used voice channels in play statistics, to the session scope.
+`/library`, `/stats` and history/replay/top commands use this scope so private
+history and server favorites stay filtered using current channel authorization.
+A play in a channel outside that bounded set is treated as hidden. Settings musicchannel
 commands add their validated target ID at every fresh check; do not treat the
 client-supplied ID as evidence of visibility or bot writability.
 

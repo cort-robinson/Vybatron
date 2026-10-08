@@ -78,3 +78,29 @@
     font-size: 14px;
   }
 }
+
+/* Autoplay suggestions: a quieter group after the queue. Same row geometry,
+   muted provenance, and an accent radio mark instead of a queue number. */
+.queue .suggested { margin-top: 28px; }
+.queue .suggested-heading { display: flex; align-items: baseline; gap: 10px; padding: 0 10px 12px; border-bottom: 1px solid var(--line); }
+.queue .suggested-heading > svg { align-self: center; color: var(--accent); flex: none; }
+.queue .suggested-heading .count { margin-left: 4px; }
+.queue .suggested-list { list-style: none; margin: 0; padding: 0; }
+.queue .suggested-row .track-index { display: flex; align-items: center; color: var(--accent); }
+.queue .suggested-row .track-text strong { color: var(--text-soft); }
+.queue .suggested-source { color: var(--muted); }
+.queue .suggested-add { width: 44px; height: 44px; }
+.queue .queue-note { color: var(--muted); font-size: 16px; padding: 4px 10px 0; max-width: 60ch; }
+.queue-compact .suggested-heading { padding-inline: 8px; }
+
+/* Matches the compact queue grid (styles.css, max-width 1023px): one action
+   column, no drag handle, so Add to queue moves into the row menu. */
+@media (max-width: 1023px) {
+  .queue .suggested-spacer, .queue .suggested-add { display: none; }
+}
+@media (max-width: 960px) {
+  .queue .suggested { margin-top: 20px; }
+  .queue .suggested-heading { flex-wrap: wrap; padding-inline: 0; }
+  .queue .suggested-heading .count { margin-left: 0; font-size: 14px; }
+  .queue .queue-note { font-size: 14px; padding-inline: 0; }
+}

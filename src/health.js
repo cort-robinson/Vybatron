@@ -26,6 +26,7 @@ export function getStatus(client) {
     queuedTracks: players.reduce((count, player) => count + (player.queue?.tracks?.length || 0), 0),
     recentPlaybackFailures: playbackHealth(client).failures.length,
     recovery: client.lavalink?.playbackRecovery?.summary?.() || null,
+    stats: client.stats?.status?.() || null,
   };
 }
 

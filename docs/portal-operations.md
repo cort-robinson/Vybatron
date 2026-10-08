@@ -16,6 +16,11 @@ bot. No Lavalink, WARP, cipher or bridge port is exposed by Funnel.
 The portal is non-root, has a read-only filesystem, a 192 MiB memory ceiling,
 112 MiB V8 heap ceiling, half a CPU, bounded temporary storage and rotating logs.
 `portal-data` persists sign-in sessions; `bot-data` remains the single music store.
+It now also holds `stats.sqlite` (play statistics, capped at 16 MiB), which keeps the
+volume well inside the 64 MiB release snapshot limit. Releases stop the bot before the
+snapshot, and the bot checkpoints the stats WAL on shutdown, so the copy is consistent.
+Rolling back to a release without stats quarantines `stats.sqlite` with other
+candidate-only files.
 Build images on the workstation or CI, then transfer the tested images. Avoid
 frontend builds on the 2 GiB VPS while music and recovery probes are running.
 

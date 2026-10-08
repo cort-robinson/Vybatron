@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { handleMessageComponent, handleModalSubmit } from '../utils/components.js';
-import { errorPayload } from '../utils/messages.js';
+import { errorPayload, SESSION_MIX_MODAL_ID } from '../utils/messages.js';
 import { MessageFlags } from 'discord.js';
 import { guardedMutation, commandMutationPolicy } from '../utils/requests.js';
 import { publicError } from '../runtime.js';
@@ -120,7 +120,8 @@ export async function loadCommands(client) {
 
     if (interaction.isModalSubmit()) {
       try {
-        await guardedMutation(interaction, handleModalSubmit, { playback: true });
+        // A session mix is a library write; seek changes playback.
+        await guardedMutation(interaction, handleModalSubmit, { playback: interaction.customId !== SESSION_MIX_MODAL_ID });
       } catch (error) {
         await reportInteractionError(interaction, error, 'player controls');
       }

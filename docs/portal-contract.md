@@ -118,8 +118,13 @@ scopes, fresh individual reads, input preservation, and revocation fences.
   personal: { window: '7d'|'30d'|'90d'|'365d'|'all',
     topTracks: StatEntry[],
     topArtists: { name: string, plays: number, lastPlayedAt: number, track: Track }[],
-    rediscover: { index: number, track: Track, requests: number, lastRequestedAt: number|null }[] }
+    rediscover: { index: number, track: Track, requests: number, lastRequestedAt: number|null }[],
+    playlists: AutoPlaylist[] }
 }`
+
+`AutoPlaylist = { id: 'your-mix'|'top-tracks'|'rediscover'|'artist-1'|'artist-2'|'artist-3',
+  kind: 'mix'|'top'|'rediscover'|'artist', title: string, artist: string|null,
+  tracks: Track[], refreshesAt: number|null }`
 
 Play statistics ([ADR-0006](adr/0006-play-statistics-store-and-song-identity.md)). Every
 list holds at most 25 entries (topArtists 10). Only plays in voice channels the actor can
@@ -130,6 +135,12 @@ Forgotten gems the window 60-120 days ago. Personal lists use only the actor's o
 topTracks/topArtists in this guild within `window` (default `30d`); `rediscover` lists the
 actor's global favorites not requested anywhere in 30 days, previously requested songs first.
 Its one-based `index` and `track.id` are the `favorite/play` index and `expectedTrackId`.
+`playlists` are personal auto-playlists ([ADR-0007](adr/0007-personal-auto-playlists-computed-on-read.md)),
+computed on read and never stored: always `your-mix`, `top-tracks` (same `window`) and
+`rediscover`, then up to three `artist-N` mixes for the actor's top artists over 90 days.
+Each holds at most 25 tracks. Your mix blends the actor's 90-day top requests with their
+favorites using a weekly seed; `refreshesAt` is when it next changes (Monday 00:00 UTC), null
+for the others. Artist mixes add visible server plays by that artist without requesters.
 Stats are optional: an unavailable store returns 503 `stats_unavailable` and nothing else
 changes. Fetch on demand; stats are not part of snapshots or the change feed.
 
@@ -179,9 +190,15 @@ radio subcommand on/off, replay(index), session resume/discard. Server favorites
 top show(list?: on-repeat|forgotten-gems, page?: 1-3) and top play(list?, shuffle?: boolean).
 `top play` is an ordinary addition (canAdd rules, no revision) that resolves the actor's
 visible list fresh inside the mutation lane and enqueues it through the normal path,
-respecting the 500-track queue limit.
+respecting the 500-track queue limit. Personal playlists: mymix show(playlist?: mix|top|rediscover|artist,
+artist?: string<=100, window?: 7d|30d|90d|365d|all, page?: 1-3) and mymix play(playlist?, artist?, window?,
+shuffle?: boolean). `mymix play` follows the same canAdd rules as `top play` and resolves the
+actor's playlist fresh inside the lane; an artist mix is addressed by artist name (default: the
+actor's top artist), and `window` applies to top tracks.
 Library: favorite add(position?)/list/play(index)/remove(index)/clear(confirm), mix
-save(name,replace)/list/load(name)/delete(name). Existing `/favorite` becomes
+save(name,replace,session?)/list/load(name)/delete(name). `session: true` saves a session mix:
+songs already played this session (oldest first, each once), then the current song and queue,
+dropping the oldest played songs to fit 100 tracks; the usual mix limits and owner rules apply. Existing `/favorite` becomes
 global; library edits outside voice allowed with channel-aware source validation.
 Settings: volume(value), fairqueue(enabled), djrole(role), reset; add musicchannel
 subcommand with option channel, validating same-guild bot-readable/writable text

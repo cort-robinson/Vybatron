@@ -20,4 +20,7 @@ Domain terms for Vybertron. One meaning per term; commands, code, and docs use t
 - **Unattended pick** — a track queued by the bot user (radio, autoplay) rather than a person. Counts half in server favorites.
 - **Song key** — the normalized same-song identity (`artist|title`) that groups topic uploads, official/lyric/audio videos, remasters, and feat. variants of one song. Live, remix, acoustic, and cover versions stay distinct.
 - **Server favorites** — per-server lists built from visible plays: **On repeat** (rolling top 25, recency-decayed, repeat requests and early skips discounted) and **Forgotten gems** (popular 60–120 days ago, unplayed since). Queued with `/top play` or the portal's Play all/Shuffle.
+- **Personal playlist** — a listener's generated playlist, computed on read from their request stats and favorites: **Your mix**, **Your top tracks**, **Rediscover**, and an **artist mix** for each of their top three artists. Queued with `/mymix play` or the portal's Home tab.
+- **Your mix** — a blend of the listener's top requests (past 90 days) and favorites, lightly randomized with a seed that changes every Monday 00:00 UTC.
+- **Session mix** — a shared mix saved from the live session: songs already played, then the current song and queue (`/mix save session:true`, Save as mix on Stop).
 - **Request stats** — a listener's own requests: top tracks, top artists, and favorites not requested recently. "Clear my request stats" anonymizes them everywhere.

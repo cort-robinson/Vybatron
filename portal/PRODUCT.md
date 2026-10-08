@@ -16,7 +16,9 @@ player and its recovery behavior remain authoritative.
 
 ## Users and operating context
 
-Members browse their private global favorites and server mixes outside voice;
+Members land on Home: the session to continue, what the server has on repeat, personal
+mixes generated from their own requests, and favorites to rediscover. They browse their
+private global favorites and server mixes outside voice;
 adding music and controlling playback follow fresh Discord visibility, same-voice,
 and DJ checks. Guild managers configure listening defaults and read diagnostics.
 Verified maintainers use trusted server-granted access. Desktop and portrait phone

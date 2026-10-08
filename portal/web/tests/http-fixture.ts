@@ -101,6 +101,7 @@ export async function startHttpFixture(options: { initialSnapshotFailures?: numb
       if (holdCommands) { heldCommands.set(response, snapshot); response.on('close', () => heldCommands.delete(response)); }
       else json(response, { ok: true, message: 'Accepted by the loopback HTTP fixture.', snapshot }); return;
     }
+    if (path.endsWith('/search')) { json(response, { tracks: [], notice: null }); return; }
     if (path.startsWith('/api/guilds/')) {
       snapshotReads.push(Date.now());
       if (snapshotFailures-- > 0) {

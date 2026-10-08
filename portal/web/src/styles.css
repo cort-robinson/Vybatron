@@ -489,6 +489,16 @@ picture.artwork { display: block; overflow: hidden; }
 .search-dialog .empty-state { min-height: 255px; }
 .search-results .section-heading { margin: 24px 0 9px; }
 .search-results .section-heading > span { font-size: 14px; color: var(--muted); }
+/* Earlier results stay readable while the next keystroke's answer loads. */
+.search-results.stale .result-list { opacity: .6; transition: opacity 160ms; }
+.search-suggestions .section-heading { margin: 24px 0 9px; }
+.search-suggestions .section-heading > span { font-size: 14px; color: var(--muted); }
+.suggestion-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.suggestion-chips > li { min-width: 0; max-width: 100%; }
+.suggestion-chip { min-height: 44px; display: inline-flex; align-items: center; gap: 7px; padding: 8px 14px; border: 1px solid var(--field-line); border-radius: 999px; background: var(--secondary); color: var(--text-soft); font-size: 14px; font-weight: 600; max-width: 100%; white-space: nowrap; transition: background-color 160ms, border-color 160ms; }
+.suggestion-chip:hover { background: var(--secondary-hover); border-color: color-mix(in oklab, var(--accent) 60%, transparent); }
+.suggestion-chip svg { color: var(--accent); flex: none; }
+.suggestion-chip span { overflow: hidden; text-overflow: ellipsis; }
 .result-list > li { display: flex; gap: 15px; align-items: center; border-bottom: 1px solid var(--line-soft); padding: 12px 0; }
 .result-list .artwork { height: 54px; width: 54px; }
 .result-list .track-text { flex: 1; }
@@ -762,7 +772,7 @@ picture.artwork { display: block; overflow: hidden; }
   .search-dialog[open] { animation: sheet-in 240ms var(--ease-out); }
   .search-dialog .dialog-heading { margin-bottom: 8px; }
   .search-dialog .search-form { position: sticky; top: 0; z-index: 1; margin-inline: -16px; padding: 8px 16px; background: color-mix(in oklab, var(--ground), white 5%); }
-  .search-results .section-heading { margin-top: 16px; }
+  .search-results .section-heading, .search-suggestions .section-heading { margin-top: 16px; }
   /* Compact deck: title and artist only; the source shows in the expanded player. */
   .compact-track-meta .metadata-dot, .compact-track-meta .track-source { display: none; }
   /* The waveform mark carries the brand; the wordmark yields its width to the server name. */

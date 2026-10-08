@@ -31,6 +31,6 @@
     "lavalink-client": "2.10.3"
   },
   "engines": {
-    "node": ">=22.12.0"
+    "node": ">=22.13.0"
   }
 }

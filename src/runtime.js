@@ -81,6 +81,8 @@ export function installRuntime(client, {
               .map(player => player.destroy?.('shutdown-disconnect')));
             if (results.some(result => result.status === 'rejected')) throw new Error('Voice shutdown failed');
           }],
+          // Players are gone; record their open plays before the store closes.
+          ['stats_close_failed', () => { client.playTracker?.closeAll?.(); client.stats?.close?.(); }],
           ['audio_close_failed', () => {
             if ([...(client.lavalink?.nodeManager?.nodes?.values() || [])].some((node) => node.connected)) {
               return client.lavalink.nodeManager.disconnectAll(false, false);

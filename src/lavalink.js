@@ -71,6 +71,8 @@ function clearQueueIdleTimer(player) {
 export async function handleTrackStart(client, player, track) {
   // Public references only. A history disk failure must never interrupt audio.
   void client.library?.recordHistory?.(player, track || player.queue?.current)?.catch(() => console.error('[Library] Could not save playback history.'));
+  // Play statistics are batched and self-contained; they cannot throw here.
+  client.playTracker?.started(player, track || player.queue?.current, { recovering: isPlaybackRecovering(player) });
   client.lavalink?.playbackRecovery?.started(player);
   client.lavalink?.playbackWatchdog?.trackStarted(player);
   playbackFailures.delete(player);
@@ -78,6 +80,20 @@ export async function handleTrackStart(client, player, track) {
   updateTrackPresence(client, player, track);
   requestControllerUpdate(client, player, { state: player.paused ? 'paused' : 'playing', track });
   updateVoiceStatus(client, player);
+}
+
+// Lavalink end reasons mapped to play-statistics outcomes. A skip arrives as
+// stopped (next track queued) or replaced; neither counts while recovering.
+export function endReason(payload, otherwise = 'moved-on') {
+  if (payload?.reason === 'finished') return 'finished';
+  if (payload?.reason === 'loadFailed') return 'failed';
+  if (payload?.reason === 'cleanup') return 'ended';
+  return otherwise;
+}
+
+export function handleTrackEnd(client, player, payload) {
+  if (payload?.reason === 'replaced' && isPlaybackRecovering(player)) return;
+  client.playTracker?.ended(player, endReason(payload));
 }
 
 export function handleQueueEnd(clientOrPlayer, maybePlayer) {
@@ -156,6 +172,7 @@ export async function handleTrackError(player, track, payload, logger = console)
 }
 
 export function handlePlayerDestroy(client, player) {
+  client.playTracker?.ended(player, 'ended');
   const lavalink = client.lavalink;
   lavalink.playbackRecovery?.invalidate(player);
   lavalink.playbackWatchdog?.remove(player);
@@ -261,19 +278,23 @@ export function initLavalink(client) {
   lavalink.on('trackStart', (player, track) => void handleTrackStart(client, player, track));
   lavalink.on('playerUpdate', (_previous, player) => {
     if (lavalink.playbackWatchdog.observe(player)) recordPlaybackProgress(client, player);
+    client.playTracker?.progress(player);
   });
   lavalink.on('playerClientUpdate', (previous, player) => {
     if (previous?.paused !== player.paused || previous?.lastPosition !== player.lastPosition) {
       lavalink.playbackWatchdog.touch(player);
+      client.playTracker?.progress(player);
     }
   });
   lavalink.on('playerSocketClosed', (player, payload) => { void recovery.handleVoiceClosed(player, payload); });
   lavalink.on('trackError', (player, track, payload) => {
     recordPlaybackFailure(client, track);
+    client.playTracker?.failed(player);
     void handleTrackError(player, track, payload);
   });
   lavalink.on('trackStuck', (player, track, payload) => {
     recordPlaybackFailure(client, track);
+    client.playTracker?.failed(player);
     void handleTrackError(player, track, payload);
   });
   // Being moved into an empty channel has no listener event of its own.
@@ -281,7 +302,11 @@ export function initLavalink(client) {
     const guild = client.guilds.cache.get(player.guildId);
     if (guild) handleVoiceStateUpdate(client, { guild }, to);
   });
-  lavalink.on('queueEnd', (player) => handleQueueEnd(client, player));
+  lavalink.on('trackEnd', (player, _track, payload) => handleTrackEnd(client, player, payload));
+  lavalink.on('queueEnd', (player, _track, payload) => {
+    client.playTracker?.ended(player, endReason(payload, 'ended'));
+    handleQueueEnd(client, player);
+  });
   lavalink.on('playerDestroy', (player) => handlePlayerDestroy(client, player));
 
   lavalink.nodeManager.on('connect', (node) => console.log(`[Lavalink] node ${node.id} connected`));

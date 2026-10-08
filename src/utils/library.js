@@ -158,6 +158,7 @@ export class MusicLibrary {
     this.document = migrated;
     return this;
   }
+  guildIds() { return Object.keys(this.document.guilds); }
   readGuild(guildId) { assertId(guildId); const guild = structuredClone(this.document.guilds[guildId] || emptyGuild()); prune(guild); return guild; }
   settings(guildId) { assertId(guildId); return { ...(this.document.guilds[guildId]?.settings || DEFAULT_SETTINGS) }; }
   favorites(userId) { assertId(userId); return structuredClone(this.document.favorites[userId] || []); }

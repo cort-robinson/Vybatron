@@ -1,11 +1,11 @@
 import { test, expect } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
-import { mockPortal, suggestedTracks } from './fixtures';
+import { gotoSession, mockPortal, suggestedTracks } from './fixtures';
 
 test('autoplay suggestions sit after the queue as their own group and can be promoted, disliked, or removed', async ({ page }) => {
   const fixture = await mockPortal(page, { suggested: true });
   const [city, tide] = suggestedTracks();
-  await page.goto('/');
+  await gotoSession(page);
   const queue = page.getByRole('region', { name: 'Shared queue' });
   const group = queue.getByRole('region', { name: 'Suggested' });
   await expect(group).toBeVisible();
@@ -34,7 +34,7 @@ test('autoplay suggestions sit after the queue as their own group and can be pro
 
 test('a stale suggestion is rejected instead of editing a different pick', async ({ page }) => {
   const fixture = await mockPortal(page, { suggested: true });
-  await page.goto('/');
+  await gotoSession(page);
   const group = page.getByRole('region', { name: 'Suggested' });
   await expect(group.getByRole('listitem')).toHaveCount(2);
   // Another listener removed the first pick; this browser has not refreshed yet.
@@ -47,7 +47,7 @@ test('a stale suggestion is rejected instead of editing a different pick', async
 
 test('start radio from a queued song, a favorite, a history entry, or a search result', async ({ page }) => {
   const fixture = await mockPortal(page);
-  await page.goto('/');
+  await gotoSession(page);
   const firstQueued = fixture.state.snapshot.session.queue[0];
   await page.getByRole('button', { name: `Song options for ${firstQueued.title}` }).click();
   await page.getByRole('button', { name: 'Start radio from this song' }).click();
@@ -99,7 +99,7 @@ test('server managers choose an autoplay mode with copy that explains the select
 test('phone suggestions keep one action column and put Add to queue in the row menu', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   const fixture = await mockPortal(page, { suggested: true });
-  await page.goto('/');
+  await gotoSession(page);
   const group = page.getByRole('region', { name: 'Suggested' });
   await expect(group.getByRole('listitem')).toHaveCount(2);
   await expect(group.locator('.suggested-add').first()).toBeHidden();

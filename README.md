@@ -68,7 +68,7 @@ GUILD_ID=your-test-server-id
 YOUTUBE_REFRESH_TOKEN=your-refresh-token
 ```
 
-Only Guilds and GuildVoiceStates intents are used; no privileged intents are required. Keep `.env` private and out of Git. Spotify public embed imports require no Spotify account or credential.
+The bot uses the Guilds, GuildVoiceStates and privileged GuildMembers intents. Enable **Server Members Intent** for the application in the Discord Developer Portal before starting it, or login fails. Keep `.env` private and out of Git. Spotify public embed imports require no Spotify account or credential.
 
 ```bash
 docker compose up -d --build

@@ -47,13 +47,19 @@ export function createChangeFeed(client, revisions, { scanMs = 250, idleMs = 60_
   const listen = (emitter, event, handler) => { emitter?.on?.(event, handler); listeners.push([emitter, event, handler]); };
   for (const event of PLAYER_EVENTS) listen(client.lavalink, event, player => { if (player?.guildId) queueMicrotask(() => check(player.guildId)); });
   // Gateway changes that alter listeners, same-voice controls or visibility.
-  // Member role edits need the privileged members intent and stay on polling.
   listen(client, 'voiceStateUpdate', (before, after) => {
     if (before?.channelId !== after?.channelId) publish(after?.guild?.id || before?.guild?.id);
   });
   for (const event of ['channelUpdate', 'channelDelete']) listen(client, event, (...channels) => publish(channels.at(-1)?.guildId));
   for (const event of ['roleCreate', 'roleUpdate', 'roleDelete']) listen(client, event, (...roles) => publish(roles.at(-1)?.guild?.id));
   listen(client, 'guildUpdate', (_before, after) => publish(after?.id));
+  // Role and timeout changes alter DJ access and channel visibility; nickname
+  // and avatar edits do not.
+  listen(client, 'guildMemberUpdate', (before, after) => {
+    const roles = member => [...(member?.roles?.cache?.keys?.() || [])].sort().join();
+    if (before?.partial || roles(before) !== roles(after) || before?.communicationDisabledUntilTimestamp !== after?.communicationDisabledUntilTimestamp) publish(after?.guild?.id);
+  });
+  listen(client, 'guildMemberRemove', member => publish(member?.guild?.id));
   const timer = setInterval(scan, scanMs); timer.unref?.();
 
   const read = after => {

@@ -1,4 +1,4 @@
-import { ChannelType, PermissionFlagsBits as P, Routes } from 'discord.js';
+import { ChannelType, GatewayIntentBits, PermissionFlagsBits as P, Routes, Status } from 'discord.js';
 import { LIBRARY_LIMITS, validId } from '../utils/library.js';
 import { fail } from './errors.js';
 import { commandAuthorityInput } from './timing.js';
@@ -67,6 +67,16 @@ export function createPortalPolicy(client, { operatorIds = [] } = {}) {
     }
     return commandAuthorityInput(input, pending);
   };
+  const sessionIds = (guildId, voiceId, channelIds = [], includeHistory = false) => {
+    const player = client.lavalink?.getPlayer(guildId);
+    const saved = savedSession(client.library, guildId);
+    const ids = new Set([player?.voiceChannelId, player?.textChannelId, voiceId, saved?.voiceChannelId,
+      saved?.textChannelId, client.library.settings(guildId).musicTextChannelId, ...channelIds].filter(validId));
+    if (includeHistory) for (const item of client.library.readGuild(guildId).history.slice(0, LIBRARY_LIMITS.history)) {
+      if (validId(item.voiceChannelId)) ids.add(item.voiceChannelId);
+    }
+    return ids;
+  };
   const ready = () => {
     if (client.isReady?.() !== true || client.runtimeState?.draining || !client.library) fail(503, 'discord_unavailable', 'Discord is temporarily unavailable.');
   };
@@ -110,16 +120,7 @@ export function createPortalPolicy(client, { operatorIds = [] } = {}) {
         throw error;
       }
     }), fresh, urgent);
-    const sessionChannelIds = (voiceId, includeHistory = channelScope === 'history') => {
-      const player = client.lavalink?.getPlayer(guildId);
-      const saved = savedSession(client.library, guildId);
-      const ids = new Set([player?.voiceChannelId, player?.textChannelId, voiceId, saved?.voiceChannelId,
-        saved?.textChannelId, client.library.settings(guildId).musicTextChannelId, ...channelIds].filter(validId));
-      if (includeHistory) for (const item of client.library.readGuild(guildId).history.slice(0, LIBRARY_LIMITS.history)) {
-        if (validId(item.voiceChannelId)) ids.add(item.voiceChannelId);
-      }
-      return ids;
-    };
+    const sessionChannelIds = (voiceId, includeHistory = channelScope === 'history') => sessionIds(guildId, voiceId, channelIds, includeHistory);
     // Bound submissions as well as actual network work; history has at most
     // 100 sources, and no hundreds-of-promises fanout reaches REST admission.
     // A failed overlapped wave stops submitting further channel batches.
@@ -191,7 +192,37 @@ export function createPortalPolicy(client, { operatorIds = [] } = {}) {
     return { ...who, guild: stage.guild, member: stage.member, channels: stage.channels, roles: admin ? stage.roles : new Map(),
       roleIds: new Set(allRoles.keys()), me: stage.me, guildAdmin, admin, fetchChannel };
   };
-  return { ready, identity, guild, close() { pendingReads.clear(); } };
+  // Session-scope authority from the Gateway-maintained cache, for audible
+  // controls only. With the members intent, every input (owner, role
+  // definitions, actor roles and timeout, channel overwrites, voice) is kept
+  // current by push events, so this is event-sourced state rather than a
+  // time-based cache. It grants no maintainer access. Returns null, so the
+  // caller takes a fresh REST round, whenever the cache can't be trusted: no
+  // members intent, the guild's shard isn't Ready (missed events replay on
+  // resume), or any input is missing.
+  const gatewayGuild = (actorId, guildId) => {
+    ready();
+    if (!validId(actorId) || !validId(guildId) || !client.options?.intents?.has?.(GatewayIntentBits.GuildMembers)) return null;
+    const server = client.guilds.cache.get(guildId);
+    if (!server || server.available === false || server.shard?.status !== Status.Ready) return null;
+    const live = server.members.cache.get(actorId); const bot = server.members.me;
+    if (!live || live.partial || !live.user || live.user.id !== actorId || live.user.bot || !bot || !server.roles.cache.has(guildId)) return null;
+    const { guildInput, allRoles } = detachGuildResponse(server, { id: server.id, owner_id: server.ownerId, name: server.name, icon: server.icon ?? null,
+      roles: [...server.roles.cache.values()].map(role => ({ id: role.id, name: role.name, position: role.rawPosition ?? 0,
+        permissions: String(role.permissions?.bitfield ?? 0n) })) }, guildId);
+    const stage = bindAuthority(guildInput, detachMember(live), allRoles, detachMember(bot), actorId);
+    const cached = id => {
+      const channel = server.channels.cache.get(id);
+      return channel?.id === id && channel.guildId === guildId && (TEXT_TYPES.has(channel.type) || VOICE_TYPES.has(channel.type))
+        ? stage.bindChannel(detachChannel(channel)) : null;
+    };
+    for (const id of sessionIds(guildId, actorVoiceId(stage.member))) { const channel = cached(id); if (channel) stage.channels.set(id, channel); }
+    const guildAdmin = Boolean(stage.guild.ownerId === actorId || stage.member.permissions?.has(P.ManageGuild));
+    return { user: stage.member.user, maintainer: false, guild: stage.guild, member: stage.member, channels: stage.channels,
+      roles: guildAdmin ? stage.roles : new Map(), roleIds: new Set(allRoles.keys()), me: stage.me, guildAdmin, admin: guildAdmin,
+      fetchChannel: async id => cached(id) };
+  };
+  return { ready, identity, guild, gatewayGuild, close() { pendingReads.clear(); } };
 }
 
 export function requirePlayback(context, client, { dj = true, sourceOnly = false, queueSource = false, saved = null, allowIdle = false } = {}) {

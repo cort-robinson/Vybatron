@@ -50,7 +50,9 @@ test('Add music search keeps native dialog tab containment and returns to its ow
   await page.keyboard.press('Tab');
   await expect(input).toBeFocused();
   await input.fill('Night Drive');
-  await page.getByRole('button', { name: 'Play next', exact: true }).focus();
+  // Live results join the tab order; the last of them still wraps to Close.
+  await expect(page.getByRole('heading', { name: 'Search results' })).toBeVisible();
+  await page.getByRole('dialog').getByRole('button').last().focus();
   await page.keyboard.press('Tab');
   await expect(page.getByRole('button', { name: 'Close dialog' })).toBeFocused();
   await page.keyboard.press('Escape');

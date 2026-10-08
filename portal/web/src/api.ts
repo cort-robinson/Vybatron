@@ -37,7 +37,11 @@ export const api = {
     return data;
   },
   library: (id: string, signal?: AbortSignal) => request<Library>(`${guildPath(id)}/library`, { signal }),
-  search: (id: string, query: string, signal?: AbortSignal) => request<{ tracks: Track[]; notice: string | null }>(`${guildPath(id)}/search?query=${encodeURIComponent(query)}`, { signal }),
+  search: async (id: string, query: string, signal?: AbortSignal) => {
+    const data = await request<{ tracks: Track[]; notice: string | null }>(`${guildPath(id)}/search?query=${encodeURIComponent(query)}`, { signal });
+    if (!Array.isArray(data.tracks) || data.tracks.length > 50) throw new ApiError(503, 'invalid_response', 'Search results are unavailable. Try searching again.');
+    return { tracks: data.tracks, notice: typeof data.notice === 'string' ? data.notice : null };
+  },
   command: (id: string, csrfToken: string, command: Command, signal?: AbortSignal) => request<CommandResult>(`${guildPath(id)}/commands`, {
     method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken }, body: JSON.stringify(command), signal,
   }, 95_000), // The API's bounded public-import deadline is 90 seconds.

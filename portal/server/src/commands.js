@@ -44,6 +44,8 @@ const schemas = {
   'settings/fairqueue': { enabled: required(boolean) }, 'settings/djrole': { role: opt(value => value === null || snowflake(value)) },
   'settings/reset': {}, 'settings/musicchannel': { channel: required(snowflake) },
   queue: {}, nowplaying: {}, history: {}, help: { topic: opt(string(40)) },
+  'top/show': { list: opt(choice(['on-repeat', 'forgotten-gems'])), page: opt(integer(1, 3)) },
+  'top/play': { list: opt(choice(['on-repeat', 'forgotten-gems'])), shuffle: opt(boolean) },
 };
 
 export function validateCommand(body) {

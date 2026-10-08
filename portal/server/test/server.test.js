@@ -102,6 +102,8 @@ async function fixture(t, { limits = {}, now, dataDir, production = false, botOr
     else if (url.pathname.endsWith('/search')) reply(res, 200, { tracks: [], notice: null });
     else if (url.pathname.endsWith('/diagnostics')) reply(res, 200, { botReady: true, audioReady: true, uptimeSeconds: 10, recoveryState: 'ready', lastError: null });
     else if (url.pathname.endsWith('/activity')) reply(res, 200, { items: [] });
+    else if (url.pathname.endsWith('/stats')) reply(res, 200, { serverFavorites: { onRepeat: [], forgottenGems: [] }, personal: { window: url.searchParams.get('window') || '30d', topTracks: [], topArtists: [], rediscover: [] } });
+    else if (url.pathname === '/v1/stats/requests/clear') reply(res, 200, { ok: true, cleared: 2 });
     else reply(res, 200, state.snapshot);
   });
   const botUrl = await listen(bridge);
@@ -1247,4 +1249,42 @@ test('Security regression: saturated portal and real bot bridge still execute ur
   assert.equal(bot.manager.getPlayer('100'), undefined);
   await bot.library.pending; assert.equal(bot.library.readGuild('100').session, null);
   assert.equal(f.app.resourceCounts().upstream, 0);
+});
+
+test('stats reads forward only a supported window, and clearing request stats needs CSRF and same origin', async t => {
+  const f = await fixture(t); const device = await f.login();
+  const read = await f.request(`/api/guilds/${guildId}/stats?window=90d`, { headers: { Cookie: device.cookie } });
+  assert.equal(read.status, 200);
+  assert.equal(read.json().personal.window, '90d');
+  const call = f.state.calls.findLast(item => item.path.endsWith('/stats'));
+  assert.equal(call.path, `/v1/guilds/${guildId}/stats`);
+  assert.deepEqual([...call.params.keys()].sort(), ['actorId', 'window']);
+  assert.equal(call.params.get('actorId'), actorId);
+  for (const query of ['window=forever', 'window=30d&window=7d', 'actorId=1', 'other=1']) {
+    assert.equal((await f.request(`/api/guilds/${guildId}/stats?${query}`, { headers: { Cookie: device.cookie } })).status, 400, query);
+  }
+  assert.equal((await f.request(`/api/guilds/${guildId}/stats`)).status, 401);
+
+  const path = '/api/stats/requests/clear';
+  const calls = () => f.state.calls.filter(item => item.path === '/v1/stats/requests/clear').length;
+  assert.equal((await f.request(path, { method: 'POST', headers: { Cookie: device.cookie, Origin: origin } })).status, 403, 'CSRF required');
+  assert.equal((await f.request(path, { method: 'POST', headers: { Cookie: device.cookie, 'X-CSRF-Token': device.csrf } })).status, 403, 'Origin required');
+  assert.equal((await f.request(path, { headers: { Cookie: device.cookie } })).status, 404, 'GET does not clear');
+  assert.equal(calls(), 0);
+  const cleared = await f.request(path, { method: 'POST', headers: { Cookie: device.cookie, Origin: origin, 'X-CSRF-Token': device.csrf } });
+  assert.equal(cleared.status, 200);
+  assert.deepEqual(cleared.json(), { ok: true, cleared: 2 });
+  const forwarded = f.state.calls.findLast(item => item.path === '/v1/stats/requests/clear');
+  assert.equal(forwarded.params.get('actorId'), actorId);
+  assert.equal(forwarded.body, null);
+});
+
+test('top commands accept only their published lists and options', async t => {
+  const f = await fixture(t); const device = await f.login();
+  for (const command of [{ command: 'top', subcommand: 'play', options: { list: 'on-repeat', shuffle: true } }, { command: 'top', subcommand: 'show', options: { list: 'forgotten-gems', page: 2 } }]) {
+    assert.equal((await sendCommand(f, device, command)).status, 200, JSON.stringify(command));
+  }
+  for (const command of [{ command: 'top', subcommand: 'play', options: { list: 'everything' } }, { command: 'top', subcommand: 'play', options: { shuffle: 'yes' } }, { command: 'top', subcommand: 'show', options: { page: 4 } }, { command: 'top' }]) {
+    assert.equal((await sendCommand(f, device, command)).status, 400, JSON.stringify(command));
+  }
 });

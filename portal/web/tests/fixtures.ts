@@ -1,6 +1,6 @@
 // Explicit loopback browser-test fixtures. Not imported by src or emitted in production.
 import type { Page } from '@playwright/test';
-import type { Activity, Bootstrap, Command, Configuration, Diagnostics, GuildSnapshot, Library, Track } from '../src/types';
+import type { Activity, Bootstrap, Command, Configuration, Diagnostics, GuildSnapshot, Library, Track, Stats } from '../src/types';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 
@@ -34,7 +34,11 @@ export function fixtureState() {
   const library: Library = { favorites: [tracks[0], current], mixes: [{ id: 'night-shift', name: 'Night shift', ownerId: 'alex', version: 'a'.repeat(32), canEdit: true, tracks: [current, ...tracks] }], history: [{ id: 'history-1', playedAt: 1_791_147_600_000, voiceChannel: { id: 'voice', name: 'General' }, track: tracks[3] }] };
   const diagnostics: Diagnostics = { botReady: true, audioReady: true, uptimeSeconds: 28_800, recoveryState: 'Healthy', lastError: null };
   const activity: Activity = { items: [{ id: 'activity-1', at: 1_791_147_600_000, actor: { id: 'jordan', displayName: 'Jordan' }, action: 'Added a song', detail: 'Night Drive joined the shared queue.' }] };
-  return { snapshot, configuration, bootstrap, library, diagnostics, activity };
+  const stats: Stats = { serverFavorites: {
+    onRepeat: tracks.slice(0, 4).map((item, index) => ({ track: item, plays: 9 - index * 2, lastPlayedAt: 1_791_147_600_000 - index * 86_400_000 })),
+    forgottenGems: [{ track: current, plays: 6, lastPlayedAt: 1_784_000_000_000 }] },
+    personal: { window: '30d', topTracks: [], topArtists: [], rediscover: [] } };
+  return { snapshot, configuration, bootstrap, library, diagnostics, activity, stats };
 }
 // Model the selected-item HTTP contract independently of the browser's capture logic.
 export function selectedCommandError(library: Library, command: Command) {
@@ -98,6 +102,7 @@ export async function mockPortal(page: Page, options: { signedOut?: boolean; bas
     else if (path.endsWith('/search')) await route.fulfill(reply({ tracks: [track('midnight-city', 'Midnight City', 'M83', 244_000, 'night')], notice: 'Local browser-test search results.' }));
     else if (path.endsWith('/diagnostics')) await route.fulfill(reply(state.diagnostics));
     else if (path.endsWith('/activity')) await route.fulfill(reply(state.activity));
+    else if (path.endsWith('/stats')) await route.fulfill(reply(state.stats));
     else if (path.endsWith('/commands')) {
       const body = route.request().postDataJSON() as Command; commands.push(body);
       if (route.request().headers()['x-csrf-token'] !== 'local-test-csrf') throw new Error('Missing CSRF token');

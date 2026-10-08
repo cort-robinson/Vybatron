@@ -10,7 +10,7 @@ import { snapshotProjection } from './projection.js';
 import { assertFavoriteSelection, assertHistorySelection, assertMixSelection } from './selections.js';
 import { commandAuthorityPhase } from './timing.js';
 
-const ALLOWED = new Set(['play', 'playnext', 'pause', 'resume', 'seek', 'skip', 'skipto', 'stop', 'clear', 'remove', 'move', 'shuffle', 'loop', 'volume', 'filter', 'voteskip', 'radio', 'replay', 'session', 'favorite', 'mix', 'settings', 'queue', 'nowplaying', 'history', 'help']);
+const ALLOWED = new Set(['play', 'playnext', 'pause', 'resume', 'seek', 'skip', 'skipto', 'stop', 'clear', 'remove', 'move', 'shuffle', 'loop', 'volume', 'filter', 'voteskip', 'radio', 'replay', 'session', 'favorite', 'mix', 'settings', 'queue', 'nowplaying', 'history', 'help', 'top']);
 const CONFLICTING = new Set(['playnext', 'seek', 'skip', 'skipto', 'clear', 'remove', 'move', 'shuffle', 'replay']);
 // These handlers perform no admission work that needs guild authority. Their
 // first await is the native requireControl guard, which takes fresh authority
@@ -135,7 +135,7 @@ function commandAccess(client, context, command, { checkState = true } = {}) {
     if (checkState && name === 'mix' && (1 + (client.lavalink.getPlayer(context.guild.id).queue.tracks?.length || 0)) > 100) fail(400, 'mix_limit', 'A mix can contain at most 100 tracks.');
     return;
   }
-  const addition = name === 'play' || (name === 'favorite' && action === 'play') || (name === 'mix' && action === 'load');
+  const addition = name === 'play' || (name === 'favorite' && action === 'play') || (name === 'mix' && action === 'load') || (name === 'top' && action === 'play');
   const checkpoint = name === 'session' ? savedSession(client.library, context.guild.id) : null;
   requirePlayback(context, client, { dj: !addition && name !== 'voteskip', allowIdle: addition || name === 'playnext', saved: checkpoint });
   const player = client.lavalink?.getPlayer(context.guild.id);
@@ -147,7 +147,7 @@ function commandAccess(client, context, command, { checkState = true } = {}) {
     const info = player?.queue?.current?.info;
     if (position === null || !info || info.isStream || info.isSeekable === false || position >= info.duration) fail(400, 'invalid_seek', 'Choose a valid timestamp before the end of a seekable track.');
   }
-  if (!player && ['play', 'playnext', 'favorite', 'mix'].includes(name)) {
+  if (!player && ['play', 'playnext', 'favorite', 'mix', 'top'].includes(name)) {
     const text = context.channels.get(client.library.settings(context.guild.id).musicTextChannelId);
     if (!writable(context, text) || !visible(context, text)) fail(409, 'music_channel_required', 'An administrator must configure a visible music text channel before starting from the web.');
   }
@@ -167,7 +167,7 @@ export async function executePortalCommand(client, policy, revisions, commandMap
     && (command.command !== 'filter' || command.values.preset !== undefined);
   const freshContext = (phase = 'native') => commandAuthorityPhase(phase, () => (phase === 'native' && GATEWAY_CONTROLS.has(command.command)
     && policy.gatewayGuild?.(body.actorId, guildId)) || policy.guild(body.actorId, guildId, undefined, { fresh: true, urgent: command.command === 'stop',
-    channelScope: ['history', 'replay'].includes(command.command) ? 'history' : 'session',
+    channelScope: ['history', 'replay', 'top'].includes(command.command) ? 'history' : 'session',
     channelIds: command.command === 'settings' && command.subcommand === 'musicchannel' && command.values.channel ? [command.values.channel] : [] }));
   let context = null;
   // Dynamic indices and source state are checked in preflight after the revision
@@ -218,7 +218,7 @@ export async function executePortalCommand(client, policy, revisions, commandMap
       // started, dynamic queue indices/checkpoint conditions must not be applied
       // to our own already-edited state.
       if (mutationStarted) {
-        const addition = command.command === 'play' || (command.command === 'favorite' && command.subcommand === 'play') || (command.command === 'mix' && command.subcommand === 'load');
+        const addition = command.command === 'play' || (command.command === 'favorite' && command.subcommand === 'play') || (command.command === 'mix' && command.subcommand === 'load') || (command.command === 'top' && command.subcommand === 'play');
         if (command.command === 'settings') { if (!context.admin) fail(403, 'admin_required', 'Manage Server permission is required.'); }
         else requirePlayback(context, client, { dj: !addition && command.command !== 'voteskip', sourceOnly: (command.command === 'favorite' && command.subcommand === 'add') || (command.command === 'mix' && command.subcommand === 'save'), allowIdle: addition || command.command === 'playnext' });
       } else commandAccess(client, context, command);
@@ -260,7 +260,7 @@ export async function executePortalCommand(client, policy, revisions, commandMap
   // avoid leaking queue/history names (including individually revoked history
   // sources) and never reexecute a mutation to regenerate its reply.
   const neutralRead = ['queue', 'nowplaying', 'history', 'replay'].includes(command.command)
-    || (command.command === 'session' && command.policy.readOnly);
+    || (['session', 'top'].includes(command.command) && command.policy.readOnly);
   const hiddenReplySource = !visibleSession(context, client.lavalink?.getPlayer(guildId))
     || replySourceIds.some(id => !visible(context, context.channels.get(id)));
   // Every mix action can capture guild library names/counts, including a

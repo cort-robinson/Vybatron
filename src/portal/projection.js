@@ -9,6 +9,8 @@ import { getControllerRecord } from '../utils/player-controller.js';
 import { seekRevision } from '../utils/operations.js';
 import { actorVoiceId, djAccess, visible, visibleHistory, visibleSession, writable, TEXT_TYPES, VOICE_TYPES } from './policy.js';
 import { publicTrackId, mixVersion } from './selections.js';
+import { STATS_WINDOWS } from '../utils/play-stats.js';
+import { fail, PortalError } from './errors.js';
 
 export function safeImage(value) {
   try {
@@ -133,4 +135,35 @@ export function libraryProjection(client, context) {
   return { favorites: client.library.favorites(context.user.id).slice(0, LIBRARY_LIMITS.favorites).map(trackProjection),
     mixes: context.member ? Object.entries(guild.mixes).slice(0, LIBRARY_LIMITS.mixes).map(([name, mix]) => ({ id: name, name, ownerId: mix.ownerId, version: mixVersion(mix), tracks: mix.tracks.map(trackProjection), canEdit: mix.ownerId === context.user.id || context.guildAdmin })) : [],
     history: guild.history.filter(item => visibleHistory(context, item)).map(item => ({ id: item.id, playedAt: item.playedAt, voiceChannel: channelProjection(context.channels.get(item.voiceChannelId)), track: trackProjection(item.track) })) };
+}
+
+export const STATS_WINDOW_IDS = Object.freeze([...Object.keys(STATS_WINDOWS), 'all']);
+const statEntry = item => ({ track: trackProjection(item.track), plays: boundedNumber(item.plays), lastPlayedAt: boundedNumber(item.lastPlayedAt) });
+
+// Server favorites and the actor's own request stats. Only plays in voice
+// channels this actor can currently see contribute; requester identities of
+// other listeners never leave the bot.
+export function statsProjection(client, context, window = '30d', now = Date.now()) {
+  const stats = client.stats;
+  const unavailable = () => fail(503, 'stats_unavailable', 'Listening stats are unavailable right now. Playback is unaffected.');
+  if (!stats?.available) unavailable();
+  try {
+    const guildId = context.guild.id;
+    const visibleChannelIds = context.member ? stats.voiceChannelIds(guildId).filter(id => visibleHistory(context, { voiceChannelId: id })) : [];
+    const since = window === 'all' ? 0 : now - STATS_WINDOWS[window];
+    const server = stats.serverFavorites(guildId, { visibleChannelIds, now });
+    const scope = { since, visibleChannelIds };
+    return {
+      serverFavorites: { onRepeat: server.onRepeat.map(statEntry), forgottenGems: server.forgottenGems.map(statEntry) },
+      personal: { window,
+        topTracks: stats.topTracks(guildId, context.user.id, { ...scope, limit: 25 }).map(statEntry),
+        topArtists: stats.topArtists(guildId, context.user.id, { ...scope, limit: 10 }).map(artist => ({ name: plainText(artist.artist, { fallback: 'Unknown artist', maxLength: 120 }),
+          plays: boundedNumber(artist.plays), lastPlayedAt: boundedNumber(artist.lastPlayedAt), track: trackProjection(artist.track) })),
+        rediscover: stats.rediscover(context.user.id, client.library.favorites(context.user.id), { now }).map(item => ({ index: item.index, track: trackProjection(item.track),
+          requests: boundedNumber(item.requests), lastRequestedAt: item.lastRequestedAt === null ? null : boundedNumber(item.lastRequestedAt) })) },
+    };
+  } catch (error) {
+    if (error instanceof PortalError) throw error;
+    return unavailable();
+  }
 }

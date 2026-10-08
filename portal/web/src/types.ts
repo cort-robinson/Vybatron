@@ -46,6 +46,19 @@ export interface Library {
   mixes: { id: string; name: string; ownerId: string; version: string; tracks: Track[]; canEdit: boolean }[];
   history: { id: string; playedAt: number; voiceChannel: { id: string; name: string } | null; track: Track }[];
 }
+// Play statistics. Lists include only plays in voice channels the viewer can see.
+export interface StatEntry { track: Track; plays: number; lastPlayedAt: number }
+export type StatsWindow = '7d' | '30d' | '90d' | '365d' | 'all';
+export interface Stats {
+  serverFavorites: { onRepeat: StatEntry[]; forgottenGems: StatEntry[] };
+  personal: {
+    window: StatsWindow;
+    topTracks: StatEntry[];
+    topArtists: { name: string; plays: number; lastPlayedAt: number; track: Track }[];
+    // index is the one-based favorites position; track.id is its expectedTrackId.
+    rediscover: { index: number; track: Track; requests: number; lastRequestedAt: number | null }[];
+  };
+}
 export interface Diagnostics {
   botReady: boolean; audioReady: boolean; uptimeSeconds: number; recoveryState: string; lastError: string | null;
 }

@@ -143,13 +143,14 @@ export class Transport {
     }
   }
 
-  async bridge(endpoint, actorId, { query = {}, command, signal, shareRead = false } = {}) {
+  async bridge(endpoint, actorId, { query = {}, command, signal, shareRead = false, method = 'GET' } = {}) {
     const url = new URL(endpoint, this.config.botUrl);
     if (actorId && !command) url.searchParams.set('actorId', actorId);
     for (const [key, value] of Object.entries(query)) url.searchParams.set(key, value);
     const options = {
       headers: { Authorization: `Bearer ${this.config.bridgeToken}`, ...(command && { 'Content-Type': 'application/json' }) },
-      method: command ? 'POST' : 'GET', body: command ? JSON.stringify({ actorId, ...command }) : undefined,
+      // A bodiless POST still sends an explicit zero length.
+      method: command ? 'POST' : method, body: command ? JSON.stringify({ actorId, ...command }) : method === 'POST' ? '' : undefined,
       timeout: command ? this.limits.commandMs : this.limits.upstreamMs,
       stop: command?.command === 'stop',
     };

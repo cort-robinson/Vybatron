@@ -331,6 +331,20 @@ export class PlayStats {
   }
 
   /**
+   * Songs by one artist that played in visible channels, from every requester.
+   * Feeds per-artist mixes; requester identities never leave this query.
+   */
+  artistSongs(guildId, artistKey, { since = 0, visibleChannelIds = [], limit = 25 } = {}) {
+    this.assertAvailable();
+    if (typeof artistKey !== 'string' || !artistKey) return [];
+    this.flush();
+    return this.withTracks(this.db.prepare(`SELECT p.song_key, COUNT(*) AS plays, MAX(p.played_at) AS last FROM plays p JOIN songs s ON s.song_key = p.song_key
+      WHERE p.guild_id = ? AND s.artist_key = ? AND p.played_at >= ? AND p.skipped = 0 AND p.voice_channel_id IN (SELECT value FROM json_each(?))
+      GROUP BY p.song_key ORDER BY plays DESC, last DESC LIMIT ?`).all(guildId, artistKey, since, ids(visibleChannelIds), limit)
+      .map(row => ({ songKey: row.song_key, plays: row.plays, lastPlayedAt: row.last })));
+  }
+
+  /**
    * Personal favorites the listener has not requested recently anywhere.
    * Uses only their own requests; previously requested songs come first.
    * @returns {{ index: number, track: object, songKey: string, requests: number, lastRequestedAt: number|null }[]} index is 1-based

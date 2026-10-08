@@ -88,6 +88,9 @@ export function songIdentity(reference = {}) {
 
 export function songKey(reference) { return songIdentity(reference).key; }
 
+/** The artist key for a display name, matching the key songIdentity assigns that artist. */
+export function artistKeyOf(name) { return songIdentity({ author: name }).artistKey; }
+
 /**
  * Higher ranks are more reliably playable references for the same song: YouTube
  * Music topic uploads first, then official audio, then other uploads. Spotify

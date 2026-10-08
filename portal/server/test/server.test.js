@@ -1288,3 +1288,23 @@ test('top commands accept only their published lists and options', async t => {
     assert.equal((await sendCommand(f, device, command)).status, 400, JSON.stringify(command));
   }
 });
+
+test('personal playlist and session mix commands accept only their published options', async t => {
+  const f = await fixture(t); const device = await f.login();
+  const revision = 'a'.repeat(32);
+  for (const command of [
+    { command: 'mymix', subcommand: 'play', options: { playlist: 'mix', shuffle: true } },
+    { command: 'mymix', subcommand: 'play', options: { playlist: 'artist', artist: 'Nova' } },
+    { command: 'mymix', subcommand: 'show', options: { playlist: 'top', window: '365d', page: 3 } },
+    { command: 'mix', subcommand: 'save', options: { name: 'friday', session: true }, expectedRevision: revision },
+  ]) assert.equal((await sendCommand(f, device, command)).status, 200, JSON.stringify(command));
+  for (const command of [
+    { command: 'mymix', subcommand: 'play', options: { playlist: 'server' } },
+    { command: 'mymix', subcommand: 'play', options: { window: '2d' } },
+    { command: 'mymix', subcommand: 'play', options: { artist: 'x'.repeat(101) } },
+    { command: 'mymix', subcommand: 'show', options: { page: 4 } },
+    { command: 'mymix' },
+    { command: 'mix', subcommand: 'save', options: { name: 'friday', session: 'yes' }, expectedRevision: revision },
+    { command: 'mix', subcommand: 'save', options: { name: 'friday', session: true } },
+  ]) assert.equal((await sendCommand(f, device, command)).status, 400, JSON.stringify(command));
+});

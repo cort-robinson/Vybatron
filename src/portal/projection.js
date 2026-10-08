@@ -10,6 +10,7 @@ import { seekRevision } from '../utils/operations.js';
 import { actorVoiceId, djAccess, visible, visibleHistory, visibleSession, writable, TEXT_TYPES, VOICE_TYPES } from './policy.js';
 import { publicTrackId, mixVersion } from './selections.js';
 import { STATS_WINDOWS } from '../utils/play-stats.js';
+import { personalPlaylists } from '../utils/auto-playlists.js';
 import { fail, PortalError } from './errors.js';
 
 export function safeImage(value) {
@@ -153,14 +154,18 @@ export function statsProjection(client, context, window = '30d', now = Date.now(
     const since = window === 'all' ? 0 : now - STATS_WINDOWS[window];
     const server = stats.serverFavorites(guildId, { visibleChannelIds, now });
     const scope = { since, visibleChannelIds };
+    const favorites = client.library.favorites(context.user.id);
     return {
       serverFavorites: { onRepeat: server.onRepeat.map(statEntry), forgottenGems: server.forgottenGems.map(statEntry) },
       personal: { window,
         topTracks: stats.topTracks(guildId, context.user.id, { ...scope, limit: 25 }).map(statEntry),
         topArtists: stats.topArtists(guildId, context.user.id, { ...scope, limit: 10 }).map(artist => ({ name: plainText(artist.artist, { fallback: 'Unknown artist', maxLength: 120 }),
           plays: boundedNumber(artist.plays), lastPlayedAt: boundedNumber(artist.lastPlayedAt), track: trackProjection(artist.track) })),
-        rediscover: stats.rediscover(context.user.id, client.library.favorites(context.user.id), { now }).map(item => ({ index: item.index, track: trackProjection(item.track),
-          requests: boundedNumber(item.requests), lastRequestedAt: item.lastRequestedAt === null ? null : boundedNumber(item.lastRequestedAt) })) },
+        rediscover: stats.rediscover(context.user.id, favorites, { now }).map(item => ({ index: item.index, track: trackProjection(item.track),
+          requests: boundedNumber(item.requests), lastRequestedAt: item.lastRequestedAt === null ? null : boundedNumber(item.lastRequestedAt) })),
+        playlists: personalPlaylists(stats, { guildId, userId: context.user.id, favorites, visibleChannelIds, since, now }).map(list => ({
+          id: list.id, kind: list.kind, title: plainText(list.title, { maxLength: 130 }), artist: list.artist === null ? null : plainText(list.artist, { fallback: 'Unknown artist', maxLength: 120 }),
+          tracks: list.tracks.map(trackProjection), refreshesAt: list.refreshesAt })) },
     };
   } catch (error) {
     if (error instanceof PortalError) throw error;

@@ -28,7 +28,7 @@ export function serverFavoriteTracks(interaction, list) {
   return (list === 'forgotten-gems' ? lists.forgottenGems : lists.onRepeat).map(entry => entry.track);
 }
 
-function shuffled(tracks) {
+export function shuffled(tracks) {
   const copy = [...tracks];
   for (let index = copy.length - 1; index > 0; index--) {
     const other = Math.floor(Math.random() * (index + 1));

@@ -26,6 +26,9 @@ const timestamp = value => {
   return Number(parts.at(-1)) <= 59 && (parts.length === 2 || Number(parts.at(-2)) <= 59);
 };
 
+const personalPlaylist = { playlist: opt(choice(['mix', 'top', 'rediscover', 'artist'])), artist: opt(string(100)),
+  window: opt(choice(['7d', '30d', '90d', '365d', 'all'])) };
+
 // Contract option names deliberately differ from some legacy slash schemas.
 // The bot adapter translates skipto(position) and replay(index) at its boundary.
 const schemas = {
@@ -39,13 +42,15 @@ const schemas = {
   'favorite/add': { position: opt(integer(1, 500)) }, 'favorite/list': { page: opt(integer(1, 1000)) },
   'favorite/play': { index: required(integer(1, Number.MAX_SAFE_INTEGER)) }, 'favorite/remove': { index: required(integer(1, Number.MAX_SAFE_INTEGER)) },
   'favorite/clear': { confirm: required(boolean) },
-  'mix/save': { name, replace: opt(boolean) }, 'mix/list': {}, 'mix/load': { name }, 'mix/delete': { name },
+  'mix/save': { name, replace: opt(boolean), session: opt(boolean) }, 'mix/list': {}, 'mix/load': { name }, 'mix/delete': { name },
   'settings/show': {}, 'settings/volume': { value: required(integer(0, 100)) },
   'settings/fairqueue': { enabled: required(boolean) }, 'settings/djrole': { role: opt(value => value === null || snowflake(value)) },
   'settings/reset': {}, 'settings/musicchannel': { channel: required(snowflake) },
   queue: {}, nowplaying: {}, history: {}, help: { topic: opt(string(40)) },
   'top/show': { list: opt(choice(['on-repeat', 'forgotten-gems'])), page: opt(integer(1, 3)) },
   'top/play': { list: opt(choice(['on-repeat', 'forgotten-gems'])), shuffle: opt(boolean) },
+  'mymix/show': { ...personalPlaylist, page: opt(integer(1, 3)) },
+  'mymix/play': { ...personalPlaylist, shuffle: opt(boolean) },
 };
 
 export function validateCommand(body) {

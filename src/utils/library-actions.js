@@ -5,6 +5,7 @@ import { COLORS, ephemeralText, textPayload } from './messages.js';
 import { safeText, trackIdentity, NO_MENTIONS } from './presentation.js';
 import { enqueueTracks, getOrCreatePlayer, resolveReferences } from './enqueue.js';
 import { refresh, withControllerLink } from './player-controller.js';
+import { historyTracks } from './history.js';
 
 export function collectionPayload(title, tracks, page = 1, footer = '') {
   const totalPages = Math.max(1, Math.ceil(tracks.length / 10));
@@ -49,6 +50,29 @@ export function mixKey(value) {
   const key = String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
   if (!/^[a-z0-9][a-z0-9 _-]{0,39}$/.test(key)) throw new Error('Name your mix with 1–40 letters, numbers, spaces, hyphens or underscores.');
   return key;
+}
+
+/**
+ * What a saved mix captures: the current song and queue, and with `session` the
+ * songs already played this session first (oldest first, each song once). When
+ * the 100-track limit is tight, the oldest played songs are left out.
+ * @returns {{ tracks: object[], played: number, sources: object[] }} sources are the live player tracks it was built from
+ */
+export function sessionMixTracks(player, { session = false } = {}) {
+  const live = [player.queue.current, ...player.queue.tracks].filter(Boolean);
+  const upcoming = live.map(trackReference).filter(Boolean);
+  if (!session) return { tracks: upcoming, played: 0, sources: live };
+  const history = historyTracks(player);
+  const taken = new Set(upcoming.map(reference => reference.uri));
+  const earlier = [];
+  // History is most recent first, so the oldest songs are the ones left out.
+  for (const track of history) {
+    if (earlier.length >= LIBRARY_LIMITS.mixTracks - upcoming.length) break;
+    const reference = trackReference(track);
+    if (!reference || taken.has(reference.uri)) continue;
+    taken.add(reference.uri); earlier.unshift(reference);
+  }
+  return { tracks: [...earlier, ...upcoming], played: earlier.length, sources: [...history, ...live] };
 }
 
 export function mayEditMix(interaction, mix) { return !mix || mix.ownerId === interaction.user.id || canManageMusic(interaction); }

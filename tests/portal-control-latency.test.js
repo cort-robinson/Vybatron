@@ -58,7 +58,7 @@ test('actual direct handlers reduce full policy latency before playback and reta
     assert.ok(f.phases.every(phase => phase.options.fresh === true));
     assert.ok(f.phases[0].start >= started && f.phases[0].end <= firstWrite && f.phases[1].start >= firstWrite);
     const measuredPolicyMs = f.phases.reduce((sum, phase) => sum + phase.end - phase.start, 0);
-    assert.ok(f.phases.every(phase => phase.end - phase.start >= 20), 'each phase awaited injected network latency');
+    assert.ok(f.phases.every(phase => phase.end - phase.start >= 19), 'each phase awaited injected network latency (1 ms timer tolerance)');
     assert.ok(f.phases[1].end <= started + elapsed && elapsed >= measuredPolicyMs, 'reply waited for fresh disclosure');
   });
 });

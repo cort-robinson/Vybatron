@@ -162,3 +162,24 @@ automated feature coverage does not imply that every item was manually toured.
 Human feedback records audible results; connection flags or Opus counts alone
 do not satisfy this listening gate. Keep the previous release image and private
 rollback state through the wider rollout.
+
+## v2.1.0: smart music discovery
+
+Adds play statistics and server favorites (ADR-0006), personal playlists, the
+Home tab and session mixes (ADR-0007), and smart autoplay from YouTube mixes
+(ADR-0008). Code revision `e05106670fbd1ff2d9e6ccea9927b831f6e1aa1b` (#31,
+including #32 and #33) deployed on 2026-10-08 at 22:18 UTC. The bot and portal
+reported that revision healthy, and the stats store backfilled 27 history plays
+at startup.
+
+Automated gates on the combined revision: 695 Node tests, 85 portal server
+tests, 6 portal integration tests, and 195 portal browser tests pass locally;
+CI passes on `main`. Before the merge, a local Lavalink 4.2.2 with the pinned
+YouTube plugin returned 25 related tracks for a YouTube mix, and three of them
+decoded real audio.
+
+Listening acceptance on 2026-10-09 in **Bot Testing**: the owner reported that
+playback works. The live stats store recorded three human-requested plays
+(two skipped early, none completed) and no autoplay plays. The server autoplay
+setting stayed Off. **No autoplay pick has been confirmed playing on the
+server**; checklist item 5 is still open and gets checked first after release.

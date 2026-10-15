@@ -191,6 +191,47 @@ Connection banners explain stale/offline state and fresh-state recovery. Permiss
 
 Implementation evidence is source-only: `web/src/styles.css`, `App.tsx`, all source components, and `usePortal.ts`, aligned with `PRODUCT.md`, the app surface brief, and the shared contract. This record does not certify live OAuth, deployment, Discord playback, or cross-device integration. Indexed favorite/history actions carry the originally selected item token; mix deletion carries the selected saved version. Conflicts refresh authoritative state and require a deliberate retry.
 
+## Overdrive look
+
+Overdrive is the default look; Classic (Settings → On this device → Portal look) is the
+receiver described above, unchanged. Overdrive lives in `src/overdrive.css`, scoped to
+`:root[data-skin='overdrive']`, plus aria-hidden scenery in `src/components/Overdrive.tsx`,
+so switching looks is one attribute and removing it is two files and their imports.
+
+- **Horizon:** a sliced sunset tinted by the accent, a seeded angular skyline with blinking
+  energon windows, and a perspective neon floor that rolls toward the viewer. The horizon
+  sits on top of the deck while browsing and rises to 70% in the sleeve, where the cover
+  eclipses the sun. Sign-in places the chrome headline on the horizon.
+- **Color:** one fixed orchid neon (`--neon`) and sunset orange are scenery and gradient
+  partners only. The cover accent still drives every action and state.
+- **Plating:** 4/12px alternating radii (true bevels where `corner-shape` is supported),
+  targeting brackets on framed panels, gradient rails instead of hairline borders, and a
+  chrome wordmark.
+- **Alive:** the floor, windows, CRT band, rail pulse, and reactor ring run only while the
+  session plays live with ambient motion on. On track change the title locks on with a
+  chromatic split while a scan beam crosses the cover. The sleeve cover leans toward a fine
+  pointer. A one-time power-on flicker runs on page load.
+- Reduced motion removes all of it except static color and shape.
+
+## Performance mode
+
+Settings → On this device → Performance mode (off by default, both looks). It sets
+`:root[data-performance]`: solid chrome replaces the backdrop blur, the blurred cover light is
+hidden, and the scene and spectrum hold still (App.tsx treats it like ambient motion off).
+Overdrive also drops its CRT texture, glow filters, and blend layers. Layout, controls, and
+playback are unchanged.
+
+Write only the standard `backdrop-filter`; the build adds the `-webkit-` form. When a rule
+declares both, the minifier keeps only the last one, which once removed the blur in Chrome and
+the phone header's containing-block override.
+
+## Sideways shelves
+
+Home shelves scroll by mouse drag (`src/dragScroll.ts`): a 6px threshold keeps presses as
+clicks, the click that ends a drag is swallowed, release flings with decay (none under
+reduced motion), and snapping waits until the drag ends. Touch and pen keep native scrolling.
+Overflowing shelves fade at whichever edge still has more to show.
+
 ## Do's and Don'ts
 
 ### Do:

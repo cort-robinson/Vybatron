@@ -6,6 +6,7 @@ import type { Portal } from '../usePortal';
 import { date, totalTime } from '../format';
 import { Confirm, Empty, ErrorState, Loading } from './ui';
 import { transition } from '../motion';
+import type { Skin } from '../skin';
 
 export type AmbientMode = 'on' | 'subtle' | 'off';
 export interface InstallPrompt extends Event { prompt: () => Promise<void>; userChoice: Promise<{ outcome: string }> }
@@ -19,7 +20,7 @@ const AUTOPLAY_HELP: Record<AutoplayMode, string> = {
   listening: 'Related songs keep playing after the queue ends, but only while someone in voice isn’t deafened.',
 };
 
-export function ServerView({ portal, ambient, setAmbient, installPrompt, install, active = true }: { active?: boolean; portal: Portal; ambient: AmbientMode; setAmbient: (value: AmbientMode) => void; installPrompt: InstallPrompt | null; install: () => void }) {
+export function ServerView({ portal, ambient, setAmbient, skin, setSkin, performance, setPerformance, installPrompt, install, active = true }: { active?: boolean; portal: Portal; ambient: AmbientMode; setAmbient: (value: AmbientMode) => void; skin: Skin; setSkin: (value: Skin) => void; performance: boolean; setPerformance: (value: boolean) => void; installPrompt: InstallPrompt | null; install: () => void }) {
   const [tab, setTab] = useState<'settings' | 'activity' | 'diagnostics' | 'commands'>('settings');
   const [reset, setReset] = useState(false);
   const { pending, can, run } = portal;
@@ -83,6 +84,8 @@ export function ServerView({ portal, ambient, setAmbient, installPrompt, install
           <div className="setting-row"><div><h3>Reset listening defaults</h3><p>Restore default volume, open controls, and normal queue order.</p></div><button className="text-button danger-text" disabled={!editable} onClick={() => setReset(true)}>Reset defaults</button></div>
         </div>}
         <div className="personal-settings">{admin && <h2>On this device</h2>}<div className="settings-list"><div className="setting-row"><div><label htmlFor="ambient-mode">Ambient motion</label><p>Album-colored lighting and the decorative spectrum display. Both settle on pause and respect reduced motion.</p></div><select id="ambient-mode" value={ambient} onChange={event => setAmbient(event.target.value as AmbientMode)}><option value="on">Immersive</option><option value="subtle">Subtle</option><option value="off">Off</option></select></div>
+          <div className="setting-row"><div><label htmlFor="portal-look">Portal look</label><p>{skin === 'overdrive' ? 'A neon horizon, chrome wordmark, HUD-framed panels and a reactor-ring play button. Classic restores the original receiver.' : 'The original smoked-glass receiver. Overdrive adds a neon horizon, HUD-framed panels and a reactor-ring play button.'}</p></div><select id="portal-look" value={skin} onChange={event => setSkin(event.target.value as Skin)}><option value="overdrive">Overdrive</option><option value="classic">Classic</option></select></div>
+          <div className="setting-row"><div><h3>Performance mode</h3><p>{performance ? 'Lighter rendering is on: solid panels instead of glass blur, no blurred cover light, and a still scene and spectrum. Controls and playback are unchanged.' : 'Full effects: glass blur, cover-colored light, and a moving scene. Turn this on if the portal feels slow or drains battery.'}</p></div><button role="switch" aria-checked={performance} className="switch" aria-label="Performance mode" onClick={() => setPerformance(!performance)}><span />{performance ? 'On' : 'Off'}</button></div>
           <div className="setting-row"><div><h3>Keep Vybertron close</h3><p>{installPrompt ? 'Install a small, dedicated window for your listening space.' : 'Use your browser’s Install app or Add to Home Screen option when available.'}</p></div><button className="button secondary" disabled={!installPrompt} onClick={install}><DownloadSimpleIcon size={19} />Install app</button></div>
           <div className="setting-row"><div><h3>This device’s session</h3><p>Discord sign-in lasts up to seven days per device.</p></div><button className="text-button" onClick={() => void portal.logout()}>Sign out</button></div>
         </div></div>

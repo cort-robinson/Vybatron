@@ -15,6 +15,8 @@ import { Home } from './components/Home';
 import { ServerView, type AmbientMode, type InstallPrompt } from './components/Server';
 import { Recovery } from './components/Recovery';
 import { transition } from './motion';
+import { applyPerformance, applySkin, initialPerformance, initialSkin, type Skin } from './skin';
+import { Horizon } from './components/Overdrive';
 
 function initialAmbient(): AmbientMode {
   try { const value = localStorage.getItem('vybertron.ambient'); return value === 'off' || value === 'subtle' || value === 'on' ? value : 'on'; } catch { return 'on'; }
@@ -30,6 +32,8 @@ export function App() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [ambient, changeAmbient] = useState<AmbientMode>(initialAmbient);
+  const [skin, changeSkin] = useState<Skin>(initialSkin);
+  const [performance, changePerformance] = useState(initialPerformance);
   const [hidden, setHidden] = useState(document.hidden);
   const [reduced, setReduced] = useState(() => matchMedia('(prefers-reduced-motion: reduce)').matches);
   const [installPrompt, setInstallPrompt] = useState<InstallPrompt | null>(null);
@@ -70,6 +74,8 @@ export function App() {
     return () => clearTimeout(timer);
   }, [portal.notice]);
   const setAmbient = (value: AmbientMode) => { changeAmbient(value); try { localStorage.setItem('vybertron.ambient', value); } catch { /* Optional, non-sensitive preference. */ } };
+  const setSkin = (value: Skin) => { applySkin(value); changeSkin(value); };
+  const setPerformance = (value: boolean) => { applyPerformance(value); changePerformance(value); };
   const order = (value: Surface) => surfaces.findIndex(item => item.id === value);
   // Leaving the sleeve folds the cover back into the deck; otherwise the view slides along the nav.
   const navigate = (value: Surface) => {
@@ -81,7 +87,9 @@ export function App() {
   // Search stays open-able for drafts and browsing; a real permission block (not a stale read) demotes the call to action.
   const addBlocked = connection === 'live' && !!snapshot && !snapshot.session.canAdd;
   const install = () => { if (installPrompt) void installPrompt.prompt().then(() => installPrompt.userChoice).then(() => setInstallPrompt(null)).catch(() => portal.notify('Use your browser’s Install app option to try again.')); };
-  const motion = ambient !== 'off' && !reduced && !hidden && connection === 'live' && snapshot?.session.status === 'playing';
+  // Ambient motion: off by choice, reduced motion, a hidden tab, or performance mode stills it.
+  const still = ambient === 'off' || reduced || hidden || performance;
+  const motion = !still && connection === 'live' && snapshot?.session.status === 'playing';
   const artwork = publicUrl(snapshot?.session.current?.artworkUrl);
   const palette = useArtPalette(artwork);
   useEffect(() => {
@@ -90,19 +98,23 @@ export function App() {
     palette.glow.forEach((color, index) => root.setProperty(`--glow-${index + 1}`, color));
     document.querySelector('meta[name="theme-color"]')?.setAttribute('content', palette.ground);
   }, [palette]);
-  const background = <div className={`ambient-scene ${expanded ? 'immersive' : ''} ${motion ? 'moving' : 'settled'} ${ambient === 'subtle' ? 'subtle' : ''} ${ambient === 'off' ? 'disabled' : ''}`} aria-hidden="true">
+  const scene = (moving: boolean) => <div className={`ambient-scene ${expanded ? 'immersive' : ''} ${moving ? 'moving' : 'settled'} ${ambient === 'subtle' ? 'subtle' : ''} ${ambient === 'off' ? 'disabled' : ''}`} aria-hidden="true">
     <div className="room-light"><span className="light light-1" /><span className="light light-2" /><span className="light light-3" /></div>
     {artwork && <img className="artwork-field" src={artwork} alt="" referrerPolicy="no-referrer" />}
+    {skin === 'overdrive' && <Horizon />}
   </div>;
-  if (auth === 'loading') return <div className="auth-page">{background}<Brand /><Loading label="Finding your listening space…" /></div>;
-  if (auth === 'signed-out' || auth === 'error') return <div className="auth-page">{background}<Brand /><main className="sign-in"><div className="signin-sleeve"><FallbackCover /></div><Spectrum className="signin-spectrum" seed="vybertron" color={palette.accent} mode="playing" animate={ambient !== 'off' && !reduced && !hidden} bands={36} /><h1>A better vibe together.</h1><p>Your shared queue and favorite songs,<br />controlled from any screen in your Discord server.</p>{auth === 'error' ? <ErrorState message={portal.authError} retry={() => void portal.loadBootstrap()} /> : <a className="button primary discord-signin" href="/auth/discord"><DiscordLogoIcon size={25} weight="fill" />Continue with Discord<ArrowRightIcon size={20} /></a>}<span className="signin-footnote">Audio plays in Discord, never in this browser.</span></main><footer className="auth-footer">Vybertron · Made for listening together</footer></div>;
+  const background = scene(motion);
+  // Sign-in has no session to wait for; the horizon idles there whenever ambient motion is allowed.
+  const welcome = scene(!still);
+  if (auth === 'loading') return <div className="auth-page">{welcome}<Brand /><Loading label="Finding your listening space…" /></div>;
+  if (auth === 'signed-out' || auth === 'error') return <div className="auth-page">{welcome}<Brand /><main className="sign-in"><div className="signin-sleeve"><FallbackCover /></div><Spectrum className="signin-spectrum" seed="vybertron" color={palette.accent} mode="playing" animate={!still} bands={36} /><h1>A better vibe together.</h1><p>Your shared queue and favorite songs,<br />controlled from any screen in your Discord server.</p>{auth === 'error' ? <ErrorState message={portal.authError} retry={() => void portal.loadBootstrap()} /> : <a className="button primary discord-signin" href="/auth/discord"><DiscordLogoIcon size={25} weight="fill" />Continue with Discord<ArrowRightIcon size={20} /></a>}<span className="signin-footnote">Audio plays in Discord, never in this browser.</span></main><footer className="auth-footer">Vybertron · Made for listening together</footer></div>;
   const viewer = bootstrap!.viewer;
   const noGuilds = !bootstrap!.guilds.length;
   const heading = surface === 'home' ? 'Home' : surface === 'session' ? 'Shared Queue' : surface === 'music' ? 'My Music' : 'Your Server';
   const room = snapshot?.session.voiceChannel; const listening = snapshot?.session.listeners.length || 0;
   // Voice room and listeners live once, in the server header; tabs name each page's sections.
   const place = room ? room.name : snapshot?.savedSession.voiceChannel ? `Saved in ${snapshot.savedSession.voiceChannel.name}` : 'Join a voice channel';
-  return <div className={`app-shell ${expanded ? 'player-open' : ''} ${connection !== 'live' ? 'has-connection-notice' : ''}`}>{background}<a href="#main-content" className="skip-link">Skip to content</a>
+  return <div className={`app-shell ${expanded ? 'player-open' : ''} ${motion ? 'motion-live' : ''} ${connection !== 'live' ? 'has-connection-notice' : ''}`}>{background}<a href="#main-content" className="skip-link">Skip to content</a>
     <aside className="sidebar"><Brand /><div className="guild-card"><div className="guild-icon">{snapshot?.guild.iconUrl || bootstrap!.guilds.find(g => g.id === portal.guildId)?.iconUrl ? <img src={publicUrl(snapshot?.guild.iconUrl || bootstrap!.guilds.find(g => g.id === portal.guildId)?.iconUrl)} alt="" /> : <DiscordLogoIcon size={26} weight="fill" />}</div><div className="guild-info"><label className="sr-only" htmlFor="guild">Server</label><select id="guild" aria-label="Server" value={portal.guildId} disabled={noGuilds} onChange={event => { portal.selectGuild(event.target.value); setExpanded(false); }}><option value="" disabled>Select server</option>{bootstrap!.guilds.map(guild => <option key={guild.id} value={guild.id}>{guild.name}</option>)}</select><span className={`guild-status ${snapshot?.session.status || 'idle'}`}><span className="status-dot" /><span className="guild-status-text">{statusLabel(snapshot)} · {place}{listening > 0 && <span className="guild-listeners"> · {listening} listening</span>}</span></span></div><CaretDownIcon className="guild-caret" size={16} /></div>
       <nav className="navigation" aria-label="Main navigation">{surfaces.map(item => <button key={item.id} className={surface === item.id ? 'selected' : ''} aria-current={surface === item.id ? 'page' : undefined} onClick={() => navigate(item.id)}>{surface === item.id && <span className="nav-indicator" aria-hidden="true" />}<item.icon size={26} /><span>{item.label}</span></button>)}</nav>
       <div className="sidebar-session">{snapshot?.session.voiceChannel && snapshot.session.listeners.length > 0 && <div className="listeners"><div>{snapshot.session.listeners.slice(0, 5).map(listener => <Avatar key={listener.id} url={listener.avatarUrl} name={listener.displayName} />)}</div><span>{snapshot.session.listeners.length} listening</span></div>}</div>
@@ -115,8 +127,8 @@ export function App() {
         {surface === 'session' && !expanded && <><Recovery portal={portal} />{snapshot.session.reason && <div className="permission-note"><WarningCircleIcon size={20} /><span>{snapshot.session.reason}</span></div>}<Queue portal={portal} onAdd={openSearch} /></>}
         <Home portal={portal} active={surface === 'home' && !expanded} onOpenPlayer={() => toggleExpanded(true)} />
         <LibraryView portal={portal} active={surface === 'music' && !expanded} />
-        <ServerView portal={portal} active={surface === 'server' && !expanded} ambient={ambient} setAmbient={setAmbient} installPrompt={installPrompt} install={install} />
-      </>}</div>{!noGuilds && <Player portal={portal} expanded={expanded} setExpanded={toggleExpanded} onAdd={openSearch} accent={palette.accent} animate={ambient !== 'off' && !reduced && !hidden} />}</main>
+        <ServerView portal={portal} active={surface === 'server' && !expanded} ambient={ambient} setAmbient={setAmbient} skin={skin} setSkin={setSkin} performance={performance} setPerformance={setPerformance} installPrompt={installPrompt} install={install} />
+      </>}</div>{!noGuilds && <Player portal={portal} expanded={expanded} setExpanded={toggleExpanded} onAdd={openSearch} accent={palette.accent} animate={!still} skin={skin} />}</main>
     </div>
     <Search portal={portal} open={searchOpen} onClose={() => setSearchOpen(false)} query={query} setQuery={setQuery} />
     {portal.notice && !searchOpen && <div className={`toast ${portal.notice.kind}`} role={portal.notice.kind === 'error' ? 'alert' : 'status'}><span>{portal.notice.message}</span><IconButton label="Dismiss notification" onClick={portal.dismissNotice}><XIcon size={19} /></IconButton></div>}

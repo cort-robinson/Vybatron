@@ -5,6 +5,7 @@ import type { AutoPlaylist, Command, Stats, StatsWindow, Track } from '../types'
 import { api, ApiError, errorMessage } from '../api';
 import { date, totalTime } from '../format';
 import { Artwork, Confirm, IconButton, Loading } from './ui';
+import { dragScroll } from '../dragScroll';
 import './home.css';
 
 const windows: { id: StatsWindow; label: string }[] = [
@@ -154,7 +155,7 @@ function Shelf({ id, title, detail, actions, empty, lead, wide = false, children
   return <section className="home-shelf" aria-labelledby={headingId}>
     <header className="home-shelf-header"><div><h2 id={headingId}>{title}</h2><p>{detail}</p></div>{actions && <div className="home-shelf-actions">{actions}</div>}</header>
     {lead}
-    {empty ? <p className="home-empty">{empty}</p> : <ol className={`shelf-row ${wide ? 'shelf-row-wide' : ''}`} aria-label={title}>{children}</ol>}
+    {empty ? <p className="home-empty">{empty}</p> : <ol ref={dragScroll} className={`shelf-row ${wide ? 'shelf-row-wide' : ''}`} aria-label={title}>{children}</ol>}
   </section>;
 }
 

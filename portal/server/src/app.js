@@ -10,6 +10,7 @@ import { HttpError, RateLimiter, busy, invalid, unauthorized, unavailable, cooki
 
 export const SESSION_COOKIE = '__Host-vybertron_session';
 export const OAUTH_COOKIE = '__Host-vybertron_oauth';
+const DISCORD_ISSUER = 'https://discord.com';
 const notFound = () => new HttpError(404, 'not_found', 'The requested resource was not found.');
 const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8', '.json': 'application/json', '.webmanifest': 'application/manifest+json',
@@ -356,12 +357,14 @@ export async function createPortalServer(config, testOptions = {}) {
         if (pathname === '/auth/discord/callback' && req.method === 'GET') {
           // Single-use, cookie-bound, expiring state supplies callback admission;
           // an anonymous peer-wide start quota must not block a valid callback.
-          queryOnly(url, ['code', 'state', 'error', 'error_description']);
+          // Discord adds RFC 9207 `iss`; when present it must name Discord.
+          queryOnly(url, ['code', 'state', 'iss', 'error', 'error_description']);
           const browserToken = cookie(req, OAUTH_COOKIE);
           const key = browserToken ? tokenHash(browserToken) : null;
           const pending = pendingOAuth.get(key); pendingOAuth.delete(key);
           res.setHeader('Set-Cookie', setCookie(OAUTH_COOKIE, '', 0));
-          if (!pending || pending.until <= now() || !equal(url.searchParams.get('state'), pending.state)) throw invalid();
+          if (!pending || pending.until <= now() || !equal(url.searchParams.get('state'), pending.state)
+            || (url.searchParams.has('iss') && url.searchParams.get('iss') !== DISCORD_ISSUER)) throw invalid();
           trusted = true;
           if (url.searchParams.has('error')) throw new HttpError(401, 'oauth_denied', 'Discord sign-in was not completed.');
           const code = url.searchParams.get('code');

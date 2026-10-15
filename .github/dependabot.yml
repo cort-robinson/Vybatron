@@ -1,0 +1,40 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ['*']
+
+  - package-ecosystem: npm
+    directories: [/, /portal/server, /portal/web]
+    schedule:
+      interval: weekly
+    groups:
+      npm-minor-and-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: pip
+    directory: /.github/lint
+    schedule:
+      interval: monthly
+    groups:
+      lint-tools:
+        patterns: ['*']
+
+  - package-ecosystem: docker
+    directories: [/, /portal]
+    schedule:
+      interval: weekly
+    groups:
+      node-base:
+        patterns: ['*']
+
+  # Audio services: Deploy stops on these and they need an operator release
+  # (docs/portal-operations.md), so they are proposed monthly, not weekly.
+  - package-ecosystem: docker-compose
+    directory: /
+    schedule:
+      interval: monthly

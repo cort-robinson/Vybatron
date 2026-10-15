@@ -9,6 +9,8 @@ export default defineConfig({
   // Every test owns its page, routes and loopback fixture, so tests run in parallel.
   fullyParallel: true,
   workers: process.env.CI ? 2 : '50%',
+  // A CI retry still marks the test flaky in the report instead of hiding it.
+  retries: process.env.CI ? 1 : 0,
   reporter: [['list'], ['html', { open: 'never' }]],
   use: { baseURL: origin, channel: process.env.PLAYWRIGHT_CHANNEL || undefined, trace: 'retain-on-failure', screenshot: 'only-on-failure', serviceWorkers: 'block' },
   // A listener from another worktree must never supply this checkout's evidence.

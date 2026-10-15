@@ -128,7 +128,7 @@ See the [operations runbook](ops/README.md) for canaries, maintenance, bounded s
 
 WARP and the audio services share a network namespace. If the WARP container needs replacement, recreate its audio dependents together under the maintenance lock; restarting WARP alone can strand them in its old namespace. Keep `warp-data` to retain registration.
 
-The optional GitHub deployment workflow activates only with `DEPLOY_ENABLED=true` and `VPS_HOST`, `VPS_USER`, and `VPS_SSH_KEY` secrets. It deploys the exact successful main-push CI commit, waits for an idle queue, preserves the running audio image IDs, decodes two full canaries, registers the complete command catalog, and verifies bot readiness. A durable journal retains the previous commit, config, images, and command catalog for rollback. Merging to main can deploy when that gate is enabled.
+The optional GitHub deployment workflow activates only with `DEPLOY_ENABLED=true` and `VPS_HOST`, `VPS_HOST_KEY`, `VPS_USER`, and `VPS_SSH_KEY` secrets. It deploys the exact successful main-push CI commit and the images that CI tested, waits for an idle queue, preserves the running audio image IDs, decodes two full canaries, registers the complete command catalog, and verifies bot readiness. A durable journal retains the previous commit, config, images, and command catalog for rollback. Merging to main can deploy when that gate is enabled.
 
 ## Verification
 

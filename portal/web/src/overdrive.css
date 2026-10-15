@@ -31,7 +31,7 @@ REVERT: everything here is scoped to :root[data-skin='overdrive']; Settings → 
 }
 
 /* ── Horizon ─────────────────────────────────────────────────────────────── */
-.od-horizon { position: absolute; inset: 0; opacity: .6; transition: opacity 900ms var(--ease-out); }
+.od-horizon { position: absolute; inset: 0; opacity: .6; transition: opacity 900ms var(--ease-out); animation: od-floor-in 700ms var(--ease-out); }
 .ambient-scene.immersive .od-horizon { opacity: 1; }
 .ambient-scene.subtle .od-horizon { opacity: .36; }
 .ambient-scene.subtle.immersive .od-horizon { opacity: .62; }
@@ -298,7 +298,7 @@ REVERT: everything here is scoped to :root[data-skin='overdrive']; Settings → 
 
 @media (prefers-reduced-motion: reduce) {
   :root[data-skin='overdrive'] {
-    .od-plane, .od-window, .od-crt::after, .od-sky, .brand > span, .player-footer::after, .transport .play-button::before, .od-cover-scan::before, .od-cover-scan::after { animation: none !important; }
+    .od-horizon, .od-plane, .od-window, .od-crt::after, .od-sky, .brand > span, .player-footer::after, .transport .play-button::before, .od-cover-scan::before, .od-cover-scan::after { animation: none !important; }
     .od-cover-scan, .player-footer::after { display: none; }
     .sleeve-artwork > .artwork { transform: none; transition: none; }
     .range::-webkit-slider-thumb, .range:active:not(:disabled)::-webkit-slider-thumb { transform: rotate(45deg); }

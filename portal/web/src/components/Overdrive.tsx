@@ -1,4 +1,4 @@
-import { useMemo, type PointerEvent } from 'react';
+import { useEffect, useMemo, useState, type PointerEvent } from 'react';
 
 // Overdrive scenery: a cover-tinted sunset over an angular Cybertronian skyline and a neon
 // floor that rolls toward the viewer while music plays. Pure decoration behind the content;
@@ -36,8 +36,15 @@ function skyline(seed: number, scale: number) {
 }
 
 export function Horizon() {
+  // Content and controls paint first; the scenery joins on the next idle moment and fades in.
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    if ('requestIdleCallback' in window) { const id = requestIdleCallback(() => setReady(true), { timeout: 600 }); return () => cancelIdleCallback(id); }
+    const id = setTimeout(() => setReady(true), 120); return () => clearTimeout(id);
+  }, []);
   const far = useMemo(() => skyline(7, .72), []);
   const near = useMemo(() => skyline(23, 1), []);
+  if (!ready) return null;
   return <div className="od-horizon">
     <div className="od-sky" />
     <div className="od-sun" />

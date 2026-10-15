@@ -84,7 +84,8 @@ test('identify/bootstrap 503 also recovers without changing or replaying music',
 test('429 read recovery respects Retry-After without creating extra streams', async ({ page }) => {
   const server = await startHttpFixture();
   try {
-    server.failNextSnapshotReads(1, 429, '3');
+    // A wide Retry-After keeps the paused state on screen long enough to act on, however slowly the runner renders.
+    server.failNextSnapshotReads(1, 429, '6');
     await gotoSession(page, server.origin);
     await expect(page.getByText('Live updates paused', { exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'Reconnect', exact: true }).click();
@@ -92,7 +93,7 @@ test('429 read recovery respects Retry-After without creating extra streams', as
     await expect(page.getByRole('button', { name: 'Pause playback' })).toBeEnabled();
     await expect.poll(() => server.streams.size).toBe(1);
     expect(server.snapshotReads).toHaveLength(2);
-    expect(server.snapshotReads[1] - server.snapshotReads[0]).toBeGreaterThanOrEqual(2900);
+    expect(server.snapshotReads[1] - server.snapshotReads[0]).toBeGreaterThanOrEqual(5900);
     expect(server.eventReads).toHaveLength(1);
     expect(server.commands).toHaveLength(0);
   } finally { await page.close(); await server.close(); }

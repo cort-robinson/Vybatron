@@ -380,6 +380,13 @@ test('OAuth uses exact callback, state-bound browser cookie, minimal scope, and 
   assert.ok(f.state.calls.every(call => call.params.get('actorId') === actorId));
 });
 
+test('OAuth callback accepts the RFC 9207 issuer Discord appends', { timeout: 5000 }, async t => {
+  const f = await fixture(t); const pending = await f.begin();
+  const response = await f.request(`/auth/discord/callback?code=valid-code&state=${pending.state}&iss=https%3A%2F%2Fdiscord.com`, { headers: { Cookie: pending.cookie } });
+  assert.equal(response.status, 302, response.text); assert.equal(response.headers.location, '/');
+  assert.ok(cookieValue(response, SESSION_COOKIE));
+});
+
 test('OAuth missing/wrong/replayed state and duplicated query input fail before token exchange', { timeout: 5000 }, async t => {
   const f = await fixture(t); const pending = await f.begin();
   assert.equal((await f.request(`/auth/discord/callback?code=a&state=${pending.state}`)).status, 400);
@@ -387,6 +394,8 @@ test('OAuth missing/wrong/replayed state and duplicated query input fail before 
   assert.equal((await f.request(`/auth/discord/callback?code=a&state=${pending.state}`, { headers: { Cookie: pending.cookie } })).status, 400);
   const duplicate = await f.begin();
   assert.equal((await f.request(`/auth/discord/callback?code=a&code=b&state=${duplicate.state}`, { headers: { Cookie: duplicate.cookie } })).status, 400);
+  const wrongIssuer = await f.begin();
+  assert.equal((await f.request(`/auth/discord/callback?code=a&state=${wrongIssuer.state}&iss=https%3A%2F%2Fevil.example`, { headers: { Cookie: wrongIssuer.cookie } })).status, 400);
   assert.equal(f.state.tokenCalls.length, 0);
   const valid = await f.login();
   assert.equal((await f.request(`/auth/discord/callback?code=valid-code&state=${valid.pending.state}`, { headers: { Cookie: valid.pending.cookie } })).status, 400);

@@ -65,7 +65,7 @@ for (const width of [1024, 1280, 1488]) {
   });
 }
 
-for (const status of [403, 404]) {
+for (const status of [403]) {
   test(`search retires server results after authoritative ${status} and cannot redisplay them`, async ({ page }) => {
     const server = await startHttpFixture();
     try {

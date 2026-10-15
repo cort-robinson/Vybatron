@@ -130,14 +130,18 @@ test('uncertain command completion fetches fresh state and never retries the mut
 });
 
 test('a public import may exceed a short read deadline without aborting or replaying', async ({ page }) => {
-  test.setTimeout(40_000);
-  const fixture = await mockPortal(page); fixture.delayCommand(22_000); await gotoSession(page);
+  const fixture = await mockPortal(page); await page.clock.install(); await gotoSession(page);
   await expect(page.getByRole('button', { name: 'Pause playback' })).toBeEnabled();
   await page.getByRole('button', { name: 'Add music', exact: true }).first().click();
   await page.getByRole('searchbox', { name: 'Music search' }).fill('https://example.com/long-public-playlist');
+  const release = fixture.holdCommands();
   await page.getByRole('button', { name: 'Add to queue', exact: true }).click();
+  await expect.poll(() => fixture.commands.length).toBe(1);
+  // Outlast the 20 s read deadline while the import is still running.
+  await page.clock.fastForward(22_000);
   await expect(page.getByRole('button', { name: 'Add to queue', exact: true })).toBeDisabled();
-  await expect(page.getByRole('status').last()).toContainText('Your listening space is updated.', { timeout: 30_000 });
+  release();
+  await expect(page.getByRole('status').last()).toContainText('Your listening space is updated.');
   await expect(page.getByRole('button', { name: 'Add to queue', exact: true })).toBeEnabled();
   expect(fixture.commands).toHaveLength(1);
 });

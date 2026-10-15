@@ -190,31 +190,15 @@ test('long RTL and CJK metadata stays inside separate 44px targets at desktop an
 });
 
 test('paused library cache removes its heavy subtree and retains the mix draft and filter on return', async ({ page }) => {
-  const state = fixtureState(); state.library.favorites = songs(1000);
-  await page.route('**/library-cache-test', route => route.fulfill({ contentType: 'text/html', body: `<!doctype html><html><body><main id="test-root"></main><script type="module">
-    import React from '/node_modules/.vite/deps/react.js';
-    import ReactDOM from '/node_modules/.vite/deps/react-dom_client.js';
-    import RefreshRuntime from '/@react-refresh';
-    import '/src/styles.css';
-    RefreshRuntime.injectIntoGlobalHook(window);
-    window.$RefreshReg$ = () => {};
-    window.$RefreshSig$ = () => type => type;
-    window.__vite_plugin_react_preamble_installed__ = true;
-    const { LibraryView } = await import('/src/components/Library.tsx');
-    const state = ${JSON.stringify(state)};
-    const portal = { ...state, guildId: 'testing', pending: [], can: () => true, blockedReason: '', run: async () => true, refreshLibrary: async () => {} };
-    const root = ReactDOM.createRoot(document.getElementById('test-root'));
-    window.setLibraryActive = active => root.render(React.createElement(LibraryView, { portal, active }));
-    window.setLibraryActive(true);
-  </script></body></html>` }));
-  await page.goto('/library-cache-test');
+  const fixture = await mockPortal(page); fixture.state.library.favorites = songs(1000);
+  await openLibrary(page);
   await expect(page.locator('.library-track-list > li')).toHaveCount(50);
   await page.getByRole('tab', { name: 'Shared mixes' }).click();
   await page.getByLabel('Save this session as a mix').fill('Draft to keep');
   await page.getByLabel('Search shared mixes').fill('Night');
-  await page.evaluate(() => (window as unknown as { setLibraryActive: (active: boolean) => void }).setLibraryActive(false));
+  await page.getByRole('button', { name: 'Session', exact: true }).click();
   await expect(page.locator('.library-view *')).toHaveCount(0);
-  await page.evaluate(() => (window as unknown as { setLibraryActive: (active: boolean) => void }).setLibraryActive(true));
+  await page.getByRole('button', { name: 'My Music', exact: true }).click();
   await expect(page.getByLabel('Save this session as a mix')).toHaveValue('Draft to keep');
   await expect(page.getByLabel('Search shared mixes')).toHaveValue('Night');
 });

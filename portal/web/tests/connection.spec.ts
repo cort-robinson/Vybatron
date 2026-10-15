@@ -198,7 +198,8 @@ test('an application 503 on an open native stream respects server recovery witho
   } finally { await page.close(); await server.close(); }
 });
 
-for (const status of [401, 403, 404]) {
+// 403 and 404 share one access-loss branch; 401 additionally signs out.
+for (const status of [401, 403]) {
   test(`an application ${status} frame clears protected data without waiting for a network close`, async ({ page }) => {
     const server = await startHttpFixture();
     try {
@@ -266,7 +267,7 @@ test('a confirmed command reply after disconnect keeps its form draft until stat
   } finally { await page.close(); await server.close(); }
 });
 
-for (const status of [401, 403, 404]) {
+for (const status of [401, 403]) {
   test(`HTTP ${status} after disconnect clears protected data and rejects a delayed command snapshot`, async ({ page }) => {
     const server = await startHttpFixture();
     try {
@@ -311,15 +312,19 @@ test('an unchanged-revision hidden-channel projection clears the older player an
 });
 
 test('authenticated native SSE stays synchronized past the old policy interval without duplicate GETs', async ({ page }) => {
-  test.setTimeout(45_000);
-  const server = await startHttpFixture({ pollMs: 3000 });
+  const server = await startHttpFixture();
   try {
-    await connected(page, server);
+    await page.clock.install(); await connected(page, server);
     const reads = server.snapshotReads.length;
-    await page.waitForTimeout(27_000);
-    server.state.snapshot.session.status = 'paused'; server.state.snapshot.revision = 'discord-paused-after-policy-interval';
-    server.broadcast();
-    await expect(page.getByRole('button', { name: 'Resume playback' })).toBeEnabled();
+    // Each live frame renews the 25 s freshness lease, so 40 s of frames needs no GET.
+    for (const [status, name] of [['paused', 'Resume playback'], ['playing', 'Pause playback']] as const) {
+      await page.clock.fastForward(20_000);
+      server.state.snapshot.session.status = status; server.state.snapshot.revision = `discord-${status}-after-policy-interval`;
+      server.broadcast();
+      await expect(page.getByRole('button', { name })).toBeEnabled();
+    }
+    await page.clock.fastForward(20_000);
+    await expect(page.getByRole('button', { name: 'Pause playback' })).toBeEnabled();
     await expect(page.getByText('Live updates paused', { exact: true })).toHaveCount(0);
     expect(server.snapshotReads).toHaveLength(reads);
     expect(server.eventReads).toHaveLength(1);

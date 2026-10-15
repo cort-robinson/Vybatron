@@ -34,7 +34,8 @@ test('every dedicated favorite action binds the displayed song, including both q
   expect(fixture.commands[4]).toEqual({ command: 'favorite', subcommand: 'remove', options: { index: 1 }, expectedTrackId: golden.id });
 });
 
-for (const subcommand of ['play', 'remove']) {
+// Stale favorite play is covered with filtering in library.repair.spec.ts.
+for (const subcommand of ['remove']) {
   test(`stale favorite ${subcommand} rows keep their token and require a fresh deliberate retry`, async ({ page }) => {
     const fixture = await mockPortal(page);
     const current = fixture.state.snapshot.session.current!;

@@ -83,7 +83,7 @@ export async function mockPortal(page: Page, options: { signedOut?: boolean; bas
   const logouts: { method: string; body: string | null; contentType: string | null; csrfToken: string | null }[] = [];
   let signedOut = !!options.signedOut;
   let conflict = false; let snapshotDelay = 0; let libraryFailure = false; let snapshotFailure = 0;
-  let uncertain = false; let commandDelay = 0; let libraryDelay = 0;
+  let uncertain = false; let commandDelay = 0; let commandGate: Promise<void> | undefined; let libraryDelay = 0;
   await page.addInitScript(() => {
     const streams: FakeEventSource[] = [];
     class FakeEventSource {
@@ -131,6 +131,7 @@ export async function mockPortal(page: Page, options: { signedOut?: boolean; bas
       const selectionError = selectedCommandError(state.library, body);
       if (selectionError) { await route.fulfill({ status: selectionError.status, json: { error: selectionError } }); return; }
       if (commandDelay) await new Promise(resolve => setTimeout(resolve, commandDelay));
+      if (commandGate) await commandGate;
       if (conflict) { conflict = false; state.snapshot.revision = `revision-${commands.length + 1}`; state.snapshot.session.queue.reverse(); await route.fulfill({ status: 409, json: { error: { code: 'stale_revision', message: 'The queue changed.' } } }); return; }
       const s = state.snapshot.session; const o = body.options || {};
       if (body.command === 'pause') s.status = 'paused';
@@ -181,7 +182,7 @@ export async function mockPortal(page: Page, options: { signedOut?: boolean; bas
     if (logout.method !== 'POST' || logout.body !== null || logout.contentType !== null || logout.csrfToken !== 'local-test-csrf') { await route.fulfill({ status: 400, json: { error: { code: 'invalid_logout', message: 'Logout requires a bodyless CSRF-protected POST.' } } }); return; }
     signedOut = true; await route.fulfill({ json: { ok: true } });
   });
-  return { state, commands, requests, requestClears, logouts, conflictNext: () => { conflict = true; }, uncertainNext: () => { uncertain = true; }, delayCommand: (ms: number) => { commandDelay = ms; }, delaySnapshot: (ms: number) => { snapshotDelay = ms; }, delayLibrary: (ms: number) => { libraryDelay = ms; }, failLibrary: () => { libraryFailure = true; }, denySnapshot: (status: number) => { snapshotFailure = status; } };
+  return { state, commands, requests, requestClears, logouts, conflictNext: () => { conflict = true; }, uncertainNext: () => { uncertain = true; }, delayCommand: (ms: number) => { commandDelay = ms; }, holdCommands: () => { let release!: () => void; commandGate = new Promise(resolve => { release = resolve; }); return () => { commandGate = undefined; release(); }; }, delaySnapshot: (ms: number) => { snapshotDelay = ms; }, delayLibrary: (ms: number) => { libraryDelay = ms; }, failLibrary: () => { libraryFailure = true; }, denySnapshot: (status: number) => { snapshotFailure = status; } };
 }
 
 export async function streamAction(page: Page, action: 'disconnect' | 'reconnect', data?: GuildSnapshot) {

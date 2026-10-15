@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api, ApiError, errorMessage } from './api';
 import type { Bootstrap, Capability, Command, Connection, GuildSnapshot, Library, SnapshotOrdering } from './types';
+import { orderingOf } from './ordering';
 import { applyIntents, createIntent, isOptimistic, needsRevision, sameTracks, slotOf, stillTargets, trackIdentities, type Intent } from './optimistic';
 
 export interface Notice { id: number; kind: 'success' | 'error' | 'info'; message: string }
@@ -17,11 +18,6 @@ interface Entry {
   clickRevision: string; clickView: GuildSnapshot; overPredictions: boolean;
 }
 const retryDelay = (attempt: number, error?: unknown) => Math.max(Math.min(1000 * 2 ** Math.min(attempt, 5), 30_000), error instanceof ApiError ? error.retryAfterMs : 0);
-const orderingOf = (snapshot: GuildSnapshot | null): SnapshotOrdering | null => {
-  const stamp = snapshot?.ordering;
-  return stamp && typeof stamp.instanceId === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(stamp.instanceId)
-    && Number.isSafeInteger(stamp.sequence) && stamp.sequence > 0 ? stamp : null;
-};
 
 export function usePortal() {
   const [bootstrap, setBootstrap] = useState<Bootstrap | null>(null);

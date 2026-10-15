@@ -80,7 +80,7 @@ async function fixture(t, { limits = {}, now, dataDir, production = false, botOr
     const url = new URL(req.url, 'http://bridge.local');
     const chunks = []; for await (const chunk of req) chunks.push(chunk);
     const body = chunks.length ? JSON.parse(Buffer.concat(chunks).toString()) : null;
-    const call = { path: url.pathname, params: url.searchParams, body, authorization: req.headers.authorization };
+    const call = { path: url.pathname, params: url.searchParams, body, authorization: req.headers.authorization, range: req.headers.range };
     state.calls.push(call);
     res.once('close', () => { if (!res.writableEnded) state.disconnected++; });
     // The change feed is a held long poll; tests answer it explicitly.
@@ -648,7 +648,7 @@ test('Static serving blocks encoded/double-encoded traversal, hidden files, syml
   await fs.symlink(outsideDir, path.join(f.config.webDist, 'outside'), process.platform === 'win32' ? 'junction' : 'dir');
   assert.equal((await f.request('/outside/secret.js')).status, 404);
   const secured = await f.request('/');
-  assert.match(secured.headers['content-security-policy'], /media-src 'none'/); assert.match(secured.headers['content-security-policy'], /script-src 'self' https:\/\/www\.youtube\.com; frame-src https:\/\/www\.youtube-nocookie\.com;/); assert.equal(secured.headers['x-frame-options'], 'DENY');
+  assert.match(secured.headers['content-security-policy'], /media-src 'self'/); assert.match(secured.headers['content-security-policy'], /script-src 'self'; style-src/); assert.doesNotMatch(secured.headers['content-security-policy'], /youtube|frame-src/); assert.equal(secured.headers['x-frame-options'], 'DENY');
   assert.equal(secured.headers['access-control-allow-origin'], undefined);
 });
 
@@ -1338,4 +1338,36 @@ test('transfer forwards a bounded list of public song links and nothing else', a
   assert.throws(() => validateCommand({ command: 'play', options: { query: 'song' }, tracks }));
   assert.throws(() => validateCommand({ command: 'transfer', options: { ...options, position: -1 }, tracks }));
   assert.throws(() => validateCommand({ command: 'transfer', options: { ...options, repeat: 'all' }, tracks }));
+});
+
+test('device audio passes byte ranges through and nothing but audio', { timeout: 5000 }, async t => {
+  const f = await fixture(t); const device = await f.login(); const headers = { Cookie: device.cookie };
+  const route = `/api/guilds/${guildId}/audio/abcdefghijk`;
+  f.state.bridgeResponse = (res, call) => {
+    if (call.range === 'bytes=2-5') { res.writeHead(206, { 'Content-Type': 'audio/mp4', 'Content-Length': 4, 'Content-Range': 'bytes 2-5/10', 'X-Private': 'secret' }); res.end('2345'); }
+    else { res.writeHead(200, { 'Content-Type': 'audio/mp4', 'Content-Length': 10, 'Set-Cookie': 'leak=1' }); res.end('0123456789'); }
+  };
+  const whole = await f.request(route, { headers });
+  assert.equal(whole.status, 200); assert.equal(whole.text, '0123456789');
+  assert.equal(whole.headers['content-type'], 'audio/mp4'); assert.equal(whole.headers['accept-ranges'], 'bytes');
+  assert.equal(whole.headers['set-cookie'], undefined); assert.equal(whole.headers['cache-control'], 'no-store');
+  const call = f.state.calls.at(-1);
+  assert.equal(call.path, `/v1/guilds/${guildId}/audio/abcdefghijk`); assert.equal(call.params.get('actorId'), actorId);
+  assert.equal(call.authorization, `Bearer ${secret}`);
+  const part = await f.request(route, { headers: { ...headers, Range: 'bytes=2-5' } });
+  assert.equal(part.status, 206); assert.equal(part.text, '2345'); assert.equal(part.headers['content-range'], 'bytes 2-5/10');
+  assert.equal(part.headers['x-private'], undefined); assert.equal(f.state.calls.at(-1).range, 'bytes=2-5');
+
+  // A JSON or oversized answer is never passed to the browser.
+  f.state.bridgeResponse = res => { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end('{"private":true}'); };
+  assert.equal((await f.request(route, { headers })).status, 503);
+  f.state.bridgeResponse = res => { res.writeHead(200, { 'Content-Type': 'audio/mp4', 'Content-Length': 41 * 1024 * 1024 }); res.end(); };
+  assert.equal((await f.request(route, { headers })).status, 503);
+  f.state.bridgeResponse = res => reply(res, 404, { error: { code: 'audio_unavailable', message: 'SECRET detail' } });
+  const missing = await f.request(route, { headers });
+  assert.equal(missing.status, 404); assert.doesNotMatch(missing.text, /SECRET/);
+
+  assert.equal((await f.request(route, { headers: { ...headers, Range: 'bytes=0-1,4-5' } })).status, 400);
+  assert.equal((await f.request(`/api/guilds/${guildId}/audio/short`, { headers })).status, 404);
+  assert.equal((await f.request(route)).status, 401);
 });

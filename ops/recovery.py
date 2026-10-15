@@ -39,6 +39,10 @@ RECOVERY_COOLDOWN = 30 * 60
 RECOVERY_WINDOW = 6 * 3600
 MAX_OUTBOX = 32
 MAX_ALERTS_PER_RUN = 5
+# One canary failing while the other plays is usually a transient WARP/YouTube
+# flap (~15 min of consecutive degraded runs before alerting). Outages still
+# alert after two runs.
+DEGRADED_ALERT_RUNS = 3
 
 
 class RecoveryError(Exception):
@@ -217,17 +221,21 @@ async function read(url, auth=true) {
  try { const r=await fetch(url,{headers:auth?headers:{},signal:AbortSignal.timeout(6000)}); return r.ok?await r.json():null; }
  catch { return null; }
 }
-const [stats,info,health,search,playback]=await Promise.all([
+// yt-cipher is distroless (no shell for a Docker healthcheck); it shares
+// WARP's namespace, so the bot reaches it through the lavalink alias.
+const cipher=fetch('http://lavalink:8001/',{signal:AbortSignal.timeout(6000)}).then(r=>r.ok).catch(()=>false);
+const [stats,info,health,search,playback,cipherOk]=await Promise.all([
  read('http://lavalink:2333/v4/stats'), read('http://lavalink:2333/v4/info'),
  read(healthBase+'/health',false),
  read('http://lavalink:2333/v4/loadtracks?identifier=ytsearch%3Aloser%20tame%20impala'),
- read(healthBase+'/playback',false)]);
-console.log(JSON.stringify({api:!!stats,bot:health?.ready===true,playing:stats?.playingPlayers??null,
+ read(healthBase+'/playback',false), cipher]);
+console.log(JSON.stringify({api:!!stats,bot:health?.ready===true,cipher:cipherOk,playing:stats?.playingPlayers??null,
  version:info?.plugins?.find(p=>p.name==='youtube-plugin')?.version,
  search:search?.loadType==='search'&&search.data?.length>0,failures:playback?.failures??[]}));
 """
         result = json.loads(command(['docker', 'exec', '-i', 'vybertron-bot', 'node', '--input-type=module'], data=script, timeout=20))
-        result['kind'] = 'audio_service' if not result['api'] else 'bot' if not result['bot'] else 'ready'
+        result['kind'] = ('audio_service' if not result['api'] else 'bot' if not result['bot']
+                          else 'cipher' if not result.get('cipher') else 'ready')
         return result
 
     def current(self):
@@ -410,6 +418,10 @@ console.log(JSON.stringify({api:!!stats,bot:health?.ready===true,playing:stats?.
             command(['docker', 'compose', 'restart', 'bot'], cwd=self.repo, timeout=45)
         elif kind == 'bot':
             command(['docker', 'compose', 'restart', 'bot'], cwd=self.repo, timeout=45)
+        elif kind == 'cipher':
+            # Joined to WARP's namespace, so a restart keeps the shared network.
+            command(['docker', 'restart', '-t', '10', 'vybertron-yt-cipher'], timeout=45)
+            time.sleep(5)
         elif kind == 'audio_service':
             self.deploy()
         else:
@@ -476,7 +488,8 @@ class Coordinator:
         elif healthy and not self.state.get('started'):
             self.state['started'] = True
             self.event('Vybertron monitoring is enabled. Connectivity, search, and decoded audio are checked about every five minutes. Official YouTube plugin updates are checked every six hours and after persistent playback failures; updates must pass full playback tests and wait for an empty player/queue. Failed updates are rolled back. Routine successful checks stay quiet.')
-        elif not healthy and failures >= 2 and self.state.get('incident_notified') != kind:
+        elif (not healthy and failures >= (DEGRADED_ALERT_RUNS if kind == 'canary_degraded' else 2)
+              and self.state.get('incident_notified') != kind):
             self.state['incident_notified'] = kind
             self.event(f'Vybertron needs attention: {detail or kind}. Automatic recovery is limited to avoid repeated interruptions. Current YouTube plugin: {self.backend.current()}.')
         self.save()
@@ -582,7 +595,8 @@ class Coordinator:
                 details = {'stopped': 'a container is stopped; intentionally stopped containers are not restarted',
                            'namespace': 'the audio containers have lost their shared network',
                            'network': 'the WARP connection is unhealthy', 'audio_service': 'the audio API is unavailable',
-                           'bot': 'the bot is disconnected from Discord or the audio server'}
+                           'bot': 'the bot is disconnected from Discord or the audio server',
+                           'cipher': 'the YouTube signature helper (yt-cipher) is not responding'}
                 return self.finish(kind, now, details.get(kind, kind))
         current = self.backend.current()
         if observation.get('version') != current:
@@ -624,6 +638,9 @@ class Coordinator:
                     self.backend.end_update()
                 probe = self.backend.probe(current, installed=True)
         else:
+            probe = self.backend.probe(current, installed=True)
+        if not probe['ok']:
+            # Retry once so a single flaky canary request is not counted.
             probe = self.backend.probe(current, installed=True)
         self.state['last_probe'] = probe
         healthy = probe['ok'] and observation.get('search', False)
@@ -762,7 +779,13 @@ def main():
             coordinator.finish('monitor_error', time.time(), 'the recovery monitor could not complete its checks (' + code + ')')
         if args.action == 'run':
             deliver_alerts(coordinator)
-        print(json.dumps({key: coordinator.state.get(key) for key in ['status', 'checked_at', 'version', 'detail', 'update_error']}))
+        summary = {key: coordinator.state.get(key) for key in ['status', 'checked_at', 'version', 'detail', 'update_error']}
+        if summary['status'] != 'healthy':
+            # Credential-free categories identify which canary flaps over time.
+            tracks = (coordinator.state.get('last_probe') or {}).get('tracks', [])
+            summary['failed_canaries'] = [{'track': index, 'category': track.get('category'), 'ended': track.get('ended')}
+                                          for index, track in enumerate(tracks) if not track.get('ok')]
+        print(json.dumps(summary))
 
 
 if __name__ == '__main__':

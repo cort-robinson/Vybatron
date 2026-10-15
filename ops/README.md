@@ -14,6 +14,15 @@ replacing its shared network namespace. Intentionally stopped containers stay
 stopped. Known active players prevent service restarts. Audio source failures do
 not trigger blind restarts.
 
+The yt-cipher image has no shell for a Docker healthcheck, so the monitor checks
+it over the shared namespace from the bot container. An unresponsive cipher is
+restarted alone (keeping WARP's namespace) under the same idle and attempt limits.
+A failed canary probe is retried once within the run. When one canary fails while
+the other plays, the alert waits for three consecutive degraded runs (about fifteen
+minutes); other failures still alert after two. Non-healthy run lines in the
+journal include `failed_canaries` (track index, category, ending) so recurring
+flaps can be traced to a specific test video.
+
 Paused and queued tracks also prevent recovery, even when the audio server cannot
 report a player count. Infrastructure repair must pass the bot's idle check and
 maintenance gate. An interrupted deployment blocks automatic recovery until its
@@ -88,6 +97,14 @@ install -m 644 ops/vybertron-recovery.service ops/vybertron-recovery.timer /etc/
 systemctl daemon-reload
 systemctl enable --now vybertron-recovery.timer
 ```
+
+## Host baseline
+
+The VPS has 2 GiB of RAM, so the Compose memory ceilings are what keep one service
+from exhausting the host (an uncapped yt-cipher grew to ~600 MiB and triggered a
+global OOM on 2026-10-14). SSH is key-only (`/etc/ssh/sshd_config.d/00-hardening.conf`)
+with fail2ban's `sshd` jail; ModemManager, udisks2, fwupd and multipathd are
+masked. Reapply these when replacing the VPS.
 
 ## Operations
 

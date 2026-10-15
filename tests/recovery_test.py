@@ -28,6 +28,10 @@ def result(ok=True, category='source'):
     return {'ok': ok, 'searchOk': True, 'tracks': [{'ok': ok, 'category': 'audio' if ok else category}] * 2}
 
 
+def partial(category='source'):
+    return {'ok': False, 'searchOk': True, 'tracks': [{'ok': True, 'category': 'audio'}, {'ok': False, 'category': category}]}
+
+
 class FakeBackend:
     def __init__(self, root):
         self.directory = root / 'state'
@@ -37,7 +41,7 @@ class FakeBackend:
         self.settings = {'auto_update': True}
         self.kind, self.playing, self.idle, self.gate = 'ready', 0, True, True
         self.available, self.calls = [], []
-        self.failures, self.probed_tracks = [], []
+        self.failures, self.probed_tracks, self.queued = [], [], []
         self.results, self.verify_ok, self.deploy_error, self.fix_recovery = {}, True, False, False
 
     def current(self):
@@ -49,6 +53,8 @@ class FakeBackend:
     def probe(self, version, full=False, installed=False, tracks=None):
         self.calls.append(('probe', version, full, installed))
         self.probed_tracks.append(tracks)
+        if self.queued:
+            return self.queued.pop(0)
         return self.results.get(version, result())
 
     def candidates(self, current):
@@ -287,6 +293,50 @@ class RecoveryTests(unittest.TestCase):
         self.assertEqual(self.coordinator.state['status'], 'canary_degraded')
         self.assertFalse(self.calls('candidates'))
         self.assertFalse(self.calls('deploy'))
+
+    def attention(self):
+        return [event for event in self.coordinator.state.get('outbox', []) if 'needs attention' in event['message']]
+
+    def test_canary_failure_that_passes_on_retry_is_healthy(self):
+        self.backend.queued = [partial()]
+        self.cycle()
+        self.assertEqual(self.coordinator.state['status'], 'healthy')
+        self.assertEqual(self.coordinator.state['failures'], 0)
+        self.assertEqual(len(self.calls('probe')), 2)
+
+    def test_degraded_canaries_alert_only_after_three_runs(self):
+        self.backend.settings['auto_update'] = False
+        self.backend.results[OLD] = partial()
+        self.cycle()
+        self.cycle()
+        self.assertEqual(self.coordinator.state['status'], 'canary_degraded')
+        self.assertFalse(self.attention())
+        self.cycle()
+        self.assertEqual(len(self.attention()), 1)
+
+    def test_complete_playback_failure_still_alerts_after_two_runs(self):
+        self.backend.settings['auto_update'] = False
+        self.backend.results[OLD] = result(False)
+        self.cycle()
+        self.assertFalse(self.attention())
+        self.cycle()
+        self.assertEqual(self.coordinator.state['status'], 'source')
+        self.assertEqual(len(self.attention()), 1)
+
+    def test_unresponsive_cipher_is_restarted_when_idle(self):
+        self.backend.kind, self.backend.fix_recovery = 'cipher', True
+        self.cycle()
+        self.assertEqual(self.coordinator.state['status'], 'cipher')
+        self.assertFalse(self.calls('recover'))
+        self.cycle()
+        self.assertEqual(self.calls('recover'), [('recover', 'cipher')])
+        self.assertEqual(self.coordinator.state['status'], 'healthy')
+
+    def test_cipher_recovery_restarts_only_the_cipher_container(self):
+        backend = r.Backend(self.backend.repo, self.backend.directory, {})
+        with patch.object(r, 'command') as command, patch.object(r.time, 'sleep'):
+            backend.recover('cipher')
+        self.assertEqual(command.call_args.args[0], ['docker', 'restart', '-t', '10', 'vybertron-yt-cipher'])
 
     def test_probe_cache_retention_preserves_current_bundle_and_unrelated_files(self):
         cache = Path(self.temp.name) / 'cache'

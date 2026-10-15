@@ -3,7 +3,7 @@ import { buildHelpPayload, HELP_TOPICS } from '../utils/help.js';
 
 export const data = new SlashCommandBuilder()
   .setName('help')
-  .setDescription('Explore Vybertron controls, your library, and supported sources')
+  .setDescription('Explore Vybatron controls, your library, and supported sources')
   .addStringOption((option) => option
     .setName('topic')
     .setDescription('Choose what to explore')

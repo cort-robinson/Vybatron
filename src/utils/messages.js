@@ -27,7 +27,7 @@ import { config } from '../config.js';
 
 export const COLORS = Object.freeze({
   // Restrained from the app icon: electric cyan carries active product state,
-  // magenta is the Vybertron signature, and amber is reserved for pause/warning.
+  // magenta is the Vybatron signature, and amber is reserved for pause/warning.
   brand: 0x00c8ff,
   accent: 0xf20aa7,
   paused: 0xffb84d,

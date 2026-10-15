@@ -106,7 +106,7 @@ export function Home({ portal, active, onOpenPlayer }: { portal: Portal; active:
     {statsShelves}
     <section className="home-privacy" aria-labelledby="home-privacy-title">
       <div><h2 id="home-privacy-title">Your request stats</h2>
-        <p>Your mixes, top tracks and Rediscover come from the songs you request. Clearing removes you from every request you’ve made, in every server. Server totals stay, anonymized, so On repeat and Forgotten gems keep their counts. Favorites, shared mixes and history aren’t touched. Vybertron never records who was listening, only who asked for a song.</p></div>
+        <p>Your mixes, top tracks and Rediscover come from the songs you request. Clearing removes you from every request you’ve made, in every server. Server totals stay, anonymized, so On repeat and Forgotten gems keep their counts. Favorites, shared mixes and history aren’t touched. Vybatron never records who was listening, only who asked for a song.</p></div>
       <button type="button" className="button secondary danger-outline" disabled={!bootstrap || clearing} onClick={() => setConfirmClear(true)}>Clear my request stats</button>
     </section>
     {confirmClear && <Confirm title="Clear your request stats?" busy={clearing}

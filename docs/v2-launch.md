@@ -1,4 +1,4 @@
-# Vybertron v2 launch evidence
+# Vybatron v2 launch evidence
 
 ## Release candidate
 
@@ -7,7 +7,7 @@ libraries, fair listening, discovery, and a clear desktop/mobile Discord player.
 The implementation contract is [SPEC.md](../SPEC.md); operator instructions and
 rollback are in [ops/README.md](../ops/README.md).
 
-**Bot Testing acceptance passes. Vybertron v2 is ready for wider rollout.**
+**Bot Testing acceptance passes. Vybatron v2 is ready for wider rollout.**
 The current image is running in the selected test server; global command
 registration and promotion to `main` are separate rollout steps.
 

@@ -1,5 +1,5 @@
 ---
-name: Vybertron Portal
+name: Vybatron Portal
 description: An album-reactive receiver for a shared Discord listening session.
 colors:
   ground: "dynamic, OKLCH L .14 tinted toward the cover's lead hue; default #0d0f14"
@@ -49,7 +49,7 @@ rounded:
   pill: "999px"
 ---
 
-# Design System: Vybertron Portal
+# Design System: Vybatron Portal
 
 ## Overview
 

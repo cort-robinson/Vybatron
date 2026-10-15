@@ -4,7 +4,7 @@ import { plainText } from './presentation.js';
 export const PRESENCE_NAME_MAX_LENGTH = 128;
 
 export const IDLE_PRESENCE_ACTIVITY = Object.freeze({
-  name: 'Vybertron',
+  name: 'Vybatron',
   state: 'Use /play to start',
   type: ActivityType.Custom,
 });

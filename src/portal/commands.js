@@ -166,7 +166,7 @@ function commandAccess(client, context, command, { checkState = true } = {}) {
     const text = context.channels.get(client.library.settings(context.guild.id).musicTextChannelId);
     if (!writable(context, text) || !visible(context, text)) fail(409, 'music_channel_required', 'An administrator must configure a visible music text channel before starting from the web.');
   }
-  if (checkpoint && action === 'resume' && (!writable(context, context.channels.get(checkpoint.textChannelId)))) fail(403, 'invalid_channel', 'Vybertron cannot write to the saved controller channel.');
+  if (checkpoint && action === 'resume' && (!writable(context, context.channels.get(checkpoint.textChannelId)))) fail(403, 'invalid_channel', 'Vybatron cannot write to the saved controller channel.');
 }
 
 function safeReply(payload) {

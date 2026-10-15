@@ -10,7 +10,7 @@ async function autoplayFixture(t) {
   const f = await portalFixture(t, { search: query => query.includes('list=RD')
     ? { loadType: 'playlist', tracks: related.map(id => ({ ...track(id), info: { ...track(id).info, author: `Artist ${id}`, title: `Song ${id}` } })) }
     : { loadType: 'search', tracks: [] } });
-  f.client.user = { id: '999', username: 'Vybertron', bot: true, displayAvatarURL: () => null };
+  f.client.user = { id: '999', username: 'Vybatron', bot: true, displayAvatarURL: () => null };
   return f;
 }
 

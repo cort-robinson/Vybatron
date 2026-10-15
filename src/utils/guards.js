@@ -40,13 +40,13 @@ export async function requireUserVoice(interaction, { checkBotAccess = false } =
   if (checkBotAccess && channel.joinable === false) {
     return reject(
       interaction,
-      'Vybertron can’t join that voice channel. Check its View Channel and Connect permissions, and make sure the channel isn’t full.'
+      'Vybatron can’t join that voice channel. Check its View Channel and Connect permissions, and make sure the channel isn’t full.'
     );
   }
   if (checkBotAccess && channel.speakable === false) {
     return reject(
       interaction,
-      'Vybertron can’t play audio in that voice channel. Grant it the Speak permission, then try again.'
+      'Vybatron can’t play audio in that voice channel. Grant it the Speak permission, then try again.'
     );
   }
   return channel;
@@ -101,7 +101,7 @@ export async function requireSessionVisibility(interaction, source) {
 
 export async function recheckEnqueueRequest(interaction, player, expectedChannel, { checkDJ = false } = {}) {
   if (interaction.client.runtimeState?.draining) {
-    await reject(interaction, 'Vybertron is updating. Your saved music is safe; try again in a minute.');
+    await reject(interaction, 'Vybatron is updating. Your saved music is safe; try again in a minute.');
     return false;
   }
   if (player.getData?.('vybertron.stopping') === true) {

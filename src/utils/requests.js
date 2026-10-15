@@ -83,7 +83,7 @@ export async function guardedMutation(interaction, operation, { playback = false
   const release = playback ? acquirePlaybackRequest(interaction.client) : null;
   if (playback && !release) {
     if (interaction.portalUnavailable) return interaction.portalUnavailable();
-    return interaction.reply({ content: 'Vybertron is briefly updating its playback service. Try again in a minute.', flags: MessageFlags.Ephemeral });
+    return interaction.reply({ content: 'Vybatron is briefly updating its playback service. Try again in a minute.', flags: MessageFlags.Ephemeral });
   }
   try {
     await acknowledgeMutation(interaction);

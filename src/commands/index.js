@@ -19,7 +19,7 @@ export function friendlyInteractionError(error, context) {
     .toLocaleLowerCase();
 
   if (/50013|50001|missing permissions|missing access/.test(details)) {
-    return 'Vybertron is missing a Discord permission needed for that action. Check View Channel, Send Messages, Embed Links, Connect, and Speak permissions.';
+    return 'Vybatron is missing a Discord permission needed for that action. Check View Channel, Send Messages, Embed Links, Connect, and Speak permissions.';
   }
   if (/10062|40060|unknown interaction|already (?:been )?acknowledged/.test(details)) {
     return 'Discord didn’t accept that control in time. The player may already have updated; use Refresh before trying again.';
@@ -38,7 +38,7 @@ export function friendlyInteractionError(error, context) {
   if (context.startsWith('/play') && /youtube|spotify|soundcloud|load|search|track/.test(details)) {
     return 'That track couldn’t be loaded. Try another result or paste a direct YouTube, Spotify, or SoundCloud link.';
   }
-  return `Vybertron hit an unexpected problem while handling ${context}. Try once more. If it keeps happening, share the reference below.`;
+  return `Vybatron hit an unexpected problem while handling ${context}. Try once more. If it keeps happening, share the reference below.`;
 }
 
 export async function loadCommandsData() {
@@ -87,7 +87,7 @@ export async function loadCommands(client) {
 
   client.on('interactionCreate', async (interaction) => {
     if (!interaction.guildId && !interaction.isAutocomplete()) {
-      await interaction.reply({ content: 'Use Vybertron in a server with a voice channel.', flags: MessageFlags.Ephemeral }).catch(() => {});
+      await interaction.reply({ content: 'Use Vybatron in a server with a voice channel.', flags: MessageFlags.Ephemeral }).catch(() => {});
       return;
     }
     if (interaction.isAutocomplete()) {

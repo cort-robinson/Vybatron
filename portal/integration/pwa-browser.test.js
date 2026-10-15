@@ -184,7 +184,7 @@ test('production PWA installs under real CSP, serves an offline shell, and never
       await page.screenshot({ path: path.join(artifacts, 'production-pwa-' + name + '.png'), fullPage: true });
 
       const manifest = await page.evaluate(() => fetch(document.querySelector('link[rel="manifest"]').href).then(response => response.json()));
-      assert.equal(manifest.name, 'Vybertron'); assert.equal(manifest.display, 'standalone');
+      assert.equal(manifest.name, 'Vybatron'); assert.equal(manifest.display, 'standalone');
       assert.equal(manifest.id, '/'); assert.equal(manifest.start_url, '/'); assert.equal(manifest.scope, '/');
       assert.ok(manifest.icons.some(icon => icon.sizes === '192x192' && icon.purpose === 'any'));
       assert.ok(manifest.icons.some(icon => icon.sizes === '512x512' && icon.purpose === 'any'));

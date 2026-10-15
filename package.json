@@ -1,5 +1,5 @@
 {
-  "name": "vybertron",
+  "name": "vybatron",
   "version": "2.1.0",
   "description": "Discord music bot powered by Lavalink",
   "main": "src/index.js",
@@ -16,15 +16,15 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/cort-robinson/Vybertron.git"
+    "url": "git+https://github.com/cort-robinson/Vybatron.git"
   },
   "keywords": [],
   "author": "",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/cort-robinson/Vybertron/issues"
+    "url": "https://github.com/cort-robinson/Vybatron/issues"
   },
-  "homepage": "https://github.com/cort-robinson/Vybertron#readme",
+  "homepage": "https://github.com/cort-robinson/Vybatron#readme",
   "dependencies": {
     "discord.js": "14.27.0",
     "dotenv": "16.6.1",

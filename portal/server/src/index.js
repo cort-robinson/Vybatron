@@ -5,10 +5,10 @@ let app;
 try {
   app = await createPortalServer(loadConfig());
   await app.listen();
-  console.log('Vybertron portal is listening.');
+  console.log('Vybatron portal is listening.');
 } catch {
   // Do not print upstream exceptions, environment values, request URLs or tokens.
-  console.error('Vybertron portal startup failed. Check configuration and private auth storage.');
+  console.error('Vybatron portal startup failed. Check configuration and private auth storage.');
   await app?.close(); process.exitCode = 1;
 }
 

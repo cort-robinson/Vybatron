@@ -7,7 +7,7 @@ import { createHash } from 'node:crypto';
 const art = (name: string) => `http://127.0.0.1:${Number(process.env.PLAYWRIGHT_PORT || 4178)}/test-art/${name}.png`;
 const person = (id: string, displayName: string, image: string) => ({ id, displayName, avatarUrl: art(image) });
 const people = [person('jordan', 'Jordan', 'jordan'), person('alex', 'Alex', 'alex'), person('sam', 'Sam', 'sam')];
-const vybertron = { id: 'vybertron', displayName: 'Vybertron', avatarUrl: null };
+const vybertron = { id: 'vybertron', displayName: 'Vybatron', avatarUrl: null };
 export function suggestedTracks(): Track[] {
   return [suggestion('city-lights', 'City Lights', 'Northline', 221_000, 'golden'), suggestion('low-tide', 'Low Tide', 'Solara', 198_000, 'afterglow')];
 }

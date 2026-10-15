@@ -1,6 +1,6 @@
 # Approved ambient and fallback artwork
 
-These are compressed derivatives of the original Vybertron generated raster
+These are compressed derivatives of the original Vybatron generated raster
 assets, retained in Git revision `0bb9bc6cda88488cbfc6013a11f109ed9a9ace37`.
 The approved composition is unchanged. Production tracks use source artwork.
 

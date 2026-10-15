@@ -174,6 +174,11 @@ changes. Fetch on demand; stats are not part of snapshots or the change feed.
   accepted; omitted means `30d`.
 - POST `/api/stats/requests/clear` -> `{ok:true,cleared:number}`. Same-origin + CSRF, no body.
   Anonymizes the signed-in listener's recorded requests in every server; server totals remain.
+- GET `/api/guilds/:guildId/audio/:videoId` (11-character YouTube id): this device's
+  player. Audio only (`audio/mp4` AAC, else `audio/webm` Opus), served with
+  `Accept-Ranges: bytes`; a single `Range: bytes=a-b` is honored (206) or rejected (416).
+  Membership only, like search. Only audio bodies up to 40 MiB pass through; errors keep
+  the sanitized JSON shape. A separate four-stream pool keeps slow phones off command slots.
 - GET `/api/guilds/:guildId/events`: credentialed same-origin SSE. `event:snapshot`
   carries GuildSnapshot. Heartbeat comments. Permission/session loss closes
   stream; state-unavailable must not replay writes. Bound connections, polling,
@@ -283,6 +288,11 @@ browser access or CORS. Portal sets the trusted session's actorId itself.
   including the guild's most recent 50 voice channels with plays).
 - POST `/v1/stats/requests/clear?actorId=...` -> `{ok:true,cleared:number}`. Requires a fresh
   verified identity; no guild grant is involved.
+- GET `/v1/guilds/:guildId/audio/:videoId?actorId=...` -> audio bytes by range (see the
+  public route). The bot fetches the whole track once from Lavalink's
+  `/youtube/stream/{id}` (itag 140, then 251), holds it in a 64 MiB in-memory LRU (40 MiB
+  per track, two downloads at a time) and serves ranges from it. Authority comes from the
+  Gateway cache when it can vouch, else a fresh REST round.
 - GET `/health` (still authenticated) -> `{ready:boolean}`.
 - GET `/v1/changes?instance=...&after=...` -> `{instanceId:string,sequence:number,reset:boolean,guildIds:string[]}`.
   Private wake-up long poll (held up to 20 s). Carries guild IDs only, never

@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { api, errorMessage } from './api';
+import { api, errorMessage, publicUrl } from './api';
+import { timestamp } from './format';
 import type { Capability, Command, GuildSnapshot, Track } from './types';
 import type { RemotePortal } from './usePortal';
 import { isLink } from './suggestions';
-import { createFrame, loadYouTube, STATE, unplayableMessage, youtubeId, type YouTubePlayer } from './youtube';
+import { youtubeId } from './youtube';
 
 // Where music plays: the shared Discord session (the bot is the authority), or
-// this device, where the portal keeps a private queue and plays it through the
-// YouTube embed. Search, favorites and stats still come from the bot either way.
+// this device, where the portal keeps a private queue and plays its audio,
+// streamed by the bot through the portal. Search, favorites and stats still come from the bot either way.
 // Listeners outside voice start on this device; a session moves between the two
 // like casting, carrying its songs, place, volume and repeat.
 export type PlaybackTarget = 'discord' | 'local';
@@ -29,13 +30,10 @@ export type Portal = Omit<RemotePortal, 'run'> & {
   moveToDiscord: () => Promise<boolean>;
   // Brings the Discord session here; `stop` ends it in Discord, otherwise it keeps playing there too.
   moveHere: (stop: boolean) => Promise<boolean>;
-  attachVideo: (element: HTMLDivElement | null) => void;
 };
 
 const DECK_KEY = 'vybertron.local';
 const MAX_QUEUE = 500;
-// A blocked autoplay leaves the embed unstarted; show it as paused, not silent "playing".
-const AUTOPLAY_GRACE_MS = 6000;
 const empty: Deck = { current: null, queue: [], status: 'idle', positionMs: 0, at: 0, durationMs: 0, volume: 100, repeat: 'off', revision: 0 };
 export const DISCORD_ONLY = 'That works in a Discord session. Choose Discord under Play on in the player menu to use it.';
 // The bot resolves each song it receives; the rest of a long queue stays behind.
@@ -73,10 +71,10 @@ export function useListening(remote: RemotePortal): Portal {
   const [pending, setPending] = useState<string[]>([]);
   const deckRef = useRef(deck);
   const pendingRef = useRef(false);
-  const host = useRef<HTMLDivElement | null>(null);
-  const player = useRef<Promise<YouTubePlayer> | null>(null);
+  const media = useRef<HTMLAudioElement | null>(null);
+  // The YouTube video whose audio the element holds, if any.
   const loaded = useRef<string | null>(null);
-  // Each load supersedes the previous one, including its late search or player events.
+  // Each load supersedes the previous one, including its late lookup or media events.
   const loadToken = useRef(0);
   const latest = useRef(remote); latest.current = remote;
 
@@ -85,92 +83,127 @@ export function useListening(remote: RemotePortal): Portal {
     const commit = (change: Partial<Deck>, structural = false) => {
       const next = { ...deckRef.current, ...change, revision: deckRef.current.revision + (structural ? 1 : 0) };
       deckRef.current = next; setDeck(next);
+      if ('mediaSession' in navigator && next.current) navigator.mediaSession.playbackState = next.status === 'playing' ? 'playing' : 'paused';
     };
-    const ensure = () => {
-      const element = host.current;
-      if (!element) return Promise.reject(new Error('Choose This device under Play on to listen here.'));
-      if (!player.current) {
-        const created = loadYouTube().then(YT => new Promise<YouTubePlayer>(resolve => {
-          const frame = createFrame(); element.replaceChildren(frame);
-          new YT.Player(frame, { events: {
-            onReady: event => resolve(event.target),
-            onStateChange: event => { if (player.current === created) changed(event.data, event.target); },
-            onError: event => { if (player.current === created) failed(event.data); },
-          } });
-        }));
-        player.current = created;
-        created.catch(() => { if (player.current === created) player.current = null; });
-      }
-      return player.current;
+    const retried = new Set<string>(); const warmed = new Set<string>();
+    // One audio element for the whole session: phones keep it playing in the
+    // background and on the lock screen, and it plays audio only, never video.
+    const audio = () => {
+      if (media.current) return media.current;
+      const element = new Audio(); element.preload = 'auto';
+      const current = () => loaded.current !== null && element.dataset.video === loaded.current && !!deckRef.current.current;
+      const anchor = () => ({ positionMs: element.currentTime * 1000, at: Date.now() });
+      element.addEventListener('playing', () => {
+        if (!current()) return;
+        commit({ status: 'playing', ...anchor(), ...(Number.isFinite(element.duration) && { durationMs: element.duration * 1000 }) });
+        warmNext();
+      });
+      element.addEventListener('pause', () => { if (current() && !element.ended) commit({ status: 'paused', ...anchor() }); });
+      for (const event of ['seeked', 'waiting']) element.addEventListener(event, () => { if (current()) commit(anchor()); });
+      element.addEventListener('ended', () => { if (current()) advance(false); });
+      element.addEventListener('error', () => { if (current() && element.error) void failed(element.dataset.video!); });
+      media.current = element;
+      return element;
     };
-    const withPlayer = (action: (p: YouTubePlayer) => void) => { void player.current?.then(action).catch(() => {}); };
+    const source = (videoId: string) => `/api/guilds/${encodeURIComponent(latest.current.guildId)}/audio/${videoId}`;
+    // The next song downloads into the bot's cache while this one plays, so
+    // the change between songs is quick even with the screen off.
+    const warmNext = () => {
+      const videoId = youtubeId(deckRef.current.queue[0]?.uri);
+      if (!videoId || warmed.has(videoId)) return;
+      warmed.add(videoId);
+      void fetch(source(videoId), { headers: { Range: 'bytes=0-0' }, credentials: 'same-origin' })
+        .then(response => response.body?.cancel()).catch(() => warmed.delete(videoId));
+    };
+    const describe = (track: Track) => {
+      if (!('mediaSession' in navigator) || typeof MediaMetadata === 'undefined') return;
+      const artwork = publicUrl(track.artworkUrl);
+      navigator.mediaSession.metadata = new MediaMetadata({ title: track.title, artist: track.author, album: 'Vybatron', artwork: artwork ? [{ src: artwork }] : [] });
+    };
     // Songs from other catalogs play through their closest YouTube match.
     const playable = async (track: Track): Promise<Track | null> => {
-      if (youtubeId(track.uri)) return track;
       const { tracks } = await api.search(latest.current.guildId, `${track.author} ${track.title}`);
       const match = tracks.find(candidate => youtubeId(candidate.uri));
       return match ? own(match) : null;
     };
-    const start = async (track: Track, startMs: number, autoplay: boolean) => {
-      const token = ++loadToken.current; loaded.current = null;
-      try {
-        const resolved = await playable(track);
+    const load = (track: Track, startMs: number, autoplay: boolean) => {
+      const videoId = youtubeId(track.uri)!; const element = audio();
+      loaded.current = videoId; element.dataset.video = videoId;
+      // A media fragment starts at the saved place; the bot serves byte ranges.
+      element.src = `${source(videoId)}${startMs >= 1000 ? `#t=${Math.floor(startMs / 1000)}` : ''}`;
+      element.volume = deckRef.current.volume / 100;
+      describe(track);
+      if (!autoplay) return;
+      element.play().catch((error: unknown) => {
+        // A newer song replaced this one (AbortError), or the browser wants a tap first.
+        if (loaded.current !== videoId || (error as Error)?.name !== 'NotAllowedError') return;
+        commit({ status: 'paused', positionMs: startMs, at: Date.now() });
+        notify('Tap play to start listening on this device.', 'info');
+      });
+    };
+    // A song with a YouTube link starts synchronously, inside the tap that asked
+    // for it, which is the only way iOS lets audio begin.
+    const start = (track: Track, startMs: number, autoplay: boolean) => {
+      const token = ++loadToken.current;
+      if (youtubeId(track.uri)) { load(track, startMs, autoplay); return; }
+      loaded.current = null;
+      void playable(track).then(resolved => {
         if (token !== loadToken.current) return;
-        if (!resolved) { notify(`“${track.title}” has no YouTube version to play here. Skipping it.`, 'error'); advance(true, true); return; }
-        const p = await ensure();
-        if (token !== loadToken.current) return;
-        if (resolved !== track) commit({ current: resolved, durationMs: resolved.durationMs }, true);
-        const videoId = youtubeId(resolved.uri)!;
-        p.setVolume(deckRef.current.volume);
-        const options = { videoId, startSeconds: Math.floor(startMs / 1000) };
-        loaded.current = videoId;
-        if (!autoplay) { p.cueVideoById(options); return; }
-        p.loadVideoById(options);
-        setTimeout(() => {
-          const state = token === loadToken.current ? p.getPlayerState() : null;
-          if (state === STATE.unstarted || state === STATE.cued) commit({ status: 'paused', positionMs: startMs, at: Date.now() });
-        }, AUTOPLAY_GRACE_MS);
-      } catch (error) {
+        if (!resolved) { notify(`“${track.title}” has no version this device can play. Skipping it.`, 'error'); advance(true, true); return; }
+        commit({ current: resolved, durationMs: resolved.durationMs }, true);
+        load(resolved, startMs, autoplay);
+      }).catch(error => {
         if (token !== loadToken.current) return;
         const deck = deckRef.current;
         commit({ status: deck.current ? 'paused' : 'idle', positionMs: position(deck), at: Date.now() });
         notify(errorMessage(error), 'error');
+      });
+    };
+    // Media errors carry no reason; the portal's answer for the same song does.
+    const failed = async (videoId: string) => {
+      const token = loadToken.current; const deck = deckRef.current;
+      let status = 0; let message = 'This song couldn’t load on this device.';
+      try {
+        const response = await fetch(source(videoId), { headers: { Range: 'bytes=0-0' }, credentials: 'same-origin' });
+        status = response.status;
+        if (!response.ok) message = (await response.json().catch(() => null))?.error?.message || message;
+        else await response.body?.cancel();
+      } catch { status = 0; }
+      if (token !== loadToken.current || !deck.current) return;
+      // Busy, briefly unreachable, or a dropped connection: one quiet retry from the same place.
+      if ([0, 206, 429, 503].includes(status) && !retried.has(videoId)) {
+        retried.add(videoId);
+        setTimeout(() => {
+          const now = deckRef.current;
+          if (token === loadToken.current && now.current) start(now.current, position(now), now.status === 'playing');
+        }, 1500);
+        return;
       }
+      notify(`“${deck.current.title}”: ${message} Skipping it.`, 'error');
+      advance(true, true);
     };
     const play = (track: Track, queue: Track[], startMs = 0) => {
       commit({ current: track, queue, status: 'playing', positionMs: startMs, at: Date.now(), durationMs: track.durationMs }, true);
-      void start(track, startMs, true);
+      start(track, startMs, true);
     };
     const stop = () => {
       ++loadToken.current; loaded.current = null;
       commit({ current: null, queue: [], status: 'idle', positionMs: 0, at: Date.now(), durationMs: 0 }, true);
-      withPlayer(p => p.stopVideo());
+      const element = media.current;
+      if (element) { element.pause(); element.removeAttribute('src'); element.load(); }
+      if ('mediaSession' in navigator) navigator.mediaSession.metadata = null;
     };
+    // The element, when it already holds the current song.
+    const ready = () => (loaded.current && media.current?.dataset.video === loaded.current ? media.current : null);
     // `drop` retires a song that cannot play, so repeat never retries it forever.
     const advance = (manual: boolean, drop = false) => {
       const deck = deckRef.current;
-      if (!manual && deck.repeat === 'track' && deck.current) { withPlayer(p => { p.seekTo(0, true); p.playVideo(); }); return; }
+      if (!manual && deck.repeat === 'track' && deck.current) { const element = ready(); if (element) { element.currentTime = 0; void element.play().catch(() => {}); } return; }
       const queue = [...deck.queue];
       if (deck.repeat === 'queue' && deck.current && !drop) queue.push(deck.current);
       const next = queue.shift();
       if (!next) { stop(); return; }
       play(next, queue);
-    };
-    const changed = (code: number, p: YouTubePlayer) => {
-      const deck = deckRef.current;
-      // Late events from a video this device has moved on from.
-      const id = p.getVideoData?.().video_id;
-      if (!deck.current || !loaded.current || (id && id !== loaded.current)) return;
-      const now = Date.now(); const at = p.getCurrentTime() * 1000; const duration = p.getDuration() * 1000;
-      if (code === STATE.playing) commit({ status: 'playing', positionMs: at, at: now, durationMs: duration > 0 ? duration : deck.durationMs });
-      else if (code === STATE.paused) commit({ status: 'paused', positionMs: at, at: now });
-      else if (code === STATE.buffering) commit({ positionMs: at, at: now });
-      else if (code === STATE.ended) advance(false);
-    };
-    const failed = (code: number) => {
-      const title = deckRef.current.current?.title;
-      notify(`${title ? `“${title}”: ` : ''}${unplayableMessage(code)} Skipping it.`, 'error');
-      advance(true, true);
     };
     const enqueue = (tracks: Track[], next: boolean) => {
       const songs = tracks.filter(track => track.uri).map(own);
@@ -208,20 +241,20 @@ export function useListening(remote: RemotePortal): Portal {
       switch (key) {
         case 'pause:':
           if (deck.status !== 'playing') return true;
-          commit({ status: 'paused', positionMs: position(deck), at: now }); withPlayer(p => p.pauseVideo()); return true;
+          commit({ status: 'paused', positionMs: position(deck), at: now }); ready()?.pause(); return true;
         case 'resume:':
           if (!deck.current) return false;
           commit({ status: 'playing', at: now });
-          if (loaded.current && player.current) withPlayer(p => p.playVideo()); else void start(deck.current, deck.positionMs, true);
+          { const element = ready(); if (element) void element.play().catch(() => commit({ status: 'paused', at: Date.now() })); else start(deck.current, deck.positionMs, true); }
           return true;
         case 'seek:': {
           const target = milliseconds(o.timestamp);
           if (target === null || !deck.current) return false;
           commit({ positionMs: target, at: now });
-          if (loaded.current) withPlayer(p => p.seekTo(target / 1000, true)); else void start(deck.current, target, deck.status === 'playing');
+          { const element = ready(); if (element) element.currentTime = target / 1000; else start(deck.current, target, deck.status === 'playing'); }
           return true;
         }
-        case 'volume:': { const volume = volumeOf(o.level); commit({ volume }); withPlayer(p => p.setVolume(volume)); return true; }
+        case 'volume:': { const volume = volumeOf(o.level); commit({ volume }); if (media.current) media.current.volume = volume / 100; return true; }
         case 'loop:': commit({ repeat: (['off', 'track', 'queue'].includes(String(o.mode)) ? o.mode : 'off') as Repeat }); return true;
         case 'skip:': if (!deck.current) return false; advance(true); return true;
         case 'skipto:': {
@@ -257,18 +290,6 @@ export function useListening(remote: RemotePortal): Portal {
         default: notify(DISCORD_ONLY, 'info'); return false;
       }
     };
-    // The embed lives in an element the app renders only while this device plays.
-    const attach = (element: HTMLDivElement | null) => {
-      if (element === host.current) return;
-      ++loadToken.current; loaded.current = null;
-      withPlayer(p => p.destroy()); player.current = null;
-      host.current = element;
-      const deck = deckRef.current;
-      if (!element) { if (deck.status === 'playing') commit({ status: 'paused', positionMs: position(deck), at: Date.now() }); return; }
-      // A session moved here keeps playing; a saved one waits, ready to resume.
-      // YouTube loads only once there is a song.
-      if (deck.current) void start(deck.current, position(deck), deck.status === 'playing');
-    };
     // Takes over a session from Discord at its current place.
     const adopt = (session: GuildSnapshot['session'], positionMs: number) => {
       if (!session.current) return;
@@ -276,15 +297,24 @@ export function useListening(remote: RemotePortal): Portal {
       const playing = session.status === 'playing';
       commit({ current: own(session.current), queue: session.queue.map(own).slice(0, MAX_QUEUE), status: playing ? 'playing' : 'paused',
         positionMs, at: Date.now(), durationMs: session.durationMs || session.current.durationMs }, true);
-      if (host.current) void start(deckRef.current.current!, positionMs, playing);
+      start(deckRef.current.current!, positionMs, playing);
     };
     const hold = () => {
       const deck = deckRef.current; const wasPlaying = deck.status === 'playing';
-      if (wasPlaying) { commit({ status: 'paused', positionMs: position(deck), at: Date.now() }); withPlayer(p => p.pauseVideo()); }
+      if (wasPlaying) { commit({ status: 'paused', positionMs: position(deck), at: Date.now() }); ready()?.pause(); }
       return wasPlaying;
     };
-    const proceed = () => { const deck = deckRef.current; if (deck.current) { commit({ status: 'playing', at: Date.now() }); withPlayer(p => p.playVideo()); } };
-    return { run, attach, stop, adopt, hold, proceed, snapshot: () => deckRef.current };
+    const proceed = () => { if (deckRef.current.current) void run({ command: 'resume' }, 'control'); };
+    // Lock-screen, headset and car controls act on this device's queue.
+    if ('mediaSession' in navigator) {
+      const actions: [MediaSessionAction, MediaSessionActionHandler][] = [
+        ['play', () => void run({ command: 'resume' }, 'control')], ['pause', () => void run({ command: 'pause' }, 'control')],
+        ['nexttrack', () => void run({ command: 'skip' }, 'control')], ['previoustrack', () => void run({ command: 'seek', options: { timestamp: '00:00' } }, 'control')],
+        ['seekto', details => { if (details.seekTime !== undefined) void run({ command: 'seek', options: { timestamp: timestamp(details.seekTime * 1000) } }, 'control'); }],
+      ];
+      for (const [action, handler] of actions) { try { navigator.mediaSession.setActionHandler(action, handler); } catch { /* Unsupported action. */ } }
+    }
+    return { run, stop, adopt, hold, proceed, snapshot: () => deckRef.current };
   }, []);
 
   useEffect(() => {
@@ -315,6 +345,8 @@ export function useListening(remote: RemotePortal): Portal {
   useEffect(() => setChoice(null), [remote.guildId]);
   const target = choice ?? automatic;
   const local = target === 'local';
+  // Playing in Discord silences this device; its queue waits, paused.
+  useEffect(() => { if (!local) engine.hold(); }, [local, engine]);
   const base = remote.snapshot;
   const discord = base?.session ?? null;
   const moveToDiscord = async () => {
@@ -354,7 +386,7 @@ export function useListening(remote: RemotePortal): Portal {
     if (capability === 'add' || capability === 'control') return !!remote.snapshot;
     return capability === 'vote' || capability === 'resume' ? false : remote.can(capability);
   }, [local, remote.can, remote.snapshot]);
-  const moves = { target, discord, moveToDiscord, moveHere, attachVideo: engine.attach };
+  const moves = { target, discord, moveToDiscord, moveHere };
   if (!local) return { ...remote, ...moves };
   return { ...remote, snapshot, receivedAt: deck.at, can, pending, syncing: false, run: engine.run, ...moves,
     blockedReason: remote.snapshot ? remote.blockedReason : 'Connecting to your server. Search and your library load from Discord.' };

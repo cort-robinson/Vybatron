@@ -412,6 +412,14 @@ export async function createPortalServer(config, testOptions = {}) {
           if (result?.ok !== true || !Number.isSafeInteger(result.cleared) || result.cleared < 0) throw unavailable();
           json(res, 200, { ok: true, cleared: result.cleared }); return;
         }
+        const audio = /^\/api\/guilds\/(\d{1,20})\/audio\/([\w-]{11})$/.exec(pathname);
+        if (audio && req.method === 'GET') {
+          // This device's player. The browser's media element sends only byte ranges.
+          queryOnly(url, []);
+          const range = req.headers.range;
+          if (range !== undefined && !/^bytes=\d{0,15}-\d{0,15}$/.test(range)) throw invalid();
+          await transport.audio(`/v1/guilds/${audio[1]}/audio/${audio[2]}`, session.actorId, { range, signal: controller.signal, res }); return;
+        }
         const match = /^\/api\/guilds\/(\d{1,20})(?:\/(configuration|library|search|commands|diagnostics|activity|events|stats))?$/.exec(pathname);
         if (!match) throw notFound();
         const [, guildId, resource] = match;

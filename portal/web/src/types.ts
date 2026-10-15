@@ -20,6 +20,8 @@ export interface CommandOption {
 export interface CommandSchema { name: string; description?: string; options?: CommandOption[] }
 export interface Bootstrap {
   viewer: Viewer; guilds: Guild[]; csrfToken: string;
+  // The listed server whose voice the viewer is in when the portal loaded.
+  voiceGuildId?: string | null;
   filters: { id: string; label: string; description: string }[];
   commands: CommandSchema[];
 }

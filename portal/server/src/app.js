@@ -399,7 +399,8 @@ export async function createPortalServer(config, testOptions = {}) {
           const bootstrap = await transport.bridge('/v1/bootstrap', session.actorId, { signal: controller.signal });
           if (!store.get(token)) throw unauthorized();
           if (bootstrap.viewer?.id !== session.actorId || !Array.isArray(bootstrap.guilds)) throw unavailable();
-          json(res, 200, { viewer: bootstrap.viewer, guilds: bootstrap.guilds, filters: bootstrap.filters,
+          const voiceGuildId = bootstrap.guilds.some(guild => guild?.id === bootstrap.voiceGuildId) ? bootstrap.voiceGuildId : null;
+          json(res, 200, { viewer: bootstrap.viewer, guilds: bootstrap.guilds, voiceGuildId, filters: bootstrap.filters,
             commands: bootstrap.commands, csrfToken: session.csrfToken }); return;
         }
         if (pathname === '/api/stats/requests/clear' && req.method === 'POST') {

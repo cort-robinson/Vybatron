@@ -94,7 +94,7 @@ async function fixture(t, { limits = {}, now, dataDir, production = false, botOr
     assert.equal(req.headers.authorization, `Bearer ${secret}`);
     if (url.pathname === '/health') reply(res, 200, { ready: true });
     else if (url.pathname === '/v1/bootstrap') {
-      const data = bootstrap(); data.viewer.id = url.searchParams.get('actorId'); reply(res, 200, data);
+      const data = bootstrap(); data.viewer.id = url.searchParams.get('actorId'); data.voiceGuildId = state.voiceGuildId ?? null; reply(res, 200, data);
     }
     else if (url.pathname.endsWith('/commands')) reply(res, 200, { ok: true, message: 'Updated.', snapshot: state.snapshot });
     else if (url.pathname.endsWith('/configuration')) reply(res, 200, { guildId, channels: [{ id: '456789012345678901', name: 'Music', type: 'text' }], roles: [] });
@@ -1316,4 +1316,12 @@ test('personal playlist and session mix commands accept only their published opt
     { command: 'mix', subcommand: 'save', options: { name: 'friday', session: 'yes' }, expectedRevision: revision },
     { command: 'mix', subcommand: 'save', options: { name: 'friday', session: true } },
   ]) assert.equal((await sendCommand(f, device, command)).status, 400, JSON.stringify(command));
+});
+
+test('bootstrap forwards the voice server only when it is a listed server', async t => {
+  const f = await fixture(t); const { cookie } = await f.login();
+  const voiceGuild = async value => { f.state.voiceGuildId = value; return (await f.request('/api/bootstrap', { headers: { Cookie: cookie } })).json().voiceGuildId; };
+  assert.equal(await voiceGuild(guildId), guildId);
+  assert.equal(await voiceGuild('567890123456789012'), null);
+  assert.equal(await voiceGuild(undefined), null);
 });

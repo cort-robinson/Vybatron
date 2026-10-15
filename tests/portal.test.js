@@ -50,6 +50,10 @@ test('bootstrap uses verified application owner, fresh membership and safe comma
   assert.equal(initial.body.commands.find(item => item.name === 'replay').options[0].name, 'index');
   assert.ok(initial.body.filters.some(item => item.id === 'warm'));
   assert.doesNotMatch(JSON.stringify(initial.body), /encoded-|token|clientData|size=/);
+  assert.equal(initial.body.voiceGuildId, '100');
+  const voice = f.members.get('200').voice.channel; f.members.get('200').voice.channel = null;
+  assert.equal((await f.request('/v1/bootstrap?actorId=200')).body.voiceGuildId, null);
+  f.members.get('200').voice.channel = voice;
   assert.equal((await f.request('/v1/bootstrap?actorId=900')).body.viewer.maintainer, true);
   f.members.delete('200');
   assert.equal((await f.request()).status, 404);

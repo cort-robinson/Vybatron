@@ -35,7 +35,7 @@ frontend builds on the 2 GiB VPS while music and recovery probes are running.
    filesystem or the bot bridge. Background configuration survives restarts.
    The bot also reads `PORTAL_ORIGIN` to add an "Open web player" link to the
    Discord player.
-3. In the existing Vybertron Discord application, register exactly
+3. In the existing Vybatron Discord application, register exactly
    `${PORTAL_ORIGIN}/auth/discord/callback` as an OAuth redirect. Copy its OAuth
    client secret into the VPS private environment file, never into chat, Git,
    a browser bundle, screenshots, CI logs or command arguments.
@@ -191,7 +191,7 @@ Audio configuration, container identities, images and resource ceilings were ret
 On 2026-10-05, both required CI jobs passed for
 `cbc2547a707662dbb8e25e7187dc30d45b62a4c6`. The release driver deployed that clean
 source's prebuilt bot and portal images while idle. The public pilot is available
-at [Vybertron](https://vybertron.tailbeae5.ts.net).
+at [Vybatron](https://vybertron.tailbeae5.ts.net).
 
 The bot runs image
 `sha256:4d58234d2d1848754020fd9bf37ec27d0b2e74d765fd9d90acdbfde1a48638dc`;

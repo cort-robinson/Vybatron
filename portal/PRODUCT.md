@@ -1,10 +1,10 @@
-# Vybertron portal
+# Vybatron portal
 
 schema: impeccable-product-v4
 
 ## Product purpose
 
-Friends control an existing Vybertron Discord listening session from a browser or
+Friends control an existing Vybatron Discord listening session from a browser or
 installed PWA. Music stays in Discord. Success is adding a first song, knowing
 what comes next, and sharing control without learning a command manual.
 

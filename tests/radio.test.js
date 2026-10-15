@@ -38,7 +38,7 @@ function fixture({ mixes = {}, fallback = { tracks: [] }, history = [], mode, pr
   };
   const channel = { members: new Map(members || [['200', { user: { bot: false }, voice: {} }]]) };
   const library = { settings: () => ({ autoplay: mode || 'off' }), readGuild: () => ({ history }) };
-  const client = { user: { id: '999', username: 'Vybertron' }, library, lavalink: { getPlayer: () => player },
+  const client = { user: { id: '999', username: 'Vybatron' }, library, lavalink: { getPlayer: () => player },
     guilds: { cache: new Map([['100', { channels: { cache: new Map([['300', channel]]) } }]]) } };
   return { player, client, current, channel, requests };
 }

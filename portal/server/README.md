@@ -1,4 +1,4 @@
-# Vybertron portal HTTP service
+# Vybatron portal HTTP service
 
 This independent Node 22.12+ package has **no runtime dependencies**. It serves
 the compiled UI, performs confidential Discord OAuth, stores encrypted device

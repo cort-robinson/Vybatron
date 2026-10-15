@@ -7,7 +7,7 @@ import { createHash } from 'node:crypto';
 const art = (name: string) => `http://127.0.0.1:${Number(process.env.PLAYWRIGHT_PORT || 4178)}/test-art/${name}.png`;
 const person = (id: string, displayName: string, image: string) => ({ id, displayName, avatarUrl: art(image) });
 const people = [person('jordan', 'Jordan', 'jordan'), person('alex', 'Alex', 'alex'), person('sam', 'Sam', 'sam')];
-const vybertron = { id: 'vybertron', displayName: 'Vybertron', avatarUrl: null };
+const vybertron = { id: 'vybertron', displayName: 'Vybatron', avatarUrl: null };
 export function suggestedTracks(): Track[] {
   return [suggestion('city-lights', 'City Lights', 'Northline', 221_000, 'golden'), suggestion('low-tide', 'Low Tide', 'Solara', 198_000, 'afterglow')];
 }
@@ -166,6 +166,9 @@ export async function mockPortal(page: Page, options: { signedOut?: boolean; bas
         }
         if (body.subcommand === 'delete') state.library.mixes = state.library.mixes.filter(m => m.name !== o.name);
       }
+      // A device session moving in: the bot plays the first link where the listener left off.
+      if (body.command === 'transfer') Object.assign(s, { status: o.paused ? 'paused' : 'playing', positionMs: Number(o.position), volume: Number(o.volume), repeat: o.repeat,
+        current: { ...track('moved-in', 'Moved In', 'M83', 244_000, 'night'), uri: body.tracks![0] }, queue: [], voiceChannel: { id: 'voice', name: 'General' } });
       state.snapshot.revision = `revision-${commands.length + 1}`;
       if (uncertain) { uncertain = false; await route.fulfill({ status: 503, json: { error: { code: 'upstream_timeout', message: 'The bot response did not arrive in time.' } } }); return; }
       await route.fulfill(reply({ ok: true, message: 'Your listening space is updated.', snapshot: state.snapshot }));

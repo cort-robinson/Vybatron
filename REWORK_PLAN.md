@@ -1,8 +1,8 @@
 > Historical plan, superseded by [SPEC.md](SPEC.md) and the [v2 launch checklist](docs/v2-launch.md). The current bot uses Lavalink and slash commands only.
 
-### Vybertron Rework Plan
+### Vybatron Rework Plan
 
-This plan reworks Vybertron into a robust, modern, deployable Discord music bot using Discord.js v14 and discord-player v6. It preserves the bot’s identity and intended features while improving stability, UX, and deployability.
+This plan reworks Vybatron into a robust, modern, deployable Discord music bot using Discord.js v14 and discord-player v6. It preserves the bot’s identity and intended features while improving stability, UX, and deployability.
 
 ## Goals
 - Reliable slash-command based music bot with optional legacy prefix `!` support
@@ -23,7 +23,7 @@ This plan reworks Vybertron into a robust, modern, deployable Discord music bot 
 ## Features to Implement
 - Core music: play, playnext, queue, skip, skipto, stop, volume
 - Quality-of-life: nowplaying, pause, resume, shuffle
-- Themed responses: embeds with Vybertron branding
+- Themed responses: embeds with Vybatron branding
 - Autocomplete-ready structure for future enhancements
 
 ## Configuration

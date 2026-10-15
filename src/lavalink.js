@@ -202,7 +202,7 @@ export function initLavalink(client) {
     sendToShard: (guildId, payload) => client.guilds.cache.get(guildId)?.shard?.send(payload),
     autoSkip: true,
     autoSkipOnResolveError: true,
-    client: { id: config.clientId, username: 'Vybertron' },
+    client: { id: config.clientId, username: 'Vybatron' },
     playerClass: HardenedPlayer,
     playerOptions: {
       defaultSearchPlatform: 'ytsearch',

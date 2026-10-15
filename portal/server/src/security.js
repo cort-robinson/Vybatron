@@ -34,7 +34,8 @@ export function securityHeaders(res, production) {
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
   res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=()');
-  res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data:; font-src 'self'; connect-src 'self'; media-src 'none'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'; worker-src 'self'; manifest-src 'self'");
+  // YouTube's embed API and player are allowed only for This device playback.
+  res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' https://www.youtube.com; frame-src https://www.youtube-nocookie.com; style-src 'self' 'unsafe-inline'; img-src 'self' https: data:; font-src 'self'; connect-src 'self'; media-src 'none'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'; worker-src 'self'; manifest-src 'self'");
   if (production) res.setHeader('Strict-Transport-Security', 'max-age=31536000');
 }
 

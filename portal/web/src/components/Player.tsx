@@ -1,10 +1,10 @@
 import { useEffect, useId, useRef, useState } from 'react';
-import { CaretDownIcon, CaretUpIcon, DotsThreeIcon, HeartIcon, PauseIcon, PlayIcon, RepeatIcon, RepeatOnceIcon, ShuffleIcon, SkipBackIcon, SkipForwardIcon, SpeakerHighIcon, StopIcon, RadioIcon, HandPalmIcon, ArrowSquareOutIcon, TrashIcon, WarningCircleIcon, ThumbsDownIcon, VinylRecordIcon } from '@phosphor-icons/react';
+import { CaretDownIcon, CheckIcon, DesktopIcon, DiscordLogoIcon, CaretUpIcon, DotsThreeIcon, HeartIcon, PauseIcon, PlayIcon, RepeatIcon, RepeatOnceIcon, ShuffleIcon, SkipBackIcon, SkipForwardIcon, SpeakerHighIcon, StopIcon, RadioIcon, HandPalmIcon, ArrowSquareOutIcon, TrashIcon, WarningCircleIcon, ThumbsDownIcon, VinylRecordIcon } from '@phosphor-icons/react';
 import type { Portal } from '../usePortal';
 import type { Command } from '../types';
 import { publicUrl } from '../api';
 import { time, timestamp } from '../format';
-import { ActionPopover, Artwork, Confirm, IconButton } from './ui';
+import { ActionPopover, Artwork, Confirm, Dialog, IconButton } from './ui';
 import { SaveSessionDialog, StopDialog } from './SessionMix';
 import { Queue } from './Queue';
 import { Spectrum } from './Spectrum';
@@ -15,6 +15,9 @@ import { Hud, tilt, untilt } from './Overdrive';
 export function Player({ portal, expanded, setExpanded, onAdd, accent, animate, skin = 'classic' }: { portal: Portal; expanded: boolean; setExpanded: (value: boolean) => void; onAdd: () => void; accent: string; animate: boolean; skin?: Skin }) {
   const { snapshot, bootstrap, can, run, receivedAt, connection, pending, syncing, library } = portal;
   const session = snapshot?.session;
+  const local = portal.target === 'local';
+  // This device's own playback needs no live Discord state to keep time.
+  const live = local || connection === 'live';
   const track = session?.current || null;
   const [clock, setClock] = useState(Date.now());
   const [scrub, setScrub] = useState<number | null>(null);
@@ -22,6 +25,7 @@ export function Player({ portal, expanded, setExpanded, onAdd, accent, animate, 
   const [confirmStop, setConfirmStop] = useState(false);
   const [confirmClear, setConfirmClear] = useState(false);
   const [saveSession, setSaveSession] = useState(false);
+  const [confirmHere, setConfirmHere] = useState(false);
   const playerRef = useRef<HTMLElement>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
   const identityTriggerRef = useRef<HTMLButtonElement>(null);
@@ -36,7 +40,7 @@ export function Player({ portal, expanded, setExpanded, onAdd, accent, animate, 
     wasExpanded.current = expanded;
   }, [expanded]);
   useEffect(() => {
-    if (!track || session?.status !== 'playing' || connection !== 'live') return;
+    if (!track || session?.status !== 'playing' || !live) return;
     let timer: ReturnType<typeof setInterval> | undefined;
     const visibility = () => {
       clearInterval(timer); timer = undefined;
@@ -47,7 +51,7 @@ export function Player({ portal, expanded, setExpanded, onAdd, accent, animate, 
     };
     document.addEventListener('visibilitychange', visibility); visibility();
     return () => { document.removeEventListener('visibilitychange', visibility); clearInterval(timer); };
-  }, [track?.id, session?.status, connection]);
+  }, [track?.id, session?.status, live]);
   useEffect(() => { setScrub(null); setVolumeDraft(null); setClock(Date.now()); }, [track?.id, snapshot?.guild.id]);
   // Acknowledge state that changes under the controls, whoever changed it: a new song settles
   // into the deck, the play mark swaps, repeat cycles, and a saved heart lifts once.
@@ -69,7 +73,7 @@ export function Player({ portal, expanded, setExpanded, onAdd, accent, animate, 
     if (!previous.saved && saved) pulse(find('.favorite svg'), [{ transform: 'scale(1)' }, { transform: 'scale(1.28)', offset: .35 }, { transform: 'scale(1)' }], 420);
   }, [track?.id, session?.status, session?.repeat, saved]);
   const duration = session?.durationMs || track?.durationMs || 0;
-  const position = Math.min(duration || Infinity, Math.max(0, (session?.positionMs || 0) + (session?.status === 'playing' && connection === 'live' ? Math.max(0, clock - receivedAt) : 0)));
+  const position = Math.min(duration || Infinity, Math.max(0, (session?.positionMs || 0) + (session?.status === 'playing' && live ? Math.max(0, clock - receivedAt) : 0)));
   const controllable = can('control') && !pending.length;
   const seekable = controllable && !!track && !track.isStream && duration > 0 && !['recovering', 'unavailable'].includes(session?.status || '');
   const control = (body: Command) => run({ ...body, expectedRevision: snapshot?.revision }, 'control');
@@ -83,12 +87,20 @@ export function Player({ portal, expanded, setExpanded, onAdd, accent, animate, 
   // supplies the icon; the hook alone owns pending and the duplicate-write lock.
   const pendingObservation = !snapshot ? 'Playback state unavailable. ' : connection !== 'live' ? 'Last known playback. ' : session?.status === 'playing' ? 'Playing. ' : session?.status === 'paused' ? 'Paused. ' : '';
   const sourceUrl = publicUrl(track?.uri);
-  const favorite = track && <IconButton className={`favorite ${index >= 0 ? 'active' : ''}`} label={index >= 0 ? 'Remove current song from favorites' : 'Save current song to favorites'} aria-pressed={index >= 0} disabled={!can('library') || !library || !!pending.length} onClick={() => void toggleFavorite()}><HeartIcon size={expanded ? 28 : 25} weight={index >= 0 ? 'fill' : 'regular'} /></IconButton>;
+  // Where this session can go: the server's session, or the viewer's own voice channel.
+  const discord = portal.discord;
+  const discordActive = !!(discord?.current || discord?.queue.length);
+  const room = discord?.voiceChannel?.name || discord?.viewerVoice?.name;
+  const discordLabel = !local ? `Discord${room ? ` · ${room}` : ''}`
+    : discordActive ? `Join the session in ${discord?.voiceChannel?.name || 'Discord'}`
+    : discord?.viewerVoice ? `${track ? 'Move to' : 'Discord ·'} ${discord.viewerVoice.name}` : 'Discord · join a voice channel first';
+  const others = discord?.listeners.filter(listener => listener.id !== bootstrap?.viewer.id).length || 0;
+  const favorite = track && <IconButton className={`favorite ${index >= 0 ? 'active' : ''}`} label={index >= 0 ? 'Remove current song from favorites' : 'Save current song to favorites'} aria-pressed={index >= 0} disabled={!can('library') || !library || !!pending.length || local && index < 0} title={local && index < 0 ? 'Save favorites while a song plays in Discord.' : undefined} onClick={() => void toggleFavorite()}><HeartIcon size={expanded ? 28 : 25} weight={index >= 0 ? 'fill' : 'regular'} /></IconButton>;
   // An autoplay pick names its provenance in place of the source.
   const metadata = track ? <>{track.author}<span className="metadata-dot" aria-hidden="true">·</span><span className="track-source">{track.suggested ? 'Autoplay pick' : track.source}</span></> : 'Add a song to start the room.';
   const identity = <div className="player-identity"><div className="player-title-row"><h2 ref={headingRef} tabIndex={-1} title={track?.title}>{track?.title || 'Nothing playing'}</h2>{favorite}</div><p title={track ? `${track.author} · ${track.source}` : undefined}>{metadata}</p>
   </div>;
-  const spectrumMode = track && active && connection === 'live' ? 'playing' : 'standby';
+  const spectrumMode = track && active && live ? 'playing' : 'standby';
   const spectrum = (className: string, bands: number, ghost?: number) => <Spectrum className={className} seed={track?.id || 'idle'} color={accent} tint={skin === 'overdrive' ? neon : undefined} mode={spectrumMode} animate={animate} bands={bands} ghost={ghost} />;
   const seek = () => { if (scrub === null) return; const value = scrub; setScrub(null); if (seekable) void control({ command: 'seek', options: { timestamp: timestamp(value) } }); };
   const timeline = <div className="playback-timeline"><div className={`timeline ${track?.isStream ? 'is-live' : ''}`}>
@@ -116,17 +128,20 @@ export function Player({ portal, expanded, setExpanded, onAdd, accent, animate, 
       onPointerUp={() => { if (volumeDraft !== null) { void control({ command: 'volume', options: { level: volumeDraft } }); setVolumeDraft(null); } }}
       onKeyUp={event => { if (volumeDraft !== null && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) { void control({ command: 'volume', options: { level: volumeDraft } }); setVolumeDraft(null); } }}
       onBlur={() => { if (volumeDraft !== null) { void control({ command: 'volume', options: { level: volumeDraft } }); setVolumeDraft(null); } }} /></div>
-    <label className={`filter-control ${session?.filter === 'warm' ? 'warm' : ''}`}><span className="filter-dot" /><span className="sr-only">Audio filter</span><select aria-label="Audio filter" value={session?.filter || bootstrap?.filters[0]?.id || ''} disabled={!controllable} onChange={event => void control({ command: 'filter', options: { preset: event.target.value } })}>
+    {!local && <label className={`filter-control ${session?.filter === 'warm' ? 'warm' : ''}`}><span className="filter-dot" /><span className="sr-only">Audio filter</span><select aria-label="Audio filter" value={session?.filter || bootstrap?.filters[0]?.id || ''} disabled={!controllable} onChange={event => void control({ command: 'filter', options: { preset: event.target.value } })}>
       {bootstrap?.filters.map(filter => <option key={filter.id} value={filter.id}>{filter.label}</option>)}
-    </select><CaretDownIcon size={16} /></label>
+    </select><CaretDownIcon size={16} /></label>}
     <ActionPopover label="More playback controls" trigger={<DotsThreeIcon size={27} weight="bold" />} className="player-more" triggerClassName="icon-button">
-      {close => <><button disabled={!can('vote') || !!pending.length || !track} onClick={() => { close(); void run({ command: 'voteskip', expectedRevision: snapshot?.revision }, 'vote'); }}><HandPalmIcon />Vote to skip</button>
-        <button disabled={!controllable || !track} onClick={() => { close(); void control({ command: 'radio', subcommand: session?.radio ? 'off' : 'on' }); }}><RadioIcon />Turn autoplay {session?.radio ? 'off' : 'on'}</button>
-        {track?.suggested && <button disabled={!controllable} onClick={() => { close(); void run({ command: 'radio', subcommand: 'less', expectedTrackId: track.id }, 'control'); }}><ThumbsDownIcon />Less like this</button>}
+      {close => <>{!local && <><button disabled={!can('vote') || !!pending.length || !track} onClick={() => { close(); void run({ command: 'voteskip', expectedRevision: snapshot?.revision }, 'vote'); }}><HandPalmIcon />Vote to skip</button>
+        <button disabled={!controllable || !track} onClick={() => { close(); void control({ command: 'radio', subcommand: session?.radio ? 'off' : 'on' }); }}><RadioIcon />Turn autoplay {session?.radio ? 'off' : 'on'}</button></>}
+        {!local && track?.suggested && <button disabled={!controllable} onClick={() => { close(); void run({ command: 'radio', subcommand: 'less', expectedTrackId: track.id }, 'control'); }}><ThumbsDownIcon />Less like this</button>}
         {sourceUrl && <a href={sourceUrl} target="_blank" rel="noreferrer" onClick={close}><ArrowSquareOutIcon />Open original track</a>}
-        <button disabled={!can('library') || !!pending.length || !track} onClick={() => { close(); setSaveSession(true); }}><VinylRecordIcon />Save session as mix</button>
+        {!local && <button disabled={!can('library') || !!pending.length || !track} onClick={() => { close(); setSaveSession(true); }}><VinylRecordIcon />Save session as mix</button>}
+        <p className="menu-section">Play on</p>
+        <button aria-pressed={local} disabled={!!pending.length} onClick={() => { close(); if (!local) { if (discord?.current) setConfirmHere(true); else void portal.moveHere(false); } }}><DesktopIcon />This device{local && <CheckIcon className="menu-check" weight="bold" />}</button>
+        <button aria-pressed={!local} disabled={!!pending.length || local && !discordActive && !discord?.viewerVoice} onClick={() => { close(); if (local) void portal.moveToDiscord(); }}><DiscordLogoIcon />{discordLabel}{!local && <CheckIcon className="menu-check" weight="bold" />}</button>
         <button className="danger-text" disabled={!controllable || !session?.queue.length} onClick={() => { close(); setConfirmClear(true); }}><TrashIcon />Clear upcoming queue</button>
-        <button className="danger-text" disabled={!can('control') || !track} onClick={() => { close(); setConfirmStop(true); }}><StopIcon />Stop and discard session</button>
+        <button className="danger-text" disabled={!can('control') || !track} onClick={() => { close(); setConfirmStop(true); }}><StopIcon />{local ? 'Stop and clear this device’s queue' : 'Stop and discard session'}</button>
       </>}
     </ActionPopover>
   </div>;
@@ -142,8 +157,16 @@ export function Player({ portal, expanded, setExpanded, onAdd, accent, animate, 
       {!expanded && permissionReason && <span className="sr-only" id={reasonId}>{permissionReason}</span>}
       <button ref={expandTriggerRef} className="expand-button" aria-expanded={expanded} aria-label={expanded ? 'Back to queue' : 'Open player'} onClick={() => { openedFromIdentity.current = false; setExpanded(!expanded); }}>{expanded ? <CaretDownIcon size={29} /> : <CaretUpIcon size={29} />}<span>{expanded ? 'Back to queue' : 'Open player'}</span></button>
     </div>
-    {confirmStop && <StopDialog portal={portal} onClose={() => setConfirmStop(false)} />}
+    {confirmStop && (local ? <Confirm title="Stop playing on this device?" detail="Stops the current song and clears this device’s queue. The Discord session, your favorites and shared mixes aren’t affected." action="Stop" onClose={() => setConfirmStop(false)} onConfirm={() => { setConfirmStop(false); void run({ command: 'stop' }, 'control'); }} />
+      : <StopDialog portal={portal} onClose={() => setConfirmStop(false)} />)}
     {saveSession && <SaveSessionDialog portal={portal} onClose={() => setSaveSession(false)} />}
-    {confirmClear && <Confirm title="Clear the upcoming queue?" detail={`Removes ${session?.queue.length || 0} queued songs. The current song keeps its position and playback state in Discord.`} action="Clear queue" onClose={() => setConfirmClear(false)} onConfirm={() => { setConfirmClear(false); void control({ command: 'clear' }); }} />}
+    {confirmHere && <Dialog title="Move playback to this device?" onClose={() => setConfirmHere(false)} className="confirm-dialog">
+      <p>{others ? `${others} other ${others === 1 ? 'person is' : 'people are'} listening in ${discord?.voiceChannel?.name || 'Discord'}. ` : ''}Move here stops the music in Discord and picks it up on this device at the same spot. Listen here too keeps Discord playing.</p>
+      {!can('control') && <p className="permission-note">{portal.blockedReason} You can still listen here too.</p>}
+      <div className="form-actions"><button type="button" className="button secondary" onClick={() => setConfirmHere(false)}>Cancel</button>
+        <button type="button" className="button secondary" onClick={() => { setConfirmHere(false); void portal.moveHere(false); }}>Listen here too</button>
+        <button type="button" className="button primary" disabled={!can('control') || !!pending.length} onClick={() => void portal.moveHere(true).then(ok => { if (ok) setConfirmHere(false); })}>Move here</button></div>
+    </Dialog>}
+    {confirmClear && <Confirm title="Clear the upcoming queue?" detail={`Removes ${session?.queue.length || 0} queued songs. The current song keeps its position and playback state${local ? '' : ' in Discord'}.`} action="Clear queue" onClose={() => setConfirmClear(false)} onConfirm={() => { setConfirmClear(false); void control({ command: 'clear' }); }} />}
   </section>;
 }

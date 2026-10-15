@@ -19,7 +19,7 @@ function sourceDescription(client) {
 
 export function buildHelpPayload(client, requestedTopic = 'start', ownerId = 'any') {
   const topic = HELP_TOPICS.find((entry) => entry.value === requestedTopic) || HELP_TOPICS[0];
-  const embed = new EmbedBuilder().setColor(0x00c8ff).setTitle(`Vybertron v2 • ${topic.label}`);
+  const embed = new EmbedBuilder().setColor(0x00c8ff).setTitle(`Vybatron v2 • ${topic.label}`);
   if (topic.value === 'start') {
     embed.setDescription('Your voice channel, your soundtrack. Join a voice channel, then use `/play` with a song name or supported track/playlist link.')
       .addFields(
@@ -52,15 +52,15 @@ export function buildHelpPayload(client, requestedTopic = 'start', ownerId = 'an
       .addFields(
         { name: 'Find the right recording', value: 'Use a song and artist name, select an autocomplete result, or paste a supported public catalog link. Track availability depends on the source, region, and audio server.' },
         { name: 'Spotify links', value: 'Spotify supplies catalog metadata; a playable recording is matched from an enabled audio source. A Spotify match does not guarantee the same audio master or availability.' },
-        { name: 'If a stream fails', value: 'Vybertron attempts bounded recovery and preserves your queue. Watch the shared player for its current state; use Skip or try another supported recording if that track remains unavailable.' },
+        { name: 'If a stream fails', value: 'Vybatron attempts bounded recovery and preserves your queue. Watch the shared player for its current state; use Skip or try another supported recording if that track remains unavailable.' },
         { name: 'If you cannot hear the bot', value: 'Check the bot’s Speak permission, Discord’s per-user bot volume, your output device, and whether the player is paused or muted. Voice-channel controls require joining the bot’s channel.' },
         { name: 'Effects and live streams', value: 'Effects use standard audio-server filters and affect everyone listening. Use `/filter preset:Original` to reset. Live streams have no reliable end time and cannot be sought.' },
       );
   }
-  embed.setFooter({ text: 'Vybertron v2 • Help is visible only to you' });
+  embed.setFooter({ text: 'Vybatron v2 • Help is visible only to you' });
   const select = new StringSelectMenuBuilder()
     .setCustomId(`help:v2:topic:${ownerId}`)
-    .setPlaceholder('Explore Vybertron…')
+    .setPlaceholder('Explore Vybatron…')
     .addOptions(HELP_TOPICS.map((entry) => ({ ...entry, default: entry.value === topic.value })));
   return { embeds: [embed], components: [new ActionRowBuilder().addComponents(select)], allowedMentions: NO_MENTIONS };
 }

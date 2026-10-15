@@ -121,7 +121,9 @@ export function snapshotProjection(client, context, revision, ordering) {
       durationMs: current ? boundedNumber(current.info?.duration) : 0, volume: allowed ? boundedNumber(player?.volume, settings.volume, 100) : 100,
       filter: allowed ? FILTERS.find(filter => filter.label === preset.label)?.id || 'custom' : 'off', repeat: allowed && ['off', 'track', 'queue'].includes(player?.repeatMode) ? player.repeatMode : 'off',
       radio: allowed && Boolean(player && autoplayActive(client, player)), autoplay: autoplayMode(client, id), fairQueue: allowed && settings.fairQueue, listeners,
-      canAdd, canControl: Boolean(allowed && player && sameVoice && djAccess(context, client)), canVote: Boolean(allowed && current && sameVoice), reason },
+      canAdd, canControl: Boolean(allowed && player && sameVoice && djAccess(context, client)), canVote: Boolean(allowed && current && sameVoice), reason,
+      // The viewer's own voice channel here, so a client can offer to move its music in.
+      viewerVoice: context.member && voice && VOICE_TYPES.has(voice.type) && visible(context, voice) ? channelProjection(voice) : null },
     savedSession: { exists: Boolean(savedVisible), savedAt: savedVisible ? saved.savedAt : null, positionMs: savedVisible ? saved.position : 0, paused: savedVisible ? saved.paused : false,
       trackCount: savedVisible ? saved.tracks.length : 0, voiceChannel: savedVisible ? channelProjection(context.channels.get(saved.voiceChannelId)) : null,
       canResume: Boolean(savedVisible && voice?.id === saved.voiceChannelId && botVoiceAccess && writable(context, context.channels.get(saved.textChannelId)) && djAccess(context, client) && !(player?.queue?.current || player?.queue?.tracks?.length)) },

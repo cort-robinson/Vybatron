@@ -27,6 +27,12 @@ const timestamp = value => {
   return Number(parts.at(-1)) <= 59 && (parts.length === 2 || Number(parts.at(-2)) <= 59);
 };
 
+// A device session moving into voice: public song links, current song first.
+const transferTracks = value => Array.isArray(value) && value.length >= 1 && value.length <= 100 && value.every(uri => {
+  if (!string(512)(uri) || /\s/.test(uri)) return false;
+  try { return new URL(uri).protocol === 'https:'; } catch { return false; }
+});
+
 const personalPlaylist = { playlist: opt(choice(['mix', 'top', 'rediscover', 'artist'])), artist: opt(string(100)),
   window: opt(choice(['7d', '30d', '90d', '365d', 'all'])) };
 
@@ -53,17 +59,19 @@ const schemas = {
   'top/play': { list: opt(choice(['on-repeat', 'forgotten-gems'])), shuffle: opt(boolean) },
   'mymix/show': { ...personalPlaylist, page: opt(integer(1, 3)) },
   'mymix/play': { ...personalPlaylist, shuffle: opt(boolean) },
+  transfer: { position: required(integer(0, 24 * 60 * 60_000)), paused: required(boolean), volume: required(integer(0, 100)), repeat: required(choice(['off', 'track', 'queue'])) },
 };
 
 export function validateCommand(body) {
   if (!body || typeof body !== 'object' || Array.isArray(body) ||
-      Object.keys(body).some(key => !['command', 'subcommand', 'options', 'expectedRevision', ...Object.keys(selectionFields)].includes(key)) ||
+      Object.keys(body).some(key => !['command', 'subcommand', 'options', 'expectedRevision', 'tracks', ...Object.keys(selectionFields)].includes(key)) ||
       typeof body.command !== 'string' || !/^[a-z]+$/.test(body.command) ||
       (body.subcommand !== undefined && (typeof body.subcommand !== 'string' || !/^[a-z]+$/.test(body.subcommand))) ||
       (body.expectedRevision !== undefined && !string(256)(body.expectedRevision))) throw invalid();
   const key = body.subcommand ? `${body.command}/${body.subcommand}` : body.command;
   if (!Object.hasOwn(schemas, key)) throw invalid();
   const selection = selectionFor[key];
+  if ((key === 'transfer') !== Object.hasOwn(body, 'tracks') || (key === 'transfer' && !transferTracks(body.tracks))) throw invalid();
   for (const [field, valid] of Object.entries(selectionFields)) {
     if (Object.hasOwn(body, field) && (field !== selection || !valid(body[field]))) throw invalid();
   }
@@ -79,5 +87,5 @@ export function validateCommand(body) {
   if (conflicting && body.expectedRevision === undefined) throw invalid();
   return { command: body.command, ...(body.subcommand && { subcommand: body.subcommand }),
     options, ...(body.expectedRevision !== undefined && { expectedRevision: body.expectedRevision }),
-    ...(selection && { [selection]: body[selection] }) };
+    ...(selection && { [selection]: body[selection] }), ...(key === 'transfer' && { tracks: body.tracks }) };
 }

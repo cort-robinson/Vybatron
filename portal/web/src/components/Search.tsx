@@ -16,9 +16,9 @@ const CACHE_TTL_MS = 60_000;
 const CACHE_LIMIT = 30;
 type Result = { tracks: Track[]; notice: string | null };
 
-function ResultRow({ track, detail, enabled, radioEnabled, blockedReason, onAdd, onRadio }: { track: Track; detail: string; enabled: boolean; radioEnabled: boolean; blockedReason: string; onAdd: (uri: string) => void; onRadio: (uri: string) => void }) {
+function ResultRow({ track, detail, enabled, radioEnabled, blockedReason, onAdd, onRadio }: { track: Track; detail: string; enabled: boolean; radioEnabled: boolean | null; blockedReason: string; onAdd: (track: Track) => void; onRadio: (uri: string) => void }) {
   return <li><Artwork track={track} /><div className="track-text"><strong>{track.title}</strong><span>{track.author} · {detail}</span></div><span className="result-length">{track.isStream ? 'Live' : time(track.durationMs)}</span>
-    <IconButton className="radio-start" label={radioLabel(track)} disabled={!radioEnabled || !track.uri} title={!track.uri ? 'This result has no public source reference' : !radioEnabled ? blockedReason : radioLabel(track)} onClick={() => { if (track.uri) onRadio(track.uri); }}><RadioIcon size={21} /></IconButton><button className="button secondary add-result" aria-label={`Add ${track.title} to queue`} disabled={!enabled || !track.uri} title={!track.uri ? 'This result has no public source reference' : !enabled ? blockedReason : undefined} onClick={() => { if (track.uri) onAdd(track.uri); }}><PlusIcon size={19} /><span>Add</span></button></li>;
+    {radioEnabled !== null && <IconButton className="radio-start" label={radioLabel(track)} disabled={!radioEnabled || !track.uri} title={!track.uri ? 'This result has no public source reference' : !radioEnabled ? blockedReason : radioLabel(track)} onClick={() => { if (track.uri) onRadio(track.uri); }}><RadioIcon size={21} /></IconButton>}<button className="button secondary add-result" aria-label={`Add ${track.title} to queue`} disabled={!enabled || !track.uri} title={!track.uri ? 'This result has no public source reference' : !enabled ? blockedReason : undefined} onClick={() => { if (track.uri) onAdd(track); }}><PlusIcon size={19} /><span>Add</span></button></li>;
 }
 
 export function Search({ portal, open, onClose, query, setQuery }: { portal: Portal; open: boolean; onClose: () => void; query: string; setQuery: (value: string) => void }) {
@@ -81,12 +81,13 @@ export function Search({ portal, open, onClose, query, setQuery }: { portal: Por
   const picks = useMemo(() => typed ? [] : suggestTracks(portal.library, session), [typed, portal.library, session]);
   const artists = useMemo(() => typed ? [] : suggestArtists(portal.library, session), [typed, portal.library, session]);
   const mine = useMemo(() => !typed || isLink(typed) ? [] : libraryMatches(portal.library, typed), [typed, portal.library]);
-  const add = (next: boolean, value: string) => portal.run({ command: next ? 'playnext' : 'play', options: { query: value } }, next ? 'control' : 'add');
+  // A chosen result travels with its query, so playing it here needs no second lookup.
+  const add = (next: boolean, value: string, track?: Track) => portal.run({ command: next ? 'playnext' : 'play', options: { query: value } }, next ? 'control' : 'add', track && [track]);
   const explore = (artist: string) => { setQuery(artist); input.current?.focus(); void search(artist); };
   const enabled = portal.can('add') && !portal.pending.length;
   const controllable = portal.can('control') && !portal.pending.length;
   const radio = (uri: string) => portal.run({ command: 'radio', subcommand: 'on', options: { track: uri } }, 'control');
-  const row = (track: Track, detail: string, key: string) => <ResultRow key={key} track={track} detail={detail} enabled={enabled} radioEnabled={controllable} blockedReason={portal.blockedReason} onAdd={uri => void add(false, uri)} onRadio={uri => void radio(uri)} />;
+  const row = (track: Track, detail: string, key: string) => <ResultRow key={key} track={track} detail={detail} enabled={enabled} radioEnabled={portal.target === 'local' ? null : controllable} blockedReason={portal.blockedReason} onAdd={track => void add(false, track.uri!, track)} onRadio={uri => void radio(uri)} />;
   const stale = searching || (!!lastQuery && lastQuery !== typed);
   if (!open) return null;
   return <Dialog title="Add music" onClose={onClose} className="search-dialog" initialFocusRef={input}>

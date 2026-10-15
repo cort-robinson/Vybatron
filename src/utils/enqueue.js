@@ -76,6 +76,8 @@ export async function resolveReferences(player, references, requester, { limit =
       const spotify = ref.sourceName === 'spotify' ? parseSpotifyUrl(ref.uri) : null;
       const track = spotify?.type === 'track' && spotify.id === ref.identifier && result?.spotifyImport?.matchedCount === 1
         ? result.tracks[0]
+        // A bare link (a portal transfer) takes what the link itself names.
+        : !ref.sourceName ? result?.tracks?.[0]
         : result?.tracks?.find(t => t.info?.sourceName === ref.sourceName && (!ref.identifier || t.info?.identifier === ref.identifier));
       if (!track) throw new Error('Saved track is unavailable.');
       return track;

@@ -1,6 +1,6 @@
 # Glossary
 
-Domain terms for Vybertron. One meaning per term; commands, code, and docs use these words consistently.
+Domain terms for Vybatron. One meaning per term; commands, code, and docs use these words consistently.
 
 - **Track** — one playable item (song/video) with title, URL, duration, source, and **requester**. Produced by a **search**; lives in a **queue**.
 - **Requester** — the Discord user who enqueued a track. Attached at search time, shown in embeds.

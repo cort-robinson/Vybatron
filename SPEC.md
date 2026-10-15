@@ -1,4 +1,4 @@
-# Vybertron v2 contract
+# Vybatron v2 contract
 
 ## Goal and architecture
 

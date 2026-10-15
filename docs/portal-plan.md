@@ -1,4 +1,4 @@
-# Vybertron portal: approved implementation plan
+# Vybatron portal: approved implementation plan
 
 The owner approved implementation and deployment on 2026-10-04, including
 parallel GPT-6.1-Sol Fast tasks. The grilling/shared-understanding gate is complete.
@@ -6,7 +6,7 @@ Target incremental cost is $0; do not purchase a service during implementation.
 
 ## Product and selected visual direction
 
-This is a production portal for existing private Vybertron servers and future
+This is a production portal for existing private Vybatron servers and future
 servers the owner deliberately adds. It does not offer public bot installation.
 Audio stays in Discord; the portal controls the existing hardened player.
 

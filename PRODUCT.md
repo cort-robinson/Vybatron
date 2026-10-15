@@ -10,7 +10,7 @@ Friend groups listening together in Discord voice channels. They want to start m
 
 ## Product Purpose
 
-Vybertron turns a Discord voice channel into an easy shared listening space. Success means a friend can play a track, understand the queue, and use the common controls on the first try while the bot stays reliable and unobtrusive in the channel.
+Vybatron turns a Discord voice channel into an easy shared listening space. Success means a friend can play a track, understand the queue, and use the common controls on the first try while the bot stays reliable and unobtrusive in the channel.
 
 ## Brand Personality
 
@@ -25,7 +25,7 @@ Feature-heavy music bots that feel like command manuals: emoji clutter, novelty 
 - Make the first song effortless: the shortest path from intent to audible playback wins.
 - Put the music first: artwork, track identity, playback state, and the next useful action outrank bot branding.
 - Keep shared control obvious: use familiar Discord affordances, clear labels, and immediate feedback.
-- Express Vybertron with restraint: a distinct voice and visual signature should flavor the experience without adding friction.
+- Express Vybatron with restraint: a distinct voice and visual signature should flavor the experience without adding friction.
 - Earn trust quietly: predictable behavior, graceful recovery, and low channel noise are part of the premium experience.
 
 ## Accessibility & Inclusion

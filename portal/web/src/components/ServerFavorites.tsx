@@ -45,7 +45,7 @@ export function ServerFavorites({ portal }: { portal: Portal }) {
     return () => controller.current?.abort();
   }, [guildId, refresh]);
 
-  const play = (list: ListId, shuffle: boolean) => run({ command: 'top', subcommand: 'play', options: { list, shuffle } }, 'add');
+  const play = (list: ListId, shuffle: boolean) => run({ command: 'top', subcommand: 'play', options: { list, shuffle } }, 'add', stats?.serverFavorites[lists.find(item => item.id === list)!.key].map(entry => entry.track));
 
   if (error && !stats) return <ErrorState message={error} retry={() => void refresh()} />;
   if (!stats) return <Loading label="Loading server favorites…" />;

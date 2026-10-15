@@ -32,7 +32,7 @@ export async function execute(interaction) {
     const permissions = channel?.permissionsFor?.(me);
     if (channel?.guildId !== interaction.guildId || ![ChannelType.GuildText, ChannelType.GuildAnnouncement].includes(channel.type)
       || !permissions?.has([PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.EmbedLinks])) {
-      return interaction.reply(ephemeralText('Choose a text channel in this server where Vybertron can view, send messages and embed links.'));
+      return interaction.reply(ephemeralText('Choose a text channel in this server where Vybatron can view, send messages and embed links.'));
     }
     await interaction.portalRecheck?.();
   }

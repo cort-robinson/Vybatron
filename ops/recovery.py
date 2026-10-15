@@ -180,7 +180,7 @@ def pin_config(config, version):
 
 
 def public_json(url):
-    request = urllib.request.Request(url, headers={'User-Agent': 'Vybertron-Recovery/1.0', 'Accept': 'application/vnd.github+json'})
+    request = urllib.request.Request(url, headers={'User-Agent': 'Vybatron-Recovery/1.0', 'Accept': 'application/vnd.github+json'})
     try:
         with urllib.request.urlopen(request, timeout=20) as response:
             value = json.loads(response.read(2 * 1024 * 1024))
@@ -445,7 +445,7 @@ console.log(JSON.stringify({api:!!stats,bot:health?.ready===true,cipher:cipherOk
         token = environment.get('DISCORD_BOT_TOKEN')
         if not token:
             return False
-        headers = {'Authorization': f'Bot {token}', 'Content-Type': 'application/json', 'User-Agent': 'Vybertron-Recovery/2.0'}
+        headers = {'Authorization': f'Bot {token}', 'Content-Type': 'application/json', 'User-Agent': 'Vybatron-Recovery/2.0'}
         base = f'https://discord.com/api/v10/channels/{channel}'
         try:
             with urllib.request.urlopen(urllib.request.Request(base, headers=headers), timeout=10) as response:
@@ -484,14 +484,14 @@ class Coordinator:
         self.state.update(status=kind, checked_at=now, failures=failures, detail=detail, version=self.backend.current())
         if healthy and self.state.pop('incident_notified', False):
             self.state['started'] = True
-            self.event('Vybertron has recovered. Discord connectivity, search, and audio checks are healthy again.')
+            self.event('Vybatron has recovered. Discord connectivity, search, and audio checks are healthy again.')
         elif healthy and not self.state.get('started'):
             self.state['started'] = True
-            self.event('Vybertron monitoring is enabled. Connectivity, search, and decoded audio are checked about every five minutes. Official YouTube plugin updates are checked every six hours and after persistent playback failures; updates must pass full playback tests and wait for an empty player/queue. Failed updates are rolled back. Routine successful checks stay quiet.')
+            self.event('Vybatron monitoring is enabled. Connectivity, search, and decoded audio are checked about every five minutes. Official YouTube plugin updates are checked every six hours and after persistent playback failures; updates must pass full playback tests and wait for an empty player/queue. Failed updates are rolled back. Routine successful checks stay quiet.')
         elif (not healthy and failures >= (DEGRADED_ALERT_RUNS if kind == 'canary_degraded' else 2)
               and self.state.get('incident_notified') != kind):
             self.state['incident_notified'] = kind
-            self.event(f'Vybertron needs attention: {detail or kind}. Automatic recovery is limited to avoid repeated interruptions. Current YouTube plugin: {self.backend.current()}.')
+            self.event(f'Vybatron needs attention: {detail or kind}. Automatic recovery is limited to avoid repeated interruptions. Current YouTube plugin: {self.backend.current()}.')
         self.save()
         return self.state
 
@@ -522,7 +522,7 @@ class Coordinator:
         with contextlib.suppress(RecoveryError):
             self.backend.end_update()
         self.save()
-        self.event(f"Vybertron restored YouTube plugin {pending['previous']} after an interrupted or failed update to {pending['candidate']}.")
+        self.event(f"Vybatron restored YouTube plugin {pending['previous']} after an interrupted or failed update to {pending['candidate']}.")
 
     def promote(self, candidate, now):
         # Prevent a new /play or an in-flight search from racing the idle check.
@@ -552,7 +552,7 @@ class Coordinator:
             self.state.pop('candidate', None)
             self.state.setdefault('updates', []).append(now)
             self.save()
-            self.event(f'Vybertron automatically updated the YouTube plugin from {previous} to {candidate}. Two complete tracks passed isolated playback tests before installation. The installed jar, search, audio, and bot connection passed verification afterward.')
+            self.event(f'Vybatron automatically updated the YouTube plugin from {previous} to {candidate}. Two complete tracks passed isolated playback tests before installation. The installed jar, search, audio, and bot connection passed verification afterward.')
             return True
         finally:
             with contextlib.suppress(RecoveryError):
@@ -633,7 +633,7 @@ class Coordinator:
                     verified = [item['id'] for item in live_failures if item['identifier'] == live_failures[-1]['identifier']]
                     self.state['handled_failures'] = [*handled, *verified][-30:]
                     self.save()
-                    self.event('Vybertron restarted the idle audio service after a real playback failure that fresh audio probes could not reproduce. The bot reconnected; retry /play. Repeated recovery attempts are limited.')
+                    self.event('Vybatron restarted the idle audio service after a real playback failure that fresh audio probes could not reproduce. The bot reconnected; retry /play. Repeated recovery attempts are limited.')
                 finally:
                     self.backend.end_update()
                 probe = self.backend.probe(current, installed=True)

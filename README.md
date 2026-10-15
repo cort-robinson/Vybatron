@@ -1,4 +1,4 @@
-# Vybertron v2
+# Vybatron v2
 
 A shared soundtrack for Discord, with a player that stays out of the way and an audio stack that knows how to recover.
 

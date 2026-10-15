@@ -10,8 +10,9 @@ import { snapshotProjection } from './projection.js';
 import { assertFavoriteSelection, assertHistorySelection, assertMixSelection, assertSuggestionSelection } from './selections.js';
 import { suggestions } from '../utils/radio.js';
 import { commandAuthorityPhase } from './timing.js';
+import * as transfer from './transfer.js';
 
-const ALLOWED = new Set(['play', 'playnext', 'pause', 'resume', 'seek', 'skip', 'skipto', 'stop', 'clear', 'remove', 'move', 'shuffle', 'loop', 'volume', 'filter', 'voteskip', 'radio', 'replay', 'session', 'favorite', 'mix', 'settings', 'queue', 'nowplaying', 'history', 'help', 'top', 'mymix']);
+const ALLOWED = new Set(['play', 'playnext', 'pause', 'resume', 'seek', 'skip', 'skipto', 'stop', 'clear', 'remove', 'move', 'shuffle', 'loop', 'volume', 'filter', 'voteskip', 'radio', 'replay', 'session', 'favorite', 'mix', 'settings', 'queue', 'nowplaying', 'history', 'help', 'top', 'mymix', 'transfer']);
 const CONFLICTING = new Set(['playnext', 'seek', 'skip', 'skipto', 'clear', 'remove', 'move', 'shuffle', 'replay']);
 // These handlers perform no admission work that needs guild authority. Their
 // first await is the native requireControl guard, which takes fresh authority
@@ -23,9 +24,11 @@ const DIRECT_CONTROLS = new Set(['pause', 'resume', 'seek', 'filter', 'volume', 
 // when the policy can vouch for it, so the playback write isn't held behind a
 // Discord REST round. Queue edits, Stop and the final disclosure stay fresh.
 const GATEWAY_CONTROLS = new Set(['pause', 'resume', 'seek', 'filter', 'volume', 'skip', 'skipto']);
-const ROOT_KEYS = new Set(['actorId', 'command', 'subcommand', 'options', 'expectedRevision', 'expectedTrackId', 'expectedHistoryId', 'expectedMixVersion']);
+const ROOT_KEYS = new Set(['actorId', 'command', 'subcommand', 'options', 'expectedRevision', 'expectedTrackId', 'expectedHistoryId', 'expectedMixVersion', 'tracks']);
+// Portal-only handlers that are not slash commands, so never appear in publicCommands.
+const handler = (commandMap, name) => name === 'transfer' ? transfer : commandMap.get(name);
 // Ordinary additions follow canAdd rules: same voice, no DJ role, no revision.
-const isAddition = ({ command, subcommand }) => command === 'play' || (command === 'favorite' && subcommand === 'play')
+const isAddition = ({ command, subcommand }) => command === 'play' || command === 'transfer' || (command === 'favorite' && subcommand === 'play')
   || (command === 'mix' && subcommand === 'load') || (['top', 'mymix'].includes(command) && subcommand === 'play') || (command === 'radio' && subcommand === 'promote');
 const object = value => value && typeof value === 'object' && !Array.isArray(value);
 // Suggestion edits carry the selected track's public id, like favorites.
@@ -48,7 +51,8 @@ export function publicCommands(commandMap) {
   });
 }
 export function validateCommand(body, commandMap) {
-  if (!object(body) || Object.keys(body).some(key => !ROOT_KEYS.has(key)) || !ALLOWED.has(body.command) || !commandMap.has(body.command)) fail(400, 'invalid_command', 'Choose a supported command.');
+  if (!object(body) || Object.keys(body).some(key => !ROOT_KEYS.has(key)) || !ALLOWED.has(body.command) || !handler(commandMap, body.command)) fail(400, 'invalid_command', 'Choose a supported command.');
+  if ((body.command === 'transfer') !== Object.hasOwn(body, 'tracks') || (body.command === 'transfer' && !transfer.validTransferTracks(body.tracks))) fail(400, 'invalid_tracks', 'Send between 1 and 100 public song links to move.');
   if (body.expectedRevision !== undefined && (typeof body.expectedRevision !== 'string' || !/^[a-f0-9]{32}$/.test(body.expectedRevision))) fail(400, 'invalid_revision', 'Use the revision from the latest snapshot.');
   const selections = [
     ['expectedTrackId', (body.command === 'favorite' && ['play', 'remove'].includes(body.subcommand)) || (body.command === 'radio' && SUGGESTION_ACTIONS.has(body.subcommand)), /^[a-f0-9]{24}$/],
@@ -59,7 +63,7 @@ export function validateCommand(body, commandMap) {
     if (Object.hasOwn(body, key) && !required) fail(400, 'invalid_selection', 'A selection token was supplied for an unsupported command.');
     if (required && (typeof body[key] !== 'string' || !shape.test(body[key]))) fail(400, 'invalid_selection', 'Include the selected library item token before trying again.');
   }
-  const schema = commandMap.get(body.command).data.toJSON();
+  const schema = handler(commandMap, body.command).data.toJSON();
   const subcommands = (schema.options || []).filter(option => option.type === 1);
   let options = schema.options || [];
   if (subcommands.length) {
@@ -158,11 +162,11 @@ function commandAccess(client, context, command, { checkState = true } = {}) {
     const info = player?.queue?.current?.info;
     if (position === null || !info || info.isStream || info.isSeekable === false || position >= info.duration) fail(400, 'invalid_seek', 'Choose a valid timestamp before the end of a seekable track.');
   }
-  if (!player && ['play', 'playnext', 'favorite', 'mix', 'top', 'mymix'].includes(name)) {
+  if (!player && ['play', 'playnext', 'favorite', 'mix', 'top', 'mymix', 'transfer'].includes(name)) {
     const text = context.channels.get(client.library.settings(context.guild.id).musicTextChannelId);
     if (!writable(context, text) || !visible(context, text)) fail(409, 'music_channel_required', 'An administrator must configure a visible music text channel before starting from the web.');
   }
-  if (checkpoint && action === 'resume' && (!writable(context, context.channels.get(checkpoint.textChannelId)))) fail(403, 'invalid_channel', 'Vybertron cannot write to the saved controller channel.');
+  if (checkpoint && action === 'resume' && (!writable(context, context.channels.get(checkpoint.textChannelId)))) fail(403, 'invalid_channel', 'Vybatron cannot write to the saved controller channel.');
 }
 
 function safeReply(payload) {
@@ -212,6 +216,7 @@ export async function executePortalCommand(client, policy, revisions, commandMap
     async reply(payload) { this.replied = true; message = safeReply(payload); },
     async editReply(payload) { this.replied = true; message = safeReply(payload); },
     async followUp(payload) { this.replied = true; message = safeReply(payload); },
+    portalTracks: command.tracks || [],
     portalReject(text) { throw new PortalError(403, 'forbidden', plainText(text, { maxLength: 250 })); },
     portalUnavailable() { fail(503, 'maintenance', 'Playback is briefly updating. Try again shortly.'); },
     portalAssertRevision: assertRevision,
@@ -265,8 +270,9 @@ export async function executePortalCommand(client, policy, revisions, commandMap
   // first queue write begins, subsequent changes are our own expected progress;
   // player identity/stopping fences still apply throughout the command.
   interaction.portalMutationStarted = () => { assertRevision(); if (!mutationStarted) assertCommandSelection(client, context, command); mutationStarted = true; };
-  if (command.policy.readOnly) { await preflight(); await commandMap.get(command.command).execute(interaction); }
-  else await guardedMutation(interaction, commandMap.get(command.command).execute, { ...command.policy, beforeMutation: preflight });
+  const { execute } = handler(commandMap, command.command);
+  if (command.policy.readOnly) { await preflight(); await execute(interaction); }
+  else await guardedMutation(interaction, execute, { ...command.policy, beforeMutation: preflight });
   context = await freshContext('finalDisclosure');
   // Captured embeds predate this final authority check. Neutral acknowledgments
   // avoid leaking queue/history names (including individually revoked history

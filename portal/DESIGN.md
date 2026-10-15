@@ -213,6 +213,25 @@ so switching looks is one attribute and removing it is two files and their impor
   pointer. A one-time power-on flicker runs on page load.
 - Reduced motion removes all of it except static color and shape.
 
+## Performance mode
+
+Settings → On this device → Performance mode (off by default, both looks). It sets
+`:root[data-performance]`: solid chrome replaces the backdrop blur, the blurred cover light is
+hidden, and the scene and spectrum hold still (App.tsx treats it like ambient motion off).
+Overdrive also drops its CRT texture, glow filters, and blend layers. Layout, controls, and
+playback are unchanged.
+
+Write only the standard `backdrop-filter`; the build adds the `-webkit-` form. When a rule
+declares both, the minifier keeps only the last one, which once removed the blur in Chrome and
+the phone header's containing-block override.
+
+## Sideways shelves
+
+Home shelves scroll by mouse drag (`src/dragScroll.ts`): a 6px threshold keeps presses as
+clicks, the click that ends a drag is swallowed, release flings with decay (none under
+reduced motion), and snapping waits until the drag ends. Touch and pen keep native scrolling.
+Overflowing shelves fade at whichever edge still has more to show.
+
 ## Do's and Don'ts
 
 ### Do:

@@ -137,7 +137,7 @@ svg { flex-shrink: 0; }
 .spectrum { display: block; pointer-events: none; }
 
 /* Sidebar: the receiver's faceplate. */
-.sidebar { width: var(--sidebar); position: fixed; inset: 0 auto var(--player) 0; display: flex; flex-direction: column; border-right: 1px solid var(--line); padding: 28px 18px 20px; background: var(--chrome); backdrop-filter: var(--chrome-blur); -webkit-backdrop-filter: var(--chrome-blur); z-index: 12; overflow-y: auto; }
+.sidebar { width: var(--sidebar); position: fixed; inset: 0 auto var(--player) 0; display: flex; flex-direction: column; border-right: 1px solid var(--line); padding: 28px 18px 20px; background: var(--chrome); backdrop-filter: var(--chrome-blur); z-index: 12; overflow-y: auto; }
 .brand { display: flex; align-items: center; gap: 11px; color: var(--text); font-size: 19px; font-weight: 800; font-stretch: 125%; letter-spacing: .06em; text-transform: uppercase; white-space: nowrap; }
 .brand svg { color: var(--accent); }
 .sidebar > .brand, .sidebar > .guild-card, .sidebar > .navigation, .sidebar > .account { flex-shrink: 0; }
@@ -291,7 +291,7 @@ picture.artwork { display: block; overflow: hidden; }
 .recovery-actions .button { color: var(--amber); }
 
 /* One player: a glass deck with its spectrum behind identity, transport, and disclosure. */
-.persistent-player { position: fixed; inset: auto 0 0; height: var(--player); z-index: 30; border-top: 1px solid var(--line-strong); background: var(--chrome); backdrop-filter: var(--chrome-blur); -webkit-backdrop-filter: var(--chrome-blur); box-shadow: var(--shadow-player); }
+.persistent-player { position: fixed; inset: auto 0 0; height: var(--player); z-index: 30; border-top: 1px solid var(--line-strong); background: var(--chrome); backdrop-filter: var(--chrome-blur); box-shadow: var(--shadow-player); }
 .player-spectrum { position: absolute; inset: 0; width: 100%; height: 100%; opacity: .22; -webkit-mask-image: linear-gradient(to top, #000 0%, rgb(0 0 0 / .4) 40%, transparent 78%); mask-image: linear-gradient(to top, #000 0%, rgb(0 0 0 / .4) 40%, transparent 78%); }
 .player-footer { position: relative; height: 100%; display: grid; grid-template-columns: minmax(0, 1fr) auto auto 80px; grid-template-rows: 44px minmax(0, 1fr); align-items: center; gap: 0 16px; padding: 0 24px 14px; }
 .playback-timeline { display: flex; align-items: center; gap: 12px; min-width: 0; width: 100%; }
@@ -375,7 +375,7 @@ picture.artwork { display: block; overflow: hidden; }
 .sleeve-topbar { border-bottom-color: transparent; }
 .expanded-main { padding: 0; min-height: 0; background: transparent; }
 /* Let identity and context claim their height before artwork and its spectrum receive the remainder. */
-.persistent-player.expanded { pointer-events: none; inset: var(--topbar) 0 0; height: auto; border: none; background: transparent; backdrop-filter: none; -webkit-backdrop-filter: none; box-shadow: none; display: grid; grid-template-rows: minmax(0, 1fr) var(--player); }
+.persistent-player.expanded { pointer-events: none; inset: var(--topbar) 0 0; height: auto; border: none; background: transparent; backdrop-filter: none; box-shadow: none; display: grid; grid-template-rows: minmax(0, 1fr) var(--player); }
 .has-connection-notice .persistent-player.expanded { top: calc(var(--topbar) + var(--connection-notice)); }
 .expanded .player-footer, .sleeve-content { pointer-events: auto; }
 .sleeve-content { margin-left: var(--sidebar); min-height: 0; display: grid; grid-template-columns: minmax(0, 52fr) minmax(0, 48fr); padding: 24px 32px; gap: 32px; animation: sleeve-in 520ms var(--ease-out); }
@@ -392,9 +392,9 @@ picture.artwork { display: block; overflow: hidden; }
 .sleeve-artwork > .artwork { display: block; width: var(--cover); height: var(--cover); aspect-ratio: 1; object-fit: cover; border-radius: 18px; box-shadow: var(--shadow-sleeve); }
 .sleeve-artwork > .artwork-empty { display: grid; place-items: center; }
 .sleeve-spectrum { width: var(--cover); height: var(--spectrum); flex-shrink: 0; }
-.sleeve-queue { align-self: start; max-height: 100%; min-width: 0; min-height: 0; overflow-y: auto; padding: 18px 16px 18px; background: color-mix(in oklab, var(--ground) 62%, transparent); backdrop-filter: var(--chrome-blur); -webkit-backdrop-filter: var(--chrome-blur); border: 1px solid var(--line); border-radius: 20px; }
+.sleeve-queue { align-self: start; max-height: 100%; min-width: 0; min-height: 0; overflow-y: auto; padding: 18px 16px 18px; background: color-mix(in oklab, var(--ground) 62%, transparent); backdrop-filter: var(--chrome-blur); border: 1px solid var(--line); border-radius: 20px; }
 .sleeve-queue .section-heading { padding-inline: 8px; }
-.expanded .player-footer { grid-template-columns: minmax(240px, 1fr) auto 80px; grid-template-rows: 1fr; padding: 14px 24px 14px calc(var(--sidebar) + 32px); gap: 20px; background: var(--chrome); backdrop-filter: var(--chrome-blur); -webkit-backdrop-filter: var(--chrome-blur); border-top: 1px solid var(--line-strong); }
+.expanded .player-footer { grid-template-columns: minmax(240px, 1fr) auto 80px; grid-template-rows: 1fr; padding: 14px 24px 14px calc(var(--sidebar) + 32px); gap: 20px; background: var(--chrome); backdrop-filter: var(--chrome-blur); border-top: 1px solid var(--line-strong); }
 .expanded .playback-cluster { grid-column: 1; grid-row: 1; max-width: 700px; }
 .expanded .transport { gap: 16px; }
 .expanded .player-extras { grid-column: 2; grid-row: 1; padding-left: 20px; border-left: 1px solid var(--line); }
@@ -578,7 +578,7 @@ picture.artwork { display: block; overflow: hidden; }
 @media (max-width: 1023px) {
   :root { --sidebar: 0px; --mobile-header: calc(72px + env(safe-area-inset-top, 0px)); --topbar: 0px; --player: 72px; --nav: calc(64px + env(safe-area-inset-bottom, 0px)); --connection-notice: 96px; --expanded-controls: 168px; }
   .app-shell { padding-bottom: calc(var(--player) + var(--nav)); }
-  .sidebar { position: relative; inset: auto; width: 100%; height: var(--mobile-header); padding: calc(8px + env(safe-area-inset-top, 0px)) max(12px, env(safe-area-inset-right, 0px)) 8px max(12px, env(safe-area-inset-left, 0px)); flex-direction: row; align-items: center; justify-content: space-between; gap: 8px; border-right: none; border-bottom: 1px solid var(--line); background: color-mix(in oklab, var(--ground) 94%, transparent); backdrop-filter: none; -webkit-backdrop-filter: none; z-index: 35; }
+  .sidebar { position: relative; inset: auto; width: 100%; height: var(--mobile-header); padding: calc(8px + env(safe-area-inset-top, 0px)) max(12px, env(safe-area-inset-right, 0px)) 8px max(12px, env(safe-area-inset-left, 0px)); flex-direction: row; align-items: center; justify-content: space-between; gap: 8px; border-right: none; border-bottom: 1px solid var(--line); background: color-mix(in oklab, var(--ground) 94%, transparent); backdrop-filter: none; z-index: 35; }
   .sidebar > .brand, .sidebar > .guild-card, .sidebar > .navigation, .sidebar > .account { flex-shrink: 0; }
 .sidebar > .brand { margin: 0; font-size: 16px; gap: 8px; }
   .sidebar > .brand svg { width: 26px; }
@@ -589,7 +589,7 @@ picture.artwork { display: block; overflow: hidden; }
   .guild-info select { font-size: 16px; min-height: 44px; }
   .guild-status { font-size: 14px; line-height: 20px; }
   .guild-caret { top: 14px; right: 8px; }
-  .navigation { position: fixed; bottom: 0; left: 0; right: 0; height: var(--nav); display: flex; flex-direction: row; justify-content: space-around; align-items: stretch; margin: 0; padding: 0 max(8px, env(safe-area-inset-right, 0px)) env(safe-area-inset-bottom, 0px) max(8px, env(safe-area-inset-left, 0px)); border-top: 1px solid var(--line); background: var(--chrome); backdrop-filter: var(--chrome-blur); -webkit-backdrop-filter: var(--chrome-blur); z-index: 60; }
+  .navigation { position: fixed; bottom: 0; left: 0; right: 0; height: var(--nav); display: flex; flex-direction: row; justify-content: space-around; align-items: stretch; margin: 0; padding: 0 max(8px, env(safe-area-inset-right, 0px)) env(safe-area-inset-bottom, 0px) max(8px, env(safe-area-inset-left, 0px)); border-top: 1px solid var(--line); background: var(--chrome); backdrop-filter: var(--chrome-blur); z-index: 60; }
   .navigation button { margin: 0; border-radius: 0; padding: 6px 8px 9px; flex: 1; min-width: 0; align-items: center; justify-content: center; flex-direction: column; gap: 2px; font-size: 14px; min-height: 44px; }
   .navigation button svg { width: 24px; height: 24px; }
   .nav-indicator { background: none; }
@@ -819,7 +819,7 @@ picture.artwork { display: block; overflow: hidden; }
   .sleeve-main .player-identity, .sleeve-main .player-context { text-align: left; }
   .sleeve-main .player-title-row { justify-content: flex-start; }
   .sleeve-main .player-permission { justify-content: flex-start; }
-  .expanded .player-footer { grid-column: 2; grid-row: 1 / -1; padding: 8px 12px 12px; border-top: 0; border-left: 1px solid var(--line); justify-content: center; background: transparent; backdrop-filter: none; -webkit-backdrop-filter: none; }
+  .expanded .player-footer { grid-column: 2; grid-row: 1 / -1; padding: 8px 12px 12px; border-top: 0; border-left: 1px solid var(--line); justify-content: center; background: transparent; backdrop-filter: none; }
   .expanded .transport { gap: 4px; }
   .player-more > .menu-panel { position: fixed; top: calc(var(--mobile-header) + 8px); bottom: calc(var(--nav) + 8px); right: max(16px, env(safe-area-inset-right, 0px)); width: 300px; max-height: none; }
 }
@@ -873,3 +873,10 @@ picture.artwork { display: block; overflow: hidden; }
   /* A deliberate static pending mark; accompanying status text and aria-busy stay. */
   .spinner { animation: none; border-right-color: currentColor; border-style: dotted; }
 }
+/* Performance mode (Settings → On this device): solid chrome instead of glass blur, no blurred cover
+   light, and a still room. App.tsx also stills the spectrum; layout and controls are unchanged. */
+:root[data-performance] { --chrome-blur: none; --chrome: color-mix(in oklab, var(--ground) 94%, transparent); }
+:root[data-performance] .artwork-field { display: none; }
+:root[data-performance] .light { animation: none; will-change: auto; }
+:root[data-performance] .sleeve-queue { background: color-mix(in oklab, var(--ground) 92%, transparent); }
+:root[data-performance] .dialog::backdrop { backdrop-filter: none; }

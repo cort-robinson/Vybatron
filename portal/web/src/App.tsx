@@ -15,7 +15,7 @@ import { Home } from './components/Home';
 import { ServerView, type AmbientMode, type InstallPrompt } from './components/Server';
 import { Recovery } from './components/Recovery';
 import { transition } from './motion';
-import { applySkin, initialSkin, type Skin } from './skin';
+import { applyPerformance, applySkin, initialPerformance, initialSkin, type Skin } from './skin';
 import { Horizon } from './components/Overdrive';
 
 function initialAmbient(): AmbientMode {
@@ -33,6 +33,7 @@ export function App() {
   const [query, setQuery] = useState('');
   const [ambient, changeAmbient] = useState<AmbientMode>(initialAmbient);
   const [skin, changeSkin] = useState<Skin>(initialSkin);
+  const [performance, changePerformance] = useState(initialPerformance);
   const [hidden, setHidden] = useState(document.hidden);
   const [reduced, setReduced] = useState(() => matchMedia('(prefers-reduced-motion: reduce)').matches);
   const [installPrompt, setInstallPrompt] = useState<InstallPrompt | null>(null);
@@ -74,6 +75,7 @@ export function App() {
   }, [portal.notice]);
   const setAmbient = (value: AmbientMode) => { changeAmbient(value); try { localStorage.setItem('vybertron.ambient', value); } catch { /* Optional, non-sensitive preference. */ } };
   const setSkin = (value: Skin) => { applySkin(value); changeSkin(value); };
+  const setPerformance = (value: boolean) => { applyPerformance(value); changePerformance(value); };
   const order = (value: Surface) => surfaces.findIndex(item => item.id === value);
   // Leaving the sleeve folds the cover back into the deck; otherwise the view slides along the nav.
   const navigate = (value: Surface) => {
@@ -85,7 +87,9 @@ export function App() {
   // Search stays open-able for drafts and browsing; a real permission block (not a stale read) demotes the call to action.
   const addBlocked = connection === 'live' && !!snapshot && !snapshot.session.canAdd;
   const install = () => { if (installPrompt) void installPrompt.prompt().then(() => installPrompt.userChoice).then(() => setInstallPrompt(null)).catch(() => portal.notify('Use your browser’s Install app option to try again.')); };
-  const motion = ambient !== 'off' && !reduced && !hidden && connection === 'live' && snapshot?.session.status === 'playing';
+  // Ambient motion: off by choice, reduced motion, a hidden tab, or performance mode stills it.
+  const still = ambient === 'off' || reduced || hidden || performance;
+  const motion = !still && connection === 'live' && snapshot?.session.status === 'playing';
   const artwork = publicUrl(snapshot?.session.current?.artworkUrl);
   const palette = useArtPalette(artwork);
   useEffect(() => {
@@ -101,9 +105,9 @@ export function App() {
   </div>;
   const background = scene(motion);
   // Sign-in has no session to wait for; the horizon idles there whenever ambient motion is allowed.
-  const welcome = scene(ambient !== 'off' && !reduced && !hidden);
+  const welcome = scene(!still);
   if (auth === 'loading') return <div className="auth-page">{welcome}<Brand /><Loading label="Finding your listening space…" /></div>;
-  if (auth === 'signed-out' || auth === 'error') return <div className="auth-page">{welcome}<Brand /><main className="sign-in"><div className="signin-sleeve"><FallbackCover /></div><Spectrum className="signin-spectrum" seed="vybertron" color={palette.accent} mode="playing" animate={ambient !== 'off' && !reduced && !hidden} bands={36} /><h1>A better vibe together.</h1><p>Your shared queue and favorite songs,<br />controlled from any screen in your Discord server.</p>{auth === 'error' ? <ErrorState message={portal.authError} retry={() => void portal.loadBootstrap()} /> : <a className="button primary discord-signin" href="/auth/discord"><DiscordLogoIcon size={25} weight="fill" />Continue with Discord<ArrowRightIcon size={20} /></a>}<span className="signin-footnote">Audio plays in Discord, never in this browser.</span></main><footer className="auth-footer">Vybertron · Made for listening together</footer></div>;
+  if (auth === 'signed-out' || auth === 'error') return <div className="auth-page">{welcome}<Brand /><main className="sign-in"><div className="signin-sleeve"><FallbackCover /></div><Spectrum className="signin-spectrum" seed="vybertron" color={palette.accent} mode="playing" animate={!still} bands={36} /><h1>A better vibe together.</h1><p>Your shared queue and favorite songs,<br />controlled from any screen in your Discord server.</p>{auth === 'error' ? <ErrorState message={portal.authError} retry={() => void portal.loadBootstrap()} /> : <a className="button primary discord-signin" href="/auth/discord"><DiscordLogoIcon size={25} weight="fill" />Continue with Discord<ArrowRightIcon size={20} /></a>}<span className="signin-footnote">Audio plays in Discord, never in this browser.</span></main><footer className="auth-footer">Vybertron · Made for listening together</footer></div>;
   const viewer = bootstrap!.viewer;
   const noGuilds = !bootstrap!.guilds.length;
   const heading = surface === 'home' ? 'Home' : surface === 'session' ? 'Shared Queue' : surface === 'music' ? 'My Music' : 'Your Server';
@@ -123,8 +127,8 @@ export function App() {
         {surface === 'session' && !expanded && <><Recovery portal={portal} />{snapshot.session.reason && <div className="permission-note"><WarningCircleIcon size={20} /><span>{snapshot.session.reason}</span></div>}<Queue portal={portal} onAdd={openSearch} /></>}
         <Home portal={portal} active={surface === 'home' && !expanded} onOpenPlayer={() => toggleExpanded(true)} />
         <LibraryView portal={portal} active={surface === 'music' && !expanded} />
-        <ServerView portal={portal} active={surface === 'server' && !expanded} ambient={ambient} setAmbient={setAmbient} skin={skin} setSkin={setSkin} installPrompt={installPrompt} install={install} />
-      </>}</div>{!noGuilds && <Player portal={portal} expanded={expanded} setExpanded={toggleExpanded} onAdd={openSearch} accent={palette.accent} animate={ambient !== 'off' && !reduced && !hidden} skin={skin} />}</main>
+        <ServerView portal={portal} active={surface === 'server' && !expanded} ambient={ambient} setAmbient={setAmbient} skin={skin} setSkin={setSkin} performance={performance} setPerformance={setPerformance} installPrompt={installPrompt} install={install} />
+      </>}</div>{!noGuilds && <Player portal={portal} expanded={expanded} setExpanded={toggleExpanded} onAdd={openSearch} accent={palette.accent} animate={!still} skin={skin} />}</main>
     </div>
     <Search portal={portal} open={searchOpen} onClose={() => setSearchOpen(false)} query={query} setQuery={setQuery} />
     {portal.notice && !searchOpen && <div className={`toast ${portal.notice.kind}`} role={portal.notice.kind === 'error' ? 'alert' : 'status'}><span>{portal.notice.message}</span><IconButton label="Dismiss notification" onClick={portal.dismissNotice}><XIcon size={19} /></IconButton></div>}

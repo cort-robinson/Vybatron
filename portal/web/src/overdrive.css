@@ -54,7 +54,7 @@ REVERT: everything here is scoped to :root[data-skin='overdrive']; Settings → 
   mask-image: linear-gradient(to bottom, #000 0 48%, transparent 48% 50.5%, #000 50.5% 58%, transparent 58% 61.5%, #000 61.5% 67.5%, transparent 67.5% 72%, #000 72% 77%, transparent 77% 82.5%, #000 82.5% 86.5%, transparent 86.5% 93%, #000 93%);
   opacity: .78; transition: top 900ms var(--ease-out), left 900ms var(--ease-out), width 900ms var(--ease-out);
 }
-.ambient-scene:not(.immersive) .od-sun { opacity: .55; mix-blend-mode: screen; }
+.ambient-scene:not(.immersive) .od-sun { top: calc(var(--horizon) - var(--sun) * .52); opacity: .34; mix-blend-mode: screen; }
 .auth-page .ambient-scene .od-sun { opacity: .78; mix-blend-mode: normal; }
 .od-skyline { position: absolute; left: 0; bottom: calc(100% - var(--horizon)); width: 100%; height: clamp(72px, 14vh, 156px); transition: bottom 900ms var(--ease-out); overflow: visible; }
 .od-skyline-far { fill: color-mix(in oklab, var(--glow-2) 55%, var(--ground)); opacity: .85; }
@@ -171,7 +171,7 @@ REVERT: everything here is scoped to :root[data-skin='overdrive']; Settings → 
   .mix-open:hover .artwork { box-shadow: 0 0 0 1px color-mix(in oklab, var(--accent) 50%, transparent), 0 22px 40px -18px color-mix(in oklab, var(--neon) 65%, black); }
 
   /* ── Deck ───────────────────────────────────────────────────────────── */
-  .persistent-player.collapsed { border-top-color: transparent; background: linear-gradient(to top, color-mix(in oklab, var(--neon) 7%, transparent), transparent 70%), var(--chrome); }
+  .persistent-player.collapsed { border-top-color: transparent; background: linear-gradient(to top, color-mix(in oklab, var(--neon) 7%, transparent), transparent 70%), color-mix(in oklab, var(--ground) 90%, transparent); }
   .player-footer::before { content: ''; position: absolute; left: 0; right: 0; top: 0; height: 1px; background: var(--rail); pointer-events: none; }
   .player-footer::after { content: ''; position: absolute; left: 0; top: -1px; width: 180px; height: 3px; border-radius: 3px; pointer-events: none; opacity: 0;
     background: linear-gradient(90deg, transparent, var(--neon), white, var(--accent), transparent); filter: blur(.5px); box-shadow: 0 0 14px 2px color-mix(in oklab, var(--neon) 55%, transparent); }
@@ -254,7 +254,7 @@ REVERT: everything here is scoped to :root[data-skin='overdrive']; Settings → 
     .sidebar { background: var(--rail) bottom / 100% 1px no-repeat, var(--chrome); }
     .sidebar::after { display: none; }
     .guild-card { background: none; }
-    .navigation { background: var(--rail) top / 100% 1px no-repeat, var(--chrome); }
+    .navigation { background: var(--rail) top / 100% 1px no-repeat, color-mix(in oklab, var(--ground) 92%, transparent); }
     .nav-indicator { background: radial-gradient(60% 90% at 50% 100%, color-mix(in oklab, var(--accent) 16%, transparent), transparent); box-shadow: none; }
     .navigation button { border-radius: 0; }
     /* The compact deck's hairline is progress; it glows instead of carrying the decorative rail. */
@@ -266,6 +266,15 @@ REVERT: everything here is scoped to :root[data-skin='overdrive']; Settings → 
 }
 @media (max-width: 1023px) and (min-width: 600px) and (max-height: 500px) {
   :root[data-skin='overdrive'] .od-cover-hud, :root[data-skin='overdrive'] .od-cover-scan { display: none; }
+}
+
+/* ── Performance mode: no CRT texture, glow filters, or blend layers; the scene is already still. */
+:root[data-skin='overdrive'][data-performance] {
+  .od-crt { display: none; }
+  .od-plane { will-change: auto; }
+  .od-sun { mix-blend-mode: normal; }
+  :is(.brand > span, .brand svg, .navigation button.selected svg, .empty-art svg, .od-hud i, .sleeve-spectrum, .expand-button:hover svg) { filter: none; }
+  .od-cover-scan::before { mix-blend-mode: normal; }
 }
 
 /* ── Power-on, once per load ────────────────────────────────────────────── */

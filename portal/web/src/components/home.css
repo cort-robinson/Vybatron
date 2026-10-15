@@ -19,6 +19,21 @@
   scrollbar-width: thin; scrollbar-color: var(--scrollbar) transparent;
 }
 .shelf-row-wide { --card: 248px; gap: 24px; }
+/* A mouse drags a shelf sideways (src/dragScroll.ts); snapping waits until the drag lets go. */
+@media (pointer: fine) {
+  .shelf-row.can-drag { cursor: grab; }
+  .shelf-row.can-drag :is(button, select, a) { cursor: pointer; }
+  .shelf-row.dragging, .shelf-row.dragging :is(button, select, a) { cursor: grabbing; }
+}
+.shelf-row.dragging { scroll-snap-type: none; user-select: none; }
+.shelf-row img { -webkit-user-drag: none; }
+/* Overflowing shelves fade at whichever edge still has more to show. */
+@property --shelf-fade-start { syntax: '<length>'; inherits: false; initial-value: 0px; }
+@property --shelf-fade-end { syntax: '<length>'; inherits: false; initial-value: 0px; }
+@supports (animation-timeline: scroll()) {
+  .shelf-row.can-drag { mask-image: linear-gradient(to right, transparent, #000 var(--shelf-fade-start), #000 calc(100% - var(--shelf-fade-end)), transparent); animation: shelf-fade linear both; animation-timeline: scroll(self inline); }
+}
+@keyframes shelf-fade { 0% { --shelf-fade-start: 0px; --shelf-fade-end: 56px; } 6% { --shelf-fade-start: 56px; } 94% { --shelf-fade-end: 56px; } 100% { --shelf-fade-start: 56px; --shelf-fade-end: 0px; } }
 .shelf-row > li { scroll-snap-align: start; min-width: 0; }
 .shelf-row::-webkit-scrollbar { height: 6px; }
 .shelf-row::-webkit-scrollbar-thumb { background: var(--scrollbar); border-radius: 6px; }

@@ -15,5 +15,18 @@ export function applySkin(skin: Skin, persist = true) {
 }
 
 
+// Performance mode trades glass blur, blurred cover light, and ambient motion for lighter
+// rendering on older or battery-powered devices. Layout, controls, and playback are unchanged.
+const performanceKey = 'vybertron.performance';
+
+export function initialPerformance() {
+  try { return localStorage.getItem(performanceKey) === 'on'; } catch { return false; }
+}
+
+export function applyPerformance(on: boolean, persist = true) {
+  if (on) document.documentElement.dataset.performance = ''; else delete document.documentElement.dataset.performance;
+  if (persist) try { localStorage.setItem(performanceKey, on ? 'on' : 'off'); } catch { /* Optional, non-sensitive preference. */ }
+}
+
 // Fixed synthwave partner to the cover-derived accent; decorative only, never a state color.
 export const neon = '#e04cff';

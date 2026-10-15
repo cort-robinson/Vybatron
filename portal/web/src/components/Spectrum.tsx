@@ -11,12 +11,12 @@ function random(seed: string) {
 }
 function rgb(hex: string) { const n = parseInt(hex.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; }
 
-export function Spectrum({ seed, color, mode, animate, bands = 48, segment = 3, gap = 2, glow = true, ghost = .09, className = '' }: {
-  seed: string; color: string; mode: SpectrumMode; animate: boolean; bands?: number; segment?: number; gap?: number; glow?: boolean; ghost?: number; className?: string;
+export function Spectrum({ seed, color, tint, mode, animate, bands = 48, segment = 3, gap = 2, glow = true, ghost = .09, className = '' }: {
+  seed: string; color: string; tint?: string; mode: SpectrumMode; animate: boolean; bands?: number; segment?: number; gap?: number; glow?: boolean; ghost?: number; className?: string;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const live = useRef({ mode, animate, target: rgb(color), wake: () => {} });
-  live.current.mode = mode; live.current.animate = animate; live.current.target = rgb(color);
+  const live = useRef({ mode, animate, target: rgb(color), tint, wake: () => {} });
+  live.current.mode = mode; live.current.animate = animate; live.current.target = rgb(color); live.current.tint = tint;
 
   useEffect(() => {
     const canvas = canvasRef.current; const context = canvas?.getContext('2d');
@@ -51,7 +51,10 @@ export function Spectrum({ seed, color, mode, animate, bands = 48, segment = 3, 
           (r < on ? lit : r === cap && cap >= on ? caps : unlit).rect(x, y, bar, segment);
         }
       }
-      const fill = `rgb(${shown.map(Math.round).join(' ')})`;
+      const base = `rgb(${shown.map(Math.round).join(' ')})`;
+      // A tint carries the column from the accent at its foot to the tint at full scale.
+      let fill: string | CanvasGradient = base;
+      if (live.current.tint) { fill = context.createLinearGradient(0, height, 0, 0); fill.addColorStop(0, base); fill.addColorStop(.55, base); fill.addColorStop(1, live.current.tint); }
       context.setTransform(dpr, 0, 0, dpr, 0, 0); context.clearRect(0, 0, width, height);
       context.fillStyle = fill; if (ghost) { context.globalAlpha = ghost; context.fill(unlit); }
       if (glow) { context.save(); context.filter = 'blur(5px)'; context.globalAlpha = .55; context.fill(lit); context.restore(); }
@@ -96,6 +99,6 @@ export function Spectrum({ seed, color, mode, animate, bands = 48, segment = 3, 
     return () => { observer.disconnect(); cancelAnimationFrame(frame); live.current.wake = () => {}; };
   }, [seed, bands, segment, gap, glow, ghost]);
 
-  useEffect(() => { live.current.wake(); }, [mode, animate, color]);
+  useEffect(() => { live.current.wake(); }, [mode, animate, color, tint]);
   return <canvas ref={canvasRef} className={`spectrum ${className}`} aria-hidden="true" />;
 }

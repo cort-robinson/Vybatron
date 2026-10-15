@@ -191,6 +191,28 @@ Connection banners explain stale/offline state and fresh-state recovery. Permiss
 
 Implementation evidence is source-only: `web/src/styles.css`, `App.tsx`, all source components, and `usePortal.ts`, aligned with `PRODUCT.md`, the app surface brief, and the shared contract. This record does not certify live OAuth, deployment, Discord playback, or cross-device integration. Indexed favorite/history actions carry the originally selected item token; mix deletion carries the selected saved version. Conflicts refresh authoritative state and require a deliberate retry.
 
+## Overdrive look
+
+Overdrive is the default look; Classic (Settings → On this device → Portal look) is the
+receiver described above, unchanged. Overdrive lives in `src/overdrive.css`, scoped to
+`:root[data-skin='overdrive']`, plus aria-hidden scenery in `src/components/Overdrive.tsx`,
+so switching looks is one attribute and removing it is two files and their imports.
+
+- **Horizon:** a sliced sunset tinted by the accent, a seeded angular skyline with blinking
+  energon windows, and a perspective neon floor that rolls toward the viewer. The horizon
+  sits on top of the deck while browsing and rises to 70% in the sleeve, where the cover
+  eclipses the sun. Sign-in places the chrome headline on the horizon.
+- **Color:** one fixed orchid neon (`--neon`) and sunset orange are scenery and gradient
+  partners only. The cover accent still drives every action and state.
+- **Plating:** 4/12px alternating radii (true bevels where `corner-shape` is supported),
+  targeting brackets on framed panels, gradient rails instead of hairline borders, and a
+  chrome wordmark.
+- **Alive:** the floor, windows, CRT band, rail pulse, and reactor ring run only while the
+  session plays live with ambient motion on. On track change the title locks on with a
+  chromatic split while a scan beam crosses the cover. The sleeve cover leans toward a fine
+  pointer. A one-time power-on flicker runs on page load.
+- Reduced motion removes all of it except static color and shape.
+
 ## Do's and Don'ts
 
 ### Do:

@@ -62,7 +62,8 @@ runtime objects and credential-bearing data. Maintain existing command meanings.
     volume: number, filter: string, repeat: 'off'|'track'|'queue',
     radio: boolean, autoplay: 'off'|'on'|'listening', fairQueue: boolean,
     listeners: {id,displayName,avatarUrl:string|null}[],
-    canAdd: boolean, canControl: boolean, canVote: boolean, reason: string|null
+    canAdd: boolean, canControl: boolean, canVote: boolean, reason: string|null,
+    viewerVoice: {id,name}|null
   },
   savedSession: {exists:boolean, savedAt:number|null, positionMs:number,
     paused:boolean, trackCount:number, voiceChannel:{id,name}|null,
@@ -78,6 +79,8 @@ reason; do not reveal restricted channel ids/name/tracks/listeners/checkpoint.
 they are not queue positions and are empty when hidden or inactive. `radio` is
 whether autoplay is active for the session (server `autoplay` mode or a /radio
 override). Clients must treat missing `suggestions`/`autoplay` as empty/off.
+`viewerVoice` is the actor's own visible voice channel in this guild, or null; clients
+play on their own device when it is null and treat a missing field (an older bot) as in voice.
 Settings/channels/roles include only authorized fields; settings null for basic
 members. Snapshot channels are the relevant, freshly verified session channels;
 the complete settings catalog is discovered separately on demand. Revision changes on queue/current identity and relevant state changes,
@@ -184,7 +187,8 @@ with independent mock actor; public production build must never activate it.
 
 Command body: `{command:string,subcommand?:string,
   options?:Record<string,string|number|boolean|null>,expectedRevision?:string,
-  expectedTrackId?:string,expectedHistoryId?:string,expectedMixVersion?:string}`.
+  expectedTrackId?:string,expectedHistoryId?:string,expectedMixVersion?:string,
+  tracks?:string[]}`. `tracks` is accepted only on `transfer`.
 No actor or authority fields accepted. Strict whitelist command/options/schema.
 Route through existing trusted command implementations/guards/lane semantics.
 Response `{ok:true,message:string,snapshot:GuildSnapshot}`. Only safe text from
@@ -211,6 +215,13 @@ save(name,replace,session?)/list/load(name)/delete(name). `session: true` saves 
 songs already played this session (oldest first, each once), then the current song and queue,
 dropping the oldest played songs to fit 100 tracks; the usual mix limits and owner rules apply. Existing `/favorite` becomes
 global; library edits outside voice allowed with channel-aware source validation.
+Device transfer: transfer(position: ms 0..86400000, paused: boolean, volume: 0-100,
+repeat: off|track|queue) with root `tracks`: 1-100 public https song links, current
+song first. Portal-only (never a slash command or public schema). It moves a
+listener's browser session into their own voice channel: canAdd rules, no revision,
+409 `session_active` if the server already has a current song or queue, and the
+same resolve/join/restore path as `session resume`. The first link keeps
+`position` only if it resolves; unavailable links are left out and reported.
 Settings: volume(value), fairqueue(enabled), autoplay(mode:off|on|listening), djrole(role), reset; add musicchannel
 subcommand with option channel, validating same-guild bot-readable/writable text
 channel. Keep public command schemas in bootstrap updated.

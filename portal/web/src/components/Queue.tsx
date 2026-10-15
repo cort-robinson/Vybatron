@@ -18,6 +18,7 @@ export function Queue({ portal, compact = false, onAdd }: { portal: Portal; comp
   const [dropIndex, setDropIndex] = useState<number | null>(null);
   const [saveSession, setSaveSession] = useState(false);
   const drag = useRef<{ index: number; revision: string; guildId: string } | null>(null);
+  const local = portal.target === 'local';
   const controllable = can('control') && !pending.length;
   const editable = can('library') && !pending.length;
   const duration = queue.reduce((sum, track) => sum + (track.isStream ? 0 : track.durationMs), 0);
@@ -36,17 +37,17 @@ export function Queue({ portal, compact = false, onAdd }: { portal: Portal; comp
     else await run({ command: 'favorite', subcommand: 'add', options: { position }, expectedRevision: snapshot?.revision }, 'library');
   };
   const startRadio = (track: Track) => { const command = startRadioCommand(track); if (command) void run(command, 'control'); };
-  const radioButton = (track: Track, close: () => void) => <button disabled={!controllable || !track.uri} onClick={() => { close(); startRadio(track); }}><RadioIcon />Start radio from this song</button>;
-  return <section className={`queue ${compact ? 'queue-compact' : ''}`} aria-label="Shared queue">
+  const radioButton = (track: Track, close: () => void) => local ? null : <button disabled={!controllable || !track.uri} onClick={() => { close(); startRadio(track); }}><RadioIcon />Start radio from this song</button>;
+  return <section className={`queue ${compact ? 'queue-compact' : ''}`} aria-label={local ? 'Queue on this device' : 'Shared queue'}>
     <div className="section-heading"><div className="heading-line"><h2>Up Next</h2>{queue.length > 0 && <span className="count">{queue.length} {queue.length === 1 ? 'song' : 'songs'}{queue.length ? ` · ${totalTime(duration)}${queue.some(t => t.isStream) ? ' + live' : ''}` : ''}</span>}</div>
       {!compact && (snapshot?.session.fairQueue || snapshot?.session.current) && <div className="queue-heading-actions">
         {snapshot?.session.fairQueue && <span className="pill"><ListNumbersIcon size={16} />Taking turns</span>}
-        {snapshot?.session.current && <button type="button" className="text-button" disabled={!editable} onClick={() => setSaveSession(true)}><VinylRecordIcon size={19} />Save session as mix</button>}
+        {snapshot?.session.current && !local && <button type="button" className="text-button" disabled={!editable} onClick={() => setSaveSession(true)}><VinylRecordIcon size={19} />Save session as mix</button>}
       </div>}
     </div>
     {saveSession && <SaveSessionDialog portal={portal} onClose={() => setSaveSession(false)} />}
     {!queue.length && suggested.length ? <p className="queue-note">Nothing queued. Autoplay plays the suggestions below; anything you add plays first.</p>
-      : !queue.length ? <Empty title="Nothing queued yet" description={snapshot?.session.current ? snapshot.session.radio ? 'Autoplay is choosing related songs to play next. Add a track and it plays first.' : 'The next song is up to you. Add a track, or turn on autoplay from the player menu to keep things going.' : snapshot?.savedSession.exists ? 'Resume your saved session above, or add a song to start fresh.' : 'Search for a song or drop a public music link. Everyone listens together in Discord.'}
+      : !queue.length ? <Empty title="Nothing queued yet" description={snapshot?.session.current ? snapshot.session.radio ? 'Autoplay is choosing related songs to play next. Add a track and it plays first.' : 'The next song is up to you. Add a track, or turn on autoplay from the player menu to keep things going.' : snapshot?.savedSession.exists ? 'Resume your saved session above, or add a song to start fresh.' : local ? 'Search for a song or drop a public music link. It plays right here on this device.' : 'Search for a song or drop a public music link. Everyone listens together in Discord.'}
       action={<button className="button primary" disabled={!can('add')} title={!can('add') ? portal.blockedReason : undefined} onClick={onAdd}><PlusIcon size={19} />Add music</button>} /> : <>
       {!compact && <div className="queue-columns" aria-hidden="true"><span>#</span><span /><span>Song</span><span>Added by</span><span>Length</span><span /><span /></div>}
       <ol className="track-list" start={startIndex + 1}>
@@ -70,7 +71,7 @@ export function Queue({ portal, compact = false, onAdd }: { portal: Portal; comp
             <div className={`requester ${track.suggested ? 'suggested-source' : ''}`}>{track.suggested ? <span>Autoplay pick</span> : track.requestedBy && <><Avatar url={track.requestedBy.avatarUrl} name={track.requestedBy.displayName} /><span>{track.requestedBy.displayName}</span></>}</div>
             <span className="track-duration">{track.isStream ? 'LIVE' : time(track.durationMs)}</span>
             {!compact && <IconButton className={isFavorite ? 'favorite active' : 'favorite'} label={isFavorite ? `Remove ${track.title} from favorites` : `Save ${track.title} to favorites`} aria-pressed={isFavorite}
-              disabled={!editable || !library} onClick={() => void favorite(track, index + 1)}><HeartIcon size={23} weight={isFavorite ? 'fill' : 'regular'} /></IconButton>}
+              disabled={!editable || !library || local && !isFavorite} onClick={() => void favorite(track, index + 1)}><HeartIcon size={23} weight={isFavorite ? 'fill' : 'regular'} /></IconButton>}
             <ActionPopover className="row-menu" label={`Song options for ${track.title}`} trigger={<DotsThreeIcon size={25} weight="bold" />}>
               {close => <>
                 <p>{track.title}</p>
@@ -78,7 +79,7 @@ export function Queue({ portal, compact = false, onAdd }: { portal: Portal; comp
                 <button disabled={!controllable || index === 0} onClick={() => { close(); void change('move', { from: index + 1, to: index }); }}><ArrowUpIcon />Move up</button>
                 <button disabled={!controllable || index === queue.length - 1} onClick={() => { close(); void change('move', { from: index + 1, to: index + 2 }); }}><ArrowDownIcon />Move down</button>
                 {radioButton(track, close)}
-                {<button className="menu-favorite" disabled={!editable || !library} onClick={() => { close(); void favorite(track, index + 1); }}><HeartIcon weight={isFavorite ? 'fill' : 'regular'} />{isFavorite ? 'Remove favorite' : 'Save to favorites'}</button>}
+                {<button className="menu-favorite" disabled={!editable || !library || local && !isFavorite} onClick={() => { close(); void favorite(track, index + 1); }}><HeartIcon weight={isFavorite ? 'fill' : 'regular'} />{isFavorite ? 'Remove favorite' : 'Save to favorites'}</button>}
                 <button className="danger-text" disabled={!controllable} onClick={() => { close(); void change('remove', { position: index + 1 }); }}><TrashIcon />Remove from queue</button>
                 {!controllable && <small>{portal.blockedReason}</small>}
               </>}

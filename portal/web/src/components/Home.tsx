@@ -73,27 +73,27 @@ export function Home({ portal, active, onOpenPlayer }: { portal: Portal; active:
     : !stats ? <Loading label="Loading your mixes and server favorites…" /> : <>
       <Shelf id="on-repeat" title="On repeat in this server" detail="What this server keeps coming back to, from sessions you can see."
         actions={stats.serverFavorites.onRepeat.length > 0 && <PlayShuffle label="On repeat" disabled={!addable} title={disabledTitle}
-          onPlay={shuffle => void run({ command: 'top', subcommand: 'play', options: { list: 'on-repeat', shuffle } }, 'add')} />}
+          onPlay={shuffle => void run({ command: 'top', subcommand: 'play', options: { list: 'on-repeat', shuffle } }, 'add', stats.serverFavorites.onRepeat.map(entry => entry.track))} />}
         empty={!stats.serverFavorites.onRepeat.length && 'Nothing on repeat yet. Songs collect here after they play in voice channels you can see.'}>
         {stats.serverFavorites.onRepeat.map((entry, index) => <TrackCard key={entry.track.id} track={entry.track} rank={index + 1} meta={`${entry.plays.toLocaleString()} ${entry.plays === 1 ? 'play' : 'plays'}`} disabled={!addable || !entry.track.uri} title={disabledTitle} onAdd={() => void add(entry.track)} />)}
       </Shelf>
       <Shelf id="your-mixes" title="Your mixes" detail="Built from the songs you request and the ones you heart. Only you see these."
         lead={!mixes.some(list => list.tracks.length) && <p className="home-empty">Your mixes fill in as you request songs in voice or heart them. A few requests are enough to start; try a longer range below if you’ve been away.</p>} wide>
         {mixes.map(list => <PlaylistTile key={list.id} list={list} detail={playlistDetail(list, statsWindow)} disabled={!addable} title={disabledTitle}
-          onPlay={shuffle => void run(playlistCommand(list, statsWindow, shuffle), 'add')}
+          onPlay={shuffle => void run(playlistCommand(list, statsWindow, shuffle), 'add', list.tracks)}
           range={list.kind === 'top' ? <label className="mix-range"><span className="sr-only">Time range for Your top tracks</span>
             <select value={statsWindow} onChange={event => setWindow(event.target.value as StatsWindow)}>{windows.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label> : null} />)}
       </Shelf>
       <Shelf id="rediscover" title="Rediscover" detail="Favorites you haven’t requested in a month, songs you used to request first."
         actions={rediscover.length > 0 && <PlayShuffle label="Rediscover" disabled={!addable} title={disabledTitle}
-          onPlay={shuffle => void run({ command: 'mymix', subcommand: 'play', options: { playlist: 'rediscover', shuffle } }, 'add')} />}
+          onPlay={shuffle => void run({ command: 'mymix', subcommand: 'play', options: { playlist: 'rediscover', shuffle } }, 'add', rediscover.map(entry => entry.track))} />}
         empty={!rediscover.length && (library?.favorites.length ? 'You’ve requested every favorite this month. Favorites come back here after 30 days without a request.' : 'Heart songs you love. Once a month passes without requesting one, it comes back here.')}>
         {rediscover.map(entry => <TrackCard key={`${entry.index}:${entry.track.id}`} track={entry.track} meta={entry.lastRequestedAt ? `Requested ${date(entry.lastRequestedAt).split(",")[0]}` : 'Never requested'}
           disabled={!addable} title={disabledTitle} onAdd={() => void run({ command: 'favorite', subcommand: 'play', options: { index: entry.index }, expectedTrackId: entry.track.id }, 'add')} />)}
       </Shelf>
       <Shelf id="forgotten-gems" title="Forgotten gems" detail="Popular in this server two to four months ago, and quiet since."
         actions={stats.serverFavorites.forgottenGems.length > 0 && <PlayShuffle label="Forgotten gems" disabled={!addable} title={disabledTitle}
-          onPlay={shuffle => void run({ command: 'top', subcommand: 'play', options: { list: 'forgotten-gems', shuffle } }, 'add')} />}
+          onPlay={shuffle => void run({ command: 'top', subcommand: 'play', options: { list: 'forgotten-gems', shuffle } }, 'add', stats.serverFavorites.forgottenGems.map(entry => entry.track))} />}
         empty={!stats.serverFavorites.forgottenGems.length && 'No forgotten gems yet. Songs that were popular two to four months ago, with no plays since, appear here.'}>
         {stats.serverFavorites.forgottenGems.map(entry => <TrackCard key={entry.track.id} track={entry.track} meta={`${entry.plays.toLocaleString()} ${entry.plays === 1 ? 'play' : 'plays'} then`} disabled={!addable || !entry.track.uri} title={disabledTitle} onAdd={() => void add(entry.track)} />)}
       </Shelf>
@@ -132,7 +132,7 @@ function ContinueListening({ portal, onOpenPlayer, add, disabled, title }: { por
   const resumable = !current && saved?.exists;
   const feature = current ? <div className="continue-feature">
     <Artwork track={current} className="continue-art" />
-    <div className="continue-text"><span className="continue-state">{snapshot?.session.status === 'paused' ? 'Paused' : 'Playing now'}{snapshot?.session.voiceChannel ? ` in ${snapshot.session.voiceChannel.name}` : ''}</span>
+    <div className="continue-text"><span className="continue-state">{snapshot?.session.status === 'paused' ? 'Paused' : 'Playing now'}{portal.target === 'local' ? ' on this device' : snapshot?.session.voiceChannel ? ` in ${snapshot.session.voiceChannel.name}` : ''}</span>
       <strong dir="auto" title={current.title}>{current.title}</strong><span dir="auto">{current.author}{snapshot?.session.queue.length ? ` · ${snapshot.session.queue.length} up next` : ''}</span></div>
     <button type="button" className="button primary" onClick={onOpenPlayer}><CaretUpIcon size={18} weight="bold" />View now playing</button>
   </div> : resumable && saved ? <div className="continue-feature">

@@ -1,7 +1,30 @@
 # Portal web
 
 Production React/TypeScript client for the binding [portal contract](../../docs/portal-contract.md).
-The bot owns all playback and library writes. The browser never plays audio.
+The bot owns Discord playback and all library writes. A listener who isn't in one of
+the server's voice channels plays on **this device** instead; the player's More menu
+moves the session between this device and Discord (Play on).
+
+## This device playback
+
+- `src/playback.ts` keeps a private queue in `localStorage` (`vybertron.local`, cleared on
+  sign-out) and handles playback commands locally; nothing is sent to the bot's command API.
+  The default follows the snapshot's `viewerVoice`, but joining voice never interrupts
+  music already playing here.
+- Moving to Discord sends `transfer` with the current song, up to 99 queued songs, the
+  position, pause, volume and repeat; the bot joins the listener's voice channel and the
+  device queue is cleared. If the server already has a session, the portal joins it instead
+  and leaves this device's songs paused. Moving here copies the Discord session at its
+  current spot; **Move here** also stops it in Discord (needs playback control), **Listen
+  here too** leaves it playing.
+  Search, favorites, mixes and stats are still read from the bot, and library edits
+  (favorite removal, mix deletion) still go to it.
+- Audio comes from the official YouTube embed (`src/youtube.ts`, `youtube-nocookie.com`).
+  Songs from other catalogs play their closest YouTube search match. YouTube loads only
+  once a song is queued on this device. The CSP allows `https://www.youtube.com` scripts
+  and `https://www.youtube-nocookie.com` frames for this.
+- Discord-only actions (filters, autoplay/radio, vote skip, saving sessions as mixes,
+  saved-session resume, and saving a new favorite) are hidden or disabled locally.
 
 ## Development and verification
 

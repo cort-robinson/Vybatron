@@ -157,6 +157,7 @@ export function LibraryView({ portal, active = true }: { portal: Portal; active?
 
 // Seeds autoplay from a saved song. Needs a live session and playback control.
 function RadioButton({ portal, track }: { portal: Portal; track: Track }) {
+  if (portal.target === 'local') return null;
   const command = startRadioCommand(track);
   const enabled = !!command && portal.can('control') && !portal.pending.length;
   return <IconButton className="radio-start" label={radioLabel(track)} disabled={!enabled} title={!command ? 'This song has no public source reference' : !enabled ? portal.blockedReason : radioLabel(track)}

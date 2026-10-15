@@ -492,4 +492,5 @@ export function usePortal() {
     reconnect: () => reconnectRef.current(), pending, syncing, can, blockedReason, run, notice, notify,
     dismissNotice: () => setNotice(null), logout };
 }
-export type Portal = ReturnType<typeof usePortal>;
+export type RemotePortal = ReturnType<typeof usePortal>;
+export type { Portal } from './playback';

@@ -41,6 +41,8 @@ export interface GuildSnapshot {
     radio: boolean; autoplay: AutoplayMode; fairQueue: boolean;
     listeners: { id: string; displayName: string; avatarUrl: string | null }[];
     canAdd: boolean; canControl: boolean; canVote: boolean; reason: string | null;
+    // The viewer's own voice channel in this server; older bots omit it.
+    viewerVoice?: { id: string; name: string } | null;
   };
   savedSession: {
     exists: boolean; savedAt: number | null; positionMs: number; paused: boolean;
@@ -84,6 +86,8 @@ export interface Activity {
 export interface Command {
   command: string; subcommand?: string; options?: Record<string, string | number | boolean | null>; expectedRevision?: string;
   expectedTrackId?: string; expectedHistoryId?: string; expectedMixVersion?: string;
+  // transfer only: public links for the current song, then the queue.
+  tracks?: string[];
 }
 export interface CommandResult { ok: true; message: string; snapshot: GuildSnapshot }
 export type Connection = 'connecting' | 'refreshing' | 'live' | 'offline';

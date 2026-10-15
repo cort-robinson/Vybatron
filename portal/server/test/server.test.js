@@ -648,7 +648,7 @@ test('Static serving blocks encoded/double-encoded traversal, hidden files, syml
   await fs.symlink(outsideDir, path.join(f.config.webDist, 'outside'), process.platform === 'win32' ? 'junction' : 'dir');
   assert.equal((await f.request('/outside/secret.js')).status, 404);
   const secured = await f.request('/');
-  assert.match(secured.headers['content-security-policy'], /media-src 'none'/); assert.equal(secured.headers['x-frame-options'], 'DENY');
+  assert.match(secured.headers['content-security-policy'], /media-src 'none'/); assert.match(secured.headers['content-security-policy'], /script-src 'self' https:\/\/www\.youtube\.com; frame-src https:\/\/www\.youtube-nocookie\.com;/); assert.equal(secured.headers['x-frame-options'], 'DENY');
   assert.equal(secured.headers['access-control-allow-origin'], undefined);
 });
 
@@ -1324,4 +1324,18 @@ test('bootstrap forwards the voice server only when it is a listed server', asyn
   assert.equal(await voiceGuild(guildId), guildId);
   assert.equal(await voiceGuild('567890123456789012'), null);
   assert.equal(await voiceGuild(undefined), null);
+});
+
+test('transfer forwards a bounded list of public song links and nothing else', async () => {
+  const { validateCommand } = await import('../src/commands.js');
+  const options = { position: 42_000, paused: false, volume: 60, repeat: 'queue' };
+  const tracks = ['https://www.youtube.com/watch?v=abcdefghijk', 'https://soundcloud.com/artist/song'];
+  assert.deepEqual(validateCommand({ command: 'transfer', options, tracks }), { command: 'transfer', options, tracks });
+  for (const bad of [[], ['http://example.com/song'], ['https://example.com/a b'], ['x'], [42], Array(101).fill(tracks[0]), 'https://example.com']) {
+    assert.throws(() => validateCommand({ command: 'transfer', options, tracks: bad }), undefined, JSON.stringify(bad));
+  }
+  assert.throws(() => validateCommand({ command: 'transfer', options }));
+  assert.throws(() => validateCommand({ command: 'play', options: { query: 'song' }, tracks }));
+  assert.throws(() => validateCommand({ command: 'transfer', options: { ...options, position: -1 }, tracks }));
+  assert.throws(() => validateCommand({ command: 'transfer', options: { ...options, repeat: 'all' }, tracks }));
 });

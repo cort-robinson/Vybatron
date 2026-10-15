@@ -15,9 +15,11 @@ test('an empty search suggests the listener’s music and explores artists witho
     { id: 'history-4', playedAt: 1_791_145_000_000, voiceChannel: null, track: rain },
   );
   const searches: string[] = [];
-  await page.route('**/api/guilds/testing/search?*', route => {
+  await page.route('**/api/guilds/testing/search?*', async route => {
     searches.push(new URL(route.request().url()).searchParams.get('query')!);
-    return route.fulfill({ json: { tracks: [outside('glass-city', 'Glass City', 'Glass Avenue')], notice: null } });
+    // Answer slower than the typing pause, so the chip's search is still in flight when it ends.
+    await new Promise(resolve => setTimeout(resolve, 800));
+    await route.fulfill({ json: { tracks: [outside('glass-city', 'Glass City', 'Glass Avenue')], notice: null } }).catch(() => {});
   });
   await page.goto('/');
   await page.getByRole('button', { name: 'Add music', exact: true }).first().click();

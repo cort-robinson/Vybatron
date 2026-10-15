@@ -74,7 +74,9 @@ export function usePortal() {
       setBootstrap(next); setAuth('ready');
       let previous = '';
       try { previous = localStorage.getItem('vybertron.guild') || ''; } catch { /* Storage is optional. */ }
-      setGuildId(next.guilds.find(g => g.id === previous)?.id || next.guilds[0]?.id || '');
+      // Being in a server's voice outranks the last server viewed.
+      const preferred = [next.voiceGuildId, previous].find(id => id && next.guilds.some(g => g.id === id));
+      setGuildId(preferred || next.guilds[0]?.id || '');
     } catch (error) {
       if (seq !== bootstrapSequence.current) return;
       if (error instanceof ApiError && error.status === 401) expireAuth();

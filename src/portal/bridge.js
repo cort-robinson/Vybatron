@@ -5,7 +5,8 @@ import { getHealth } from '../health.js';
 import { searchMusic } from '../utils/search.js';
 import { validatePlaybackQuery } from '../utils/query.js';
 import { withTimeout } from '../utils/enqueue.js';
-import { createPortalPolicy } from './policy.js';
+import { validId } from '../utils/library.js';
+import { actorVoiceId, createPortalPolicy } from './policy.js';
 import { FILTERS, actorProjection, guildProjection, trackProjection, snapshotProjection, libraryProjection, activityProjection, configurationProjection, createRevisions, statsProjection, STATS_WINDOW_IDS } from './projection.js';
 import { publicCommands, executePortalCommand } from './commands.js';
 import { fail, safeError } from './errors.js';
@@ -103,16 +104,21 @@ export function startPortalBridge(client, {
           const actorId = url.searchParams.get('actorId');
           const who = await policy.identity(actorId);
           const guilds = [];
+          // The server whose voice the viewer is in, so the portal opens there.
+          let voiceGuildId = null;
           // Discord's installed guild inventory is authoritative and bounded.
           const ids = [...client.guilds.cache.keys()].slice(0, 1000);
           for (let start = 0; start < ids.length; start += 4) {
             const results = await Promise.all(ids.slice(start, start + 4).map(async id => {
-              try { return guildProjection(await policy.guild(actorId, id, who, { channelScope: 'none' })); }
-              catch (error) { if (error?.status === 404) return null; throw error; }
+              try {
+                const context = await policy.guild(actorId, id, who, { channelScope: 'none' });
+                if (!voiceGuildId && validId(actorVoiceId(context.member))) voiceGuildId = context.guild.id;
+                return guildProjection(context);
+              } catch (error) { if (error?.status === 404) return null; throw error; }
             }));
             guilds.push(...results.filter(Boolean));
           }
-          return json(response, 200, { viewer: { id: who.user.id, username: who.user.username.slice(0, 80), displayName: actorProjection(who.user).displayName, avatarUrl: actorProjection(who.user).avatarUrl, maintainer: who.maintainer }, guilds, filters: FILTERS, commands: publicCommands(commandMap) }, maxResponseBytes);
+          return json(response, 200, { viewer: { id: who.user.id, username: who.user.username.slice(0, 80), displayName: actorProjection(who.user).displayName, avatarUrl: actorProjection(who.user).avatarUrl, maintainer: who.maintainer }, guilds, voiceGuildId, filters: FILTERS, commands: publicCommands(commandMap) }, maxResponseBytes);
         }
         if (url.pathname === '/v1/stats/requests/clear' && request.method === 'POST') {
           // Personal data across every server: identity only, never a guild grant.

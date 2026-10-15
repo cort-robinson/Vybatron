@@ -341,3 +341,16 @@ test('phone player is singular, keyboard-accessible, responsive and reduced-moti
   const result = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze();
   expect(result.violations).toEqual([]);
 });
+
+for (const inVoice of [true, false]) {
+  test(`opens ${inVoice ? 'the server whose voice you are in' : 'the last viewed server outside voice'}`, async ({ page }) => {
+    const fixture = await mockPortal(page);
+    fixture.state.bootstrap.guilds.push({ ...fixture.state.snapshot.guild, id: 'other', name: 'Other listening space' });
+    fixture.state.bootstrap.voiceGuildId = inVoice ? 'testing' : null;
+    await page.addInitScript(() => localStorage.setItem('vybertron.guild', 'other'));
+    await page.goto('/');
+    const expected = inVoice ? 'testing' : 'other';
+    await expect(page.getByRole('combobox', { name: 'Server', exact: true })).toHaveValue(expected);
+    expect(fixture.requests.filter(path => /^\/api\/guilds\/[^/]+$/.test(path))[0]).toBe(`/api/guilds/${expected}`);
+  });
+}

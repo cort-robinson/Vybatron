@@ -18,20 +18,20 @@ Set `VITE_API_PROXY` to a different **development-only** upstream. Production
 requests always use same-origin paths and secure cookies; no browser credential config.
 
 ```powershell
-npm run build
 npx playwright install chromium
 npm test
 ```
 
-The protocol/PWA tests serve `dist` on an ephemeral loopback port, so build before
-testing. If bundled Chromium is unavailable, use an installed system browser:
+`npm test` builds `dist` and runs the tests in parallel against `vite preview`; the
+protocol/PWA tests also serve `dist` on an ephemeral loopback port. Set
+`PLAYWRIGHT_PORT` if 4178 is taken. If bundled Chromium is unavailable, use an installed system browser:
 `$env:PLAYWRIGHT_CHANNEL = 'chrome'` (or `msedge`) before `npm test`.
 Tests use independent, explicit synthetic fixtures only in `tests/**`. No fixture
 adapter, fake login, or player data is exported into `dist`.
 
 `scripts/prepare-qa-art.mjs` regenerates test-only crops from approved references.
-`tests/design.spec.ts` captures desktop, phone, and tablet UI and records console,
-overflow, and accessibility findings in `.impeccable/review/`. `scripts/compare-qa.mjs`
+`tests/design.spec.ts` captures desktop, phone, and tablet UI into `.impeccable/review/`
+and fails on console errors, overflow, or accessibility findings. `scripts/compare-qa.mjs`
 creates source-left/browser-right comparisons. See `../design-qa.md` for the bounded review.
 
 ## Integration notes

@@ -31,13 +31,14 @@ export function Search({ portal, open, onClose, query, setQuery }: { portal: Por
   const cache = useRef(new Map<string, Result & { expiresAt: number }>());
   const input = useRef<HTMLInputElement>(null);
   const sequence = useRef(0);
+  const inFlight = useRef('');
   const latestGuild = useRef(portal.guildId);
   latestGuild.current = portal.guildId;
   const hasAccess = !!portal.snapshot;
   const maxLength = portal.bootstrap?.commands.find(c => c.name === 'play')?.options?.find(o => o.name === 'query')?.max_length || 200;
   const typed = query.trim();
   const reset = () => {
-    controller.current?.abort(); sequence.current++;
+    controller.current?.abort(); sequence.current++; inFlight.current = '';
     setTracks(null); setNotice(null); setError(''); setSearching(false); setLastQuery('');
   };
   useEffect(() => { cache.current.clear(); reset(); }, [portal.guildId]);
@@ -48,14 +49,16 @@ export function Search({ portal, open, onClose, query, setQuery }: { portal: Por
   useEffect(() => () => controller.current?.abort(), []);
   const search = async (value = typed) => {
     if (!value || value.length > maxLength || portal.connection !== 'live' || !hasAccess) return;
+    const guild = portal.guildId; const key = `${guild}:${value.toLocaleLowerCase()}`;
+    // An explore chip searches at once and its typing pause then asks again: let the first answer arrive.
+    if (inFlight.current === key) return;
     controller.current?.abort(); controller.current = new AbortController();
-    const seq = ++sequence.current; const guild = portal.guildId;
-    const key = `${guild}:${value.toLocaleLowerCase()}`;
+    const seq = ++sequence.current; inFlight.current = '';
     const cached = cache.current.get(key);
     if (cached && cached.expiresAt > Date.now()) {
       setTracks(cached.tracks); setNotice(cached.notice); setLastQuery(value); setError(''); setSearching(false); return;
     }
-    setSearching(true); setError('');
+    setSearching(true); setError(''); inFlight.current = key;
     try {
       const result = await api.search(guild, value, controller.current.signal);
       if (seq === sequence.current && latestGuild.current === guild) {
@@ -65,7 +68,7 @@ export function Search({ portal, open, onClose, query, setQuery }: { portal: Por
         setTracks(result.tracks); setNotice(result.notice); setLastQuery(value);
       }
     } catch (cause) { if (!controller.current?.signal.aborted && seq === sequence.current) setError(errorMessage(cause)); }
-    finally { if (seq === sequence.current) setSearching(false); }
+    finally { if (seq === sequence.current) { setSearching(false); inFlight.current = ''; } }
   };
   useEffect(() => {
     if (!typed) { reset(); return; }

@@ -319,31 +319,22 @@ test('native autoplay toggle keeps its lifecycle and pending reply while ordered
   } finally { await page.close(); await server.close(); }
 });
 
-const unknownStamps: { label: string; value: unknown }[] = [
-  { label: 'missing', value: undefined }, { label: 'null', value: null },
-  { label: 'non-UUID instance', value: { instanceId: 'unknown-bridge', sequence: 3 } },
-  { label: 'string sequence', value: { instanceId: instance, sequence: '3' } },
-  { label: 'fractional sequence', value: { instanceId: instance, sequence: 3.5 } },
-  { label: 'unsafe sequence', value: { instanceId: instance, sequence: Number.MAX_SAFE_INTEGER + 1 } },
-  { label: 'zero sequence', value: { instanceId: instance, sequence: 0 } },
-];
-for (const { label, value } of unknownStamps) {
-  test(`a ${label} command stamp uses a new GET instead of ordered acceptance`, async ({ page }) => {
-    const server = await startHttpFixture();
-    try {
-      await connected(page, server); const reads = server.snapshotReads.length;
-      server.holdCommandReplies(); stamp(server.state.snapshot, 3);
-      await pause(page).click(); await expect.poll(() => server.heldCommands.size).toBe(1);
-      const reply = [...server.heldCommands.values()][0];
-      Object.assign(reply, { ordering: value }); reply.session.current!.title = 'Unverified command response';
-      server.holdSnapshotReads(); server.releaseCommandReplies();
-      await expect.poll(() => server.capturedSnapshots.size).toBe(1);
-      await expect(playerTitle(page, 'Unverified command response')).toHaveCount(0); await expect(resume(page)).toBeDisabled();
-      server.releaseSnapshotReads(); await expect(resume(page)).toBeEnabled();
-      await expect.poll(() => server.snapshotReads.length).toBe(reads + 1); expect(server.commands).toHaveLength(1);
-    } finally { await page.close(); await server.close(); }
-  });
-}
+// Every malformed stamp shape is covered by ordering-stamp.spec.ts; one proves the fallback end to end.
+test('a malformed command stamp uses a new GET instead of ordered acceptance', async ({ page }) => {
+  const server = await startHttpFixture();
+  try {
+    await connected(page, server); const reads = server.snapshotReads.length;
+    server.holdCommandReplies(); stamp(server.state.snapshot, 3);
+    await pause(page).click(); await expect.poll(() => server.heldCommands.size).toBe(1);
+    const reply = [...server.heldCommands.values()][0];
+    Object.assign(reply, { ordering: { instanceId: 'unknown-bridge', sequence: 3 } }); reply.session.current!.title = 'Unverified command response';
+    server.holdSnapshotReads(); server.releaseCommandReplies();
+    await expect.poll(() => server.capturedSnapshots.size).toBe(1);
+    await expect(playerTitle(page, 'Unverified command response')).toHaveCount(0); await expect(resume(page)).toBeDisabled();
+    server.releaseSnapshotReads(); await expect(resume(page)).toBeEnabled();
+    await expect.poll(() => server.snapshotReads.length).toBe(reads + 1); expect(server.commands).toHaveLength(1);
+  } finally { await page.close(); await server.close(); }
+});
 
 test('a malformed SSE stamp disables writes and independently refreshes instead of renewing freshness', async ({ page }) => {
   const server = await startHttpFixture();

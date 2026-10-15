@@ -6,10 +6,12 @@ export default defineConfig({
   testDir: './tests',
   timeout: 30_000,
   expect: { timeout: 7_000 },
-  fullyParallel: false,
-  workers: 1,
+  // Every test owns its page, routes and loopback fixture, so tests run in parallel.
+  fullyParallel: true,
+  workers: process.env.CI ? 2 : '50%',
   reporter: [['list'], ['html', { open: 'never' }]],
   use: { baseURL: origin, channel: process.env.PLAYWRIGHT_CHANNEL || undefined, trace: 'retain-on-failure', screenshot: 'only-on-failure', serviceWorkers: 'block' },
   // A listener from another worktree must never supply this checkout's evidence.
-  webServer: { command: `npm run dev -- --host 127.0.0.1 --port ${port} --strictPort`, url: origin, reuseExistingServer: false, timeout: 30_000 },
+  // Tests run against a fresh production build, which loads much faster than dev.
+  webServer: { command: `npm run build && npx vite preview --host 127.0.0.1 --port ${port} --strictPort`, url: origin, reuseExistingServer: false, timeout: 120_000 },
 });

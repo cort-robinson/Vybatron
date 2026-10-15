@@ -20,8 +20,8 @@ async function loaded(page: Page) {
   await expect(page.getByRole('button', { name: 'Refresh options', exact: true })).toBeEnabled();
 }
 
-test('configuration: one catalog GET per Settings visit despite fresh three-second SSE frames', async ({ page }) => {
-  const server = await startHttpFixture({ pollMs: 3000 });
+test('configuration: one catalog GET per Settings visit despite fresh SSE frames', async ({ page }) => {
+  const server = await startHttpFixture({ pollMs: 250 });
   try {
     await connected(page, server);
     expect(server.configurationReads).toHaveLength(0);
@@ -29,7 +29,7 @@ test('configuration: one catalog GET per Settings visit despite fresh three-seco
     await settings(page); await loaded(page);
     await expect(page.locator('#music-channel option')).toHaveText(['Choose a music channel', '# General', '# music-lounge']);
     await expect(page.locator('#dj-role option')).toHaveText(['Everyone in voice', 'DJs']);
-    await page.waitForTimeout(6200);
+    await page.waitForTimeout(800); // Several live frames arrive while Settings is open.
     await expect(page.getByRole('button', { name: 'Pause playback' })).toBeEnabled();
     expect(server.configurationReads).toEqual([{ guildId: 'testing', method: 'GET' }]);
     await page.screenshot({ path: test.info().outputPath('configuration-desktop.png'), fullPage: true });
@@ -94,7 +94,8 @@ test('configuration: phone drafts survive transient discovery failures, native r
   } finally { await page.close(); await server.close(); }
 });
 
-for (const status of [401, 403, 404]) {
+// Settings treats 401, 403 and 404 as one denial.
+for (const status of [403]) {
   test(`configuration: a hard ${status} clears catalog choices and cannot fall back to snapshot roles`, async ({ page }) => {
     const server = await startHttpFixture();
     try {

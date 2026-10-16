@@ -75,8 +75,13 @@ services:
       - YOUTUBE_REFRESH_TOKEN=${YOUTUBE_REFRESH_TOKEN:-}
       - POT_TOKEN=${POT_TOKEN:-}
       - POT_VISITOR_DATA=${POT_VISITOR_DATA:-}
+    # Adds the locally built vybatron-audio plugin (lavalink/plugins/build.sh),
+    # which streams audio-only songs to portal listeners on their own device.
+    # Without the jar Lavalink starts exactly as before and Discord is unaffected.
+    entrypoint: ["sh", "-c", "mkdir -p plugins && cp /opt/vybatron/vybatron-audio.jar plugins/ 2>/dev/null || true; exec java -jar Lavalink.jar"]
     volumes:
       - ./lavalink/application.yml:/opt/Lavalink/application.yml:ro
+      - ./lavalink/plugins:/opt/vybatron:ro
     healthcheck:
       test: ["CMD-SHELL", "wget -q --spider --header \"Authorization: $${LAVALINK_SERVER_PASSWORD}\" http://localhost:2333/version"]
       interval: 10s

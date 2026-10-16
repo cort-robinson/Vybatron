@@ -1371,3 +1371,14 @@ test('device audio passes byte ranges through and nothing but audio', { timeout:
   assert.equal((await f.request(`/api/guilds/${guildId}/audio/short`, { headers })).status, 404);
   assert.equal((await f.request(route)).status, 401);
 });
+
+test('device audio streams a song still arriving and cuts off anything past the cap', { timeout: 5000 }, async t => {
+  const f = await fixture(t, { limits: { audioBytes: 12 } }); const device = await f.login(); const headers = { Cookie: device.cookie };
+  const route = `/api/guilds/${guildId}/audio/abcdefghijk`;
+  f.state.bridgeResponse = res => { res.writeHead(200, { 'Content-Type': 'audio/ogg' }); res.write('OggS'); setTimeout(() => res.end('-rest'), 20); };
+  const streamed = await f.request(route, { headers });
+  assert.equal(streamed.status, 200); assert.equal(streamed.text, 'OggS-rest');
+  assert.equal(streamed.headers['content-type'], 'audio/ogg'); assert.equal(streamed.headers['content-length'], undefined);
+  f.state.bridgeResponse = res => { res.writeHead(200, { 'Content-Type': 'audio/ogg' }); res.write('0123456789'); setTimeout(() => res.end('0123456789'), 20); };
+  await assert.rejects(f.request(route, { headers }));
+});

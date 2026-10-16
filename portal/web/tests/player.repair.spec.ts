@@ -202,3 +202,11 @@ test('phone sleeve centers the empty cover icon and rings the whole filter pill'
   expect(ring.pillOutline).toBe('solid');
   expect(ring.selectOutline).toBe('none');
 });
+
+test('icon-only transport controls keep their name as a hover tooltip while usable', async ({ page }) => {
+  await mockPortal(page); await page.goto('/');
+  const transport = page.getByRole('group', { name: 'Playback controls' });
+  await expect(transport.getByRole('button', { name: 'Pause playback' })).toBeEnabled();
+  await expect(transport.getByRole('button', { name: 'Shuffle queue' })).toHaveAttribute('title', 'Shuffle queue');
+  await expect(transport.getByRole('button', { name: /^Repeat: / })).toHaveAttribute('title', /^Repeat: /);
+});

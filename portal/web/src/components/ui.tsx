@@ -3,8 +3,10 @@ import { ArrowClockwiseIcon, MusicNotesIcon, UserIcon, XIcon, WarningCircleIcon 
 import { publicUrl } from '../api';
 import type { Track } from '../types';
 
-export function IconButton({ label, children, className = '', ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { label: string }) {
-  return <button type="button" className={`icon-button ${className}`} aria-label={label} title={label} {...props}>{children}</button>;
+// A caller's title (usually why the control is unavailable) replaces the label tooltip; an
+// undefined one falls back to the label instead of erasing it.
+export function IconButton({ label, children, className = '', title, ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { label: string }) {
+  return <button type="button" className={`icon-button ${className}`} aria-label={label} title={title ?? label} {...props}>{children}</button>;
 }
 export function FallbackCover({ className = '', alt = '', large = false }: { className?: string; alt?: string; large?: boolean }) {
   const sizes = large ? '(max-width: 960px) calc(100vw - 40px), (max-width: 1100px) 45vw, 560px' : '180px';

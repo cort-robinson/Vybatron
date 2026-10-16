@@ -303,6 +303,9 @@ REVERT: everything here is scoped to :root[data-skin='overdrive']; Settings → 
     .od-horizon, .od-plane, .od-window, .od-crt::after, .od-sky, .brand > span, .player-footer::after, .transport .play-button::before, .od-cover-scan::before, .od-cover-scan::after { animation: none !important; }
     .od-cover-scan, .player-footer::after { display: none; }
     .sleeve-artwork > .artwork { transform: none; transition: none; }
+    /* The horizon changes place between browse and the sleeve without travelling; the sun only fades. */
+    .od-skyline, .od-floor { transition: none; }
+    .od-sun { transition-property: opacity; }
     .range::-webkit-slider-thumb, .range:active:not(:disabled)::-webkit-slider-thumb { transform: rotate(45deg); }
     .range::-moz-range-thumb, .range:active:not(:disabled)::-moz-range-thumb { transform: rotate(45deg); }
     .shelf-row > li:hover .shelf-art .artwork, .playlist-tile:hover .playlist-cover { transform: none; }

@@ -18,6 +18,7 @@ export function RoomLight({ palette, instant, quick, children }: { palette: Pale
     const outgoing = elements.current.get(key(layers[0].palette));
     const incoming = elements.current.get(key(layers[1].palette));
     if (!outgoing || !incoming) return;
+    let active = true;
     const clocks = new Map<string, CSSAnimation[]>();
     for (const animation of outgoing.getAnimations({ subtree: true })) {
       if (animation instanceof CSSAnimation && animation.animationName !== 'room-relight') {
@@ -29,8 +30,19 @@ export function RoomLight({ palette, instant, quick, children }: { palette: Pale
     for (const animation of incoming.getAnimations({ subtree: true })) {
       if (!(animation instanceof CSSAnimation) || animation.animationName === 'room-relight') continue;
       const previous = clocks.get(animation.animationName)?.shift();
-      if (previous?.currentTime != null) animation.currentTime = previous.currentTime;
+      if (!previous) continue;
+      const synchronize = () => {
+        if (!active || !incoming.isConnected || !outgoing.isConnected || animation.playState === 'idle' || previous.playState === 'idle') return;
+        // A seek on a pending animation holds that frame until the renderer is ready, leaving it
+        // behind on slower devices. Share the timeline origin, while preserving CSS pause control.
+        if (previous.startTime != null && previous.playState === 'running' && animation.playState !== 'paused' && previous.timeline === animation.timeline && previous.playbackRate === animation.playbackRate) animation.startTime = previous.startTime;
+        else if (previous.currentTime != null) animation.currentTime = previous.currentTime;
+      };
+      synchronize();
+      // Initial scenery can itself still be waiting for its first paint.
+      if (previous.pending && previous.playState === 'running') void previous.ready.then(synchronize, () => undefined);
     }
+    return () => { active = false; };
   }, [layers]);
   useEffect(() => {
     if (instant) { setLayers([{ palette, prepared: true }]); return; }

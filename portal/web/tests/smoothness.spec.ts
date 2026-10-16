@@ -96,11 +96,14 @@ test('a song change dissolves fixed room palettes without repeatedly changing in
   const incoming = page.locator('.room-incoming');
   await expect(incoming.locator('.od-horizon')).toHaveCount(1);
   await expect(incoming.locator('.od-horizon')).toHaveCSS('animation-name', 'none');
-  const phaseDifference = await page.locator('.room-colors').evaluateAll(rooms => {
-    const clock = (room: Element) => room.querySelector('.od-plane')!.getAnimations().find(a => a instanceof CSSAnimation && a.animationName === 'od-roll')!.currentTime as number;
-    return Math.abs(clock(rooms[0]) - clock(rooms[1]));
+  const clocks = await page.locator('.room-colors').evaluateAll(rooms => {
+    const animations = rooms.map(room => room.querySelector('.od-plane')!.getAnimations().find(a => a instanceof CSSAnimation && a.animationName === 'od-roll')!);
+    return { starts: animations.map(a => a.startTime), difference: Math.abs(Number(animations[0].currentTime) - Number(animations[1].currentTime)) };
   });
-  expect(phaseDifference).toBeLessThan(50);
+  // A shared timeline origin remains correct even when CI delays the incoming layer's first paint.
+  expect(clocks.starts[0]).not.toBeNull();
+  expect(clocks.starts[1]).toBe(clocks.starts[0]);
+  expect(clocks.difference).toBeLessThan(50);
   const samples = await incoming.evaluate(element => {
     const animation = element.getAnimations().find(a => a instanceof CSSAnimation && a.animationName === 'room-relight')!;
     animation.pause();
@@ -118,6 +121,21 @@ test('a song change dissolves fixed room palettes without repeatedly changing in
   expect(await page.evaluate(() => document.getAnimations().filter(a => a instanceof CSSTransition && a.transitionProperty.startsWith('--')).length)).toBe(0);
   await page.clock.runFor(500);
   await expect(page.locator('.room-colors')).toHaveCount(1);
+  const state = fixture.state.snapshot;
+  const motionState = () => page.locator('.od-plane').evaluate(el => el.getAnimations().find(a => a instanceof CSSAnimation && a.animationName === 'od-roll')!.playState);
+  state.session.status = 'paused'; state.revision = 'paused-after-relight';
+  await page.evaluate(data => (window as unknown as { portalTest: { emit: (d: unknown) => void } }).portalTest.emit(data), state);
+  await expect.poll(motionState).toBe('paused');
+  state.session.current = state.session.queue.shift()!; state.revision = 'relight-while-paused';
+  await page.evaluate(data => (window as unknown as { portalTest: { emit: (d: unknown) => void } }).portalTest.emit(data), state);
+  await expect.poll(() => accent(page)).not.toBe(final);
+  await expect(page.locator('.room-colors')).toHaveCount(2);
+  await expect.poll(() => page.locator('.od-plane').evaluateAll(elements => elements.map(el => el.getAnimations().find(a => a instanceof CSSAnimation && a.animationName === 'od-roll')!.playState))).toEqual(['paused', 'paused']);
+  await page.clock.runFor(2300);
+  await expect(page.locator('.room-colors')).toHaveCount(1);
+  state.session.status = 'playing'; state.revision = 'resumed-after-relight';
+  await page.evaluate(data => (window as unknown as { portalTest: { emit: (d: unknown) => void } }).portalTest.emit(data), state);
+  await expect.poll(motionState).toBe('running');
 });
 
 test('reduced motion turned on mid-glide finishes the glide quickly', async ({ page }) => {

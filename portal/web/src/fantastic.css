@@ -264,6 +264,11 @@ REVERT: everything here is scoped to :root[data-skin='fantastic']; Settings → 
   .ff-tune::before { top: 0; background: linear-gradient(to top, #fff4dc 0 2px, color-mix(in oklab, var(--ff-base), black 55%) 2px); }
   .ff-tune::after { bottom: 0; background: linear-gradient(to bottom, #fff4dc 0 2px, color-mix(in oklab, var(--ff-base), black 55%) 2px); }
   .sleeve-main .player-title-row h2 { text-shadow: 0 2px 0 color-mix(in oklab, var(--ff-suit) 45%, transparent); }
+  /* The now-playing caption sits on an enamel plate, like a broadcast title card, so the planet,
+     skyline, and bay never run through the title or the artist. */
+  .sleeve-main > .player-identity, .sleeve-main > .player-context:has(> p) { width: fit-content; max-width: min(100%, 560px); padding: 12px 24px 14px; border-radius: 22px;
+    outline: 1px solid var(--trim); outline-offset: -5px; background: var(--piping), color-mix(in oklab, var(--ff-base) 80%, transparent); backdrop-filter: var(--chrome-blur); }
+  .sleeve-main > .player-context:has(> p) { padding-block: 10px; }
   .sleeve-queue { border-radius: 26px; outline: 1px solid var(--trim); outline-offset: -6px; background: var(--piping), color-mix(in oklab, var(--ff-base) 64%, transparent); }
   .expanded .player-footer { border-top-color: transparent; }
   .expanded .player-extras { border-left-color: transparent; background: linear-gradient(to bottom, transparent, var(--line-strong), transparent) left / 1px 100% no-repeat; }
@@ -284,6 +289,9 @@ REVERT: everything here is scoped to :root[data-skin='fantastic']; Settings → 
     .ambient-scene { --planet-x: 74%; }
     .ambient-scene.immersive { --ff-horizon: 64%; --planet: clamp(280px, 90vw, 520px); --planet-x: 50%; }
     .ff-krackle { left: -12vw; top: 4vh; width: 130vw; opacity: .6; }
+    /* In the sleeve the storm starts below Back to queue instead of crowding it. */
+    .app-shell .ambient-scene.immersive .ff-krackle { top: calc(var(--mobile-header) + 56px); }
+    .sleeve-main > .player-identity, .sleeve-main > .player-context:has(> p) { padding: 8px 16px 10px; border-radius: 18px; }
     .sidebar { background: var(--piping-bottom), var(--chrome); }
     .sidebar::after { display: none; }
     .guild-card { background: none; outline: 0; }
@@ -310,6 +318,9 @@ REVERT: everything here is scoped to :root[data-skin='fantastic']; Settings → 
   :root[data-skin='fantastic'] :is(.ff-tv, .ff-tv-glass, .ff-tune) { display: none; }
   :root[data-skin='fantastic'] .sleeve-artwork { --bezel: 0px; }
   :root[data-skin='fantastic'] .sleeve-spectrum { translate: none; }
+  /* The side-by-side controls sit over the planet, so they get the caption's enamel too (no blur:
+     this footer holds the fixed More menu). */
+  :root[data-skin='fantastic'] .expanded .player-footer { margin-bottom: 8px; border-left-color: transparent; border-radius: 18px; outline: 1px solid var(--trim); outline-offset: -5px; background: color-mix(in oklab, var(--ff-base) 84%, transparent); }
 }
 
 /* ── Performance mode: no comet, water shimmer, or print offsets; the scene is already still. */
@@ -333,6 +344,9 @@ REVERT: everything here is scoped to :root[data-skin='fantastic']; Settings → 
     .ff-scene, .ff-burst, .ff-window, .ff-krackle-voids circle, .ff-train, .ff-glint, .transport .play-button::after { animation: none !important; }
     .ff-herald, .ff-tune { display: none; }
     .shelf-row > li:hover .shelf-art .artwork, .playlist-tile:hover .playlist-cover, .button.primary:hover:not(:disabled) { transform: none; }
+    /* The horizon changes place between browse and the sleeve without travelling; the planet only fades. */
+    .ff-sky, .ff-stars, .ff-skyline, .ff-bay, .ff-glint { transition: none; }
+    .ff-planet { transition-property: opacity; }
   }
   :root[data-skin='fantastic'][data-boot] :is(.ff-planet, .ff-bay, .ff-skyline, .ff-krackle) { animation: none; }
 }

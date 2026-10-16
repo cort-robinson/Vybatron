@@ -226,7 +226,8 @@ so switching looks is one attribute and removing it is two files and their impor
   chromatic split while a scan beam crosses the cover. The sleeve cover leans toward a fine
   pointer. On page load the sun rises and the floor and skyline fade in once; the chrome never
   flickers.
-- Reduced motion removes all of it except static color and shape.
+- Reduced motion removes all of it except static color and shape; the horizon changes place
+  without travelling and the sun only fades.
 
 ## Fantastic Four look
 
@@ -246,9 +247,13 @@ broadcast from Earth-828, after *The Fantastic Four: First Steps*. It lives in
   inset trim lines on panels, indicator lamps on navigation, a tick-dial bezel around play,
   and a teal TV set with knobs and curved glass framing the sleeve cover. Michroma (self-hosted)
   is for the wordmark and headings only; names, numbers, and copy stay in Archivo.
+- **Caption plate:** in the sleeve, the now-playing title, artist, and any state note sit on an
+  enamel plate (inset trim, 80% ground) so the planet, skyline, and bay never run under text. In
+  short landscape the side-by-side controls get the same plate.
 - **Alive:** starbursts, krackle, windows, the monorail, a Silver Surfer streak, and the Torch
   orbiting the dial run only while the session plays live. On track change the TV rolls the
-  new picture open and the title stretches and snaps back. Reduced motion removes all of it;
+  new picture open and the title stretches and snaps back. Reduced motion removes all of it,
+  and the horizon changes place without travelling (the planet only fades);
   performance mode also drops the comet and water shimmer.
 
 ## Performance mode

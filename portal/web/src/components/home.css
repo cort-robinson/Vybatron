@@ -81,7 +81,7 @@
 .playlist-meta { margin-top: 3px; color: var(--text-soft); font-size: 14px; font-variant-numeric: tabular-nums; }
 .playlist-detail { margin-top: 6px; color: var(--muted); font-size: 14px; line-height: 1.5; }
 .mix-range { display: block; margin-top: 10px; }
-.mix-range select { width: 100%; min-height: 40px; font-size: 14px; }
+.mix-range select { width: 100%; min-height: 44px; font-size: 14px; }
 .playlist-actions { display: flex; align-items: center; gap: 8px; margin-top: auto; padding-top: 14px; }
 .playlist-actions .button { flex: 1; min-height: 44px; padding: 9px 14px; font-size: 14px; }
 .playlist-actions .icon-button { width: 44px; min-width: 44px; min-height: 44px; border: 1px solid var(--field-line); border-radius: 12px; }

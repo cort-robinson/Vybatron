@@ -1,9 +1,5 @@
 # Product
 
-## Register
-
-product
-
 ## Users
 
 Friend groups listening together in Discord voice channels. They want to start music quickly, add tracks conversationally, understand what is playing, and share control without learning a command manual or configuring the bot first.

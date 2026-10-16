@@ -58,13 +58,13 @@ test('player payload uses semantic status, timestamp, and native controls', () =
   );
   assert.deepEqual(
     playing.components[1].components.map((component) => component.data.label),
-    ['Shuffle', 'Loop: off', 'Seek', 'Refresh']
+    ['Back', 'Shuffle', 'Loop: off', 'Seek', 'Refresh']
   );
   assert.deepEqual(
     playing.components[2].components.map((component) => component.data.label),
     ['Open track']
   );
-  assert.equal(playing.components[1].components[2].data.disabled, false);
+  assert.equal(playing.components[1].components[3].data.disabled, false);
   const playerIds = playing.components
     .flatMap((row) => row.components)
     .map((component) => component.data.custom_id)
@@ -86,7 +86,7 @@ test('player payload uses semantic status, timestamp, and native controls', () =
   const livePlayer = makePlayer(0);
   livePlayer.queue.current.info.isStream = true;
   const live = buildPlayerPayload(livePlayer);
-  assert.equal(live.components[1].components[2].data.disabled, true);
+  assert.equal(live.components[1].components[3].data.disabled, true);
 });
 
 for (const size of [0, 1, 10, 11, 25, 26, 250]) {

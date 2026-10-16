@@ -3,7 +3,7 @@ import { requireControl } from '../utils/guards.js';
 import { ephemeralText } from '../utils/messages.js';
 import { requestControllerEnd, withControllerLink } from '../utils/player-controller.js';
 import { plainText } from '../utils/presentation.js';
-import { clearVoiceStatus } from '../utils/voice-status.js';
+import { clearVoiceStatusBeforeLeaving } from '../utils/voice-status.js';
 import { cancelGuildMutations } from '../utils/requests.js';
 import { retirePresentationPlayer } from '../utils/presentation-updates.js';
 
@@ -28,9 +28,10 @@ export async function execute(interaction) {
   );
   try {
     await player.stopPlaying?.(true, false);
-    // These owned, bounded writers settle independently of physical shutdown.
-    clearVoiceStatus(interaction.client, player);
+    // The controller writer settles independently of physical shutdown. The
+    // voice status must clear first: Discord rejects it once the bot has left.
     requestControllerEnd(interaction.client, player, `Stopped by ${username}.`);
+    await clearVoiceStatusBeforeLeaving(interaction.client, player);
   } finally {
     await player.destroy();
   }

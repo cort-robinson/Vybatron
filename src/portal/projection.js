@@ -78,7 +78,7 @@ export function createRevisions(client) {
     const signature = [epochs.get(guildId) || 0, objectId(player), objectId(current), current ? trackProjection(current).id : null,
       (player?.queue?.tracks || []).map(track => [objectId(track), trackProjection(track).id]), player?.voiceChannelId, player?.textChannelId,
       Boolean(player?.paused), Boolean(player?.playing), Boolean(isPlaybackRecovering(player)), player?.volume, player?.repeatMode, getAudioPreset(player).label,
-      seekRevision(player),
+      seekRevision(player), Boolean(player?.queue?.previous?.length),
       Boolean(radioState(player).enabled), radioState(player).override, autoplayActive(client, player), suggestionProjection(player).map(track => track.id),
       Boolean(current && isAutoplayTrack(player, current)), guild.settings, guild.mixes, guild.history.map(item => item.id),
       checkpoint ? [checkpoint.voiceChannelId, checkpoint.textChannelId, checkpoint.tracks, checkpoint.paused, checkpoint.volume, checkpoint.repeatMode] : null];
@@ -117,6 +117,8 @@ export function snapshotProjection(client, context, revision, ordering) {
     session: { status, voiceChannel: allowed ? channelProjection(context.channels.get(player?.voiceChannelId)) : null, textChannel: allowed ? channelProjection(context.channels.get(player?.textChannelId)) : null,
       current: current ? trackProjection(current, isAutoplayTrack(player, current)) : null, queue: allowed ? (player?.queue?.tracks || []).slice(0, LIBRARY_LIMITS.queue).map(track => trackProjection(track, isAutoplayTrack(player, track))) : [],
       suggestions: allowed && player ? suggestionProjection(player) : [],
+      // Back returns to an earlier track of this session when one exists.
+      hasPrevious: Boolean(allowed && player?.queue?.previous?.length),
       positionMs: current ? boundedNumber(status === 'playing' ? player.position : player.lastPosition ?? player.position, 0, boundedNumber(current.info?.duration) || Number.MAX_SAFE_INTEGER) : 0,
       durationMs: current ? boundedNumber(current.info?.duration) : 0, volume: allowed ? boundedNumber(player?.volume, settings.volume, 100) : 100,
       filter: allowed ? FILTERS.find(filter => filter.label === preset.label)?.id || 'custom' : 'off', repeat: allowed && ['off', 'track', 'queue'].includes(player?.repeatMode) ? player.repeatMode : 'off',

@@ -40,7 +40,7 @@ const personalPlaylist = { playlist: opt(choice(['mix', 'top', 'rediscover', 'ar
 // The bot adapter translates skipto(position) and replay(index) at its boundary.
 const schemas = {
   play: { query: required(string(200)) }, playnext: { query: required(string(200)) },
-  pause: {}, resume: {}, seek: { timestamp: required(timestamp) }, skip: {},
+  pause: {}, resume: {}, seek: { timestamp: required(timestamp) }, skip: {}, back: {},
   skipto: { position }, stop: {}, clear: {}, remove: { position }, move: { from: position, to: position },
   shuffle: {}, loop: { mode: required(choice(['off', 'track', 'queue'])) },
   volume: { level: required(integer(0, 100)) }, filter: { preset: required(string(40)) }, voteskip: {},
@@ -82,7 +82,7 @@ export function validateCommand(body) {
     if (!Object.hasOwn(schema, option) || !schema[option].validate(value)) throw invalid();
   }
   for (const [option, rule] of Object.entries(schema)) if (rule.required && !Object.hasOwn(options, option)) throw invalid();
-  const conflicting = ['clear', 'remove', 'move', 'shuffle', 'skip', 'skipto', 'seek', 'playnext', 'replay',
+  const conflicting = ['clear', 'remove', 'move', 'shuffle', 'skip', 'skipto', 'back', 'seek', 'playnext', 'replay',
     'mix/save', 'favorite/add', 'session/resume', 'session/discard'].includes(key);
   if (conflicting && body.expectedRevision === undefined) throw invalid();
   return { command: body.command, ...(body.subcommand && { subcommand: body.subcommand }),

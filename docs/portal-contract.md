@@ -58,7 +58,8 @@ runtime objects and credential-bearing data. Maintain existing command meanings.
   session: {
     status: 'idle'|'playing'|'paused'|'recovering'|'unavailable',
     voiceChannel: {id,name}|null, textChannel: {id,name}|null,
-    current: Track|null, queue: Track[], suggestions: Track[], positionMs: number, durationMs: number,
+    current: Track|null, queue: Track[], suggestions: Track[], hasPrevious: boolean,
+    positionMs: number, durationMs: number,
     volume: number, filter: string, repeat: 'off'|'track'|'queue',
     radio: boolean, autoplay: 'off'|'on'|'listening', fairQueue: boolean,
     listeners: {id,displayName,avatarUrl:string|null}[],
@@ -79,6 +80,8 @@ reason; do not reveal restricted channel ids/name/tracks/listeners/checkpoint.
 they are not queue positions and are empty when hidden or inactive. `radio` is
 whether autoplay is active for the session (server `autoplay` mode or a /radio
 override). Clients must treat missing `suggestions`/`autoplay` as empty/off.
+`hasPrevious` is whether this session has an earlier track for `back` to return
+to; clients must treat it as false when missing.
 `viewerVoice` is the actor's own visible voice channel in this guild, or null; clients
 play on their own device when it is null and treat a missing field (an older bot) as in voice.
 Settings/channels/roles include only authorized fields; settings null for basic
@@ -203,7 +206,7 @@ Response `{ok:true,message:string,snapshot:GuildSnapshot}`. Only safe text from
 the command reply; never raw Discord interaction/token objects or embeds with secrets.
 
 Core playback command names and options: play/playnext(query), pause/resume,
-seek(timestamp), skip/skipto(position), stop, clear, remove(position), move(from,to),
+seek(timestamp), skip/skipto(position), back, stop, clear, remove(position), move(from,to),
 shuffle, loop(mode:off|track|queue), volume(level), filter(preset), voteskip,
 radio on(track?)/off/promote(position)/remove(position)/less(position?), replay(index),
 session resume/discard. radio promote/remove/less carry `expectedTrackId` (the
@@ -232,9 +235,12 @@ same resolve/join/restore path as `session resume`. The first link keeps
 `position` only if it resolves; unavailable links are left out and reported.
 Settings: volume(value), fairqueue(enabled), autoplay(mode:off|on|listening), djrole(role), reset; add musicchannel
 subcommand with option channel, validating same-guild bot-readable/writable text
-channel. Keep public command schemas in bootstrap updated.
+channel. Keep public command schemas in bootstrap updated. `back` restarts the
+current track after its first three seconds (or when no earlier track exists);
+otherwise it plays the previous session track and returns the current one to the
+front of the queue.
 
-Use expectedRevision for queue edits/skip/seek/replace/save-current operations;
+Use expectedRevision for queue edits/skip/back/seek/replace/save-current operations;
 UI should include the last snapshot revision. Ordinary play additions may omit
 it. Stop keeps existing urgent/cancellation behavior. A stale write returns409.
 Do not nest the same withGuildMutation lane twice or bypass maintenance leases.

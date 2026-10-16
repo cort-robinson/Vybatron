@@ -15,6 +15,8 @@ export type PlaybackTarget = 'discord' | 'local';
 type Repeat = 'off' | 'track' | 'queue';
 interface Deck {
   current: Track | null; queue: Track[]; status: 'idle' | 'playing' | 'paused';
+  // Songs this session already played, most recent first, for Back.
+  history: Track[];
   // Position at `at`; playing positions advance from there.
   positionMs: number; at: number; durationMs: number; volume: number; repeat: Repeat;
   // Bumped by queue edits so drag-and-drop can detect a changed queue.
@@ -34,7 +36,10 @@ export type Portal = Omit<RemotePortal, 'run'> & {
 
 const DECK_KEY = 'vybertron.local';
 const MAX_QUEUE = 500;
-const empty: Deck = { current: null, queue: [], status: 'idle', positionMs: 0, at: 0, durationMs: 0, volume: 100, repeat: 'off', revision: 0 };
+const MAX_HISTORY = 100;
+// Early in a song Back goes to the previous one; later it restarts this one.
+export const RESTART_AFTER_MS = 3000;
+const empty: Deck = { current: null, queue: [], history: [], status: 'idle', positionMs: 0, at: 0, durationMs: 0, volume: 100, repeat: 'off', revision: 0 };
 export const DISCORD_ONLY = 'That works in a Discord session. Choose Discord under Play on in the player menu to use it.';
 // The bot resolves each song it receives; the rest of a long queue stays behind.
 export const TRANSFER_TRACKS = 100;
@@ -58,7 +63,8 @@ function initialDeck(): Deck {
     const saved = JSON.parse(localStorage.getItem(DECK_KEY) || 'null');
     if (!saved || !Array.isArray(saved.queue)) return empty;
     const current = isTrack(saved.current) ? saved.current : null;
-    return { ...empty, current, queue: saved.queue.filter(isTrack).slice(0, MAX_QUEUE), status: current ? 'paused' : 'idle',
+    const history = Array.isArray(saved.history) ? saved.history.filter(isTrack).slice(0, MAX_HISTORY) : [];
+    return { ...empty, current, queue: saved.queue.filter(isTrack).slice(0, MAX_QUEUE), history, status: current ? 'paused' : 'idle',
       positionMs: current ? Math.max(0, Number(saved.positionMs) || 0) : 0, durationMs: current?.durationMs || 0,
       volume: saved.volume === undefined ? 100 : volumeOf(saved.volume), repeat: ['track', 'queue'].includes(saved.repeat) ? saved.repeat : 'off' };
   } catch { return empty; }
@@ -182,13 +188,15 @@ export function useListening(remote: RemotePortal): Portal {
       notify(`“${deck.current.title}”: ${message} Skipping it.`, 'error');
       advance(true, true);
     };
-    const play = (track: Track, queue: Track[], startMs = 0) => {
-      commit({ current: track, queue, status: 'playing', positionMs: startMs, at: Date.now(), durationMs: track.durationMs }, true);
+    // Moving on remembers the song that was playing, unless it couldn't play.
+    const remember = (deck: Deck, drop = false) => deck.current && !drop ? [deck.current, ...deck.history].slice(0, MAX_HISTORY) : deck.history;
+    const play = (track: Track, queue: Track[], history = remember(deckRef.current), startMs = 0) => {
+      commit({ current: track, queue, history, status: 'playing', positionMs: startMs, at: Date.now(), durationMs: track.durationMs }, true);
       start(track, startMs, true);
     };
     const stop = () => {
       ++loadToken.current; loaded.current = null;
-      commit({ current: null, queue: [], status: 'idle', positionMs: 0, at: Date.now(), durationMs: 0 }, true);
+      commit({ current: null, queue: [], history: [], status: 'idle', positionMs: 0, at: Date.now(), durationMs: 0 }, true);
       const element = media.current;
       if (element) { element.pause(); element.removeAttribute('src'); element.load(); }
       if ('mediaSession' in navigator) navigator.mediaSession.metadata = null;
@@ -203,7 +211,7 @@ export function useListening(remote: RemotePortal): Portal {
       if (deck.repeat === 'queue' && deck.current && !drop) queue.push(deck.current);
       const next = queue.shift();
       if (!next) { stop(); return; }
-      play(next, queue);
+      play(next, queue, remember(deck, drop));
     };
     const enqueue = (tracks: Track[], next: boolean) => {
       const songs = tracks.filter(track => track.uri).map(own);
@@ -254,6 +262,13 @@ export function useListening(remote: RemotePortal): Portal {
           { const element = ready(); if (element) element.currentTime = target / 1000; else start(deck.current, target, deck.status === 'playing'); }
           return true;
         }
+        case 'back:': {
+          const [previous, ...history] = deck.history;
+          if (!previous || (deck.current && position(deck) > RESTART_AFTER_MS)) return deck.current ? run({ command: 'seek', options: { timestamp: '00:00' } }, capability) : false;
+          // The current song waits at the front of the queue, so Skip returns to it.
+          play(previous, deck.current ? [deck.current, ...deck.queue].slice(0, MAX_QUEUE) : deck.queue, history);
+          return true;
+        }
         case 'volume:': { const volume = volumeOf(o.level); commit({ volume }); if (media.current) media.current.volume = volume / 100; return true; }
         case 'loop:': commit({ repeat: (['off', 'track', 'queue'].includes(String(o.mode)) ? o.mode : 'off') as Repeat }); return true;
         case 'skip:': if (!deck.current) return false; advance(true); return true;
@@ -295,7 +310,7 @@ export function useListening(remote: RemotePortal): Portal {
       if (!session.current) return;
       commit({ volume: session.volume, repeat: session.repeat });
       const playing = session.status === 'playing';
-      commit({ current: own(session.current), queue: session.queue.map(own).slice(0, MAX_QUEUE), status: playing ? 'playing' : 'paused',
+      commit({ current: own(session.current), queue: session.queue.map(own).slice(0, MAX_QUEUE), history: [], status: playing ? 'playing' : 'paused',
         positionMs, at: Date.now(), durationMs: session.durationMs || session.current.durationMs }, true);
       start(deckRef.current.current!, positionMs, playing);
     };
@@ -309,7 +324,7 @@ export function useListening(remote: RemotePortal): Portal {
     if ('mediaSession' in navigator) {
       const actions: [MediaSessionAction, MediaSessionActionHandler][] = [
         ['play', () => void run({ command: 'resume' }, 'control')], ['pause', () => void run({ command: 'pause' }, 'control')],
-        ['nexttrack', () => void run({ command: 'skip' }, 'control')], ['previoustrack', () => void run({ command: 'seek', options: { timestamp: '00:00' } }, 'control')],
+        ['nexttrack', () => void run({ command: 'skip' }, 'control')], ['previoustrack', () => void run({ command: 'back' }, 'control')],
         ['seekto', details => { if (details.seekTime !== undefined) void run({ command: 'seek', options: { timestamp: timestamp(details.seekTime * 1000) } }, 'control'); }],
       ];
       for (const [action, handler] of actions) { try { navigator.mediaSession.setActionHandler(action, handler); } catch { /* Unsupported action. */ } }
@@ -320,7 +335,7 @@ export function useListening(remote: RemotePortal): Portal {
   useEffect(() => {
     const save = () => {
       const deck = deckRef.current;
-      try { localStorage.setItem(DECK_KEY, JSON.stringify({ current: deck.current, queue: deck.queue, positionMs: position(deck), volume: deck.volume, repeat: deck.repeat })); }
+      try { localStorage.setItem(DECK_KEY, JSON.stringify({ current: deck.current, queue: deck.queue, history: deck.history, positionMs: position(deck), volume: deck.volume, repeat: deck.repeat })); }
       catch { /* The queue still plays; it just won't survive a reload. */ }
     };
     save();
@@ -376,7 +391,7 @@ export function useListening(remote: RemotePortal): Portal {
   };
   const snapshot = useMemo((): GuildSnapshot | null => !local || !base ? base : {
     ...base, revision: `local:${deck.revision}`,
-    session: { ...base.session, status: deck.status, voiceChannel: null, textChannel: null, current: deck.current, queue: deck.queue,
+    session: { ...base.session, status: deck.status, voiceChannel: null, textChannel: null, current: deck.current, queue: deck.queue, hasPrevious: deck.history.length > 0,
       positionMs: deck.positionMs, durationMs: deck.durationMs, suggestions: [], volume: deck.volume, repeat: deck.repeat,
       radio: false, autoplay: 'off', fairQueue: false, listeners: [], canAdd: true, canControl: true, canVote: false, reason: null },
     savedSession: { ...base.savedSession, exists: false, canResume: false },

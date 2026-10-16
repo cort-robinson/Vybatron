@@ -42,6 +42,7 @@ export const QUEUE_PAGE_SIZE = 10;
 const PLAYER_IDS = Object.freeze({
   toggle: 'player:v1:toggle',
   skip: 'player:v1:skip',
+  back: 'player:v1:back',
   shuffle: 'player:v1:shuffle',
   loop: 'player:v1:loop',
   seek: 'player:v1:seek',
@@ -115,6 +116,11 @@ function playerComponents(player, state, track) {
       .setDisabled(disabled)
   );
   const utilityRow = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId(PLAYER_IDS.back)
+      .setLabel('Back')
+      .setStyle(ButtonStyle.Secondary)
+      .setDisabled(disabled),
     new ButtonBuilder()
       .setCustomId(PLAYER_IDS.shuffle)
       .setLabel('Shuffle')

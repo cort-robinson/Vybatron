@@ -9,7 +9,7 @@ import {
 } from './utils/player-controller.js';
 import { plainText } from './utils/presentation.js';
 import { clearTrackPresence, updateTrackPresence } from './utils/presence.js';
-import { clearVoiceStatus, updateVoiceStatus } from './utils/voice-status.js';
+import { clearVoiceStatus, clearVoiceStatusBeforeLeaving, updateVoiceStatus } from './utils/voice-status.js';
 import { recordPlaybackFailure, recordPlaybackProgress } from './utils/playback-health.js';
 import { fillRadioQueue, refreshSuggestions } from './utils/radio.js';
 import {
@@ -19,6 +19,7 @@ import {
 } from './playback-recovery.js';
 import { createPlaybackWatchdog } from './playback-watchdog.js';
 import { retirePresentationPlayer } from './utils/presentation-updates.js';
+import { LIBRARY_LIMITS } from './utils/library.js';
 
 export const IDLE_MS = 5 * 60 * 1000;
 // A short grace covers a listener's reconnect blip without holding an empty room open.
@@ -43,8 +44,9 @@ export function startIdleTimer(player, options = IDLE_MS) {
         : 'Disconnected after five minutes with an empty queue.';
     void (async () => {
       try {
-        if (client) clearVoiceStatus(client, player);
         if (client) requestControllerEnd(client, player, message);
+        // Discord rejects a status clear once the bot has left the channel.
+        if (client) await clearVoiceStatusBeforeLeaving(client, player);
       } catch {
         // A controller edit must never prevent the idle disconnect.
       } finally {
@@ -204,6 +206,8 @@ export function initLavalink(client) {
     autoSkipOnResolveError: true,
     client: { id: config.clientId, username: 'Vybatron' },
     playerClass: HardenedPlayer,
+    // Session history backs /history, /replay, and Back; it ends with the player.
+    queueOptions: { maxPreviousTracks: LIBRARY_LIMITS.history },
     playerOptions: {
       defaultSearchPlatform: 'ytsearch',
       maxErrorsPerTime: { threshold: 30_000, maxAmount: 3 },

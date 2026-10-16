@@ -1,4 +1,6 @@
 import { autoplayActive, noteSkip, queueNextSuggestion } from './radio.js';
+import { replayableCopy } from './history.js';
+import { LIBRARY_LIMITS } from './library.js';
 
 export async function togglePlayback(player) {
   const wasPaused = player.paused;
@@ -17,6 +19,42 @@ export async function skipCurrent(player, client = null) {
   if (player.queue.tracks.length > 0) await player.skip();
   else await player.stopPlaying(true, Boolean(client && autoplayActive(client, player)));
   return track;
+}
+
+// Like a media player's back button: early in a song it goes to the previous
+// one, later it restarts the current one. The current song returns to the
+// front of the queue, so Skip comes straight back to it.
+export const RESTART_AFTER_MS = 3000;
+export function previousTrack(player) {
+  return player?.queue?.previous?.[0] || null;
+}
+
+function restartable(track) {
+  return track && !track.info?.isStream && track.info?.isSeekable !== false
+    && Number.isFinite(track.info?.duration) && track.info.duration > 0;
+}
+
+// The web player decides restart-or-back from the position it showed, so it
+// passes Infinity: its Back always means the previous track when one exists.
+export async function goBack(player, { restartAfterMs = RESTART_AFTER_MS } = {}) {
+  const current = player.queue.current;
+  const previous = previousTrack(player);
+  const position = current ? (player.position ?? player.lastPosition ?? 0) : 0;
+  if (restartable(current) && (!previous || position > restartAfterMs)) {
+    await player.seek(0);
+    seekVersions.set(player, seekRevision(player) + 1);
+    return { restarted: true, track: current };
+  }
+  if (!previous) return { error: current ? 'This track can’t restart, and there is no earlier track this session.' : 'There is no earlier track in this session.' };
+  if (current && (player.queue.tracks?.length || 0) >= LIBRARY_LIMITS.queue) {
+    return { error: `The queue holds at most ${LIBRARY_LIMITS.queue} upcoming tracks. Remove one before going back.` };
+  }
+  if (current) await player.queue.add(replayableCopy(current), 0);
+  await player.queue.shiftPrevious();
+  const track = replayableCopy(previous);
+  // Replacing the current song keeps it out of history; it waits in the queue.
+  await player.play({ clientTrack: track, position: 0 });
+  return { restarted: false, track };
 }
 
 export async function shuffleQueue(player) {

@@ -125,6 +125,21 @@ export function clearVoiceStatus(client, player) {
   }, { terminal: true });
 }
 
+// Discord only lets a connected member clear a channel status, so a session
+// that ends must clear it before leaving voice. Bounded well under a second:
+// one status PUT normally settles in a few hundred milliseconds, and a held
+// write never delays the disconnect, it only loses the race to it.
+export const CLEAR_BEFORE_LEAVE_MS = 600;
+export async function clearVoiceStatusBeforeLeaving(client, player, ms = CLEAR_BEFORE_LEAVE_MS) {
+  let timer;
+  const deadline = new Promise(resolve => { timer = setTimeout(resolve, ms, false); });
+  try {
+    return await Promise.race([clearVoiceStatus(client, player), deadline]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export function resetVoiceStatusWarnings() {
   // Kept for existing callers/tests. Never discard an unsettled writer fence.
   for (const guildId of writers.keys()) {

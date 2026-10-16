@@ -36,6 +36,8 @@ export interface GuildSnapshot {
     current: Track | null; queue: Track[]; positionMs: number; durationMs: number;
     // Autoplay picks waiting after the queue (suggested: true). Not part of the queue.
     suggestions: Track[];
+    // An earlier track of this session that Back can return to; older bots omit it.
+    hasPrevious?: boolean;
     volume: number; filter: string; repeat: 'off' | 'track' | 'queue';
     // radio: autoplay is active for this session (server mode or /radio override).
     radio: boolean; autoplay: AutoplayMode; fairQueue: boolean;

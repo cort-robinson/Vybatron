@@ -103,6 +103,20 @@ test('V9: idle timer destroys player after timeout', async () => {
   assert.equal(player.destroyed, 1);
 });
 
+test('idle disconnect clears the voice status while still connected', async () => {
+  const player = mockPlayer('idle-status');
+  const events = [];
+  const destroy = player.destroy;
+  player.destroy = () => { events.push('destroy'); return destroy(); };
+  const client = mockClient(mockChannel());
+  client.user = { id: 'bot' };
+  client.lavalink = { getPlayer: () => player };
+  client.rest = { put: async (_route, { body }) => { await sleep(5); events.push(`status:${body.status}`); } };
+  startIdleTimer(player, { ms: 5, client });
+  await sleep(60);
+  assert.deepEqual(events, ['status:null', 'destroy']);
+});
+
 test('V9: cleared idle timer never destroys', async () => {
   const player = mockPlayer('idle-2');
   startIdleTimer(player, 10);
@@ -174,7 +188,7 @@ test('repeated unrelated voice events do not restart the empty-channel deadline'
   assert.equal(player.destroyed, 1);
 });
 
-test('the bot leaves one minute after being moved into an empty voice channel', (t) => {
+test('the bot leaves one minute after being moved into an empty voice channel', async (t) => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
   const player = mockPlayer('empty-channel-move');
   const client = mockClient(mockChannel());
@@ -188,6 +202,8 @@ test('the bot leaves one minute after being moved into an empty voice channel', 
     t.mock.timers.tick(59_000);
     assert.equal(player.destroyed, 0);
     t.mock.timers.tick(1_000);
+    // The voice status clear settles before the disconnect.
+    await new Promise((resolve) => setImmediate(resolve));
     assert.equal(player.destroyed, 1);
   } finally {
     clearIdleTimer(player.guildId);

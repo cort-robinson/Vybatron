@@ -134,6 +134,33 @@ repair playback manually, then resolve the `pending` journal before resuming.
 
 Tests: `python3 -m unittest discover -s tests -p '*_test.py'` and `npm test`.
 
+## Device audio plugin
+
+`lavalink/plugins/vybatron-audio` is a small Lavalink plugin that streams a song's
+audio as Ogg Opus at `/vybatron/audio/{videoId}` for portal listeners playing on
+their own device. It decodes through the same pipeline as Discord playback, on a
+private player that belongs to no session (two exports at a time, 60-minute cap).
+The jar is not in Git; build it on the VPS from the compose checkout, offline,
+against the running Lavalink's own libraries and the probe's pinned JDK:
+
+```sh
+cd /root/Vybertron && lavalink/plugins/build.sh
+```
+
+Compose mounts `lavalink/plugins` read-only and Lavalink's entrypoint copies the jar
+into its plugins folder at start. Without the jar Lavalink starts exactly as before;
+only device audio is unavailable (the bot then tries the YouTube plugin's stream
+route). Rebuild after changing the plugin source or the Lavalink image, then
+recreate Lavalink under the maintenance lock with an idle bot, as for any audio
+release:
+
+```sh
+flock -n /run/lock/vybertron-maintenance.lock sh -c '
+  docker exec vybertron-bot node -e "fetch(\"http://127.0.0.1:3000/maintenance/begin\",{method:\"POST\"}).then(r=>r.json()).then(s=>process.exit(s.busy||s.inFlight?1:0))" &&
+  docker compose up -d --no-deps --no-build --pull never --force-recreate --wait lavalink;
+  docker exec vybertron-bot node -e "fetch(\"http://127.0.0.1:3000/maintenance/end\",{method:\"POST\"})"'
+```
+
 ## V2 runtime and releases
 
 The bot runs on a digest-pinned Node 22 image as the unprivileged `node` user,

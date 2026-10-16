@@ -20,7 +20,8 @@ moves the session between this device and Discord (Play on).
   Search, favorites, mixes and stats are still read from the bot, and library edits
   (favorite removal, mix deletion) still go to it.
 - Audio only, no video: one `<audio>` element plays `/api/guilds/:id/audio/:videoId`,
-  which the bot serves by byte range from Lavalink's YouTube plugin. It keeps playing
+  Ogg Opus decoded by Lavalink's vybatron-audio plugin (iOS 18.4+ for Opus) and served by
+  the bot, from the start while it arrives and by byte range once complete. It keeps playing
   in the background and on the lock screen, with Media Session controls. A song with a
   YouTube link starts inside the tap that asked for it (iOS requires this); songs from
   other catalogs play their closest YouTube match. The next song is warmed in the bot's

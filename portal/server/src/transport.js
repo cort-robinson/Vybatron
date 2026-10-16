@@ -64,9 +64,13 @@ export class Transport {
           const length = Number(response.headers['content-length']); const contentRange = response.headers['content-range'];
           const validRange = value => typeof value === 'string' && /^bytes (\d+-\d+|\*)\/\d+$/.test(value);
           if (status === 416 && validRange(contentRange)) { response.resume(); res.writeHead(416, { 'Content-Range': contentRange }); res.end(); resolve(); return; }
-          if ([200, 206].includes(status) && /^audio\/(mp4|webm)$/.test(type) && Number.isSafeInteger(length) && length <= this.limits.audioBytes
+          // A song still arriving streams without a length; its bytes are counted instead.
+          const unsized = status === 200 && response.headers['content-length'] === undefined && response.headers['transfer-encoding'] === 'chunked';
+          if ([200, 206].includes(status) && /^audio\/(ogg|mp4|webm)$/.test(type) && (unsized || (Number.isSafeInteger(length) && length <= this.limits.audioBytes))
             && (status === 200 || validRange(contentRange))) {
-            res.writeHead(status, { 'Content-Type': type, 'Content-Length': length, 'Accept-Ranges': 'bytes', ...(status === 206 && { 'Content-Range': contentRange }) });
+            res.writeHead(status, { 'Content-Type': type, ...(!unsized && { 'Content-Length': length }), 'Accept-Ranges': 'bytes', ...(status === 206 && { 'Content-Range': contentRange }) });
+            let sent = 0;
+            response.on('data', chunk => { sent += chunk.length; if (sent > this.limits.audioBytes) { res.destroy(); req.destroy(); } });
             response.pipe(res);
             response.once('end', resolve); response.once('error', () => { res.destroy(); resolve(); });
             res.once('close', () => { req.destroy(); resolve(); });

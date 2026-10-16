@@ -56,8 +56,8 @@ rounded:
 **Creative North Star: "The receiver that lights up with the record."**
 
 The portal is a hi-fi receiver for a shared Discord session. The current cover relights
-the room: three soft light pools and the single accent are derived from the artwork; the
-pools glide to the next cover's colors when the track changes, and the accent follows with the song. A VFD-style segmented
+the room: three soft light pools and the single accent are derived from the artwork, and
+they glide to the next cover's colors when the track changes. A VFD-style segmented
 spectrum glows behind the player deck and under the expanded cover. Smoked-glass chrome
 lets the room light through without letting content ghost through.
 
@@ -78,10 +78,11 @@ never measured. They make no sync claim and carry no text that implies one.
 - **Fixed state colors:** rose for favorites, amber for pause, Warm, recovery, and
   offline attention, red for unavailable and destructive actions. These never follow the
   artwork, so state stays recognizable with any cover.
-- Colors are registered `@property <color>` values set on `:root`. Only the light pools
-  transition them (2.2s); a transition on `:root` restyled and repainted the whole page every
-  frame and stuttered on phones (tests/smoothness.spec.ts guards this). The accent and ground
-  switch with the song, and the spectrum canvas eases toward the new accent.
+- Colors are registered `@property <color>` values set on `:root`. The light pools transition
+  their glows every frame (2.2s); they are three elements. The accent (1.2s) and ground (1.6s),
+  which every element reads, glide in steps about 20 times a second (`src/relight.ts`): a CSS
+  transition on `:root` restyled and repainted the whole page every frame and stuttered on phones
+  (tests/smoothness.spec.ts guards both). The spectrum canvas eases toward the same accent.
 
 ## Typography
 
@@ -140,7 +141,7 @@ one-segment baseline and stops drawing. Without motion it renders one still fram
 
 ## Motion
 
-One authored moment: the room relighting on track change (light pools glide over 2.2s). Light
+One authored moment: the room relighting on track change (accent 1.2s, glows 2.2s). Light
 pools drift over 38-58s only while playing. The sleeve rises in once, and menus, dialogs, and
 toasts use short ease-out entrances. Reduced motion removes drift, spatial entrances, and
 hover lifts while keeping color changes and the static pending mark.

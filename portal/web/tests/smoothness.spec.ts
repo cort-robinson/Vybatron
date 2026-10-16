@@ -69,18 +69,26 @@ test('a song change dissolves the cover in place instead of cutting to an empty 
   } finally { await server.close(); }
 });
 
-test('a song change relights the room without animating the whole page', async ({ page }) => {
+test('a song change glides the page to the new colors without restyling it every frame', async ({ page }) => {
   const fixture = await mockPortal(page); await page.goto('/');
   await page.getByRole('button', { name: 'Open player', exact: true }).click();
   const accent = () => page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--accent'));
   await expect.poll(accent).not.toBe('#5fdcd2');
+  await page.waitForTimeout(1500);
   const before = await accent();
   const state = fixture.state.snapshot; state.session.current = state.session.queue.shift()!; state.revision = 'revision-relight';
   await page.evaluate(data => (window as unknown as { portalTest: { emit: (d: unknown) => void } }).portalTest.emit(data), state);
-  await expect.poll(accent).not.toBe(before);
-  // Colors that glide on :root restyle and repaint the whole page every frame; only the light pools glide.
+  // The accent passes through in-between colors on its way, a step about every 50ms.
+  const seen = await page.evaluate(() => new Promise<string[]>(resolve => {
+    const values: string[] = []; const started = performance.now();
+    const sample = () => { values.push(getComputedStyle(document.documentElement).getPropertyValue('--accent')); if (performance.now() - started < 1600) requestAnimationFrame(sample); else resolve(values); };
+    requestAnimationFrame(sample);
+  }));
+  const distinct = [...new Set(seen)].filter(value => value !== before);
+  expect(distinct.length).toBeGreaterThan(5);
+  // Colors that transition on :root restyle and repaint the whole page every frame; only the three
+  // light pools run CSS color transitions.
   const gliding = await page.evaluate(() => document.getAnimations().filter(animation => animation instanceof CSSTransition && animation.transitionProperty.startsWith('--'))
-    .map(animation => `${((animation.effect as KeyframeEffect).target as Element).className}:${(animation as CSSTransition).transitionProperty}`));
-  expect(gliding.length).toBeGreaterThan(0);
+    .map(animation => ((animation.effect as KeyframeEffect).target as Element).className));
   expect(gliding.every(name => name.startsWith('light '))).toBe(true);
 });

@@ -5,6 +5,7 @@ import { usePortal } from './usePortal';
 import { useListening } from './playback';
 import { publicUrl } from './api';
 import { useArtPalette } from './art';
+import { relight } from './relight';
 import { Spectrum } from './components/Spectrum';
 import { statusLabel } from './format';
 import { ActionPopover, Avatar, Empty, ErrorState, FallbackCover, IconButton, Loading } from './components/ui';
@@ -98,10 +99,11 @@ export function App() {
   const motion = !still && connection === 'live' && snapshot?.session.status === 'playing';
   const artwork = publicUrl(snapshot?.session.current?.artworkUrl);
   const palette = useArtPalette(artwork);
+  // The room glides to the new cover's colors: the light pools on their own (styles.css), the accent
+  // and ground in steps (relight.ts). Reduced motion shortens the glide and a hidden tab skips it.
   useEffect(() => {
-    const root = document.documentElement.style;
-    root.setProperty('--accent', palette.accent); root.setProperty('--ground', palette.ground);
-    palette.glow.forEach((color, index) => root.setProperty(`--glow-${index + 1}`, color));
+    palette.glow.forEach((color, index) => document.documentElement.style.setProperty(`--glow-${index + 1}`, color));
+    relight({ '--accent': palette.accent, '--ground': palette.ground }, document.hidden ? 'instant' : reduced ? 'quick' : 'glide');
     document.querySelector('meta[name="theme-color"]')?.setAttribute('content', palette.ground);
   }, [palette]);
   const scene = (moving: boolean) => <div className={`ambient-scene ${expanded ? 'immersive' : ''} ${moving ? 'moving' : 'settled'} ${ambient === 'subtle' ? 'subtle' : ''} ${ambient === 'off' ? 'disabled' : ''}`} aria-hidden="true">

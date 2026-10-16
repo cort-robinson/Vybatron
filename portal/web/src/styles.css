@@ -20,7 +20,6 @@ FORM: album-reactive receiver; spectrum and lighting are decorative and generate
   font-synthesis: none;
   font-weight: 450;
   color-scheme: dark;
-  transition: --accent 1.2s cubic-bezier(.2, .7, .2, 1), --ground 1.6s ease, --glow-1 2.2s ease, --glow-2 2.2s ease, --glow-3 2.2s ease;
   --text: #f5f4f8;
   --text-soft: #e2e0e8;
   --muted: #aaa8b5;
@@ -113,7 +112,9 @@ svg { flex-shrink: 0; }
 .ambient-scene { position: fixed; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; background: var(--ground); }
 .ambient-scene::after { content: ''; position: absolute; inset: 0; background: radial-gradient(120% 90% at 60% 35%, transparent 40%, color-mix(in oklab, var(--ground) 70%, transparent) 100%); }
 .room-light { position: absolute; inset: 0; opacity: .62; transition: opacity 900ms var(--ease-out); }
-.light { position: absolute; border-radius: 50%; will-change: transform; }
+.light { position: absolute; border-radius: 50%; will-change: transform; transition: 2.2s ease; transition-property: --glow-1, --glow-2, --glow-3; }
+/* The light pools glide to the next cover's colors every frame: only these three elements restyle.
+   The accent and ground, which every element reads, are stepped by relight.ts instead. */
 .light-1 { width: 78vmax; height: 62vmax; right: -22vmax; top: -30vmax; background: radial-gradient(closest-side, var(--glow-1), transparent); }
 .light-2 { width: 64vmax; height: 52vmax; left: -20vmax; bottom: -30vmax; background: radial-gradient(closest-side, var(--glow-2), transparent); }
 .light-3 { width: 46vmax; height: 36vmax; left: 30%; top: 38%; background: radial-gradient(closest-side, var(--glow-3), transparent); opacity: .7; }
@@ -964,11 +965,11 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
 @media (prefers-reduced-motion: reduce) {
   .nav-indicator { view-transition-name: none; }
   html { scroll-behavior: auto; }
-  :root { transition-duration: 300ms; }
   .light, .ambient-scene.moving .light, .ambient-scene.moving.immersive .artwork-field { animation: none; transform: none; }
   .menu-panel, .dialog[open], .toast { animation: none; }
   /* The sleeve still arrives, as a fade rather than a rise. */
   .sleeve-content, .sleeve-main > .player-identity, .sleeve-main > .player-context, .sleeve-queue { animation: none; }
+  .light { transition-duration: 300ms; }
   .queue-open .sleeve-queue, body > .menu-sheet-layer > .menu-panel.menu-sheet { animation: fade-in 160ms ease-out both; }
   .sleeve-content { animation: fade-in 200ms ease-out; }
   .compact-progress { transition: none; }

@@ -41,6 +41,15 @@ export const defaultPalette: Palette = {
   source: 'default',
 };
 
+const hexRgb = (hex: string) => [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16)) as [number, number, number];
+/** Mixes two #rrggbb colors in OKLab; `t` is the share of `to`. */
+export function mixOklab(from: string, to: string, t: number) {
+  if (!/^#[\da-f]{6}$/i.test(from) || !/^#[\da-f]{6}$/i.test(to)) return to;
+  const a = toOklch(...hexRgb(from)); const b = toOklch(...hexRgb(to));
+  const L = a.L + (b.L - a.L) * t; const A = a.a + (b.a - a.a) * t; const B = a.b + (b.b - a.b) * t;
+  return oklchHex(L, Math.hypot(A, B), (Math.atan2(B, A) * 180 / Math.PI + 360) % 360);
+}
+
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 
 export function paletteFromPixels(data: Uint8ClampedArray): Palette {

@@ -15,6 +15,21 @@ async function drag(page: Page, locator: Locator, { dx = 0, dy, duration = 160, 
   await cdp.detach();
 }
 const press = (page: Page, locator: Locator, hold: number) => drag(page, locator, { dy: 0, hold });
+// Sends a whole quick gesture (start, vertical moves, end) back to back without awaiting each event,
+// so it reaches the page as a quick tap or flick however slow the machine is. Awaited steps can
+// stretch into a long hold under load, which is then rightly treated as one.
+async function burst(page: Page, locator: Locator, moves: number[] = [], { holdAfter = 0 } = {}) {
+  const box = (await locator.boundingBox())!; const x = box.x + box.width / 2; const y = box.y + box.height / 2;
+  const cdp = await page.context().newCDPSession(page);
+  await Promise.all([
+    cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] }),
+    ...moves.map(dy => cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x, y: y + dy }] })),
+    ...holdAfter ? [] : [cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })],
+  ]);
+  // A finger that moved and then rests stays down for `holdAfter` before lifting.
+  if (holdAfter) { await page.waitForTimeout(holdAfter); await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); }
+  await cdp.detach();
+}
 const settled = (page: Page) => page.waitForFunction(() => !document.documentElement.dataset.motion);
 // Like a tap, a swipe leaves no keyboard focus ring behind.
 const ringless = async (page: Page) => expect(await page.evaluate(() => document.querySelector(':focus-visible')?.outerHTML.slice(0, 80) ?? null)).toBeNull();
@@ -140,9 +155,9 @@ test('holding a queue row opens its menu; a tap or a scroll does not', async ({ 
   const fixture = await mockPortal(page); await gotoSession(page);
   const row = page.locator('.queue .track-row', { hasText: 'Slow Motion' }).locator('.track-text');
   const sheet = page.getByRole('group', { name: 'Song options for Slow Motion' });
-  await press(page, row, 80);
-  await drag(page, row, { dy: -60, duration: 400 });
-  await page.waitForTimeout(700);
+  await burst(page, row);
+  // A scroll whose finger then rests past the hold time is still a scroll.
+  await burst(page, row, [-15, -30, -45, -60], { holdAfter: 700 });
   await expect(sheet).toHaveCount(0);
   await press(page, row, 700);
   await expect(sheet).toBeVisible();

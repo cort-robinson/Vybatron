@@ -92,9 +92,10 @@ readout. Queue column labels are the only small uppercase text. Minimums are unc
 
 ## Layout
 
-Desktop: fixed sidebar, 114px topbar, and a 92px single-row deck. The deck's three zones are
+Desktop: fixed sidebar, 114px topbar, and a 104px single-row deck. The deck's three zones are
 identity (56px cover, title, artist, heart) on the left; the transport centered over the timeline,
-whose 44px seek target tucks 8px under the transport row; and volume, filter, More, and a 44px
+whose 44px seek target tucks 8px under the transport row, 18px below the deck top so the
+skin rings around the play button stay clear of the edge; and volume, filter, More, and a 44px
 open/close toggle on the right. The open sleeve keeps the same deck without the identity zone,
 so the transport never moves. Pending and syncing notes float in a pill just above the deck's
 center (toasts rise to clear it). At 1023px and below: one 72px server header (waveform mark,

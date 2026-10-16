@@ -125,6 +125,24 @@ export function clearVoiceStatus(client, player) {
   }, { terminal: true });
 }
 
+// Discord only lets a connected member clear a channel status, so a session
+// that ends must clear it before leaving voice. Bounded well under a second:
+// one status PUT normally settles in a few hundred milliseconds. A clear
+// queued behind an unsettled write cannot go out in time, so it never waits.
+export const CLEAR_BEFORE_LEAVE_MS = 600;
+export async function clearVoiceStatusBeforeLeaving(client, player, ms = CLEAR_BEFORE_LEAVE_MS) {
+  const busy = Boolean(player?.guildId) && presentationWritePending(key(player.guildId));
+  const cleared = clearVoiceStatus(client, player);
+  if (busy) return false;
+  let timer;
+  const deadline = new Promise(resolve => { timer = setTimeout(resolve, ms, false); });
+  try {
+    return await Promise.race([cleared, deadline]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export function resetVoiceStatusWarnings() {
   // Kept for existing callers/tests. Never discard an unsettled writer fence.
   for (const guildId of writers.keys()) {

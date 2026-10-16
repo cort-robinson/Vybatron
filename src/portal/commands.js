@@ -12,18 +12,18 @@ import { suggestions } from '../utils/radio.js';
 import { commandAuthorityPhase } from './timing.js';
 import * as transfer from './transfer.js';
 
-const ALLOWED = new Set(['play', 'playnext', 'pause', 'resume', 'seek', 'skip', 'skipto', 'stop', 'clear', 'remove', 'move', 'shuffle', 'loop', 'volume', 'filter', 'voteskip', 'radio', 'replay', 'session', 'favorite', 'mix', 'settings', 'queue', 'nowplaying', 'history', 'help', 'top', 'mymix', 'transfer']);
-const CONFLICTING = new Set(['playnext', 'seek', 'skip', 'skipto', 'clear', 'remove', 'move', 'shuffle', 'replay']);
+const ALLOWED = new Set(['play', 'playnext', 'pause', 'resume', 'seek', 'skip', 'skipto', 'back', 'stop', 'clear', 'remove', 'move', 'shuffle', 'loop', 'volume', 'filter', 'voteskip', 'radio', 'replay', 'session', 'favorite', 'mix', 'settings', 'queue', 'nowplaying', 'history', 'help', 'top', 'mymix', 'transfer']);
+const CONFLICTING = new Set(['playnext', 'seek', 'skip', 'skipto', 'back', 'clear', 'remove', 'move', 'shuffle', 'replay']);
 // These handlers perform no admission work that needs guild authority. Their
 // first await is the native requireControl guard, which takes fresh authority
 // inside the bounded mutation lane before reading protected state. An earlier
 // admission or preflight grant would only repeat the same round back to back.
-const DIRECT_CONTROLS = new Set(['pause', 'resume', 'seek', 'filter', 'volume', 'skip', 'skipto', 'loop', 'shuffle',
+const DIRECT_CONTROLS = new Set(['pause', 'resume', 'seek', 'filter', 'volume', 'skip', 'skipto', 'back', 'loop', 'shuffle',
   'remove', 'move', 'clear', 'radio', 'voteskip', 'stop']);
 // Audible controls take their pre-mutation authority from the Gateway cache
 // when the policy can vouch for it, so the playback write isn't held behind a
 // Discord REST round. Queue edits, Stop and the final disclosure stay fresh.
-const GATEWAY_CONTROLS = new Set(['pause', 'resume', 'seek', 'filter', 'volume', 'skip', 'skipto']);
+const GATEWAY_CONTROLS = new Set(['pause', 'resume', 'seek', 'filter', 'volume', 'skip', 'skipto', 'back']);
 const ROOT_KEYS = new Set(['actorId', 'command', 'subcommand', 'options', 'expectedRevision', 'expectedTrackId', 'expectedHistoryId', 'expectedMixVersion', 'tracks']);
 // Portal-only handlers that are not slash commands, so never appear in publicCommands.
 const handler = (commandMap, name) => name === 'transfer' ? transfer : commandMap.get(name);

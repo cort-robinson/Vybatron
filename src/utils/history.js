@@ -64,15 +64,8 @@ export function buildHistoryPayload(player, requestedPage = 0, ownerId = 'any') 
   return { embeds: [embed], components, allowedMentions: NO_MENTIONS };
 }
 
-export async function replayHistoryTrack(player, position = 1, expectedIdentity = null) {
-  if (!Number.isInteger(position) || position < 1) return { error: 'Choose a recent track from /history.' };
-  const original = historyTracks(player)[position - 1];
-  if (!original?.info || (expectedIdentity && trackIdentity(original) !== expectedIdentity)) {
-    return { error: 'History changed; choose a track again.' };
-  }
-  if ((player.queue.tracks?.length || 0) >= LIBRARY_LIMITS.queue) {
-    return { error: `The queue holds at most ${LIBRARY_LIMITS.queue} upcoming tracks. Remove one before replaying a track.` };
-  }
+// A fresh copy plays from the start and returns to history when it ends.
+export function replayableCopy(original) {
   const track = {
     ...original,
     info: { ...original.info, position: 0 },
@@ -82,6 +75,19 @@ export async function replayHistoryTrack(player, position = 1, expectedIdentity 
     track.pluginInfo.clientData = { ...original.pluginInfo.clientData };
     delete track.pluginInfo.clientData.previousTrack;
   }
+  return track;
+}
+
+export async function replayHistoryTrack(player, position = 1, expectedIdentity = null) {
+  if (!Number.isInteger(position) || position < 1) return { error: 'Choose a recent track from /history.' };
+  const original = historyTracks(player)[position - 1];
+  if (!original?.info || (expectedIdentity && trackIdentity(original) !== expectedIdentity)) {
+    return { error: 'History changed; choose a track again.' };
+  }
+  if ((player.queue.tracks?.length || 0) >= LIBRARY_LIMITS.queue) {
+    return { error: `The queue holds at most ${LIBRARY_LIMITS.queue} upcoming tracks. Remove one before replaying a track.` };
+  }
+  const track = replayableCopy(original);
   await player.queue.add(track, 0);
   if (!player.playing && !player.paused && !player.queue.current) await player.play({ position: 0 });
   return { track, started: player.queue.current === track };

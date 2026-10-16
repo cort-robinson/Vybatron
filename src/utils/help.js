@@ -31,7 +31,7 @@ export function buildHelpPayload(client, requestedTopic = 'start', ownerId = 'an
   } else if (topic.value === 'controls') {
     embed.setDescription('Playback controls are shared by everyone in the bot’s voice channel. A configured DJ role may restrict changes.')
       .addFields(
-        { name: 'Playback', value: '`/pause` · `/resume` · `/skip` · `/voteskip` · `/stop`\n`/seek timestamp:1:30` jumps within a seekable track.' },
+        { name: 'Playback', value: '`/pause` · `/resume` · `/back` · `/skip` · `/voteskip` · `/stop`\n`/back` returns to the previous track, or restarts this one after a few seconds.\n`/seek timestamp:1:30` jumps within a seekable track.' },
         { name: 'Build the queue', value: '`/queue` browses upcoming tracks. `/move`, `/remove`, and `/skipto` use queue positions. `/shuffle` rearranges upcoming tracks; `/loop` repeats a track or the queue.' },
         { name: 'Tune the sound', value: '`/volume` sets 0–100%. `/filter` shows the current preset. Choose Original, Bass, Warm, Clarity, Nightcore, Slow, or Mono; every preset replaces previous effects.' },
         { name: 'Go back without losing your place', value: '`/history` browses recent session tracks. `/replay position:1` queues the most recent track next and lets the current song finish.' },

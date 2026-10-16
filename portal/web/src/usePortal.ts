@@ -6,7 +6,7 @@ import { applyIntents, createIntent, isOptimistic, needsRevision, sameTracks, sl
 
 export interface Notice { id: number; kind: 'success' | 'error' | 'info'; message: string }
 // Non-optimistic commands that still bind to the session the user saw.
-const conflicting = new Set(['playnext', 'session', 'replay']);
+const conflicting = new Set(['playnext', 'session', 'replay', 'back']);
 const freshnessMs = 25_000;
 // Show a quiet syncing hint only when the bot is noticeably slow to confirm.
 const syncingAfterMs = 700;

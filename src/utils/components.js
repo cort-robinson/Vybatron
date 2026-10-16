@@ -18,6 +18,7 @@ import {
   requestControllerRefresh,
 } from './player-controller.js';
 import {
+  goBack,
   nextLoopMode,
   setLoopMode,
   seekToTimestamp,
@@ -27,7 +28,7 @@ import {
 } from './operations.js';
 import { formatDuration, safeText, trackIdentity } from './presentation.js';
 import { updateTrackPresence } from './presence.js';
-import { clearVoiceStatus, updateVoiceStatus } from './voice-status.js';
+import { clearVoiceStatusBeforeLeaving, updateVoiceStatus } from './voice-status.js';
 import { buildHelpPayload } from './help.js';
 import { buildHistoryPayload, historySessionKey, replayHistoryTrack } from './history.js';
 import { cancelGuildMutations } from './requests.js';
@@ -142,6 +143,17 @@ async function handlePlayerComponent(interaction, action, expectedIdentity = nul
     return null;
   }
 
+  if (action === 'back') {
+    await interaction.deferUpdate();
+    const result = await goBack(controlledPlayer);
+    if (result.error) return interaction.followUp(ephemeralText(result.error));
+    if (result.restarted) {
+      updateTrackPresence(interaction.client, controlledPlayer);
+      await refresh(interaction.client, controlledPlayer);
+    }
+    return null;
+  }
+
   if (action === 'shuffle') {
     if (controlledPlayer.queue.tracks.length < 2) {
       return interaction.reply(ephemeralText('Add at least two queued tracks before shuffling.'));
@@ -176,8 +188,8 @@ async function handlePlayerComponent(interaction, action, expectedIdentity = nul
     try {
       await controlledPlayer.stopPlaying?.(true, false);
       await interaction.update({ content: 'Stopping playback…', components: [] });
-      clearVoiceStatus(interaction.client, controlledPlayer);
       requestControllerEnd(interaction.client, controlledPlayer, `Stopped by ${username}.`);
+      await clearVoiceStatusBeforeLeaving(interaction.client, controlledPlayer);
     } finally {
       await controlledPlayer.destroy();
     }
@@ -254,7 +266,7 @@ async function handleHistoryComponent(interaction, action, ownerId, session, pag
 
 export async function handleMessageComponent(interaction) {
   const customId = interaction.customId || '';
-  const playerMatch = /^player:v1:(toggle|skip|shuffle|loop|seek|queue|refresh|stop|stop-confirm|stop-cancel|stop-save)$/.exec(customId);
+  const playerMatch = /^player:v1:(toggle|skip|back|shuffle|loop|seek|queue|refresh|stop|stop-confirm|stop-cancel|stop-save)$/.exec(customId);
   if (playerMatch) return handlePlayerComponent(interaction, playerMatch[1]);
 
   const favoriteMatch = /^player:v2:favorite:([a-f0-9]{12})$/.exec(customId);

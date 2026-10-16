@@ -210,3 +210,21 @@ test('icon-only transport controls keep their name as a hover tooltip while usab
   await expect(transport.getByRole('button', { name: 'Shuffle queue' })).toHaveAttribute('title', 'Shuffle queue');
   await expect(transport.getByRole('button', { name: /^Repeat: / })).toHaveAttribute('title', /^Repeat: /);
 });
+
+test('Back returns to the previous song early in a track and restarts it later', async ({ page }) => {
+  const fixture = await mockPortal(page);
+  Object.assign(fixture.state.snapshot.session, { status: 'paused', positionMs: 1_000, hasPrevious: true });
+  await gotoSession(page);
+  await waitForPlayer(page);
+  const player = page.getByTestId('player');
+  const revision = fixture.state.snapshot.revision;
+  await player.getByRole('button', { name: 'Previous song', exact: true }).click();
+  await expect.poll(() => fixture.commands.at(-1)).toEqual({ command: 'back', expectedRevision: revision });
+
+  Object.assign(fixture.state.snapshot.session, { positionMs: 60_000 });
+  await page.reload();
+  await waitForPlayer(page);
+  await player.getByRole('button', { name: 'Restart current song', exact: true }).click();
+  await expect.poll(() => fixture.commands.at(-1)?.command).toBe('seek');
+  expect(fixture.commands.at(-1)?.options).toEqual({ timestamp: '00:00' });
+});

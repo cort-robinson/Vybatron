@@ -4,6 +4,7 @@ import type { Portal } from '../usePortal';
 import type { Command } from '../types';
 import { publicUrl } from '../api';
 import { time, timestamp } from '../format';
+import { RESTART_AFTER_MS } from '../playback';
 import { ActionPopover, Artwork, Confirm, Dialog, IconButton } from './ui';
 import { SaveSessionDialog, StopDialog } from './SessionMix';
 import { Queue } from './Queue';
@@ -81,6 +82,8 @@ export function Player({ portal, expanded, setExpanded, onAdd, accent, animate, 
   const controllable = can('control') && !pending.length;
   const seekable = controllable && !!track && !track.isStream && duration > 0 && !['recovering', 'unavailable'].includes(session?.status || '');
   const control = (body: Command) => run({ ...body, expectedRevision: snapshot?.revision }, 'control');
+  // Early in a song Back goes to the previous one; later, or with nothing earlier, it restarts this one.
+  const goesBack = !!session?.hasPrevious && (position <= RESTART_AFTER_MS || !seekable);
   const index = library?.favorites.findIndex(t => t.id === track?.id) ?? -1;
   const toggleFavorite = () => index < 0 ? run({ command: 'favorite', subcommand: 'add', expectedRevision: snapshot?.revision }, 'library') : run({ command: 'favorite', subcommand: 'remove', options: { index: index + 1 }, expectedTrackId: library?.favorites[index].id }, 'library');
   const active = session?.status === 'playing';
@@ -118,7 +121,7 @@ export function Player({ portal, expanded, setExpanded, onAdd, accent, animate, 
     : syncing ? <><span className="spinner" aria-hidden="true" /><span>Syncing with Discord…</span></> : null}</div></div>;
   const controls = <div className="transport" role="group" aria-label="Playback controls" aria-describedby={controlDescription} aria-busy={!!pending.length}>
     <IconButton label="Shuffle queue" disabled={!controllable || !session?.queue.length} title={blockedTitle} onClick={() => void control({ command: 'shuffle' })}><ShuffleIcon size={24} /></IconButton>
-    <IconButton label="Restart current song" disabled={!seekable} title={blockedTitle} onClick={() => void control({ command: 'seek', options: { timestamp: '00:00' } })}><SkipBackIcon size={27} weight="fill" /></IconButton>
+    <IconButton label={goesBack ? 'Previous song' : 'Restart current song'} disabled={goesBack ? !controllable : !seekable} title={blockedTitle} onClick={() => void control(goesBack ? { command: 'back' } : { command: 'seek', options: { timestamp: '00:00' } })}><SkipBackIcon size={27} weight="fill" /></IconButton>
     <IconButton className={`play-button ${session?.status === 'paused' || session?.status === 'recovering' ? 'settled' : ''}`} label={active ? 'Pause playback' : 'Resume playback'} disabled={!controllable || !track || !['playing', 'paused'].includes(session?.status || '')} title={blockedTitle} aria-describedby={controlDescription}
       onClick={() => void control({ command: active ? 'pause' : 'resume' })}>{active ? <PauseIcon size={31} weight="fill" /> : <PlayIcon size={31} weight="fill" />}</IconButton>
     <IconButton label="Skip current song" disabled={!controllable || !track} title={blockedTitle} onClick={() => void control({ command: 'skip' })}><SkipForwardIcon size={27} weight="fill" /></IconButton>

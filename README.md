@@ -37,7 +37,7 @@ Start with `/help`. Join a voice channel and use `/play` with a song and artist,
 | --- | --- |
 | `/play`, `/playnext` | Add music or request the next track |
 | `/queue`, `/remove`, `/move`, `/clear` | Browse and edit upcoming tracks; Clear keeps the current song playing |
-| `/skip`, `/skipto`, `/voteskip` | Skip, jump, or vote with a strict majority of current human listeners |
+| `/back`, `/skip`, `/skipto`, `/voteskip` | Go back a track (or restart this one), skip, jump, or vote with a strict majority of current human listeners |
 | `/pause`, `/resume`, `/seek`, `/stop` | Transport controls; Stop clears and disconnects |
 | `/volume`, `/loop`, `/shuffle`, `/nowplaying` | Volume, repetition, queue order, and player details |
 | `/filter` | Inspect or select an audio preset |

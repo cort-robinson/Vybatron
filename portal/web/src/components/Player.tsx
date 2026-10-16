@@ -9,8 +9,9 @@ import { SaveSessionDialog, StopDialog } from './SessionMix';
 import { Queue } from './Queue';
 import { Spectrum } from './Spectrum';
 import { pulse } from '../motion';
-import { neon, type Skin } from '../skin';
+import { neon, skinTint, type Skin } from '../skin';
 import { Hud, tilt, untilt } from './Overdrive';
+import { Television } from './Fantastic';
 
 export function Player({ portal, expanded, setExpanded, onAdd, accent, animate, skin = 'classic' }: { portal: Portal; expanded: boolean; setExpanded: (value: boolean) => void; onAdd: () => void; accent: string; animate: boolean; skin?: Skin }) {
   const { snapshot, bootstrap, can, run, receivedAt, connection, pending, syncing, library } = portal;
@@ -67,6 +68,8 @@ export function Player({ portal, expanded, setExpanded, onAdd, accent, animate, 
       // Overdrive: the new title locks on as a chromatic split converges. No slicing or jumps, so it
       // reads as focus settling rather than a flicker.
       if (previous.track && track && skin === 'overdrive') pulse(find('.player-identity h2, .compact-track-title'), [{ textShadow: `-4px 0 ${neon}, 4px 0 ${accent}` }, { textShadow: `-1px 0 ${neon}, 1px 0 ${accent}`, offset: .6 }, { textShadow: `0 0 transparent, 0 0 transparent` }], 560);
+      // Fantastic: the new title stretches like Reed Richards and snaps back into shape.
+      if (previous.track && track && skin === 'fantastic') pulse(find('.player-identity h2, .compact-track-title'), [{ transform: 'none' }, { transform: 'scale(1.16, .9)', offset: .22 }, { transform: 'scale(.95, 1.04)', offset: .48 }, { transform: 'scale(1.02, .99)', offset: .72 }, { transform: 'none' }], 720);
       return;
     }
     if (previous.status !== session?.status && previous.status && ['playing', 'paused'].includes(session?.status || '')) pulse(find('.play-button svg'), [{ opacity: 0, transform: 'scale(.55)' }, { opacity: 1, transform: 'none' }], 240);
@@ -102,7 +105,7 @@ export function Player({ portal, expanded, setExpanded, onAdd, accent, animate, 
   const identity = <div className="player-identity"><div className="player-title-row"><h2 ref={headingRef} tabIndex={-1} title={track?.title}>{track?.title || 'Nothing playing'}</h2>{favorite}</div><p title={track ? `${track.author} · ${track.source}` : undefined}>{metadata}</p>
   </div>;
   const spectrumMode = track && active && live ? 'playing' : 'standby';
-  const spectrum = (className: string, bands: number, ghost?: number) => <Spectrum className={className} seed={track?.id || 'idle'} color={accent} tint={skin === 'overdrive' ? neon : undefined} mode={spectrumMode} animate={animate} bands={bands} ghost={ghost} />;
+  const spectrum = (className: string, bands: number, ghost?: number) => <Spectrum className={className} seed={track?.id || 'idle'} color={accent} tint={skinTint(skin)} mode={spectrumMode} animate={animate} bands={bands} ghost={ghost} />;
   const seek = () => { if (scrub === null) return; const value = scrub; setScrub(null); if (seekable) void control({ command: 'seek', options: { timestamp: timestamp(value) } }); };
   const timeline = <div className="playback-timeline"><div className={`timeline ${track?.isStream ? 'is-live' : ''}`}>
     <span>{track?.isStream ? 'LIVE' : time(scrub ?? position)}</span>
@@ -149,7 +152,7 @@ export function Player({ portal, expanded, setExpanded, onAdd, accent, animate, 
   return <section ref={playerRef} className={`persistent-player ${expanded ? 'expanded' : 'collapsed'} ${session?.status || 'idle'}`} aria-label="Music player" data-testid="player">
     {!expanded && spectrum('player-spectrum', 56, 0)}
     {expanded && <div className="sleeve-content"><button className="mobile-collapse text-button" onClick={() => setExpanded(false)}><CaretDownIcon size={22} />Back to queue</button>
-      <div className="sleeve-main"><div className="sleeve-artwork" onPointerMove={tilt} onPointerLeave={untilt}><Artwork track={track} large />{spectrum('sleeve-spectrum', 40)}{skin === 'overdrive' && <><span className="od-cover-plate" aria-hidden="true" /><Hud className="od-cover-hud" /><span key={track?.id || 'idle'} className="od-cover-scan" aria-hidden="true" /></>}</div>{identity}<div className="player-context">{permissionReason && <p className="player-permission" id={reasonId}><WarningCircleIcon size={18} aria-hidden="true" /><span>{permissionReason}</span></p>}{connection === 'live' && session?.status === 'recovering' && <p className="player-state warm-text" role="status">Recovering your place. Playback controls will return when it’s ready.</p>}{session?.status === 'paused' && <p className="player-state warm-text">{connection === 'live' ? 'Paused · right here when you’re ready' : 'Last known: paused'}</p>}</div></div>
+      <div className="sleeve-main"><div className="sleeve-artwork" onPointerMove={tilt} onPointerLeave={untilt}><Artwork track={track} large />{spectrum('sleeve-spectrum', 40)}{skin === 'overdrive' && <><span className="od-cover-plate" aria-hidden="true" /><Hud className="od-cover-hud" /><span key={track?.id || 'idle'} className="od-cover-scan" aria-hidden="true" /></>}{skin === 'fantastic' && <><Television /><span key={track?.id || 'idle'} className="ff-tune" aria-hidden="true" /></>}</div>{identity}<div className="player-context">{permissionReason && <p className="player-permission" id={reasonId}><WarningCircleIcon size={18} aria-hidden="true" /><span>{permissionReason}</span></p>}{connection === 'live' && session?.status === 'recovering' && <p className="player-state warm-text" role="status">Recovering your place. Playback controls will return when it’s ready.</p>}{session?.status === 'paused' && <p className="player-state warm-text">{connection === 'live' ? 'Paused · right here when you’re ready' : 'Last known: paused'}</p>}</div></div>
       <div className="sleeve-queue"><Queue portal={portal} compact onAdd={onAdd} /></div>
     </div>}
     <div className="player-footer">{!expanded && <span className="compact-progress" aria-hidden="true" style={{ '--range-progress': `${track && !track.isStream && duration ? Math.min(100, (position / duration) * 100) : 0}%` } as React.CSSProperties} />}{!expanded && <div className="compact-identity"><button ref={identityTriggerRef} type="button" className="player-expand-trigger" aria-label={track ? `Open player for ${track.title}` : 'Open player details'} aria-expanded={false} onClick={() => { openedFromIdentity.current = true; setExpanded(true); }}><Artwork track={track} /><span className="compact-title"><span className="compact-track-title" title={track?.title}>{track?.title || 'Nothing playing'}</span><span className="compact-track-meta" title={track ? `${track.author} · ${track.source}` : undefined}>{metadata}</span></span></button><span className="compact-favorite">{favorite}</span></div>}

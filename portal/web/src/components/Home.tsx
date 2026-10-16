@@ -155,7 +155,8 @@ function Shelf({ id, title, detail, actions, empty, lead, wide = false, children
   return <section className="home-shelf" aria-labelledby={headingId}>
     <header className="home-shelf-header"><div><h2 id={headingId}>{title}</h2><p>{detail}</p></div>{actions && <div className="home-shelf-actions">{actions}</div>}</header>
     {lead}
-    {empty ? <p className="home-empty">{empty}</p> : <ol ref={dragScroll} className={`shelf-row ${wide ? 'shelf-row-wide' : ''}`} aria-label={title}>{children}</ol>}
+    {/* A sideways shelf is itself a tab stop, so the keyboard can scroll it even when its cards' buttons are disabled. */}
+    {empty ? <p className="home-empty">{empty}</p> : <ol ref={dragScroll} tabIndex={0} className={`shelf-row ${wide ? 'shelf-row-wide' : ''}`} aria-label={title}>{children}</ol>}
   </section>;
 }
 

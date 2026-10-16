@@ -9,6 +9,9 @@ test('voice context and an accessible main landmark remain available in the expa
   await page.goto('/');
   await expect(page.locator('.guild-status')).toContainText('General');
   await page.getByRole('button', { name: 'Open player', exact: true }).click();
+  // Opening the player focuses its heading once the transition settles; skip-link checks come after.
+  await page.waitForFunction(() => !document.documentElement.dataset.motion);
+  await expect(page.getByTestId('player').getByRole('heading', { level: 2 })).toBeFocused();
   await expect(page.getByRole('main')).toHaveCount(1);
   await expect(page.getByRole('main').getByRole('region', { name: 'Music player' })).toBeVisible();
   await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1);

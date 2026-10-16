@@ -28,11 +28,23 @@ test('Pause and Resume change the player immediately while the bot confirms in t
   try {
     await connected(page, server);
     server.holdCommandExecution();
-    const clicked = Date.now();
+    // Timed inside the page from the click to the flipped control, so a busy test
+    // runner's own click overhead never counts. The bot is held: nothing can confirm.
+    await page.evaluate(() => {
+      const record = window as unknown as { flip?: Promise<number> };
+      record.flip = new Promise(resolve => {
+        document.addEventListener('click', () => {
+          const clicked = performance.now();
+          const flipped = () => !!document.querySelector('[data-testid="player"] button[aria-label="Resume playback"]');
+          const observer = new MutationObserver(() => { if (flipped()) { observer.disconnect(); resolve(performance.now() - clicked); } });
+          observer.observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['aria-label'] });
+        }, { capture: true, once: true });
+      });
+    });
     await play(page, true).click();
     // No round trip: the control flips and stays usable while Discord confirms.
-    await expect(play(page, false)).toBeEnabled({ timeout: 250 });
-    expect(Date.now() - clicked).toBeLessThan(1000);
+    await expect(play(page, false)).toBeEnabled();
+    expect(await page.evaluate(() => (window as unknown as { flip: Promise<number> }).flip)).toBeLessThan(250);
     await expect(player(page).getByRole('group', { name: 'Playback controls' })).not.toHaveAttribute('aria-busy', 'true');
     await expect(player(page).getByText('Waiting for confirmation')).toHaveCount(0);
     await expect.poll(() => server.commands.map(command => command.command)).toEqual(['pause']);

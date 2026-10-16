@@ -1,0 +1,338 @@
+/*
+FANTASTIC: the receiver, as Earth-828 would have built it in 1964.
+THESIS: the room still lights up with the record, now as a retro-future broadcast. A ringed planet
+tinted by the cover rises over a Googie skyline where the Baxter Building flies the 4, a monorail
+glides past, and Kirby krackle trails the cosmic storm across a dusk sky.
+MATERIAL: mid-century appliance. Capsule controls with suit piping (a cream line over a blue one),
+enamel panels with an inset trim line, indicator lamps, a dial bezel around play, and the sleeve's
+cover playing on a teal television with two knobs and curved glass. Michroma, the space-age wide
+face, carries the wordmark and headings; Archivo keeps every name, number, and line of copy.
+COLOR: the cover's accent stays the lead and keeps every state meaning. Cream, suit blue, enamel
+teal, mustard, and Torch flame are scenery and trim only; favorites, pause, and danger keep theirs.
+MOTION: one authored moment per track change (the TV rolls the new picture open as a set warming
+up, while the title stretches like Reed Richards and snaps back). Ambient motion (twinkling bursts,
+crackling krackle, the monorail, a Silver Surfer streak, Torch circling the dial) runs only while
+the session plays live, and reduced motion removes all of it.
+REVERT: everything here is scoped to :root[data-skin='fantastic']; Settings → Portal look.
+*/
+:root[data-skin='fantastic'] {
+  --ff-cream: #f3e5c8;
+  --ff-suit: #4a8fd4;
+  --ff-teal: #2f8f8a;
+  --ff-mustard: #e8b54a;
+  --ff-flame: #ff7a38;
+  --ff-navy: #0b1628;
+  --ff-base: color-mix(in oklab, var(--ground) 52%, var(--ff-navy));
+  --ff-pipe: color-mix(in oklab, var(--ff-cream) 30%, transparent);
+  --ff-pipe-2: color-mix(in oklab, var(--ff-suit) 62%, transparent);
+  --piping: linear-gradient(var(--ff-pipe), var(--ff-pipe)) 0 0 / 100% 1px no-repeat, linear-gradient(var(--ff-pipe-2), var(--ff-pipe-2)) 0 3px / 100% 1px no-repeat;
+  --piping-bottom: linear-gradient(var(--ff-pipe), var(--ff-pipe)) 0 100% / 100% 1px no-repeat, linear-gradient(var(--ff-pipe-2), var(--ff-pipe-2)) 0 calc(100% - 3px) / 100% 1px no-repeat;
+  --trim: color-mix(in oklab, var(--ff-cream) 11%, transparent);
+  --display: 'Michroma', 'Archivo Variable', sans-serif;
+
+  --text: #f7efdf;
+  --text-soft: #ecdfc6;
+  --muted: #bdb09a;
+  --line: rgb(243 229 200 / .1);
+  --line-soft: rgb(243 229 200 / .065);
+  --line-strong: rgb(243 229 200 / .17);
+  --surface: color-mix(in oklab, var(--ff-base), var(--ff-cream) 5%);
+  --raised: color-mix(in oklab, var(--ff-base), var(--ff-cream) 9%);
+  --chrome: color-mix(in oklab, var(--ff-base) 78%, transparent);
+  --field: rgb(243 229 200 / .05);
+  --field-line: rgb(243 229 200 / .17);
+  --secondary: rgb(243 229 200 / .07);
+  --secondary-hover: rgb(243 229 200 / .11);
+  --hover-surface: rgb(243 229 200 / .055);
+  --selected-surface: rgb(243 229 200 / .08);
+  --range-track: rgb(243 229 200 / .16);
+  --range-thumb: var(--ff-cream);
+  --scrollbar: rgb(243 229 200 / .2);
+  --shadow-control: 0 10px 22px -10px color-mix(in oklab, var(--accent) 85%, black);
+
+  ::selection { color: var(--ff-navy); background: var(--ff-mustard); }
+  :focus-visible { outline-color: var(--accent); }
+}
+
+/* ── Earth-828 ───────────────────────────────────────────────────────────── */
+:root[data-skin='fantastic'] {
+  .ambient-scene { background: var(--ff-base); --ff-horizon: calc(100% - var(--player) - var(--nav)); --planet: clamp(250px, 36vmin, 440px); --planet-x: calc(var(--sidebar) + (100vw - var(--sidebar)) * .7); }
+  .ambient-scene::after { background: radial-gradient(120% 90% at 60% 35%, transparent 45%, color-mix(in oklab, var(--ff-base) 70%, transparent) 100%); }
+  .room-light { opacity: .42; }
+  .ambient-scene.immersive { --ff-horizon: 72%; --planet: clamp(340px, 64vmin, 760px); --planet-x: calc(var(--sidebar) + 32px + (100vw - var(--sidebar) - 96px) * .26); }
+  .auth-page .ambient-scene { --ff-horizon: calc(50% + 120px); --planet: clamp(280px, 46vmin, 520px); --planet-x: 50%; }
+}
+
+.ff-scene { position: absolute; inset: 0; opacity: .66; transition: opacity 900ms var(--ease-out); animation: ff-fade 700ms var(--ease-out); }
+.ambient-scene.immersive .ff-scene { opacity: 1; }
+.ambient-scene.subtle .ff-scene { opacity: .38; }
+.ambient-scene.subtle.immersive .ff-scene { opacity: .64; }
+.ambient-scene.disabled .ff-scene { opacity: .44; }
+.auth-page .ff-scene { opacity: .94; }
+
+/* Dusk: navy overhead, suit blue at altitude, and a Torch-orange band where the sun just went down. */
+.ff-sky { position: absolute; left: 0; right: 0; top: 0; height: var(--ff-horizon); transition: height 900ms var(--ease-out); background:
+  radial-gradient(38% 46% at var(--planet-x) 100%, color-mix(in oklab, var(--accent) 24%, transparent), transparent 72%),
+  linear-gradient(to bottom, transparent 18%, color-mix(in oklab, var(--ff-suit) 13%, transparent) 55%, color-mix(in oklab, var(--ff-flame) 22%, transparent) 88%, color-mix(in oklab, var(--ff-mustard) 34%, transparent)); }
+.ff-stars { position: absolute; left: 0; top: 0; width: 100%; height: var(--ff-horizon); transition: height 900ms var(--ease-out); }
+.ff-speck { fill: var(--ff-cream); opacity: .5; }
+.ff-burst { fill: var(--ff-cream); opacity: .85; transform-box: fill-box; transform-origin: center; animation: ff-twinkle 6s ease-in-out infinite paused; }
+
+/* Kirby krackle: black voids rimmed in cosmic energy, tinted by the cover. */
+.ff-krackle { position: absolute; left: var(--sidebar); top: 1vh; width: min(1000px, 70vw); height: auto; opacity: .85; overflow: visible; transition: opacity 700ms var(--ease-out); }
+/* Reading pages keep a clear sky: the storm joins the sleeve and the sign-in, and the monorail
+   runs only behind the sleeve, where no headline sits on the skyline. */
+.app-shell .ambient-scene:not(.immersive) :is(.ff-krackle, .ff-rail, .ff-train), .auth-page :is(.ff-rail, .ff-train) { opacity: 0; transition-duration: 160ms; }
+.ff-rail, .ff-train { transition: opacity 700ms var(--ease-out); }
+.ff-energy-core { stop-color: color-mix(in oklab, var(--ff-cream) 55%, var(--accent)); stop-opacity: 1; }
+.ff-energy-mid { stop-color: color-mix(in oklab, var(--accent) 55%, var(--ff-flame)); stop-opacity: .5; }
+.ff-energy-edge { stop-color: var(--accent); stop-opacity: 0; }
+.ff-krackle-voids circle { fill: color-mix(in oklab, var(--ff-base), black 40%); transform-box: fill-box; transform-origin: center; animation: ff-crackle 3.4s ease-in-out infinite alternate paused; }
+
+/* The Silver Surfer, now and then, on his way somewhere important. */
+.ff-herald { position: absolute; left: 0; top: 30%; width: clamp(140px, 16vw, 260px); height: 2px; border-radius: 2px; opacity: 0; pointer-events: none;
+  background: linear-gradient(90deg, transparent, rgb(214 226 245 / .35) 60%, #f4f8ff); transform: rotate(-11deg) translateX(-40vw); animation: ff-herald 23s linear 5s infinite paused; }
+.ff-herald::after { content: ''; position: absolute; right: -2px; top: -2px; width: 6px; height: 6px; border-radius: 50%; background: #fff; box-shadow: 0 0 10px 3px rgb(214 230 255 / .8); }
+
+.ff-planet { position: absolute; left: var(--planet-x); top: calc(var(--ff-horizon) - var(--planet) * .74); width: var(--planet); aspect-ratio: 1; translate: -50% 0; overflow: visible;
+  opacity: .92; transition: opacity 700ms var(--ease-out) 260ms, top 900ms var(--ease-out), left 900ms var(--ease-out), width 900ms var(--ease-out); }
+.ambient-scene:not(.immersive) .ff-planet { top: calc(var(--ff-horizon) - var(--planet) * .6); opacity: .5; transition-duration: 160ms, 900ms, 900ms, 900ms; transition-delay: 0ms; }
+.auth-page .ambient-scene .ff-planet { top: calc(var(--ff-horizon) - var(--planet) * 1.02); opacity: .86; }
+.ff-planet-light { stop-color: color-mix(in oklab, var(--ff-cream) 88%, var(--accent)); }
+.ff-planet-mid { stop-color: color-mix(in oklab, color-mix(in oklab, var(--ff-flame) 50%, var(--ff-mustard)) 82%, var(--accent)); }
+.ff-planet-dark { stop-color: color-mix(in oklab, color-mix(in oklab, var(--ff-flame) 40%, var(--accent)) 45%, var(--ff-navy)); }
+.ff-planet-dot { fill: var(--ff-navy); opacity: .6; }
+.ff-ring { fill: none; stroke: color-mix(in oklab, var(--ff-cream) 80%, var(--ff-flame)); stroke-width: 4.5; }
+.ff-band { fill: none; stroke: color-mix(in oklab, var(--ff-cream) 20%, transparent); stroke-width: 3; stroke-linecap: round; }
+
+.ff-skyline { position: absolute; left: 0; bottom: calc(100% - var(--ff-horizon)); width: 100%; height: clamp(84px, 16vh, 184px); overflow: visible; transition: bottom 900ms var(--ease-out), height 900ms var(--ease-out); }
+.ambient-scene:not(.immersive) .ff-skyline { height: clamp(64px, 12vh, 140px); }
+.auth-page .ambient-scene .ff-skyline { height: clamp(84px, 16vh, 176px); }
+.ff-skyline-far { fill: color-mix(in oklab, var(--ff-suit) 30%, var(--ff-base)); opacity: .72; }
+.ff-skyline-near { fill: color-mix(in oklab, var(--ff-base), #04080f 55%); stroke: color-mix(in oklab, var(--ff-cream) 26%, transparent); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.ff-window { fill: var(--ff-mustard); opacity: .85; animation: ff-blink 11s steps(1) infinite paused; }
+.ff-emblem circle { fill: var(--ff-suit); stroke: var(--ff-cream); stroke-width: 2.2; }
+.ff-emblem path { fill: var(--ff-cream); fill-rule: evenodd; }
+.ff-rail { fill: none; stroke: color-mix(in oklab, var(--ff-cream) 42%, transparent); stroke-width: 2.5; }
+.ff-train { display: none; }
+@supports (offset-path: path('M0 0')) {
+  .ff-train { display: inline; offset-rotate: auto; offset-distance: 34%; animation: ff-monorail 26s linear infinite paused; }
+}
+.ff-train rect { fill: var(--ff-cream); }
+.ff-train-windows { fill: var(--ff-navy); }
+
+/* The bay: a cream-and-blue horizon line, the planet's reflection, and Ben-Day dots in the shallows. */
+.ff-bay { position: absolute; left: 0; right: 0; top: var(--ff-horizon); bottom: 0; overflow: hidden; transition: top 900ms var(--ease-out);
+  background: linear-gradient(to bottom, color-mix(in oklab, var(--ff-flame) 22%, var(--ff-base)), color-mix(in oklab, var(--ff-suit) 14%, var(--ff-base)) 35%, var(--ff-base) 85%); }
+.ff-bay::before { content: ''; position: absolute; z-index: 1; left: 0; right: 0; top: 0; height: 5px; background: var(--piping); --ff-pipe: color-mix(in oklab, var(--ff-cream) 70%, transparent); }
+.ff-bay::after { content: ''; position: absolute; inset: 0; background: radial-gradient(circle, color-mix(in oklab, var(--ff-cream) 20%, transparent) 1.3px, transparent 1.8px) 0 0 / 9px 9px;
+  -webkit-mask-image: linear-gradient(to bottom, #000, transparent 75%); mask-image: linear-gradient(to bottom, #000, transparent 75%); }
+.ff-glint { position: absolute; left: var(--planet-x); top: 6px; width: calc(var(--planet) * .42); height: 80%; translate: -50% 0; opacity: .55; transition: left 900ms var(--ease-out), width 900ms var(--ease-out);
+  background: repeating-linear-gradient(to bottom, color-mix(in oklab, var(--ff-cream) 55%, var(--accent)) 0 2px, transparent 2px 8px);
+  -webkit-mask-image: radial-gradient(50% 100% at 50% 0, #000, transparent); mask-image: radial-gradient(50% 100% at 50% 0, #000, transparent);
+  animation: ff-shimmer 2.4s linear infinite paused; }
+
+.ambient-scene.moving :is(.ff-burst, .ff-window, .ff-krackle-voids circle, .ff-herald, .ff-train, .ff-glint) { animation-play-state: running; }
+
+@keyframes ff-fade { from { opacity: 0; } }
+@keyframes ff-twinkle { 0%, 70%, 100% { transform: none; opacity: .85; } 80% { transform: scale(1.5) rotate(22deg); opacity: 1; } 90% { transform: scale(.7); opacity: .5; } }
+@keyframes ff-crackle { from { transform: scale(.82); } to { transform: scale(1.12); } }
+@keyframes ff-blink { 0% { opacity: .85; } 37% { opacity: .2; } 44% { opacity: .85; } 81% { opacity: .45; } }
+@keyframes ff-herald { 0% { transform: rotate(-11deg) translateX(-40vw); opacity: 0; } 1% { opacity: 1; } 9% { opacity: 1; } 11%, 100% { transform: rotate(-11deg) translateX(130vw); opacity: 0; } }
+@keyframes ff-monorail { 0% { offset-distance: 34%; } 66% { offset-distance: 100%; } 66.01% { offset-distance: 0%; } 100% { offset-distance: 34%; } }
+@keyframes ff-shimmer { to { background-position: 0 8px; } }
+
+/* ── Faceplate: sidebar, wordmark, navigation ───────────────────────────── */
+:root[data-skin='fantastic'] {
+  /* The wordmark prints in cream with a slightly misregistered blue plate, like a 1964 comic. */
+  .brand > span { font-family: var(--display); font-weight: 400; font-stretch: normal; font-size: 16px; letter-spacing: .14em; color: var(--ff-cream); text-shadow: 1.5px 1.5px 0 color-mix(in oklab, var(--ff-suit) 85%, transparent); }
+  .brand svg { width: 24px; height: 24px; padding: 6px; box-sizing: content-box; border-radius: 50%; color: var(--ff-cream); background: var(--ff-suit); box-shadow: 0 0 0 2px var(--ff-cream), 0 0 0 4px color-mix(in oklab, var(--ff-suit) 55%, transparent); }
+
+  .sidebar { border-right-color: transparent; background: linear-gradient(to bottom, transparent 55%, color-mix(in oklab, var(--ff-suit) 8%, transparent)), var(--chrome); }
+  .sidebar::after { content: ''; position: absolute; top: 0; bottom: 0; right: 0; width: 4px; pointer-events: none;
+    background: linear-gradient(var(--ff-pipe), var(--ff-pipe)) right / 1px 100% no-repeat, linear-gradient(var(--ff-pipe-2), var(--ff-pipe-2)) left / 1px 100% no-repeat; }
+  .guild-card { border-color: var(--line); border-radius: 20px; outline: 1px solid var(--trim); outline-offset: -5px; background: linear-gradient(160deg, color-mix(in oklab, var(--ff-suit) 9%, transparent), rgb(243 229 200 / .02) 70%); }
+  .guild-card:hover { border-color: color-mix(in oklab, var(--ff-cream) 26%, transparent); }
+  .guild-icon { border-radius: 50%; }
+  .guild-status.playing .status-dot { background: var(--ff-flame); box-shadow: 0 0 0 3px color-mix(in oklab, var(--ff-flame) 22%, transparent); }
+
+  /* Navigation: capsule keys; the current one lights its indicator lamp. */
+  .navigation button { border-radius: 999px; }
+  .navigation button:hover { background: rgb(243 229 200 / .05); }
+  .nav-indicator { background: color-mix(in oklab, var(--ff-cream) 8%, transparent); box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--ff-cream) 15%, transparent); }
+  .nav-indicator::before { left: auto; right: 18px; width: 8px; height: 8px; margin-top: -4px; border-radius: 50%;
+    background: radial-gradient(circle at 35% 35%, #fff4d8, var(--ff-flame) 62%); box-shadow: 0 0 10px 1px color-mix(in oklab, var(--ff-flame) 70%, transparent); }
+  .sidebar-session, .account { border-top-color: transparent; background: var(--piping); }
+
+  /* ── Page frame ─────────────────────────────────────────────────────── */
+  .topbar { border-bottom-color: transparent; background: var(--piping-bottom); }
+  .sleeve-topbar { background: none; }
+  .page-title h1 { font-family: var(--display); font-weight: 400; font-stretch: normal; font-size: 28px; line-height: 1.25; letter-spacing: .03em; text-transform: uppercase; }
+  .header-search { border-radius: 999px; }
+  .header-search:hover { box-shadow: 0 0 0 1px color-mix(in oklab, var(--ff-cream) 22%, transparent); }
+
+  .button, .discord-signin, .filter-control { border-radius: 999px; }
+  .button.primary { box-shadow: inset 0 0 0 2px var(--accent), inset 0 0 0 3px color-mix(in oklab, var(--ff-cream) 60%, transparent); transition: background-color 160ms, box-shadow 220ms, transform 200ms var(--ease-out); }
+  .button.primary:hover:not(:disabled) { transform: translateY(-1px); box-shadow: inset 0 0 0 2px var(--primary-hover), inset 0 0 0 3px color-mix(in oklab, var(--ff-cream) 75%, transparent), var(--shadow-control); }
+  .button.secondary:hover:not(:disabled) { border-color: color-mix(in oklab, var(--ff-cream) 34%, transparent); }
+  .mobile-add { box-shadow: inset 0 0 0 2px var(--accent), inset 0 0 0 3px color-mix(in oklab, var(--ff-cream) 60%, transparent), 0 8px 20px -10px black; }
+  input, select { border-radius: 14px; }
+  input:focus-visible, select:focus-visible { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 18%, transparent); }
+
+  /* ── Lists ──────────────────────────────────────────────────────────── */
+  .track-row { border-radius: 18px; }
+  .track-row:hover { background-color: rgb(243 229 200 / .045); }
+  .track-row:hover .track-index { color: var(--ff-flame); }
+  .track-row.drop-target { background: var(--accent-soft); box-shadow: inset 0 2px 0 var(--accent); }
+  .artwork { border-radius: 10px; }
+  .queue-columns { color: color-mix(in oklab, var(--ff-cream) 45%, var(--muted)); }
+  .pill { border-color: color-mix(in oklab, var(--ff-cream) 24%, transparent); }
+  .empty-art { border-radius: 50%; border-color: color-mix(in oklab, var(--ff-cream) 24%, transparent); outline: 1px solid var(--ff-pipe-2); outline-offset: 4px;
+    background: radial-gradient(circle at 35% 30%, color-mix(in oklab, var(--accent) 26%, transparent), transparent 70%), var(--surface); }
+  .tabs { border-bottom-color: transparent; background: var(--piping-bottom); }
+  .tabs .tab-indicator { height: 3px; bottom: 0; background: linear-gradient(90deg, var(--accent), var(--ff-flame)); }
+  .switch > span::after { box-shadow: 0 1px 2px rgb(0 0 0 / .45); }
+  .switch[aria-checked='false'] > span::after { background: var(--ff-cream); }
+  .spinner { border-color: var(--accent); border-right-color: transparent; border-left-color: var(--ff-flame); }
+  .menu-panel { border-radius: 20px; outline: 1px solid var(--trim); outline-offset: -5px; }
+  .menu-panel button, .menu-panel a { border-radius: 14px; }
+  .toast, .update-notice { border-radius: 22px; }
+  .dialog { border-radius: 28px; outline: 1px solid var(--trim); outline-offset: -7px; background: var(--piping), var(--surface); }
+  .search-field, .suggestion-chip { border-radius: 999px; }
+  .continue-feature { border-radius: 24px; outline: 1px solid var(--trim); outline-offset: -6px;
+    background: linear-gradient(100deg, color-mix(in oklab, var(--accent) 14%, transparent), color-mix(in oklab, var(--ff-flame) 7%, transparent) 60%, transparent), var(--surface); }
+  .continue-art { border-radius: 12px; }
+
+  /* Home shelves: each heading ends in a length of suit piping; cards lift off the page on hover. */
+  .home-shelf-header h2 { display: flex; align-items: center; gap: 14px; font-family: var(--display); font-weight: 400; font-stretch: normal; font-size: 19px; letter-spacing: .05em; text-transform: uppercase; }
+  .home-shelf-header h2::after { content: ''; flex: 0 0 auto; width: 40px; height: 5px;
+    background: linear-gradient(var(--ff-cream), var(--ff-cream)) 0 0 / 100% 1.5px no-repeat, linear-gradient(var(--ff-flame), var(--ff-flame)) 0 100% / 100% 2px no-repeat; }
+  .shelf-art .artwork, .playlist-cover { border-radius: 14px; transition: transform 320ms var(--ease-out), box-shadow 320ms var(--ease-out); }
+  .shelf-row > li:hover .shelf-art .artwork, .playlist-tile:hover .playlist-cover { transform: translateY(-4px); box-shadow: 0 0 0 1px color-mix(in oklab, var(--ff-cream) 30%, transparent), 0 18px 28px -14px rgb(0 0 0 / .8); }
+  .shelf-rank { border-radius: 50%; box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--ff-cream) 26%, transparent); }
+  .shelf-rank.lead { color: var(--ff-flame); }
+  .mix-art .artwork { border-radius: 16px; }
+  .mix-open:hover .artwork { box-shadow: 0 0 0 1px color-mix(in oklab, var(--ff-cream) 30%, transparent), 0 18px 32px -16px rgb(0 0 0 / .8); }
+
+  /* ── Deck ───────────────────────────────────────────────────────────── */
+  .persistent-player.collapsed { border-top-color: transparent; background: var(--piping), linear-gradient(to top, color-mix(in oklab, var(--ff-suit) 8%, transparent), transparent 70%), var(--chrome); }
+  .player-spectrum { opacity: .34; }
+  .player-expand-trigger > .artwork { border-radius: 12px; }
+  .player-identity h2, .compact-track-title { transform-origin: 20% 60%; }
+  .expand-button { border-left-color: transparent; background: linear-gradient(to bottom, transparent, var(--line-strong), transparent) left / 1px 100% no-repeat; }
+
+  /* The play control is a tuning dial: twelve ticks, the four quarters in flame. While the room
+     plays, the Human Torch circles it. */
+  .transport .play-button { position: relative; background-image: radial-gradient(circle at 50% 28%, rgb(255 255 255 / .34), transparent 62%); }
+  .transport .play-button::before, .transport .play-button::after { content: ''; position: absolute; inset: -10px; border-radius: 50%; pointer-events: none;
+    -webkit-mask-image: radial-gradient(farthest-side, transparent calc(100% - 5px), #000 calc(100% - 4.5px)); mask-image: radial-gradient(farthest-side, transparent calc(100% - 5px), #000 calc(100% - 4.5px)); }
+  .transport .play-button::before { background: repeating-conic-gradient(from -2.5deg, var(--ff-flame) 0 5deg, transparent 5deg 90deg), repeating-conic-gradient(from -1deg, color-mix(in oklab, var(--ff-cream) 50%, transparent) 0 2deg, transparent 2deg 30deg); transition: opacity 400ms; }
+  .transport .play-button::after { background: conic-gradient(from 0deg, transparent 0 58%, color-mix(in oklab, var(--ff-flame) 60%, transparent) 86%, #ffd27a 97%, #fff6dc 99%, transparent 100%);
+    opacity: 0; transition: opacity 400ms; animation: ff-orbit 2.8s linear infinite paused; }
+  .persistent-player.playing .transport .play-button::after { opacity: 1; }
+  .motion-live .persistent-player.playing .transport .play-button::after { animation-play-state: running; }
+  .transport .play-button:disabled::before { opacity: .3; }
+
+  /* Ranges: the fill heats from the accent to flame; the handle is a cream knob with a pin. */
+  .range::-webkit-slider-runnable-track { background: linear-gradient(90deg, var(--accent), color-mix(in oklab, var(--accent), var(--ff-flame) 60%)) 0 0 / var(--range-progress) 100% no-repeat, var(--range-track); }
+  .range::-webkit-slider-thumb { width: 16px; height: 16px; margin-top: -6px; background: radial-gradient(circle, var(--ff-navy) 0 2.4px, var(--ff-cream) 3px); box-shadow: 0 0 0 4px var(--accent-soft), 0 2px 5px rgb(0 0 0 / .5); }
+  .range::-moz-range-progress { background: linear-gradient(90deg, var(--accent), color-mix(in oklab, var(--accent), var(--ff-flame) 60%)); }
+  .range::-moz-range-thumb { width: 16px; height: 16px; background: radial-gradient(circle, var(--ff-navy) 0 2.4px, var(--ff-cream) 3px); box-shadow: 0 0 0 4px var(--accent-soft), 0 2px 5px rgb(0 0 0 / .5); }
+  .timeline.is-live .range::-webkit-slider-runnable-track { background: var(--range-track); }
+
+  /* ── Sleeve: the cover plays on a 1964 television ──────────────────── */
+  .sleeve-artwork { --bezel: 16px; --cover: min(100cqw - var(--bezel) * 2, 100cqh - var(--spectrum) - 12px - var(--bezel) * 2); }
+  .sleeve-artwork > .artwork, .sleeve-artwork > .artwork-ghost { border-radius: 22px; }
+  .sleeve-artwork > .artwork { box-shadow: none; }
+  .sleeve-spectrum { translate: 0 calc(var(--bezel) - 6px); }
+  .ff-tv, .ff-tv-glass, .ff-tune { position: absolute; left: 50%; translate: -50% 0; pointer-events: none; }
+  .ff-tv { z-index: -1; top: calc((100cqh - var(--cover) - 12px - var(--spectrum)) / 2 - var(--bezel)); width: calc(var(--cover) + var(--bezel) * 2); height: calc(var(--cover) + var(--bezel) * 2); border-radius: 34px;
+    background: linear-gradient(160deg, color-mix(in oklab, var(--ff-teal) 62%, var(--ff-cream)), color-mix(in oklab, var(--ff-teal) 86%, var(--accent)) 32%, color-mix(in oklab, var(--ff-teal), black 40%));
+    box-shadow: inset 0 2px 0 rgb(255 255 255 / .32), inset 0 -3px 0 rgb(0 0 0 / .28), 0 40px 80px -34px rgb(0 0 0 / .85), 0 22px 60px -30px color-mix(in oklab, var(--accent) 60%, transparent); }
+  /* Speaker slot and two knobs, set into the lower bezel. */
+  .ff-tv::before { content: ''; position: absolute; left: calc(var(--bezel) + 10px); bottom: calc(var(--bezel) / 2 - 2px); width: min(70px, 22%); height: 4px; border-radius: 2px; background: repeating-linear-gradient(90deg, rgb(0 0 0 / .4) 0 2px, transparent 2px 5px); }
+  .ff-tv i { position: absolute; bottom: calc(var(--bezel) / 2 - 5px); width: 10px; height: 10px; border-radius: 50%; background: radial-gradient(circle at 40% 35%, #fffaf0, var(--ff-cream) 45%, #a9987a); box-shadow: 0 1px 2px rgb(0 0 0 / .55); }
+  .ff-tv i:nth-child(1) { right: calc(var(--bezel) + 8px); }
+  .ff-tv i:nth-child(2) { right: calc(var(--bezel) + 26px); }
+  .ff-tv-glass, .ff-tune { top: calc((100cqh - var(--cover) - 12px - var(--spectrum)) / 2); width: var(--cover); height: var(--cover); border-radius: 22px; }
+  /* Curved glass: a soft window reflection and the tube's darker rim. */
+  .ff-tv-glass { background: radial-gradient(90% 70% at 22% 8%, rgb(255 255 255 / .17), transparent 46%), radial-gradient(closest-side, transparent 72%, rgb(0 0 0 / .26));
+    box-shadow: inset 0 0 0 1.5px rgb(0 0 0 / .45), inset 0 0 34px rgb(0 0 0 / .32); }
+  /* Channel change: the picture rolls open from a bright line, the way a tube set warms up. */
+  .ff-tune { overflow: hidden; }
+  .ff-tune::before, .ff-tune::after { content: ''; position: absolute; left: 0; right: 0; height: 50%; animation: ff-tune 640ms cubic-bezier(.7, 0, .2, 1) 60ms both; }
+  .ff-tune::before { top: 0; background: linear-gradient(to top, #fff4dc 0 2px, color-mix(in oklab, var(--ff-base), black 55%) 2px); }
+  .ff-tune::after { bottom: 0; background: linear-gradient(to bottom, #fff4dc 0 2px, color-mix(in oklab, var(--ff-base), black 55%) 2px); }
+  .sleeve-main .player-title-row h2 { text-shadow: 0 2px 0 color-mix(in oklab, var(--ff-suit) 45%, transparent); }
+  .sleeve-queue { border-radius: 26px; outline: 1px solid var(--trim); outline-offset: -6px; background: var(--piping), color-mix(in oklab, var(--ff-base) 64%, transparent); }
+  .expanded .player-footer { border-top-color: transparent; }
+  .expanded .player-extras { border-left-color: transparent; background: linear-gradient(to bottom, transparent, var(--line-strong), transparent) left / 1px 100% no-repeat; }
+
+  /* ── Sign-in ────────────────────────────────────────────────────────── */
+  .sign-in h1 { font-family: var(--display); font-weight: 400; font-stretch: normal; font-size: clamp(26px, 3.4vw, 44px); line-height: 1.25; letter-spacing: .01em; color: var(--ff-cream);
+    text-shadow: 2px 2px 0 color-mix(in oklab, var(--ff-suit) 85%, transparent), 0 2px 24px rgb(0 0 0 / .6); }
+  .signin-sleeve { border-radius: 22px; box-shadow: 0 0 0 14px var(--ff-teal), 0 0 0 15px rgb(0 0 0 / .3), 0 44px 80px -30px rgb(0 0 0 / .85); }
+  .sign-in > p, .signin-footnote, .auth-footer { text-shadow: 0 1px 12px rgb(0 0 0 / .9); }
+}
+
+@keyframes ff-orbit { to { transform: rotate(360deg); } }
+@keyframes ff-tune { 0% { height: 50%; } 18% { height: 49.4%; } 100% { height: 0%; } }
+
+/* ── Phone and tablet ───────────────────────────────────────────────────── */
+@media (max-width: 1023px) {
+  :root[data-skin='fantastic'] {
+    .ambient-scene { --planet-x: 74%; }
+    .ambient-scene.immersive { --ff-horizon: 64%; --planet: clamp(280px, 90vw, 520px); --planet-x: 50%; }
+    .ff-krackle { left: -12vw; top: 4vh; width: 130vw; opacity: .6; }
+    .sidebar { background: var(--piping-bottom), var(--chrome); }
+    .sidebar::after { display: none; }
+    .guild-card { background: none; outline: 0; }
+    .navigation { background: var(--piping), color-mix(in oklab, var(--ff-base) 92%, transparent); }
+    .navigation button { border-radius: 0; }
+    .nav-indicator { background: radial-gradient(60% 90% at 50% 100%, color-mix(in oklab, var(--ff-cream) 10%, transparent), transparent); box-shadow: none; }
+    .nav-indicator::before { top: 9px; right: auto; left: 50%; width: 6px; height: 6px; margin: 0 0 0 -3px; }
+    .page-title h1 { font-size: 22px; }
+    .home-shelf-header h2 { font-size: 16px; }
+    /* The compact deck's hairline is progress; it heats toward flame instead of carrying the piping. */
+    .persistent-player.collapsed { background: linear-gradient(to top, color-mix(in oklab, var(--ff-suit) 8%, transparent), transparent 70%), var(--chrome); }
+    .compact-progress { height: 2px; background: linear-gradient(90deg, var(--accent), color-mix(in oklab, var(--accent), var(--ff-flame) 60%) var(--range-progress, 0%), transparent 0); }
+    .sleeve-artwork { --bezel: 11px; }
+    .ff-tv { border-radius: 26px; }
+    .ff-tv i { width: 8px; height: 8px; bottom: calc(var(--bezel) / 2 - 4px); }
+    .ff-tv i:nth-child(2) { right: calc(var(--bezel) + 22px); }
+    .ff-tv-glass, .ff-tune, .sleeve-artwork > .artwork, .sleeve-artwork > .artwork-ghost { border-radius: 18px; }
+  }
+}
+@media (max-width: 599px) {
+  :root[data-skin='fantastic'] .page-title h1 { font-size: 20px; }
+}
+@media (max-width: 1023px) and (min-width: 600px) and (max-height: 500px) {
+  :root[data-skin='fantastic'] :is(.ff-tv, .ff-tv-glass, .ff-tune) { display: none; }
+  :root[data-skin='fantastic'] .sleeve-artwork { --bezel: 0px; }
+  :root[data-skin='fantastic'] .sleeve-spectrum { translate: none; }
+}
+
+/* ── Performance mode: no comet, water shimmer, or print offsets; the scene is already still. */
+:root[data-skin='fantastic'][data-performance] {
+  .ff-herald, .ff-glint { display: none; }
+  .ff-bay::after { -webkit-mask-image: none; mask-image: none; opacity: .5; }
+}
+
+/* ── Sign-on, once per load: the planet rises, the city lights up, the storm blooms. */
+:root[data-skin='fantastic'][data-boot] {
+  .ff-planet { animation: ff-rise 1900ms var(--ease-out) both; }
+  .ff-bay { animation: ff-fade 1400ms var(--ease-out) 200ms both; }
+  .ff-skyline { animation: ff-fade 1200ms var(--ease-out) 450ms both; }
+  .ff-krackle { animation: ff-bloom 1800ms var(--ease-out) 300ms both; }
+}
+@keyframes ff-rise { from { translate: -50% 40%; opacity: 0; } }
+@keyframes ff-bloom { from { opacity: 0; transform: scale(.94); } }
+
+@media (prefers-reduced-motion: reduce) {
+  :root[data-skin='fantastic'] {
+    .ff-scene, .ff-burst, .ff-window, .ff-krackle-voids circle, .ff-train, .ff-glint, .transport .play-button::after { animation: none !important; }
+    .ff-herald, .ff-tune { display: none; }
+    .shelf-row > li:hover .shelf-art .artwork, .playlist-tile:hover .playlist-cover, .button.primary:hover:not(:disabled) { transform: none; }
+  }
+  :root[data-skin='fantastic'][data-boot] :is(.ff-planet, .ff-bay, .ff-skyline, .ff-krackle) { animation: none; }
+}

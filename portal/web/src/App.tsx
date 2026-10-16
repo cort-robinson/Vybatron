@@ -18,6 +18,7 @@ import { Recovery } from './components/Recovery';
 import { transition } from './motion';
 import { applyPerformance, applySkin, initialPerformance, initialSkin, type Skin } from './skin';
 import { Horizon } from './components/Overdrive';
+import { Earth828 } from './components/Fantastic';
 
 function initialAmbient(): AmbientMode {
   try { const value = localStorage.getItem('vybertron.ambient'); return value === 'off' || value === 'subtle' || value === 'on' ? value : 'on'; } catch { return 'on'; }
@@ -104,6 +105,7 @@ export function App() {
     <div className="room-light"><span className="light light-1" /><span className="light light-2" /><span className="light light-3" /></div>
     <ArtworkField url={artwork} />
     {skin === 'overdrive' && <Horizon />}
+    {skin === 'fantastic' && <Earth828 />}
   </div>;
   const background = scene(motion);
   // Sign-in has no session to wait for; the horizon idles there whenever ambient motion is allowed.

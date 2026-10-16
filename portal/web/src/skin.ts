@@ -1,12 +1,14 @@
 // Portal look. Overdrive layers the synthwave horizon and HUD chrome over the receiver;
-// Classic is the original receiver, untouched. Every Overdrive style is scoped to
-// :root[data-skin='overdrive'], so switching back is a single attribute change.
-export type Skin = 'overdrive' | 'classic';
+// Fantastic tunes it to a 1960s retro-future broadcast (Earth-828); Classic is the original
+// receiver, untouched. Every skin's styles are scoped to :root[data-skin='…'], so switching
+// is a single attribute change. Overdrive stays the default; the others are opt-in.
+export type Skin = 'overdrive' | 'fantastic' | 'classic';
 
 const key = 'vybertron.skin';
+const skins: readonly Skin[] = ['overdrive', 'fantastic', 'classic'];
 
 export function initialSkin(): Skin {
-  try { return localStorage.getItem(key) === 'classic' ? 'classic' : 'overdrive'; } catch { return 'overdrive'; }
+  try { const stored = localStorage.getItem(key); return skins.includes(stored as Skin) ? stored as Skin : 'overdrive'; } catch { return 'overdrive'; }
 }
 
 export function applySkin(skin: Skin, persist = true) {
@@ -28,5 +30,7 @@ export function applyPerformance(on: boolean, persist = true) {
   if (persist) try { localStorage.setItem(performanceKey, on ? 'on' : 'off'); } catch { /* Optional, non-sensitive preference. */ }
 }
 
-// Fixed synthwave partner to the cover-derived accent; decorative only, never a state color.
+// Fixed scenery partners to the cover-derived accent; decorative only, never a state color.
 export const neon = '#e04cff';
+export const flame = '#ff7a38';
+export const skinTint = (skin: Skin) => skin === 'overdrive' ? neon : skin === 'fantastic' ? flame : undefined;

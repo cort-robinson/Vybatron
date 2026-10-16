@@ -15,6 +15,22 @@ test('Classic look renders without Overdrive scenery and switches back live from
   await expect(page.locator('html')).toHaveAttribute('data-skin', 'overdrive');
 });
 
+test('Fantastic Four is opt-in: it swaps in the Earth-828 scenery and the sleeve television, and persists', async ({ page }) => {
+  await mockPortal(page); await page.goto('/');
+  await expect(page.getByRole('button', { name: 'Pause playback' })).toBeEnabled();
+  await expect(page.locator('html')).toHaveAttribute('data-skin', 'overdrive');
+  await page.getByRole('button', { name: 'Server', exact: true }).click();
+  await page.getByLabel('Portal look').selectOption('fantastic');
+  await expect(page.locator('html')).toHaveAttribute('data-skin', 'fantastic');
+  await expect(page.locator('.ff-scene')).toHaveCount(1);
+  await expect(page.locator('.od-horizon')).toHaveCount(0);
+  await page.reload();
+  await expect(page.locator('html')).toHaveAttribute('data-skin', 'fantastic');
+  await page.getByRole('button', { name: 'Open player', exact: true }).click();
+  await expect(page.locator('.sleeve-artwork .ff-tv')).toHaveCount(1);
+  await expect(page.locator('.sleeve-artwork .od-cover-hud')).toHaveCount(0);
+});
+
 test('performance mode drops glass blur and stills the scene, and stays on after a reload', async ({ page }) => {
   await mockPortal(page); await page.goto('/');
   await expect(page.getByRole('button', { name: 'Pause playback' })).toBeEnabled();

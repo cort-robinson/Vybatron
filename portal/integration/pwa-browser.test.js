@@ -171,9 +171,11 @@ test('production PWA installs under real CSP, serves an offline shell, and never
       assert.deepEqual(registration, { count: 1, script: origin + '/sw.js', scope: origin + '/', active: 'activated' });
       assert.deepEqual(await cachedPaths(page), expectedPaths);
 
-      // Exercise every subset, including the small Vietnamese file.
+      // Exercise every subset, including the small Vietnamese file, and the Fantastic look's
+      // display face, which the default look never requests on its own.
       const fonts = await page.evaluate(async () => {
         await document.fonts.load('500 16px "Archivo Variable"', 'Aa Ā ế');
+        await document.fonts.load('400 16px "Michroma"', 'Aa');
         await document.fonts.ready;
         return { loaded: document.fonts.check('500 16px "Archivo Variable"', 'Aa Ā ế'),
           states: [...document.fonts].map(font => font.status) };

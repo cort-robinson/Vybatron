@@ -228,9 +228,32 @@ so switching looks is one attribute and removing it is two files and their impor
   flickers.
 - Reduced motion removes all of it except static color and shape.
 
+## Fantastic Four look
+
+Opt-in (Settings → Portal look → Fantastic Four); never the default. A 1960s retro-future
+broadcast from Earth-828, after *The Fantastic Four: First Steps*. It lives in
+`src/fantastic.css`, scoped to `:root[data-skin='fantastic']`, plus aria-hidden scenery in
+`src/components/Fantastic.tsx`, with the same one-attribute switch and two-file removal.
+
+- **Scenery:** dusk sky over a seeded Googie skyline (bullet towers, saucer needles, domes);
+  the Baxter Building flies a 4 emblem. A ringed planet tinted by the accent replaces the sun
+  and sits behind the sleeve cover. The bay below carries the planet's reflection and Ben-Day
+  dots. Kirby krackle and the monorail appear only in the sleeve (krackle also at sign-in), so
+  reading pages keep a clear sky.
+- **Color:** cream, suit blue, enamel teal, mustard, and Torch flame are scenery and trim only.
+  The cover accent still drives every action and state.
+- **Material:** capsule controls, suit piping (cream line over blue) instead of hairlines,
+  inset trim lines on panels, indicator lamps on navigation, a tick-dial bezel around play,
+  and a teal TV set with knobs and curved glass framing the sleeve cover. Michroma (self-hosted)
+  is for the wordmark and headings only; names, numbers, and copy stay in Archivo.
+- **Alive:** starbursts, krackle, windows, the monorail, a Silver Surfer streak, and the Torch
+  orbiting the dial run only while the session plays live. On track change the TV rolls the
+  new picture open and the title stretches and snaps back. Reduced motion removes all of it;
+  performance mode also drops the comet and water shimmer.
+
 ## Performance mode
 
-Settings → On this device → Performance mode (off by default, both looks). It sets
+Settings → On this device → Performance mode (off by default, every look). It sets
 `:root[data-performance]`: solid chrome replaces the backdrop blur, the blurred cover light is
 hidden, and the scene and spectrum hold still (App.tsx treats it like ambient motion off).
 Overdrive also drops its CRT texture, glow filters, and blend layers. Layout, controls, and

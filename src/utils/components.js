@@ -30,6 +30,7 @@ import { formatDuration, safeText, trackIdentity } from './presentation.js';
 import { updateTrackPresence } from './presence.js';
 import { clearVoiceStatusBeforeLeaving, updateVoiceStatus } from './voice-status.js';
 import { buildHelpPayload } from './help.js';
+import { inviteUrlFor } from './invite.js';
 import { buildHistoryPayload, historySessionKey, replayHistoryTrack } from './history.js';
 import { cancelGuildMutations } from './requests.js';
 import { retirePresentationPlayer } from './presentation-updates.js';
@@ -277,7 +278,7 @@ export async function handleMessageComponent(interaction) {
     if (helpMatch[1] !== 'any' && interaction.user?.id !== helpMatch[1]) {
       return interaction.reply(ephemeralText('Only the person who opened this help can change topics.'));
     }
-    return interaction.update(buildHelpPayload(interaction.client, interaction.values?.[0], helpMatch[1]));
+    return interaction.update(buildHelpPayload(interaction.client, interaction.values?.[0], helpMatch[1], { inviteUrl: await inviteUrlFor(interaction.client, interaction.user?.id) }));
   }
 
   const historyMatch = /^history:v2:(page|refresh|replay):([^:]+):([a-f0-9]{12}):(\d+)(?::(?:previous|next))?$/.exec(customId);

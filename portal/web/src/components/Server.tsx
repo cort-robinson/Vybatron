@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ArrowClockwiseIcon, CheckCircleIcon, ClockIcon, DownloadSimpleIcon, GearSixIcon, ShieldCheckIcon, WarningCircleIcon } from '@phosphor-icons/react';
+import { ArrowClockwiseIcon, CheckCircleIcon, ClockIcon, DiscordLogoIcon, DownloadSimpleIcon, GearSixIcon, ShieldCheckIcon, WarningCircleIcon } from '@phosphor-icons/react';
 import { api, ApiError, errorMessage } from '../api';
 import type { Activity, AutoplayMode, Capability, Command, CommandOption, Configuration, Diagnostics } from '../types';
 import type { Portal } from '../usePortal';
@@ -95,6 +95,7 @@ export function ServerView({ portal, ambient, setAmbient, skin, setSkin, perform
           <div className="setting-row"><div><h3>Keep Vybatron close</h3><p>{installPrompt ? 'Install a small, dedicated window for your listening space.' : 'Use your browser’s Install app or Add to Home Screen option when available.'}</p></div><button className="button secondary" disabled={!installPrompt} onClick={install}><DownloadSimpleIcon size={19} />Install app</button></div>
           <div className="setting-row"><div><h3>This device’s session</h3><p>Discord sign-in lasts up to seven days per device.</p></div><button className="text-button" onClick={() => void portal.logout()}>Sign out</button></div>
         </div></div>
+        {portal.bootstrap?.inviteUrl && <div className="personal-settings"><h2>Share Vybatron</h2><div className="settings-list"><div className="setting-row"><div><h3>Add to another server</h3><p>Pick any server where you have Manage Server permission. Discord shows what Vybatron can access before you confirm.</p></div><a className="button secondary" href={portal.bootstrap.inviteUrl} target="_blank" rel="noopener noreferrer"><DiscordLogoIcon size={19} weight="fill" />Add to server</a></div></div></div>}
       </>}
       {active && tab === 'activity' && snapshot?.guild.admin && <ActivityView portal={portal} />}
       {active && tab === 'diagnostics' && snapshot?.guild.admin && <DiagnosticsView portal={portal} />}

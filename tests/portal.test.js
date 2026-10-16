@@ -51,6 +51,9 @@ test('bootstrap uses verified application owner, fresh membership and safe comma
   assert.ok(initial.body.filters.some(item => item.id === 'warm'));
   assert.doesNotMatch(JSON.stringify(initial.body), /encoded-|token|clientData|size=/);
   assert.equal(initial.body.voiceGuildId, '100');
+  // The bot is private: only maintainers are offered the install link.
+  assert.equal(initial.body.inviteUrl, null);
+  assert.match((await f.request('/v1/bootstrap?actorId=900')).body.inviteUrl, /^https:\/\/discord\.com\/oauth2\/authorize\?client_id=123456789012345678&/);
   const voice = f.members.get('200').voice.channel; f.members.get('200').voice.channel = null;
   assert.equal((await f.request('/v1/bootstrap?actorId=200')).body.voiceGuildId, null);
   f.members.get('200').voice.channel = voice;

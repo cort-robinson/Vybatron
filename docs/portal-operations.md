@@ -380,13 +380,20 @@ includes the commit. It stops before staging when the running release is not an
 ancestor, or when `docker-compose.yml`, `lavalink/`, `warp/` or the playback probe
 changed: the portal driver never recreates audio, so those releases need an operator.
 
-Otherwise it builds both images on the GitHub runner (never on the 2 GiB VPS),
-transfers them with a `git archive` of the exact commit, installs that commit's
+Otherwise it downloads the bot and portal images that the main-push CI run built
+and tested (never building on the 2 GiB VPS), checks both carry the target revision
+label, transfers them with a `git archive` of the exact commit, installs that commit's
 `ops/portal_deploy.py` and `ops/deploy.py` as the private drivers (keeping the
 previous pair as `*.previous`), and runs the same idle-guarded portal driver used for
 manual releases. A busy or paused session fails the job without changing services;
-re-run it once the session is idle. The job then checks both containers carry the
-target revision and report healthy.
+re-run it once the session is idle. The CI image artifacts expire after a day, so
+re-run a failed release within that window or re-run CI first. The job then checks
+both containers carry the target revision and report healthy, and deletes the image
+artifacts.
+
+SSH trusts only the host key in the `VPS_HOST_KEY` secret (the server's public key
+lines without host names, for example `ssh-ed25519 AAAA…`). After rebuilding the
+VPS or rotating its host keys, update that secret from a verified connection.
 
 The portal driver registers commands globally and clears the test guild's
 guild-scoped copy, so nothing appears twice. Each transaction backs up both catalogs

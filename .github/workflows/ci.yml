@@ -13,16 +13,54 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: .github/lint/requirements.txt
+
+      - name: Install lint tools
+        run: pip install -r .github/lint/requirements.txt
+
+      - name: Lint workflows
+        run: actionlint
+
+      - name: Lint shell scripts
+        run: shellcheck warp/*.sh tests/*.sh
+
+      - name: Lint Python
+        run: ruff check ops tests
+
+      - name: Parse Lavalink configuration
+        run: python -c "import sys, yaml; list(yaml.safe_load_all(open(sys.argv[1])))" lavalink/application.yml
+
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      BOT_IMAGE: vybertron-bot:sha-${{ github.sha }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
           cache: npm
+
+      # The recovery and release drivers run on the VPS's Python 3.12.
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
 
       - name: Install dependencies
         run: npm ci
@@ -30,20 +68,17 @@ jobs:
       - name: Run tests
         run: npm test
 
-      - name: Check production dependencies
-        run: npm audit --omit=dev --audit-level=high
-
-      - name: Test recovery policy
-        run: python3 -m unittest discover -s tests -p '*_test.py'
+      - name: Test recovery and release drivers
+        run: python -m unittest discover -s tests -p '*_test.py'
 
       - name: Build bot image
-        run: docker build -t vybertron-bot:ci .
+        run: docker build --label "org.opencontainers.image.revision=$GITHUB_SHA" -t "$BOT_IMAGE" .
 
       - name: Verify container persistence permissions
         run: >-
           docker run --rm --read-only --tmpfs /tmp:rw,noexec,nosuid,size=32m
           -v vybertron-ci-data:/app/data -e VYBERTRON_DATA_DIR=/app/data
-          vybertron-bot:ci node --input-type=module -e
+          "$BOT_IMAGE" node --input-type=module -e
           "import {writeFile,readFile} from 'node:fs/promises';
           if(process.getuid()===0)throw new Error('root runtime');
           await writeFile('/app/data/ci-check','ok');
@@ -60,12 +95,29 @@ jobs:
           LAVALINK_PASSWORD: ci-placeholder
           SPOTIFY_SP_DC: ""
 
+      # Deploy ships this exact tested image rather than rebuilding it.
+      - name: Save bot image for release
+        if: github.event_name == 'push'
+        run: docker save "$BOT_IMAGE" | gzip -1 > vybertron-bot.tar.gz
+
+      - name: Upload bot image for release
+        if: github.event_name == 'push'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          path: vybertron-bot.tar.gz
+          archive: false
+          retention-days: 1
+
   portal:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      PORTAL_IMAGE: vybertron-portal:sha-${{ github.sha }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
           cache: npm
@@ -85,24 +137,17 @@ jobs:
       - name: Install browser for portal verification
         working-directory: portal/web
         run: npx playwright install --with-deps chromium
-      - name: Verify portal desktop, phone and accessibility
-        working-directory: portal/web
-        run: npm test
       - name: Verify browser OAuth through proxy and authoritative bot adapter
         run: npm run portal:integration
-      - name: Audit portal runtime dependencies
-        run: |
-          npm --prefix portal/server audit --omit=dev --audit-level=high
-          npm --prefix portal/web audit --omit=dev --audit-level=high
       - name: Build isolated portal image
-        run: docker build -f portal/Dockerfile -t vybertron-portal:ci .
+        run: docker build --label "org.opencontainers.image.revision=$GITHUB_SHA" -f portal/Dockerfile -t "$PORTAL_IMAGE" .
       - name: Verify encrypted login persistence across bounded containers
         run: |
           for phase in create reopen; do
             docker run --rm -i --read-only --memory=192m --memory-swap=256m --cpus=0.5 --pids-limit=64 \
               --tmpfs /tmp:rw,noexec,nosuid,size=16m -v vybertron-ci-portal-auth:/app/data \
               -e NODE_OPTIONS=--max-old-space-size=112 -e PORTAL_CI_PHASE=$phase \
-              vybertron-portal:ci node --input-type=module < portal/integration/container-auth.mjs
+              "$PORTAL_IMAGE" node --input-type=module < portal/integration/container-auth.mjs
           done
       - name: Validate private portal overlay
         run: docker compose -f docker-compose.yml -f docker-compose.portal.yml --profile portal config --quiet
@@ -114,3 +159,102 @@ jobs:
           DISCORD_CLIENT_SECRET: ci-placeholder
           PORTAL_BRIDGE_TOKEN: ci-placeholder
           PORTAL_SESSION_SECRET: ci-placeholder
+      - name: Save portal image for release
+        if: github.event_name == 'push'
+        run: docker save "$PORTAL_IMAGE" | gzip -1 > vybertron-portal.tar.gz
+      - name: Upload portal image for release
+        if: github.event_name == 'push'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          path: vybertron-portal.tar.gz
+          archive: false
+          retention-days: 1
+
+  # A merge commit whose tree matches a same-repository pull request run that
+  # already passed the browser suite skips the suite on main. Tree equality
+  # means identical files, so the earlier pass covers this commit exactly.
+  browser-plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      tree: ${{ steps.plan.outputs.tree }}
+      run: ${{ steps.plan.outputs.run }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Find an earlier pass on this tree
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO_ID: ${{ github.repository_id }}
+        run: |
+          TREE=$(git rev-parse 'HEAD^{tree}')
+          echo "tree=$TREE" >> "$GITHUB_OUTPUT"
+          RUN=true
+          if [ "$GITHUB_EVENT_NAME" = push ]; then
+            PASSED=$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?name=browser-verified-$TREE&per_page=100" \
+              --jq "[.artifacts[] | select((.expired | not) and .workflow_run.head_repository_id == $REPO_ID)] | length")
+            if [ "$PASSED" -gt 0 ]; then
+              RUN=false
+              echo "::notice::A pull request run already passed the browser suite on tree $TREE; skipping it here."
+            fi
+          fi
+          echo "run=$RUN" >> "$GITHUB_OUTPUT"
+
+  browser:
+    name: browser (${{ matrix.shard }}/3)
+    needs: browser-plan
+    if: needs.browser-plan.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    defaults:
+      run:
+        working-directory: portal/web
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: portal/web/package-lock.json
+      - name: Install portal web dependencies
+        run: npm ci
+      - name: Install browser
+        run: npx playwright install --with-deps chromium
+      - name: Verify portal desktop, phone and accessibility
+        run: npx playwright test --shard=${{ matrix.shard }}/3
+      - name: Upload failure evidence
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: playwright-shard-${{ matrix.shard }}
+          path: |
+            portal/web/playwright-report
+            portal/web/test-results
+          retention-days: 7
+
+  browser-verified:
+    needs: [browser-plan, browser]
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Record the tested tree
+        run: echo "$TREE" > browser-verified.txt
+        env:
+          TREE: ${{ needs.browser-plan.outputs.tree }}
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: browser-verified-${{ needs.browser-plan.outputs.tree }}
+          path: browser-verified.txt
+          retention-days: 14

@@ -1,0 +1,5 @@
+target-version = "py312"
+
+[lint]
+# Errors that are bugs, not style: syntax, undefined names, unused imports.
+select = ["E9", "F"]

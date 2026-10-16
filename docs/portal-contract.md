@@ -1,27 +1,23 @@
-# Portal v1 integration contract
+# Portal integration contract
 
-This is the shared contract for three parallel implementation tasks. Implement
-this shape exactly. Root coordinates changes; do not silently invent incompatible
-paths/names. JSON uses camelCase. Dates are epoch milliseconds. Track positions
+The shared contract between the bot bridge, the portal API and the web UI. Change
+all three together; do not invent incompatible paths or names. JSON uses camelCase. Dates are epoch milliseconds. Track positions
 and command indices are one-based. Durations/positions are milliseconds.
 
-## Ownership and deployment boundary
+## Components and deployment boundary
 
-- Bot task: `src/portal/**`, necessary existing bot modules and bot tests. Export
+- Bot bridge: `src/portal/**`. Exports
   `startPortalBridge(client, options)` with close/dispose handling. Optional bridge
   defaults disabled unless `PORTAL_BRIDGE_TOKEN` is set. Bind
   `PORTAL_BRIDGE_HOST` (default loopback; Compose uses 0.0.0.0) and
   `PORTAL_BRIDGE_PORT` (default 3010). Never publish bridge host ports.
-- API task: `portal/server/**` only, including its package/test files. Node HTTP
+- Portal API: `portal/server/**`, a Node HTTP
   service listens on `PORTAL_HOST`/`PORTAL_PORT` (default 3001); serves build from
   `PORTAL_WEB_DIST` (default sibling `../web/dist`). Uses `PORTAL_BOT_URL` (private
   bridge origin), `PORTAL_BRIDGE_TOKEN`, `PORTAL_ORIGIN`, `DISCORD_CLIENT_ID`,
   `DISCORD_CLIENT_SECRET`, `PORTAL_SESSION_SECRET`, `PORTAL_DATA_DIR`.
-- UI task: `portal/web/**`, `portal/PRODUCT.md`, `portal/DESIGN.md`, scoped surface
-  briefs and `portal/design-qa.md`. Root creates assets under web/public/assets.
-  Vite proxy `/api` and `/auth` to localhost:3001; configurable VITE_API_PROXY.
-- Root: contract/plan, assets coordination, Docker/Compose/CI/env/runbook/release.
-  No agent commits or mutates live infrastructure during its implementation task.
+- Web UI: `portal/web/**`, guided by `portal/PRODUCT.md` and `portal/DESIGN.md`.
+  Vite proxies `/api` and `/auth` to localhost:3001; configurable VITE_API_PROXY.
 
 Bot bridges trust only their constant-time validated secret and a session-derived
 actorId. Bot rechecks Discord member/owner/Manage Server/DJ/channel/voice state.
@@ -157,7 +153,7 @@ for the others. Artist mixes add visible server plays by that artist without req
 Stats are optional: an unavailable store returns 503 `stats_unavailable` and nothing else
 changes. Fetch on demand; stats are not part of snapshots or the change feed.
 
-## Public browser endpoints (portal API task)
+## Public browser endpoints (portal API)
 
 - GET `/health`: credential-free portal responsiveness/readiness, never music data.
 - GET `/auth/discord`: OAuth code flow with state (PKCE when supported), exact
@@ -280,7 +276,7 @@ unauthenticated,403 forbidden/wrong voice/DJ/hidden channel,404 inaccessible
 guild or missing resource,409 stale/changed session,400 invalid input,429 busy,
 503 bridge/Discord/audio unavailable. Avoid arbitrary upstream errors/logs.
 
-## Internal bot endpoints (bot task)
+## Internal bot endpoints (bot bridge)
 
 All require `Authorization: Bearer <PORTAL_BRIDGE_TOKEN>`. Header only. No
 browser access or CORS. Portal sets the trusted session's actorId itself.

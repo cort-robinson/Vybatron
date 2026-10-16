@@ -31,7 +31,7 @@ moves the session between this device and Discord (Play on).
 
 ## Development and verification
 
-Node 22.12+:
+Node 24.11+:
 
 ```powershell
 cd portal/web
@@ -58,7 +58,7 @@ adapter, fake login, or player data is exported into `dist`.
 `scripts/prepare-qa-art.mjs` regenerates test-only crops from approved references.
 `tests/design.spec.ts` captures desktop, phone, and tablet UI into `.impeccable/review/`
 and fails on console errors, overflow, or accessibility findings. `scripts/compare-qa.mjs`
-creates source-left/browser-right comparisons. See `../design-qa.md` for the bounded review.
+creates source-left/browser-right comparisons.
 
 ## Integration notes
 
@@ -129,4 +129,4 @@ real integration check. It covers every selected-item action, shifted favorites,
 permission-filtered history with an unchanged revision, replaced mix confirmations,
 captured schema selections across refresh/disconnect, held HTTP conflict reads,
 and stale library responses. Phone controls use normal pointer actions with no
-horizontal overflow. See `../design-qa.md` for evidence and remaining live gates.
+horizontal overflow.

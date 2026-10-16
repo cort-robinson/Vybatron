@@ -77,8 +77,9 @@ export function Player({ portal, expanded, setExpanded, onAdd, accent, animate, 
     if (previous.repeat !== session?.repeat && previous.repeat) pulse(find('.repeat-control svg'), [{ transform: 'rotate(-180deg) scale(.7)', opacity: .4 }, { transform: 'none', opacity: 1 }], 360);
     if (!previous.saved && saved) pulse(find('.favorite svg'), [{ transform: 'scale(1)' }, { transform: 'scale(1.28)', offset: .35 }, { transform: 'scale(1)' }], 420);
   }, [track?.id, session?.status, session?.repeat, saved]);
-  const duration = session?.durationMs || track?.durationMs || 0;
-  const position = Math.min(duration || Infinity, Math.max(0, (session?.positionMs || 0) + (session?.status === 'playing' && live ? Math.max(0, clock - receivedAt) : 0)));
+  // With no current song there is no timeline, whatever position an idle snapshot still carries.
+  const duration = track ? session?.durationMs || track.durationMs || 0 : 0;
+  const position = !track ? 0 : Math.min(duration || Infinity, Math.max(0, (session?.positionMs || 0) + (session?.status === 'playing' && live ? Math.max(0, clock - receivedAt) : 0)));
   const controllable = can('control') && !pending.length;
   const seekable = controllable && !!track && !track.isStream && duration > 0 && !['recovering', 'unavailable'].includes(session?.status || '');
   const control = (body: Command) => run({ ...body, expectedRevision: snapshot?.revision }, 'control');
@@ -154,7 +155,7 @@ export function Player({ portal, expanded, setExpanded, onAdd, accent, animate, 
   </div>;
   return <section ref={playerRef} className={`persistent-player ${expanded ? 'expanded' : 'collapsed'} ${session?.status || 'idle'}`} aria-label="Music player" data-testid="player">
     {!expanded && spectrum('player-spectrum', 56, 0)}
-    {expanded && <div className="sleeve-content"><button className="mobile-collapse text-button" onClick={() => setExpanded(false)}><CaretDownIcon size={22} />Back to queue</button>
+    {expanded && <div className="sleeve-content"><button className="mobile-collapse text-button" onClick={() => setExpanded(false)}><CaretDownIcon size={22} />Close player</button>
       <div className="sleeve-main"><div className="sleeve-artwork" onPointerMove={tilt} onPointerLeave={untilt}><Artwork track={track} large />{spectrum('sleeve-spectrum', 40)}{skin === 'overdrive' && <><span className="od-cover-plate" aria-hidden="true" /><Hud className="od-cover-hud" /><span key={track?.id || 'idle'} className="od-cover-scan" aria-hidden="true" /></>}{skin === 'fantastic' && <><Television /><span key={track?.id || 'idle'} className="ff-tune" aria-hidden="true" /></>}</div>{identity}<div className="player-context">{permissionReason && <p className="player-permission" id={reasonId}><WarningCircleIcon size={18} aria-hidden="true" /><span>{permissionReason}</span></p>}{connection === 'live' && session?.status === 'recovering' && <p className="player-state warm-text" role="status">Recovering your place. Playback controls will return when it’s ready.</p>}{session?.status === 'paused' && <p className="player-state warm-text">{connection === 'live' ? 'Paused · right here when you’re ready' : 'Last known: paused'}</p>}</div></div>
       <div className="sleeve-queue"><Queue portal={portal} compact onAdd={onAdd} /></div>
     </div>}
@@ -162,7 +163,7 @@ export function Player({ portal, expanded, setExpanded, onAdd, accent, animate, 
       <div className="playback-cluster">{controls}{timeline}</div>
       {extras}
       {!expanded && permissionReason && <span className="sr-only" id={reasonId}>{permissionReason}</span>}
-      <button ref={expandTriggerRef} className="expand-button" aria-expanded={expanded} aria-label={expanded ? 'Back to queue' : 'Open player'} title={expanded ? 'Back to queue' : 'Open player'} onClick={() => { openedFromIdentity.current = false; setExpanded(!expanded); }}>{expanded ? <CaretDownIcon size={29} /> : <CaretUpIcon size={29} />}<span>{expanded ? 'Back to queue' : 'Open player'}</span></button>
+      <button ref={expandTriggerRef} className="expand-button" aria-expanded={expanded} aria-label={expanded ? 'Close player' : 'Open player'} title={expanded ? 'Close player' : 'Open player'} onClick={() => { openedFromIdentity.current = false; setExpanded(!expanded); }}>{expanded ? <CaretDownIcon size={29} /> : <CaretUpIcon size={29} />}<span>{expanded ? 'Close player' : 'Open player'}</span></button>
     </div>
     {confirmStop && (local ? <Confirm title="Stop playing on this device?" detail="Stops the current song and clears this device’s queue. The Discord session, your favorites and shared mixes aren’t affected." action="Stop" onClose={() => setConfirmStop(false)} onConfirm={() => { setConfirmStop(false); void run({ command: 'stop' }, 'control'); }} />
       : <StopDialog portal={portal} onClose={() => setConfirmStop(false)} />)}

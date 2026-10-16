@@ -43,7 +43,7 @@ test('advanced drafts survive navigation and expansion without recapturing selec
   const original = fixture.state.library.favorites[0].id;
   await page.getByRole('button', { name: 'Open player', exact: true }).click();
   fixture.state.library.favorites.reverse();
-  await page.getByRole('button', { name: 'Back to queue', exact: true }).click();
+  await page.getByRole('button', { name: 'Close player', exact: true }).click();
   await expect(page.getByText('Selected: Night Drive', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Apply control', exact: true }).click();
   await expect.poll(() => fixture.commands.length).toBe(1);

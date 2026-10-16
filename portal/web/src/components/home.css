@@ -121,7 +121,7 @@
   .shelf-row-wide { --card: 220px; }
   .continue-feature { grid-template-columns: 64px minmax(0, 1fr); gap: 14px; padding: 14px; }
   .continue-art { width: 64px; height: 64px; }
-  .continue-text strong { font-size: 17px; }
+  .continue-text strong { font-size: 17px; white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow-wrap: anywhere; }
   .continue-feature .button { grid-column: 1 / -1; }
   .stop-dialog .form-actions .button { flex: 1 1 100%; }
 }

@@ -197,8 +197,9 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 320, height: 568 
         }
         expect(feedback.y + feedback.height <= button.y + 1 || button.y + button.height <= feedback.y + 1).toBe(true);
         if (viewport.width < 1024) {
-          const nav = (await page.locator('.navigation').boundingBox())!;
-          expect(feedback.y + feedback.height).toBeLessThanOrEqual(nav.y + 1);
+          // Short screens give the open player the whole screen, so the bound is the viewport's edge.
+          const nav = await page.locator('.navigation').boundingBox();
+          expect(feedback.y + feedback.height).toBeLessThanOrEqual((nav?.y ?? viewport.height) + 1);
         }
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
         expect(await confirmation(page).locator('.spinner').evaluate(element => getComputedStyle(element).animationName)).toBe('none');

@@ -257,7 +257,7 @@ test('production PWA installs under real CSP, serves an offline shell, and never
       online = false; await context.setOffline(true);
       const reload = await page.reload({ waitUntil: 'load' });
       assert.equal(reload.fromServiceWorker(), true);
-      await page.getByRole('heading', { name: 'A better vibe together.' }).waitFor();
+      await page.getByRole('heading', { name: 'Sign in to Vybatron' }).waitFor();
       assert.equal(await page.evaluate(() => document.fonts.ready.then(() => document.fonts.check('500 16px "Archivo Variable"'))), true);
       const uncached = await page.evaluate(async () => {
         const probes = [['/api/bootstrap', 'GET'], ['/api/guilds/100/library', 'GET'], ['/auth/discord', 'GET'], ['/health', 'GET'],

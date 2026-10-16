@@ -128,6 +128,20 @@ pools drift over 38-58s only while playing. The sleeve rises in once, and menus,
 toasts use short ease-out entrances. Reduced motion removes drift, spatial entrances, and
 hover lifts while keeping color changes and the static pending mark.
 
+No frame may flash. Every change either glides or dissolves, and nothing ever drops to empty in
+between (tests/smoothness.spec.ts guards the first and last rules):
+
+- View transitions crossfade the page in equal, linear halves (240ms; 420ms for a look, lighting,
+  or performance change). Unequal halves leave both snapshots partly transparent and dim the
+  whole screen.
+- Outgoing and incoming views overlap (170ms out, in from 20ms) so the content area never empties.
+- Song changes keep the old cover until the new one has decoded, then dissolve it over 620ms on an
+  even curve. The blurred cover light crossfades layers only after the next image decodes, and it
+  leaves with the sleeve instead of fading out at full-screen size.
+- The palette holds through a gap of up to 1.5s with no artwork instead of resetting to default.
+- Anything the travelling cover uncovers is shaded: Overdrive keeps a plate behind the cover and
+  dims the sun at once when the sleeve closes.
+
 ## Components
 
 Confirmation toasts clear themselves after 4.5s; error toasts stay until dismissed. Toasts
@@ -210,7 +224,8 @@ so switching looks is one attribute and removing it is two files and their impor
 - **Alive:** the floor, windows, CRT band, rail pulse, and reactor ring run only while the
   session plays live with ambient motion on. On track change the title locks on with a
   chromatic split while a scan beam crosses the cover. The sleeve cover leans toward a fine
-  pointer. A one-time power-on flicker runs on page load.
+  pointer. On page load the sun rises and the floor and skyline fade in once; the chrome never
+  flickers.
 - Reduced motion removes all of it except static color and shape.
 
 ## Performance mode

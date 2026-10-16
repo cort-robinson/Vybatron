@@ -1,4 +1,4 @@
-import { useCallback, useId, useLayoutEffect, useRef, useState, type ButtonHTMLAttributes, type ReactNode, type RefObject } from 'react';
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type ButtonHTMLAttributes, type ReactNode, type RefObject } from 'react';
 import { ArrowClockwiseIcon, MusicNotesIcon, UserIcon, XIcon, WarningCircleIcon } from '@phosphor-icons/react';
 import { publicUrl } from '../api';
 import type { Track } from '../types';
@@ -14,15 +14,36 @@ export function FallbackCover({ className = '', alt = '', large = false }: { cla
       style={{ display: 'block', width: '100%', height: '100%', objectFit: 'cover', borderRadius: 'inherit' }} />
   </picture>;
 }
+// A changed cover keeps the previous image on screen until the next one has decoded, so a song
+// change never shows an empty frame between covers.
+function useDecodedSource(source: string | undefined) {
+  const [shown, setShown] = useState(source);
+  useEffect(() => {
+    if (source === shown) return;
+    if (!source || !shown) { setShown(source); return; }
+    let current = true; const image = new Image(); image.src = source;
+    void image.decode().catch(() => undefined).then(() => { if (current) setShown(source); });
+    return () => { current = false; };
+  }, [source, shown]);
+  return shown;
+}
 export function Artwork({ track, className = '', large = false }: { track: Track | null; className?: string; large?: boolean }) {
-  const source = publicUrl(track?.artworkUrl);
+  const source = useDecodedSource(publicUrl(track?.artworkUrl));
   const [failedSource, setFailedSource] = useState<string | undefined>();
+  // A large cover dissolves into the next: the previous image lingers on top and fades out.
+  const [ghost, setGhost] = useState<string>();
+  const previous = useRef(source);
+  useEffect(() => {
+    if (large && previous.current && source && previous.current !== source) setGhost(previous.current);
+    previous.current = source;
+  }, [source, large]);
   const alt = large && track ? `Artwork for ${track.title}` : '';
   // No current song: an honest empty sleeve rather than a photo that reads as a track.
   if (!track) return <span className={`artwork artwork-empty ${className}`}><MusicNotesIcon size={large ? 56 : 24} aria-hidden="true" /></span>;
   if (!source || source === failedSource) return <FallbackCover className={`artwork ${className}`} alt={alt} large={large} />;
-  return <img className={`artwork ${className}`} src={source} alt={alt}
-    loading={large ? 'eager' : 'lazy'} decoding="async" onError={() => setFailedSource(source)} />;
+  return <><img className={`artwork ${className}`} src={source} alt={alt}
+    loading={large ? 'eager' : 'lazy'} decoding="async" onError={() => setFailedSource(source)} />
+    {ghost && <img key={ghost} className="artwork-ghost" src={ghost} alt="" aria-hidden="true" onAnimationEnd={() => setGhost(undefined)} />}</>;
 }
 export function Avatar({ url, name, className = '' }: { url?: string | null; name: string; className?: string }) {
   const src = publicUrl(url);

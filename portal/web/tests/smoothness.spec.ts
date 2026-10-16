@@ -69,66 +69,71 @@ test('a song change dissolves the cover in place instead of cutting to an empty 
   } finally { await server.close(); }
 });
 
-// Relight helpers: the room's accent settles once its glide ends; a song change is a fresh snapshot.
-type Sample = { at: number; accent: string; pageWide: number };
+// Relight helpers. The glide runs on a paused page clock stepped one 16ms frame at a time, so a slow
+// machine (CI's software rendering) changes neither the glide nor how it is sampled.
+type Sample = { accent: string; pageWide: number };
 const accent = (page: Page) => page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--accent'));
 async function settledAccent(page: Page) {
   let previous = '';
   await expect.poll(async () => { const now = await accent(page); const stable = now === previous; previous = now; return stable; }, { intervals: [400] }).toBe(true);
   return previous;
 }
-async function changeSong(page: Page, fixture: Awaited<ReturnType<typeof mockPortal>>, title?: string) {
-  const state = fixture.state.snapshot; const index = title ? state.session.queue.findIndex(track => track.title === title) : 0;
-  state.session.current = state.session.queue.splice(index, 1)[0]; state.revision = `revision-${state.session.current.id}`;
+// Pauses the clock, changes song, and waits (in real time) until the new cover's colors have
+// started their glide: the theme color is set to the new ground when the glide begins.
+async function relightTo(page: Page, fixture: Awaited<ReturnType<typeof mockPortal>>, title: string) {
+  const theme = () => page.evaluate(() => document.querySelector('meta[name="theme-color"]')!.getAttribute('content'));
+  const before = await theme();
+  await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1000));
+  const state = fixture.state.snapshot; state.session.current = state.session.queue.splice(state.session.queue.findIndex(track => track.title === title), 1)[0]; state.revision = `revision-${state.session.current.id}`;
   await page.evaluate(data => (window as unknown as { portalTest: { emit: (d: unknown) => void } }).portalTest.emit(data), state);
+  await expect.poll(theme).not.toBe(before);
 }
-// Records the accent and any color transition outside the light pools on every frame, from now
-// until the accent has changed and then held still for half a second (the artwork may load late).
-async function sampleRelight(page: Page) {
-  await page.evaluate(() => {
-    const w = window as unknown as { relight: Sample[]; relightDone: boolean }; w.relight = []; w.relightDone = false;
-    const start = performance.now(); let changedAt = 0;
-    const sample = () => {
-      const now = performance.now(); const value = getComputedStyle(document.documentElement).getPropertyValue('--accent');
-      const pageWide = document.getAnimations().filter(animation => animation instanceof CSSTransition && animation.transitionProperty.startsWith('--') && !((animation.effect as KeyframeEffect).target as Element).classList.contains('light')).length;
-      if (w.relight.length && value !== w.relight.at(-1)!.accent) changedAt = now;
-      w.relight.push({ at: now, accent: value, pageWide });
-      if ((changedAt && now - changedAt > 500) || now - start > 8000) w.relightDone = true; else requestAnimationFrame(sample);
-    };
-    requestAnimationFrame(sample);
-  });
+// Advances the paused clock frame by frame, recording the accent and any color transition outside
+// the three light pools after each frame.
+async function frames(page: Page, ms: number) {
+  const samples: Sample[] = [];
+  for (let elapsed = 0; elapsed < ms; elapsed += 16) {
+    await page.clock.runFor(16);
+    samples.push(await page.evaluate(() => ({
+      accent: getComputedStyle(document.documentElement).getPropertyValue('--accent'),
+      pageWide: document.getAnimations().filter(animation => animation instanceof CSSTransition && animation.transitionProperty.startsWith('--') && !((animation.effect as KeyframeEffect).target as Element).classList.contains('light')).length,
+    })));
+  }
+  return samples;
 }
-const samples = async (page: Page) => { await page.waitForFunction(() => (window as unknown as { relightDone: boolean }).relightDone); return page.evaluate(() => (window as unknown as { relight: Sample[] }).relight); };
 
 test('a song change glides the page to the new colors without restyling it every frame', async ({ page }) => {
+  await page.clock.install();
   const fixture = await mockPortal(page); await page.goto('/');
   await page.getByRole('button', { name: 'Open player', exact: true }).click();
   const before = await settledAccent(page);
-  await sampleRelight(page); await changeSong(page, fixture, 'Golden Hour');
-  const all = await samples(page);
+  await relightTo(page, fixture, 'Golden Hour');
+  const all = await frames(page, 1600);
   // Colors that transition on :root restyle and repaint the whole page every frame; only the three
   // light pools run CSS color transitions, at any point in the glide.
   expect(all.filter(sample => sample.pageWide).length).toBe(0);
-  // The accent passes through in-between colors, but in steps (about every 50ms over 1.2s), not every frame.
+  // The accent passes through in-between colors in steps about every 50ms over 1.2s: not every frame.
   const distinct = new Set(all.map(sample => sample.accent).filter(value => value !== before));
-  expect(distinct.size).toBeGreaterThan(5);
+  expect(distinct.size).toBeGreaterThan(10);
   expect(distinct.size).toBeLessThanOrEqual(32);
-  const after = await settledAccent(page);
-  expect(after).not.toBe(before);
-  expect(all.at(-1)!.accent).toBe(after);
+  const final = all.at(-1)!.accent;
+  expect(final).not.toBe(before);
+  expect((await frames(page, 500)).every(sample => sample.accent === final)).toBe(true);
 });
 
 test('reduced motion turned on mid-glide finishes the glide quickly', async ({ page }) => {
+  await page.clock.install();
   const fixture = await mockPortal(page); await page.goto('/');
   await page.getByRole('button', { name: 'Open player', exact: true }).click();
-  const before = await settledAccent(page);
-  await sampleRelight(page); await changeSong(page, fixture, 'Golden Hour');
-  // Switch only once the glide is visibly under way.
-  await page.waitForFunction(before => getComputedStyle(document.documentElement).getPropertyValue('--accent') !== before, before, { polling: 'raf' });
+  await settledAccent(page);
+  await relightTo(page, fixture, 'Golden Hour');
+  await frames(page, 160);
   await page.emulateMedia({ reducedMotion: 'reduce' });
-  const switched = await page.evaluate(() => performance.now());
-  const all = await samples(page);
-  const last = all.filter((sample, index) => index && sample.accent !== all[index - 1].accent).at(-1)!;
-  // The short glide is 300ms; left alone, the full glide keeps changing the color for about a second.
-  expect(last.at - switched).toBeLessThan(650);
+  // The clock is paused, so the glide stands still while the app reacts to the media change.
+  await page.waitForTimeout(500);
+  const all = await frames(page, 1200);
+  const lastChange = all.reduce((last, sample, index) => index > 0 && sample.accent !== all[index - 1].accent ? index : last, -1);
+  // The short glide is 300ms; left alone, the full glide keeps changing the color for most of a second.
+  expect(lastChange).toBeGreaterThan(0);
+  expect(lastChange * 16).toBeLessThan(400);
 });

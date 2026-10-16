@@ -186,7 +186,6 @@ REVERT: everything here is scoped to :root[data-skin='overdrive']; Settings → 
   .filter-control { border-radius: 4px 14px 4px 14px; }
   .filter-dot { box-shadow: 0 0 8px var(--accent); }
   .filter-control.warm .filter-dot { box-shadow: 0 0 8px var(--amber); }
-  .expand-button { border-left-color: transparent; background: linear-gradient(to bottom, transparent, var(--line-strong), transparent) left / 1px 100% no-repeat; }
   .expand-button:hover svg { filter: drop-shadow(0 0 6px var(--accent)); }
 
   /* Reactor: the play control sits inside a ring that turns while the room plays. */
@@ -235,7 +234,6 @@ REVERT: everything here is scoped to :root[data-skin='overdrive']; Settings → 
   .sleeve-main .player-title-row h2 { text-shadow: 0 0 30px color-mix(in oklab, var(--accent) 40%, transparent), 0 2px 0 color-mix(in oklab, var(--neon) 35%, transparent); }
   .sleeve-queue { border-radius: 6px 22px 6px 22px; background: var(--hud), var(--rail) top / 100% 1px no-repeat, color-mix(in oklab, var(--ground) 62%, transparent); }
   .expanded .player-footer { border-top-color: transparent; }
-  .expanded .player-extras { border-left-color: transparent; background: linear-gradient(to bottom, transparent, var(--line-strong), transparent) left / 1px 100% no-repeat; }
 
   /* ── Sign-in ────────────────────────────────────────────────────────── */
   .sign-in h1 {
@@ -269,6 +267,12 @@ REVERT: everything here is scoped to :root[data-skin='overdrive']; Settings → 
     .od-cover-hud { --gap: 10px; }
     .od-hud i { width: 20px; height: 20px; }
   }
+}
+/* On short phones the sun rises behind the caption, so the caption gets a smoked plate. */
+@media (max-width: 599px) and (max-height: 700px) {
+  :root[data-skin='overdrive'] .sleeve-main > .player-identity { width: fit-content; max-width: 100%; padding: 6px 16px 8px; border-radius: 4px 14px 4px 14px; background: color-mix(in oklab, var(--ground) 80%, transparent); }
+  /* The title's wide glow is clipped by its line clamp and would read as a box on the plate. */
+  :root[data-skin='overdrive'] .sleeve-main .player-title-row h2 { text-shadow: 0 2px 0 color-mix(in oklab, var(--neon) 35%, transparent); }
 }
 @media (max-width: 1023px) and (min-width: 600px) and (max-height: 500px) {
   :root[data-skin='overdrive'] :is(.od-cover-hud, .od-cover-scan, .od-cover-plate) { display: none; }

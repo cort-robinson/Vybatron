@@ -219,7 +219,6 @@ REVERT: everything here is scoped to :root[data-skin='fantastic']; Settings → 
   .player-spectrum { opacity: .34; }
   .player-expand-trigger > .artwork { border-radius: 12px; }
   .player-identity h2, .compact-track-title { transform-origin: 20% 60%; }
-  .expand-button { border-left-color: transparent; background: linear-gradient(to bottom, transparent, var(--line-strong), transparent) left / 1px 100% no-repeat; }
 
   /* The play control is a tuning dial: twelve ticks, the four quarters in flame. While the room
      plays, the Human Torch circles it. */
@@ -271,7 +270,6 @@ REVERT: everything here is scoped to :root[data-skin='fantastic']; Settings → 
   .sleeve-main > .player-context:has(> p) { padding-block: 10px; }
   .sleeve-queue { border-radius: 26px; outline: 1px solid var(--trim); outline-offset: -6px; background: var(--piping), color-mix(in oklab, var(--ff-base) 64%, transparent); }
   .expanded .player-footer { border-top-color: transparent; }
-  .expanded .player-extras { border-left-color: transparent; background: linear-gradient(to bottom, transparent, var(--line-strong), transparent) left / 1px 100% no-repeat; }
 
   /* ── Sign-in ────────────────────────────────────────────────────────── */
   .sign-in h1 { font-family: var(--display); font-weight: 400; font-stretch: normal; font-size: clamp(26px, 3.4vw, 44px); line-height: 1.25; letter-spacing: .01em; color: var(--ff-cream);

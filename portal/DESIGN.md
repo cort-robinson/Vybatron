@@ -92,11 +92,20 @@ readout. Queue column labels are the only small uppercase text. Minimums are unc
 
 ## Layout
 
-Geometry is unchanged from the October 5 repair: fixed sidebar, 114px topbar, 154px
-persistent player on desktop. At 1023px and below: one 72px server header (waveform mark,
+Desktop: fixed sidebar, 114px topbar, and a 92px single-row deck. The deck's three zones are
+identity (56px cover, title, artist, heart) on the left; the transport centered over the timeline,
+whose 44px seek target tucks 8px under the transport row; and volume, filter, More, and a 44px
+open/close toggle on the right. The open sleeve keeps the same deck without the identity zone,
+so the transport never moves. Pending and syncing notes float in a pill just above the deck's
+center (toasts rise to clear it). At 1023px and below: one 72px server header (waveform mark,
 server picker, a single status line with voice room and listeners, and the Add music button),
-a 72px compact player whose progress is a passive hairline, and 64px bottom navigation. The
-page title stays for assistive technology only. Voice room and listeners appear once, in the
+a 72px compact player whose progress is a passive hairline, and 64px bottom navigation. Phones
+open to three control rows (timeline, transport, volume with filter and More); on phones 700px
+or shorter the sleeve drops its spectrum strip and tucks the seek bar under the transport so the
+cover keeps its room, and Overdrive puts the caption on a smoked plate where the sun rises behind it. Tablets (600px
+and wider) add favorite and restart to the compact deck, and open to two rows: the timeline
+across the top, then volume, transport, and filter with More, which lets the cover grow to 640px.
+The page title stays for assistive technology only. Voice room and listeners appear once, in the
 server header (plus the desktop listener avatars). The expanded sleeve keeps its 52:48 artwork and Up Next grid.
 The cover and its spectrum share one container-query size (`--cover`), so the display
 strip always matches the cover width. Short landscape phones hide the sleeve spectrum.

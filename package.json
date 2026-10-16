@@ -27,7 +27,7 @@
   "homepage": "https://github.com/cort-robinson/Vybatron#readme",
   "dependencies": {
     "discord.js": "14.27.0",
-    "dotenv": "16.6.1",
+    "dotenv": "18.0.7",
     "lavalink-client": "2.11.0"
   },
   "engines": {

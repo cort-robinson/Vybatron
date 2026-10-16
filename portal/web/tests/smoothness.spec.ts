@@ -69,26 +69,66 @@ test('a song change dissolves the cover in place instead of cutting to an empty 
   } finally { await server.close(); }
 });
 
+// Relight helpers: the room's accent settles once its glide ends; a song change is a fresh snapshot.
+type Sample = { at: number; accent: string; pageWide: number };
+const accent = (page: Page) => page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--accent'));
+async function settledAccent(page: Page) {
+  let previous = '';
+  await expect.poll(async () => { const now = await accent(page); const stable = now === previous; previous = now; return stable; }, { intervals: [400] }).toBe(true);
+  return previous;
+}
+async function changeSong(page: Page, fixture: Awaited<ReturnType<typeof mockPortal>>, title?: string) {
+  const state = fixture.state.snapshot; const index = title ? state.session.queue.findIndex(track => track.title === title) : 0;
+  state.session.current = state.session.queue.splice(index, 1)[0]; state.revision = `revision-${state.session.current.id}`;
+  await page.evaluate(data => (window as unknown as { portalTest: { emit: (d: unknown) => void } }).portalTest.emit(data), state);
+}
+// Records the accent and any color transition outside the light pools on every frame, from now
+// until the accent has changed and then held still for half a second (the artwork may load late).
+async function sampleRelight(page: Page) {
+  await page.evaluate(() => {
+    const w = window as unknown as { relight: Sample[]; relightDone: boolean }; w.relight = []; w.relightDone = false;
+    const start = performance.now(); let changedAt = 0;
+    const sample = () => {
+      const now = performance.now(); const value = getComputedStyle(document.documentElement).getPropertyValue('--accent');
+      const pageWide = document.getAnimations().filter(animation => animation instanceof CSSTransition && animation.transitionProperty.startsWith('--') && !((animation.effect as KeyframeEffect).target as Element).classList.contains('light')).length;
+      if (w.relight.length && value !== w.relight.at(-1)!.accent) changedAt = now;
+      w.relight.push({ at: now, accent: value, pageWide });
+      if ((changedAt && now - changedAt > 500) || now - start > 8000) w.relightDone = true; else requestAnimationFrame(sample);
+    };
+    requestAnimationFrame(sample);
+  });
+}
+const samples = async (page: Page) => { await page.waitForFunction(() => (window as unknown as { relightDone: boolean }).relightDone); return page.evaluate(() => (window as unknown as { relight: Sample[] }).relight); };
+
 test('a song change glides the page to the new colors without restyling it every frame', async ({ page }) => {
   const fixture = await mockPortal(page); await page.goto('/');
   await page.getByRole('button', { name: 'Open player', exact: true }).click();
-  const accent = () => page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--accent'));
-  await expect.poll(accent).not.toBe('#5fdcd2');
-  await page.waitForTimeout(1500);
-  const before = await accent();
-  const state = fixture.state.snapshot; state.session.current = state.session.queue.shift()!; state.revision = 'revision-relight';
-  await page.evaluate(data => (window as unknown as { portalTest: { emit: (d: unknown) => void } }).portalTest.emit(data), state);
-  // The accent passes through in-between colors on its way, a step about every 50ms.
-  const seen = await page.evaluate(() => new Promise<string[]>(resolve => {
-    const values: string[] = []; const started = performance.now();
-    const sample = () => { values.push(getComputedStyle(document.documentElement).getPropertyValue('--accent')); if (performance.now() - started < 1600) requestAnimationFrame(sample); else resolve(values); };
-    requestAnimationFrame(sample);
-  }));
-  const distinct = [...new Set(seen)].filter(value => value !== before);
-  expect(distinct.length).toBeGreaterThan(5);
+  const before = await settledAccent(page);
+  await sampleRelight(page); await changeSong(page, fixture, 'Golden Hour');
+  const all = await samples(page);
   // Colors that transition on :root restyle and repaint the whole page every frame; only the three
-  // light pools run CSS color transitions.
-  const gliding = await page.evaluate(() => document.getAnimations().filter(animation => animation instanceof CSSTransition && animation.transitionProperty.startsWith('--'))
-    .map(animation => ((animation.effect as KeyframeEffect).target as Element).className));
-  expect(gliding.every(name => name.startsWith('light '))).toBe(true);
+  // light pools run CSS color transitions, at any point in the glide.
+  expect(all.filter(sample => sample.pageWide).length).toBe(0);
+  // The accent passes through in-between colors, but in steps (about every 50ms over 1.2s), not every frame.
+  const distinct = new Set(all.map(sample => sample.accent).filter(value => value !== before));
+  expect(distinct.size).toBeGreaterThan(5);
+  expect(distinct.size).toBeLessThanOrEqual(32);
+  const after = await settledAccent(page);
+  expect(after).not.toBe(before);
+  expect(all.at(-1)!.accent).toBe(after);
+});
+
+test('reduced motion turned on mid-glide finishes the glide quickly', async ({ page }) => {
+  const fixture = await mockPortal(page); await page.goto('/');
+  await page.getByRole('button', { name: 'Open player', exact: true }).click();
+  const before = await settledAccent(page);
+  await sampleRelight(page); await changeSong(page, fixture, 'Golden Hour');
+  // Switch only once the glide is visibly under way.
+  await page.waitForFunction(before => getComputedStyle(document.documentElement).getPropertyValue('--accent') !== before, before, { polling: 'raf' });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const switched = await page.evaluate(() => performance.now());
+  const all = await samples(page);
+  const last = all.filter((sample, index) => index && sample.accent !== all[index - 1].accent).at(-1)!;
+  // The short glide is 300ms; left alone, the full glide keeps changing the color for about a second.
+  expect(last.at - switched).toBeLessThan(650);
 });

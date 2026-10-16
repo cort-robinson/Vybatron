@@ -20,11 +20,11 @@ const plan: Record<string, [duration: number, curve: (t: number) => number]> = {
   '--accent': [1200, bezier(.2, .7, .2, 1)], '--ground': [1600, ease],
 };
 const shown = new Map<string, string>();
-let frame = 0;
+let frame = 0; let target: Record<string, string> | null = null;
 
 // Glides the root colors to `colors`. Reduced motion shortens the glide; `instant` sets them at once.
 export function relight(colors: Record<string, string>, mode: 'glide' | 'quick' | 'instant' = 'glide') {
-  cancelAnimationFrame(frame);
+  cancelAnimationFrame(frame); frame = 0; target = colors;
   const root = document.documentElement.style;
   const from = new Map(Object.keys(colors).map(name => [name, shown.get(name) ?? colors[name]]));
   const apply = (elapsed: number) => {
@@ -38,11 +38,17 @@ export function relight(colors: Record<string, string>, mode: 'glide' | 'quick' 
     }
     return done;
   };
-  if (apply(mode === 'instant' ? Infinity : 0)) return;
+  if (apply(mode === 'instant' ? Infinity : 0)) { target = null; return; }
   const start = performance.now(); let last = start;
   const tick = (now: number) => {
-    if (now - last >= stepMs - 4) { last = now; if (apply(now - start)) return; }
+    if (now - last >= stepMs - 4) { last = now; if (apply(now - start)) { frame = 0; target = null; return; } }
     frame = requestAnimationFrame(tick);
   };
   frame = requestAnimationFrame(tick);
+}
+
+// A glide already under way follows a change of circumstance: a hidden tab lands it at once, and
+// reduced motion finishes it within the short glide from wherever it has reached.
+export function retime(mode: 'quick' | 'instant') {
+  if (target) relight(target, mode);
 }

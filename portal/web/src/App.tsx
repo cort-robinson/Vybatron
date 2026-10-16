@@ -5,7 +5,7 @@ import { usePortal } from './usePortal';
 import { useListening } from './playback';
 import { publicUrl } from './api';
 import { useArtPalette } from './art';
-import { relight } from './relight';
+import { relight, retime } from './relight';
 import { Spectrum } from './components/Spectrum';
 import { statusLabel } from './format';
 import { ActionPopover, Avatar, Empty, ErrorState, FallbackCover, IconButton, Loading } from './components/ui';
@@ -106,6 +106,7 @@ export function App() {
     relight({ '--accent': palette.accent, '--ground': palette.ground }, document.hidden ? 'instant' : reduced ? 'quick' : 'glide');
     document.querySelector('meta[name="theme-color"]')?.setAttribute('content', palette.ground);
   }, [palette]);
+  useEffect(() => { if (hidden) retime('instant'); else if (reduced) retime('quick'); }, [hidden, reduced]);
   const scene = (moving: boolean) => <div className={`ambient-scene ${expanded ? 'immersive' : ''} ${moving ? 'moving' : 'settled'} ${ambient === 'subtle' ? 'subtle' : ''} ${ambient === 'off' ? 'disabled' : ''}`} aria-hidden="true">
     <div className="room-light"><span className="light light-1" /><span className="light light-2" /><span className="light light-3" /></div>
     <ArtworkField url={artwork} />

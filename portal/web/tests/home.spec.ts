@@ -19,7 +19,7 @@ test('Home is the landing surface, with shelves in order and stats loaded after 
   await expect(continuing).toContainText('Evening Light');
   await expect(continuing.getByRole('listitem')).toHaveCount(1);
   await continuing.getByRole('button', { name: 'View now playing' }).click();
-  await expect(page.getByRole('button', { name: 'Back to queue' }).first()).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Close player' }).first()).toBeVisible();
 });
 
 test('every shelf queues through the normal commands', async ({ page }) => {

@@ -103,7 +103,11 @@ server picker, a single status line with voice room and listeners, and the Add m
 a 72px compact player whose progress is a passive hairline, and 64px bottom navigation. Phones
 open to three control rows (timeline, transport, volume with filter and More); on phones 700px
 or shorter the sleeve drops its spectrum strip and tucks the seek bar under the transport so the
-cover keeps its room, and Overdrive puts the caption on a smoked plate where the sun rises behind it. Tablets (600px
+cover keeps its room. At 1023px and below on screens 700px or shorter (a folded phone's cover display,
+a phone browser with its toolbars, landscape), the open player takes the whole screen: the server
+header and bottom navigation yield to the cover, and Close player returns to them. An open player More
+menu may rise over the header so every action fits. Sign-in compacts its cover and spacing below 760px
+of height so Continue with Discord stays above the fold. Tablets (600px
 and wider) add favorite and restart to the compact deck, and open to two rows: the timeline
 across the top, then volume, transport, and filter with More, which lets the cover grow to 640px.
 The page title stays for assistive technology only. Voice room and listeners appear once, in the
@@ -225,9 +229,12 @@ so switching looks is one attribute and removing it is two files and their impor
 - **Horizon:** a sliced sunset tinted by the accent, a seeded angular skyline with blinking
   energon windows, and a perspective neon floor that rolls toward the viewer. The horizon
   sits on top of the deck while browsing and rises to 70% in the sleeve, where the cover
-  eclipses the sun. Sign-in places the chrome headline on the horizon.
+  eclipses the sun. Sign-in stands the cover and spectrum on the horizon, with the sign-in copy on the floor below.
 - **Color:** one fixed orchid neon (`--neon`) and sunset orange are scenery and gradient
   partners only. The cover accent still drives every action and state.
+- **Caption plate:** in the sleeve the title, artist, and any state note sit on a smoked plate (ground
+  at 80%) at every size, since the skyline, sun bands, and floor run behind them. In short landscape
+  the side-by-side controls get the same plate.
 - **Plating:** 4/12px alternating radii (true bevels where `corner-shape` is supported),
   targeting brackets on framed panels, gradient rails instead of hairline borders, and a
   chrome wordmark.

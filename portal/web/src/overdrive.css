@@ -39,7 +39,9 @@ REVERT: everything here is scoped to :root[data-skin='overdrive']; Settings → 
 .ambient-scene:not(.immersive) { --horizon: calc(100% - var(--player) - var(--nav)); --sun: clamp(220px, 34vmin, 400px); }
 .ambient-scene:not(.immersive) .od-skyline { height: clamp(56px, 11vh, 124px); }
 .ambient-scene.immersive { --horizon: 70%; --sun: clamp(300px, 66vmin, 760px); --sun-x: calc(var(--sidebar) + 32px + (100vw - var(--sidebar) - 96px) * .26); }
-.auth-page .ambient-scene { --horizon: calc(50% + 100px); --sun: clamp(300px, 58vmin, 640px); --sun-x: 50%; }
+/* Sign-in: the cover and spectrum stand on the horizon and the sign-in copy sits on the clear floor below. */
+.auth-page .ambient-scene { --horizon: calc(50% + 28px); --sun: clamp(300px, 58vmin, 640px); --sun-x: 50%; }
+@media (max-width: 1023px), (max-height: 760px) { .auth-page .ambient-scene { --horizon: calc(50% + 4px); } }
 .auth-page .ambient-scene .od-skyline { height: clamp(72px, 14vh, 156px); }
 .auth-page .od-horizon { opacity: .92; }
 
@@ -132,6 +134,8 @@ REVERT: everything here is scoped to :root[data-skin='overdrive']; Settings → 
   .mobile-add { border-radius: 4px 12px 4px 12px; box-shadow: inset 0 -2px 0 color-mix(in oklab, var(--neon) 55%, transparent), 0 8px 22px -10px var(--accent); }
   input, select { border-radius: 4px 10px 4px 10px; }
   input:focus-visible, select:focus-visible { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 18%, transparent); }
+  /* The search field draws its own focus ring around the whole field; the bare input inside stays flat. */
+  .search-field input:focus-visible { box-shadow: none; }
 
   /* ── Lists ──────────────────────────────────────────────────────────── */
   .track-row, .library-track-list > li, .history-list > li, .result-list > li { transition: background-color 160ms, background-position 420ms var(--ease-out); }
@@ -231,19 +235,18 @@ REVERT: everything here is scoped to :root[data-skin='overdrive']; Settings → 
     animation: od-scan 1.3s cubic-bezier(.3, .1, .2, 1) 120ms 1 both; }
   .motion-live .od-cover-scan::after { content: ''; position: absolute; left: 0; right: 0; top: 0; height: 2px; translate: 0 -10px; background: color-mix(in oklab, var(--accent) 55%, white); opacity: .4; box-shadow: 0 0 14px 2px var(--accent); mix-blend-mode: screen; animation: od-sweep 9s linear 2s infinite; }
   .sleeve-spectrum { filter: drop-shadow(0 0 8px color-mix(in oklab, var(--neon) 35%, transparent)); }
-  .sleeve-main .player-title-row h2 { text-shadow: 0 0 30px color-mix(in oklab, var(--accent) 40%, transparent), 0 2px 0 color-mix(in oklab, var(--neon) 35%, transparent); }
+  /* The caption sits where the skyline, sun bands, and floor grid run, so the title, artist, and any
+     state note ride a smoked plate. A wide title glow would be clipped by the plate's line clamp. */
+  .sleeve-main > .player-identity, .sleeve-main > .player-context:has(> p) { width: fit-content; max-width: min(100%, 560px); padding: 8px 24px 10px; border-radius: 4px 14px 4px 14px; background: color-mix(in oklab, var(--ground) 80%, transparent); }
+  .sleeve-main > .player-context:has(> p) { padding-block: 8px; }
+  .sleeve-main .player-title-row h2 { text-shadow: 0 2px 0 color-mix(in oklab, var(--neon) 35%, transparent); }
   .sleeve-queue { border-radius: 6px 22px 6px 22px; background: var(--hud), var(--rail) top / 100% 1px no-repeat, color-mix(in oklab, var(--ground) 62%, transparent); }
   .expanded .player-footer { border-top-color: transparent; }
 
   /* ── Sign-in ────────────────────────────────────────────────────────── */
-  .sign-in h1 {
-    background: linear-gradient(180deg, #f1f8ff 0%, #b5d2ff 42%, #ffffff 52%, #3a1f63 53%, #8a4fc8 64%, #ff9ad8 86%, #fff1fa 100%);
-    -webkit-background-clip: text; background-clip: text; color: transparent; padding-bottom: .08em;
-    filter: drop-shadow(0 0 1.5px rgb(10 4 24)) drop-shadow(0 3px 0 rgb(10 4 24 / .85)) drop-shadow(0 0 22px color-mix(in oklab, var(--neon) 45%, transparent));
-  }
   .signin-sleeve { border-radius: 6px 22px 6px 22px; box-shadow: var(--shadow-sleeve), 0 0 0 1px color-mix(in oklab, var(--accent) 35%, transparent), 0 30px 80px -24px color-mix(in oklab, var(--neon) 80%, transparent); }
   .discord-signin { border-radius: 4px 16px 4px 16px; }
-  .sign-in > p, .signin-footnote, .auth-footer { text-shadow: 0 1px 12px rgb(0 0 0 / .9); }
+  .sign-in > p, .signin-footnote { text-shadow: 0 1px 12px rgb(0 0 0 / .9); }
 }
 
 /* Plated corners where the browser can draw true bevels (outline and focus follow them). */
@@ -268,14 +271,14 @@ REVERT: everything here is scoped to :root[data-skin='overdrive']; Settings → 
     .od-hud i { width: 20px; height: 20px; }
   }
 }
-/* On short phones the sun rises behind the caption, so the caption gets a smoked plate. */
-@media (max-width: 599px) and (max-height: 700px) {
-  :root[data-skin='overdrive'] .sleeve-main > .player-identity { width: fit-content; max-width: 100%; padding: 6px 16px 8px; border-radius: 4px 14px 4px 14px; background: color-mix(in oklab, var(--ground) 80%, transparent); }
-  /* The title's wide glow is clipped by its line clamp and would read as a box on the plate. */
-  :root[data-skin='overdrive'] .sleeve-main .player-title-row h2 { text-shadow: 0 2px 0 color-mix(in oklab, var(--neon) 35%, transparent); }
+@media (max-width: 1023px) {
+  :root[data-skin='overdrive'] .sleeve-main > :is(.player-identity, .player-context:has(> p)) { padding: 6px 16px 8px; }
 }
 @media (max-width: 1023px) and (min-width: 600px) and (max-height: 500px) {
   :root[data-skin='overdrive'] :is(.od-cover-hud, .od-cover-scan, .od-cover-plate) { display: none; }
+  /* The side-by-side controls sit over the sun and skyline, so they get the caption's smoked plate
+     too (no blur: this footer holds the fixed More menu). */
+  :root[data-skin='overdrive'] .expanded .player-footer { margin-bottom: 8px; border-left-color: transparent; border-radius: 4px 16px 4px 16px; background: color-mix(in oklab, var(--ground) 84%, transparent); }
 }
 
 /* ── Performance mode: no CRT texture, glow filters, or blend layers; the scene is already still. */

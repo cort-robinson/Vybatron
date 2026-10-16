@@ -56,7 +56,7 @@ for (const width of [320, 390]) {
       await open.click();
       await expect(player.getByRole('heading', { name: longTitle, exact: true })).toBeVisible();
       expect(fixture.commands).toHaveLength(0);
-      await player.getByRole('button', { name: 'Back to queue', exact: true }).first().click();
+      await player.getByRole('button', { name: 'Close player', exact: true }).first().click();
       await identity.click();
       await expect(player.getByRole('heading', { name: longTitle, exact: true })).toBeFocused();
       expect(fixture.commands).toHaveLength(0);

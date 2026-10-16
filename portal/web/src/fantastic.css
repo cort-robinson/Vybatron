@@ -60,8 +60,10 @@ REVERT: everything here is scoped to :root[data-skin='fantastic']; Settings → 
   .ambient-scene::after { background: radial-gradient(120% 90% at 60% 35%, transparent 45%, color-mix(in oklab, var(--ff-base) 70%, transparent) 100%); }
   .room-light { opacity: .42; }
   .ambient-scene.immersive { --ff-horizon: 72%; --planet: clamp(340px, 64vmin, 760px); --planet-x: calc(var(--sidebar) + 32px + (100vw - var(--sidebar) - 96px) * .26); }
-  .auth-page .ambient-scene { --ff-horizon: calc(50% + 120px); --planet: clamp(280px, 46vmin, 520px); --planet-x: 50%; }
+  /* Sign-in: the cover and spectrum stand on the horizon and the sign-in copy sits on the bay below. */
+  .auth-page .ambient-scene { --ff-horizon: calc(50% + 28px); --planet: clamp(280px, 46vmin, 520px); --planet-x: 50%; }
 }
+@media (max-width: 1023px), (max-height: 760px) { :root[data-skin='fantastic'] .auth-page .ambient-scene { --ff-horizon: calc(50% + 4px); } }
 
 .ff-scene { position: absolute; inset: 0; opacity: .66; transition: opacity 900ms var(--ease-out); animation: ff-fade 700ms var(--ease-out); }
 .ambient-scene.immersive .ff-scene { opacity: 1; }
@@ -272,10 +274,8 @@ REVERT: everything here is scoped to :root[data-skin='fantastic']; Settings → 
   .expanded .player-footer { border-top-color: transparent; }
 
   /* ── Sign-in ────────────────────────────────────────────────────────── */
-  .sign-in h1 { font-family: var(--display); font-weight: 400; font-stretch: normal; font-size: clamp(26px, 3.4vw, 44px); line-height: 1.25; letter-spacing: .01em; color: var(--ff-cream);
-    text-shadow: 2px 2px 0 color-mix(in oklab, var(--ff-suit) 85%, transparent), 0 2px 24px rgb(0 0 0 / .6); }
   .signin-sleeve { border-radius: 22px; box-shadow: 0 0 0 14px var(--ff-teal), 0 0 0 15px rgb(0 0 0 / .3), 0 44px 80px -30px rgb(0 0 0 / .85); }
-  .sign-in > p, .signin-footnote, .auth-footer { text-shadow: 0 1px 12px rgb(0 0 0 / .9); }
+  .sign-in > p, .signin-footnote { text-shadow: 0 1px 12px rgb(0 0 0 / .9); }
 }
 
 @keyframes ff-orbit { to { transform: rotate(360deg); } }
@@ -287,7 +287,7 @@ REVERT: everything here is scoped to :root[data-skin='fantastic']; Settings → 
     .ambient-scene { --planet-x: 74%; }
     .ambient-scene.immersive { --ff-horizon: 64%; --planet: clamp(280px, 90vw, 520px); --planet-x: 50%; }
     .ff-krackle { left: -12vw; top: 4vh; width: 130vw; opacity: .6; }
-    /* In the sleeve the storm starts below Back to queue instead of crowding it. */
+    /* In the sleeve the storm starts below Close player instead of crowding it. */
     .app-shell .ambient-scene.immersive .ff-krackle { top: calc(var(--mobile-header) + 56px); }
     .sleeve-main > .player-identity, .sleeve-main > .player-context:has(> p) { padding: 8px 16px 10px; border-radius: 18px; }
     .sidebar { background: var(--piping-bottom), var(--chrome); }

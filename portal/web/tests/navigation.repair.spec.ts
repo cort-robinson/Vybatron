@@ -42,7 +42,7 @@ test('server settings drafts survive navigation and opening the artwork player',
   await page.getByRole('button', { name: 'Server', exact: true }).click();
   await page.getByLabel('Default volume', { exact: true }).fill('42');
   await page.getByRole('button', { name: 'Open player', exact: true }).click();
-  await page.getByRole('button', { name: 'Back to queue', exact: true }).click();
+  await page.getByRole('button', { name: 'Close player', exact: true }).click();
   await expect(page.getByLabel('Default volume', { exact: true })).toHaveValue('42');
   await page.getByRole('button', { name: 'Session', exact: true }).click();
   await page.getByRole('button', { name: 'Server', exact: true }).click();

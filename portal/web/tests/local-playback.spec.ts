@@ -1,26 +1,15 @@
 import { test, expect, type Page } from '@playwright/test';
 import { gotoSession, mockPortal } from './fixtures';
 
-// A stand-in for YouTube's embed API at the network boundary: it records what the
-// portal asks the player to do and answers with the player's own state events.
-const fakeApi = `
-window.ytCalls = [];
-window.YT = { Player: class {
-  constructor(frame, { events }) { this.events = events; this.state = -1; this.time = 0; this.id = ''; setTimeout(() => events.onReady({ target: this }), 0); }
-  emit(state) { this.state = state; this.events.onStateChange({ data: state, target: this }); }
-  loadVideoById({ videoId, startSeconds }) { ytCalls.push('load:' + videoId + '@' + (startSeconds || 0)); this.id = videoId; this.time = startSeconds || 0; setTimeout(() => this.emit(1), 0); }
-  cueVideoById({ videoId, startSeconds }) { ytCalls.push('cue:' + videoId); this.id = videoId; this.time = startSeconds || 0; setTimeout(() => this.emit(5), 0); }
-  playVideo() { ytCalls.push('play'); this.emit(1); }
-  pauseVideo() { ytCalls.push('pause'); this.emit(2); }
-  stopVideo() { ytCalls.push('stop'); this.state = -1; }
-  seekTo(seconds) { ytCalls.push('seek:' + seconds); this.time = seconds; }
-  setVolume(volume) { ytCalls.push('volume:' + volume); }
-  getCurrentTime() { return this.time; } getDuration() { return 244; } getPlayerState() { return this.state; }
-  getVideoData() { return { video_id: this.id }; }
-  destroy() {}
-} };
-window.onYouTubeIframeAPIReady?.();
-`;
+// A minute of silent 8 kHz mono WAV: real, decodable audio for the media element.
+function silence(seconds = 60) {
+  const samples = 8000 * seconds; const wav = Buffer.alloc(44 + samples, 128);
+  wav.write('RIFF', 0); wav.writeUInt32LE(36 + samples, 4); wav.write('WAVE', 8); wav.write('fmt ', 12);
+  wav.writeUInt32LE(16, 16); wav.writeUInt16LE(1, 20); wav.writeUInt16LE(1, 22); wav.writeUInt32LE(8000, 24);
+  wav.writeUInt32LE(8000, 28); wav.writeUInt16LE(1, 32); wav.writeUInt16LE(8, 34); wav.write('data', 36); wav.writeUInt32LE(samples, 40);
+  return wav;
+}
+const audioBody = silence();
 const youtubeTrack = (id: string, title: string) => ({ id: id.padEnd(24, '0'), title, author: 'M83', uri: `https://www.youtube.com/watch?v=${id}`, source: 'youtube',
   durationMs: 244_000, artworkUrl: null, isStream: false, requestedBy: null });
 const general = { id: 'voice', name: 'General' };
@@ -30,13 +19,23 @@ async function portal(page: Page, { inVoice, idle = false }: { inVoice: boolean;
   const s = fixture.state.snapshot.session;
   s.viewerVoice = inVoice ? general : null;
   if (idle) Object.assign(s, { status: 'idle', current: null, queue: [], listeners: [], voiceChannel: null, canControl: false });
+  // Record what the portal asks the audio element to do.
+  await page.addInitScript(() => {
+    const calls: string[] = []; (window as unknown as { audioCalls: string[] }).audioCalls = calls;
+    const media = HTMLMediaElement.prototype; const play = media.play; const pause = media.pause;
+    media.play = function () { calls.push(`play:${this.dataset.video}@${this.src.split('#t=')[1] || 0}`); return play.call(this); };
+    media.pause = function () { calls.push('pause'); return pause.call(this); };
+  });
+  const audio: string[] = [];
+  await page.route('**/api/guilds/*/audio/*', route => {
+    audio.push(new URL(route.request().url()).pathname.split('/').pop()!);
+    return route.fulfill({ status: 200, contentType: 'audio/wav', body: audioBody });
+  });
   await page.route('**/api/guilds/*/search?*', route => route.fulfill({ json: { tracks: [youtubeTrack('dX3k_QDnzHE', 'Midnight City'), youtubeTrack('Fk3RbKWbmtg', 'Wait')], notice: null } }));
-  await page.route('https://www.youtube.com/iframe_api', route => route.fulfill({ contentType: 'text/javascript', body: fakeApi }));
-  await page.route('https://www.youtube-nocookie.com/**', route => route.fulfill({ contentType: 'text/html', body: '<!doctype html><title>player</title>' }));
   await gotoSession(page);
-  return fixture;
+  return Object.assign(fixture, { audio });
 }
-const calls = (page: Page) => page.evaluate(() => (window as unknown as { ytCalls?: string[] }).ytCalls || []);
+const calls = (page: Page) => page.evaluate(() => (window as unknown as { audioCalls?: string[] }).audioCalls || []);
 const title = (page: Page) => page.getByTestId('player').locator('.compact-track-title');
 const openMenu = (page: Page) => page.getByTestId('player').getByRole('button', { name: 'More playback controls' }).click();
 async function playOn(page: Page, choice: string) {
@@ -51,7 +50,7 @@ async function addSongs(page: Page) {
   await page.keyboard.press('Escape');
 }
 
-test('outside voice the portal plays on this device without sending Discord commands', async ({ page }) => {
+test('outside voice the portal plays audio on this device without sending Discord commands', async ({ page }) => {
   const fixture = await portal(page, { inVoice: false });
   await expect(title(page)).toHaveText('Nothing playing');
   await expect(page.getByRole('heading', { name: 'Your Queue' })).toBeAttached();
@@ -59,20 +58,27 @@ test('outside voice the portal plays on this device without sending Discord comm
 
   await addSongs(page);
   await expect(title(page)).toHaveText('Midnight City');
-  await expect(page.locator('.local-video iframe')).toBeVisible();
-  await expect.poll(() => calls(page)).toContain('load:dX3k_QDnzHE@0');
+  await expect.poll(() => calls(page)).toContain('play:dX3k_QDnzHE@0');
+  // Audio only: no video, no YouTube frame or script on the page.
+  await expect(page.locator('iframe, video')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Pause playback' })).toBeEnabled();
   await page.getByRole('button', { name: 'Pause playback' }).click();
   await expect(page.getByRole('button', { name: 'Resume playback' })).toBeEnabled();
   await page.getByRole('button', { name: 'Skip current song' }).click();
   await expect(title(page)).toHaveText('Wait');
-  await expect.poll(() => calls(page)).toEqual(expect.arrayContaining(['pause', 'load:Fk3RbKWbmtg@0']));
+  await expect.poll(() => calls(page)).toEqual(expect.arrayContaining(['pause', 'play:Fk3RbKWbmtg@0']));
+  await expect.poll(() => fixture.audio).toContain('Fk3RbKWbmtg');
   expect(fixture.commands).toEqual([]);
 
-  // The queue survives a reload, waiting paused for the listener.
+  // The queue survives a reload, waiting paused; nothing downloads until play.
+  await page.getByRole('button', { name: 'Pause playback' }).click();
   await page.reload();
   await expect(title(page)).toHaveText('Wait');
   await expect(page.getByRole('button', { name: 'Resume playback' })).toBeEnabled();
-  await expect.poll(() => calls(page)).toContain('cue:Fk3RbKWbmtg');
+  expect(await calls(page)).toEqual([]);
+  await page.getByRole('button', { name: 'Resume playback' }).click();
+  await expect.poll(() => calls(page)).toContainEqual(expect.stringMatching(/^play:Fk3RbKWbmtg@/));
+  await expect(page.getByRole('button', { name: 'Pause playback' })).toBeEnabled();
   // The Discord session already playing can be joined from here.
   await openMenu(page);
   await expect(page.getByRole('button', { name: 'Join the session in General' })).toBeEnabled();
@@ -80,9 +86,9 @@ test('outside voice the portal plays on this device without sending Discord comm
 });
 
 test('in voice the portal keeps controlling the Discord session', async ({ page }) => {
-  await portal(page, { inVoice: true });
+  const fixture = await portal(page, { inVoice: true });
   await expect(title(page)).toHaveText('Evening Light');
-  await expect(page.locator('.local-video')).toHaveCount(0);
+  expect(fixture.audio).toEqual([]);
 });
 
 test('moving to voice casts this device’s queue and place into the listener’s channel', async ({ page }) => {
@@ -99,14 +105,13 @@ test('moving to voice casts this device’s queue and place into the listener’
   await page.evaluate(snapshot => (window as unknown as { portalTest: { emit: (data: unknown) => void } }).portalTest.emit(snapshot), fixture.state.snapshot);
   await openMenu(page);
   await expect(page.getByRole('button', { name: 'Move to General' })).toBeEnabled();
-  await expect(page.locator('.local-video')).toHaveCount(1);
+  expect(await calls(page)).not.toContain('pause');
   await page.getByRole('button', { name: 'Move to General' }).click();
   await expect(title(page)).toHaveText('Moved In');
   const moved = fixture.commands.at(-1)!;
   expect(moved).toMatchObject({ command: 'transfer', tracks: ['https://www.youtube.com/watch?v=dX3k_QDnzHE', 'https://www.youtube.com/watch?v=Fk3RbKWbmtg'],
     options: { paused: false, volume: 100, repeat: 'off' } });
   expect(moved.options!.position).toBeGreaterThanOrEqual(0);
-  await expect(page.locator('.local-video')).toHaveCount(0);
   // This device went quiet before Discord took over.
   await expect.poll(() => calls(page)).toContain('pause');
 });
@@ -119,16 +124,17 @@ test('moving here can leave Discord playing or stop it', async ({ page }) => {
   await dialog.getByRole('button', { name: 'Listen here too' }).click();
   // Songs from other catalogs play here through their YouTube match, from the same spot.
   await expect(title(page)).toHaveText('Midnight City');
-  await expect.poll(() => calls(page)).toContainEqual(expect.stringMatching(/^load:dX3k_QDnzHE@1\d\d$/));
+  await expect.poll(() => calls(page)).toContainEqual(expect.stringMatching(/^play:dX3k_QDnzHE@1\d\d$/));
   await expect(page.locator('.track-row')).toHaveCount(4);
   expect(fixture.commands).toEqual([]);
 
   await playOn(page, 'Join the session in General');
   await expect(title(page)).toHaveText('Evening Light');
+  await expect.poll(() => calls(page)).toContain('pause');
   await playOn(page, 'This device');
   await page.getByRole('dialog').getByRole('button', { name: 'Move here' }).click();
   await expect.poll(() => fixture.commands.map(command => command.command)).toEqual(['stop']);
-  await expect(page.locator('.local-video')).toHaveCount(1);
+  await expect(page.getByRole('heading', { name: 'Your Queue' })).toBeAttached();
 });
 
 test('home lists queue on this device from the tracks the portal already shows', async ({ page }) => {

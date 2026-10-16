@@ -11,6 +11,8 @@ export const LIMITS = Object.freeze({
   authFileBytes: 4 * 1024 * 1024, staticBytes: 16 * 1024 * 1024,
   urlBytes: 4096, headerBytes: 16 * 1024,
   requestMs: 10_000, upstreamMs: 10_000, commandMs: 90_000,
+  // Device playback: the bot fetches a whole track before its first byte range.
+  audioStreams: 4, audioMs: 60_000, audioBytes: 40 * 1024 * 1024,
   // pollMs is the safety net without the bot change feed; with a healthy feed
   // streams are woken on change and only poll for revocation every pollFeedMs.
   pollMs: 3000, pollFeedMs: 10_000, changesMs: 25_000, changesRetryMaxMs: 30_000,

@@ -12,6 +12,7 @@ import { publicCommands, executePortalCommand } from './commands.js';
 import { fail, safeError } from './errors.js';
 import { createCommandTimings, commandTimingSpan } from './timing.js';
 import { createChangeFeed } from './changes.js';
+import { createAudioCache, sendAudio } from './audio.js';
 
 const hash = value => createHash('sha256').update(value).digest();
 function json(response, status, body, maxBytes) {
@@ -53,6 +54,7 @@ export function startPortalBridge(client, {
   const revisions = createRevisions(client);
   const timings = createCommandTimings();
   const changes = createChangeFeed(client, revisions);
+  const audio = createAudioCache(client);
   const measuredPolicy = { ...policy, guild: (...args) => commandTimingSpan('authorization', () => policy.guild(...args)) };
   const commands = loadCommandsData();
   // Every rejection is observed even if no caller waits for startup readiness.
@@ -128,6 +130,15 @@ export function startPortalBridge(client, {
           try { cleared = client.stats.clearRequests(who.user.id); } catch { fail(503, 'stats_unavailable', 'Your request stats could not be cleared. Try again shortly.'); }
           return json(response, 200, { ok: true, cleared }, maxResponseBytes);
         }
+        const audioMatch = url.pathname.match(/^\/v1\/guilds\/(\d{1,22})\/audio\/([\w-]{11})$/);
+        if (audioMatch && request.method === 'GET') {
+          // Membership only, like search. A phone makes many range requests per
+          // song, so the Gateway cache vouches when it can instead of REST rounds.
+          const actorId = url.searchParams.get('actorId');
+          const context = policy.gatewayGuild?.(actorId, audioMatch[1]) || await policy.guild(actorId, audioMatch[1], undefined, { channelScope: 'none' });
+          if (!context.member) fail(403, 'membership_required', 'Join this server to listen to its music.');
+          return sendAudio(request, response, await audio.get(audioMatch[2]));
+        }
         const match = url.pathname.match(/^\/v1\/guilds\/(\d{1,22})(?:\/(library|search|commands|diagnostics|activity|configuration|stats))?$/);
         if (!match) fail(404, 'not_found', 'That bridge endpoint does not exist.');
         const [, guildId, resource] = match;
@@ -201,6 +212,7 @@ export function startPortalBridge(client, {
       await closed;
     }
     revisions.close();
+    audio.clear();
     policy.close();
     timings.close();
     server.removeAllListeners('connection'); server.removeAllListeners('clientError');

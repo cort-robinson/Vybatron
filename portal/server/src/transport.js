@@ -7,6 +7,7 @@ const safeErrors = {
   401: ['unauthenticated', 'Sign in with Discord to continue.'],
   403: ['forbidden', 'Your current Discord permissions or voice state do not allow this action.'],
   404: ['not_found', 'This guild or resource is unavailable to you.'],
+  413: ['audio_too_long', 'This song is too long to play on this device.'],
   409: ['stale_revision', 'The session changed. Refresh before retrying this action.'],
   429: ['busy', 'The bot is busy. Please try again shortly.'],
   503: ['unavailable', 'The bot or audio service is unavailable. Refresh before making another change.'],
@@ -40,6 +41,50 @@ export class Transport {
     // behind, or occupies, the bounded protected-request pool.
     const feed = { keepAlive: true, maxSockets: 1, maxFreeSockets: 1 };
     this.feedAgents = { http: new http.Agent(feed), https: new https.Agent(feed) };
+    // Audio streams to a phone for as long as its connection takes, so it has
+    // its own small pool and never holds the protected-request slots.
+    this.audioActive = 0;
+    this.audioAgent = new http.Agent({ keepAlive: true, maxSockets: limits.audioStreams, maxFreeSockets: 2 });
+  }
+
+  // Passes one audio byte range from the bot straight to the browser. Only an
+  // audio body with a sane length and range is forwarded; errors stay sanitized.
+  async audio(endpoint, actorId, { range, signal, res }) {
+    if (this.audioActive >= this.limits.audioStreams) throw busy();
+    this.audioActive++;
+    try {
+      await new Promise((resolve, reject) => {
+        const url = new URL(endpoint, this.config.botUrl); url.searchParams.set('actorId', actorId);
+        const req = (url.protocol === 'https:' ? https : http).request(url, {
+          headers: { Authorization: `Bearer ${this.config.bridgeToken}`, 'Accept-Encoding': 'identity', ...(range && { Range: range }) },
+          agent: url.protocol === 'https:' ? this.httpsAgent : this.audioAgent, signal, maxHeaderSize: this.limits.headerBytes,
+        }, response => {
+          clearTimeout(timer);
+          const status = response.statusCode; const type = response.headers['content-type'] || '';
+          const length = Number(response.headers['content-length']); const contentRange = response.headers['content-range'];
+          const validRange = value => typeof value === 'string' && /^bytes (\d+-\d+|\*)\/\d+$/.test(value);
+          if (status === 416 && validRange(contentRange)) { response.resume(); res.writeHead(416, { 'Content-Range': contentRange }); res.end(); resolve(); return; }
+          // A song still arriving streams without a length; its bytes are counted instead.
+          const unsized = status === 200 && response.headers['content-length'] === undefined && response.headers['transfer-encoding'] === 'chunked';
+          if ([200, 206].includes(status) && /^audio\/(ogg|mp4|webm)$/.test(type) && (unsized || (Number.isSafeInteger(length) && length <= this.limits.audioBytes))
+            && (status === 200 || validRange(contentRange))) {
+            res.writeHead(status, { 'Content-Type': type, ...(!unsized && { 'Content-Length': length }), 'Accept-Ranges': 'bytes', ...(status === 206 && { 'Content-Range': contentRange }) });
+            let sent = 0;
+            response.on('data', chunk => { sent += chunk.length; if (sent > this.limits.audioBytes) { res.destroy(); req.destroy(); } });
+            response.pipe(res);
+            response.once('end', resolve); response.once('error', () => { res.destroy(); resolve(); });
+            res.once('close', () => { req.destroy(); resolve(); });
+            return;
+          }
+          response.resume();
+          const [code, message] = status !== 200 && safeErrors[status] || safeErrors[503];
+          reject(new HttpError(status !== 200 && safeErrors[status] ? status : 503, code, message));
+        });
+        const timer = setTimeout(() => req.destroy(new Error('Upstream timeout')), this.limits.audioMs); timer.unref();
+        req.once('error', () => { clearTimeout(timer); reject(unavailable()); });
+        req.end();
+      });
+    } finally { this.audioActive--; }
   }
 
   async request(url, { method = 'GET', headers = {}, body, signal, timeout = this.limits.upstreamMs, stop = false } = {}) {

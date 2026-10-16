@@ -19,10 +19,13 @@ moves the session between this device and Discord (Play on).
   here too** leaves it playing.
   Search, favorites, mixes and stats are still read from the bot, and library edits
   (favorite removal, mix deletion) still go to it.
-- Audio comes from the official YouTube embed (`src/youtube.ts`, `youtube-nocookie.com`).
-  Songs from other catalogs play their closest YouTube search match. YouTube loads only
-  once a song is queued on this device. The CSP allows `https://www.youtube.com` scripts
-  and `https://www.youtube-nocookie.com` frames for this.
+- Audio only, no video: one `<audio>` element plays `/api/guilds/:id/audio/:videoId`,
+  Ogg Opus decoded by Lavalink's vybatron-audio plugin (iOS 18.4+ for Opus) and served by
+  the bot, from the start while it arrives and by byte range once complete. It keeps playing
+  in the background and on the lock screen, with Media Session controls. A song with a
+  YouTube link starts inside the tap that asked for it (iOS requires this); songs from
+  other catalogs play their closest YouTube match. The next song is warmed in the bot's
+  cache while the current one plays. CSP: `media-src 'self'`; no third-party script or frame.
 - Discord-only actions (filters, autoplay/radio, vote skip, saving sessions as mixes,
   saved-session resume, and saving a new favorite) are hidden or disabled locally.
 

@@ -78,11 +78,13 @@ never measured. They make no sync claim and carry no text that implies one.
 - **Fixed state colors:** rose for favorites, amber for pause, Warm, recovery, and
   offline attention, red for unavailable and destructive actions. These never follow the
   artwork, so state stays recognizable with any cover.
-- Colors are registered `@property <color>` values set on `:root`. The light pools transition
-  their glows every frame (2.2s); they are three elements. The accent (1.2s) and ground (1.6s),
-  which every element reads, glide in steps about 20 times a second (`src/relight.ts`): a CSS
-  transition on `:root` restyled and repainted the whole page every frame and stuttered on phones
-  (tests/smoothness.spec.ts guards both). The spectrum canvas eases toward the same accent.
+- The root palette commits once per cover. The room dissolves between two complete, fixed-color
+  scenery layers over 2.2s (`src/components/RoomLight.tsx`), reusing painted gradients instead of
+  tweening inherited page variables or repainting large textures each frame. The outgoing room
+  stays opaque, replacement scenery is immediately ready, and ambient animation phases continue.
+  Rapid skips retain only the latest pending palette; hidden tabs settle immediately and reduced
+  motion finishes within 300ms. Controls retain their native color transitions and the spectrum
+  canvas eases toward the same accent (`tests/smoothness.spec.ts` guards continuity).
 
 ## Typography
 
@@ -141,7 +143,7 @@ one-segment baseline and stops drawing. Without motion it renders one still fram
 
 ## Motion
 
-One authored moment: the room relighting on track change (accent 1.2s, glows 2.2s). Light
+One authored moment: the room relighting on track change (a 2.2s dissolve). Light
 pools drift over 38-58s only while playing. The sleeve rises in once, and menus, dialogs, and
 toasts use short ease-out entrances. Reduced motion removes drift, spatial entrances, and
 hover lifts while keeping color changes and the static pending mark.

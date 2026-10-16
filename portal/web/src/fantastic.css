@@ -57,7 +57,8 @@ REVERT: everything here is scoped to :root[data-skin='fantastic']; Settings → 
 /* ── Earth-828 ───────────────────────────────────────────────────────────── */
 :root[data-skin='fantastic'] {
   .ambient-scene { background: var(--ff-base); --ff-horizon: calc(100% - var(--player) - var(--nav)); --planet: clamp(250px, 36vmin, 440px); --planet-x: calc(var(--sidebar) + (100vw - var(--sidebar)) * .7); }
-  .ambient-scene::after { background: radial-gradient(120% 90% at 60% 35%, transparent 45%, color-mix(in oklab, var(--ff-base) 70%, transparent) 100%); }
+  .room-colors { --ff-base: color-mix(in oklab, var(--ground) 52%, var(--ff-navy)); background: var(--ff-base); }
+  .room-colors::after { background: radial-gradient(120% 90% at 60% 35%, transparent 45%, color-mix(in oklab, var(--ff-base) 70%, transparent) 100%); }
   .room-light { opacity: .42; }
   .ambient-scene.immersive { --ff-horizon: 72%; --planet: clamp(340px, 64vmin, 760px); --planet-x: calc(var(--sidebar) + 32px + (100vw - var(--sidebar) - 96px) * .26); }
   /* Sign-in: the cover and spectrum stand on the horizon and the sign-in copy sits on the bay below. */
@@ -262,8 +263,8 @@ REVERT: everything here is scoped to :root[data-skin='fantastic']; Settings → 
   /* Channel change: the picture rolls open from a bright line, the way a tube set warms up. */
   .ff-tune { overflow: hidden; }
   .ff-tune::before, .ff-tune::after { content: ''; position: absolute; left: 0; right: 0; height: 50%; animation: ff-tune 640ms cubic-bezier(.7, 0, .2, 1) 60ms both; }
-  .ff-tune::before { top: 0; background: linear-gradient(to top, #fff4dc 0 2px, color-mix(in oklab, var(--ff-base), black 55%) 2px); }
-  .ff-tune::after { bottom: 0; background: linear-gradient(to bottom, #fff4dc 0 2px, color-mix(in oklab, var(--ff-base), black 55%) 2px); }
+  .ff-tune::before { --tune-away: -100%; top: 0; background: linear-gradient(to top, #fff4dc 0 2px, color-mix(in oklab, var(--ff-base), black 55%) 2px); }
+  .ff-tune::after { --tune-away: 100%; bottom: 0; background: linear-gradient(to bottom, #fff4dc 0 2px, color-mix(in oklab, var(--ff-base), black 55%) 2px); }
   .sleeve-main .player-title-row h2 { text-shadow: 0 2px 0 color-mix(in oklab, var(--ff-suit) 45%, transparent); }
   /* The now-playing caption sits on an enamel plate, like a broadcast title card, so the planet,
      skyline, and bay never run through the title or the artist. */
@@ -279,7 +280,7 @@ REVERT: everything here is scoped to :root[data-skin='fantastic']; Settings → 
 }
 
 @keyframes ff-orbit { to { transform: rotate(360deg); } }
-@keyframes ff-tune { 0% { height: 50%; } 18% { height: 49.4%; } 100% { height: 0%; } }
+@keyframes ff-tune { 0% { transform: translateY(0); } 18% { transform: translateY(calc(var(--tune-away) * .012)); } 100% { transform: translateY(var(--tune-away)); } }
 
 /* ── Phone and tablet ───────────────────────────────────────────────────── */
 @media (max-width: 1023px) {
@@ -301,7 +302,7 @@ REVERT: everything here is scoped to :root[data-skin='fantastic']; Settings → 
     .home-shelf-header h2 { font-size: 16px; }
     /* The compact deck's hairline is progress; it heats toward flame instead of carrying the piping. */
     .persistent-player.collapsed { background: linear-gradient(to top, color-mix(in oklab, var(--ff-suit) 8%, transparent), transparent 70%), var(--chrome); }
-    .compact-progress { height: 2px; background: linear-gradient(90deg, var(--accent), color-mix(in oklab, var(--accent), var(--ff-flame) 60%) var(--range-progress, 0%), transparent 0); }
+    .compact-progress { --progress-fill: linear-gradient(90deg, var(--accent), color-mix(in oklab, var(--accent), var(--ff-flame) 60%)); }
     .sleeve-artwork { --bezel: 11px; }
     .ff-tv { border-radius: 26px; }
     .ff-tv i { width: 8px; height: 8px; bottom: calc(var(--bezel) / 2 - 4px); }

@@ -5,8 +5,8 @@ import { usePortal } from './usePortal';
 import { useListening } from './playback';
 import { publicUrl } from './api';
 import { useArtPalette } from './art';
-import { relight, retime } from './relight';
 import { Spectrum } from './components/Spectrum';
+import { RoomLight } from './components/RoomLight';
 import { statusLabel } from './format';
 import { ActionPopover, Avatar, Empty, ErrorState, FallbackCover, IconButton, Loading } from './components/ui';
 import { Player } from './components/Player';
@@ -99,19 +99,20 @@ export function App() {
   const motion = !still && connection === 'live' && snapshot?.session.status === 'playing';
   const artwork = publicUrl(snapshot?.session.current?.artworkUrl);
   const palette = useArtPalette(artwork);
-  // The room glides to the new cover's colors: the light pools on their own (styles.css), the accent
-  // and ground in steps (relight.ts). Reduced motion shortens the glide and a hidden tab skips it.
+  // Commit inherited tokens once. The large scenery dissolves between fixed palettes in RoomLight;
+  // controls retain their native color transitions without repeatedly restyling the whole page.
   useEffect(() => {
     palette.glow.forEach((color, index) => document.documentElement.style.setProperty(`--glow-${index + 1}`, color));
-    relight({ '--accent': palette.accent, '--ground': palette.ground }, document.hidden ? 'instant' : reduced ? 'quick' : 'glide');
+    document.documentElement.style.setProperty('--accent', palette.accent);
+    document.documentElement.style.setProperty('--ground', palette.ground);
     document.querySelector('meta[name="theme-color"]')?.setAttribute('content', palette.ground);
   }, [palette]);
-  useEffect(() => { if (hidden) retime('instant'); else if (reduced) retime('quick'); }, [hidden, reduced]);
   const scene = (moving: boolean) => <div className={`ambient-scene ${expanded ? 'immersive' : ''} ${moving ? 'moving' : 'settled'} ${ambient === 'subtle' ? 'subtle' : ''} ${ambient === 'off' ? 'disabled' : ''}`} aria-hidden="true">
-    <div className="room-light"><span className="light light-1" /><span className="light light-2" /><span className="light light-3" /></div>
+    <RoomLight palette={palette} instant={hidden} quick={reduced}>{prepared => <>
     <ArtworkField url={artwork} />
-    {skin === 'overdrive' && <Horizon />}
-    {skin === 'fantastic' && <Earth828 />}
+    {skin === 'overdrive' && <Horizon prepared={prepared} />}
+    {skin === 'fantastic' && <Earth828 prepared={prepared} />}
+    </>}</RoomLight>
   </div>;
   const background = scene(motion);
   // Sign-in has no session to wait for; the horizon idles there whenever ambient motion is allowed.
@@ -153,14 +154,17 @@ function ArtworkField({ url }: { url?: string }) {
   const [shown, setShown] = useState(url);
   useEffect(() => {
     if (!url) { setShown(undefined); return; }
-    setLayers(current => current.includes(url) ? current : [...current.slice(-1), url]);
     let current = true; const image = new Image(); image.referrerPolicy = 'no-referrer'; image.src = url;
-    void image.decode().catch(() => undefined).then(() => { if (current) setShown(url); });
+    void image.decode().then(() => {
+      if (!current) return;
+      setLayers(layers => layers.includes(url) ? layers : [...layers.slice(-1), url]);
+      setShown(url);
+    }, () => { if (current) setShown(undefined); });
     return () => { current = false; };
   }, [url]);
   // Drop faded layers once their fade has finished.
   useEffect(() => {
-    const timer = setTimeout(() => setLayers(current => current.filter(layer => layer === shown)), 1000);
+    const timer = setTimeout(() => setLayers(current => current.filter(layer => layer === shown)), 1200);
     return () => clearTimeout(timer);
   }, [shown]);
   return <>{layers.map(layer => <img key={layer} className={`artwork-field ${layer === shown ? 'shown' : ''}`} src={layer} alt="" referrerPolicy="no-referrer" />)}</>;

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ArrowDownIcon, ArrowUpIcon, DotsThreeIcon, HeartIcon, ListNumbersIcon, PlayIcon, PlusIcon, RadioIcon, ThumbsDownIcon, TrashIcon, DotsSixVerticalIcon, VinylRecordIcon, XIcon } from '@phosphor-icons/react';
+import { ArrowDownIcon, ArrowLineUpIcon, ArrowUpIcon, DotsThreeIcon, HeartIcon, ListNumbersIcon, PlayIcon, PlusIcon, RadioIcon, ThumbsDownIcon, TrashIcon, DotsSixVerticalIcon, VinylRecordIcon, XIcon } from '@phosphor-icons/react';
 import type { Track } from '../types';
 import type { Portal } from '../usePortal';
 import { time, totalTime } from '../format';
@@ -18,6 +18,7 @@ export function Queue({ portal, compact = false, onAdd }: { portal: Portal; comp
   const [dropIndex, setDropIndex] = useState<number | null>(null);
   const [saveSession, setSaveSession] = useState(false);
   const drag = useRef<{ index: number; revision: string; guildId: string } | null>(null);
+  const lift = useRef<Lift | null>(null);
   const local = portal.target === 'local';
   const controllable = can('control') && !pending.length;
   const editable = can('library') && !pending.length;
@@ -26,6 +27,7 @@ export function Queue({ portal, compact = false, onAdd }: { portal: Portal; comp
   const currentPage = Math.min(page, Math.max(0, Math.ceil(queue.length / pageSize) - 1));
   const startIndex = currentPage * pageSize;
   useEffect(() => { setPage(0); drag.current = null; setDropIndex(null); }, [portal.guildId, compact]);
+  useEffect(() => () => { if (lift.current) cancelAnimationFrame(lift.current.frame); }, []);
   useEffect(() => { if (page !== currentPage) setPage(currentPage); }, [page, currentPage]);
   const changePage = (nextPage: number) => { setPage(nextPage); drag.current = null; setDropIndex(null); };
   const change = async (command: string, options: Record<string, number>, revision = snapshot?.revision) => {
@@ -35,6 +37,45 @@ export function Queue({ portal, compact = false, onAdd }: { portal: Portal; comp
     const index = library?.favorites.findIndex(t => t.id === track.id) ?? -1;
     if (index >= 0) await run({ command: 'favorite', subcommand: 'remove', options: { index: index + 1 }, expectedTrackId: track.id }, 'library');
     else await run({ command: 'favorite', subcommand: 'add', options: { position }, expectedRevision: snapshot?.revision }, 'library');
+  };
+  const moveTo = (from: { index: number; revision: string; guildId: string }, index: number) => {
+    if (!snapshot || from.index === index || !controllable) return;
+    if (from.revision !== snapshot.revision || from.guildId !== snapshot.guild.id) { portal.notify('The queue changed while you were moving this song. Review it and try again.', 'error'); return; }
+    void change('move', { from: from.index + 1, to: index + 1 }, from.revision);
+  };
+  // Touch and pen reorder by holding the handle: the row follows the finger, the list scrolls at its
+  // edges, and the song lands on the row under the finger. A mouse uses native drag and drop below.
+  const place = (current: Lift) => {
+    current.row.style.transform = `translateY(${current.y - current.startY + current.scroller.scrollTop - current.startScroll}px)`;
+    const rows = Array.from(current.row.parentElement?.children || []) as HTMLElement[];
+    const target = rows.findIndex(row => {
+      const box = row.getBoundingClientRect(); const shift = row === current.row ? current.scroller.scrollTop - current.startScroll + current.y - current.startY : 0;
+      return current.y >= box.top - shift && current.y < box.bottom - shift;
+    });
+    if (target >= 0) current.target = startIndex + target;
+    setDropIndex(current.target !== current.index ? current.target : null);
+  };
+  const raise = (event: React.PointerEvent<HTMLElement>, index: number) => {
+    if (event.pointerType === 'mouse' || !snapshot || !controllable || lift.current) return;
+    event.preventDefault();
+    const row = event.currentTarget.closest('li') as HTMLElement; const scroller = scrollerOf(row);
+    event.currentTarget.setPointerCapture(event.pointerId);
+    const current: Lift = { index, revision: snapshot.revision, guildId: snapshot.guild.id, pointer: event.pointerId, startY: event.clientY, y: event.clientY, startScroll: scroller.scrollTop, row, scroller, target: index, frame: 0 };
+    lift.current = current; row.classList.add('lifted');
+    const step = () => {
+      const view = scroller === document.scrollingElement ? { top: 0, bottom: document.querySelector('.persistent-player')?.getBoundingClientRect().top ?? innerHeight } : scroller.getBoundingClientRect();
+      const speed = current.y < view.top + 56 ? -Math.min(14, (view.top + 56 - current.y) / 4) : current.y > view.bottom - 56 ? Math.min(14, (current.y - view.bottom + 56) / 4) : 0;
+      if (speed) { scroller.scrollTop += speed; place(current); }
+      current.frame = requestAnimationFrame(step);
+    };
+    current.frame = requestAnimationFrame(step);
+  };
+  const follow = (event: React.PointerEvent<HTMLElement>) => { const current = lift.current; if (current?.pointer === event.pointerId) { current.y = event.clientY; place(current); } };
+  const lower = (event: React.PointerEvent<HTMLElement>, commit: boolean) => {
+    const current = lift.current; if (current?.pointer !== event.pointerId) return;
+    lift.current = null; cancelAnimationFrame(current.frame);
+    current.row.classList.remove('lifted'); current.row.style.transform = ''; setDropIndex(null);
+    if (commit) moveTo(current, current.target);
   };
   const startRadio = (track: Track) => { const command = startRadioCommand(track); if (command) void run(command, 'control'); };
   const radioButton = (track: Track, close: () => void) => local ? null : <button disabled={!controllable || !track.uri} onClick={() => { close(); startRadio(track); }}><RadioIcon />Start radio from this song</button>;
@@ -60,13 +101,12 @@ export function Queue({ portal, compact = false, onAdd }: { portal: Portal; comp
             onDragOver={event => { if (controllable && drag.current) { event.preventDefault(); setDropIndex(index); } }}
             onDrop={event => {
               event.preventDefault(); setDropIndex(null); const from = drag.current; drag.current = null;
-              if (!from || !snapshot || from.index === index || !controllable) return;
-              if (from.revision !== snapshot.revision || from.guildId !== snapshot.guild.id) { portal.notify('The queue changed while you were moving this song. Review it and try again.', 'error'); return; }
-              void change('move', { from: from.index + 1, to: index + 1 }, from.revision);
+              if (from) moveTo(from, index);
             }}>
             <span className="track-index">{index + 1}</span>
-            {!compact && <span className={`drag-handle ${controllable ? '' : 'disabled'}`} draggable={controllable} title={controllable ? 'Drag to reorder; the song menu also has keyboard controls' : portal.blockedReason}
-              onDragStart={event => { if (!snapshot || !controllable) { event.preventDefault(); return; } drag.current = { index, revision: snapshot.revision, guildId: snapshot.guild.id }; event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', key); }} onDragEnd={() => { drag.current = null; setDropIndex(null); }}><DotsSixVerticalIcon size={23} /></span>}
+            <span className={`drag-handle ${controllable ? '' : 'disabled'}`} draggable={controllable} title={controllable ? 'Drag to reorder; the song menu also has keyboard controls' : portal.blockedReason}
+              onPointerDown={event => raise(event, index)} onPointerMove={follow} onPointerUp={event => lower(event, true)} onPointerCancel={event => lower(event, false)}
+              onDragStart={event => { if (!snapshot || !controllable || lift.current) { event.preventDefault(); return; } drag.current = { index, revision: snapshot.revision, guildId: snapshot.guild.id }; event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', key); }} onDragEnd={() => { drag.current = null; setDropIndex(null); }}><DotsSixVerticalIcon size={23} /></span>
             <div className="track-main"><Artwork track={track} /><div className="track-text"><strong title={track.title}>{track.title}</strong><span title={track.author}>{track.author}</span></div></div>
             <div className={`requester ${track.suggested ? 'suggested-source' : ''}`}>{track.suggested ? <span>Autoplay pick</span> : track.requestedBy && <><Avatar url={track.requestedBy.avatarUrl} name={track.requestedBy.displayName} /><span>{track.requestedBy.displayName}</span></>}</div>
             <span className="track-duration">{track.isStream ? 'LIVE' : time(track.durationMs)}</span>
@@ -76,6 +116,7 @@ export function Queue({ portal, compact = false, onAdd }: { portal: Portal; comp
               {close => <>
                 <p>{track.title}</p>
                 <button disabled={!controllable} onClick={() => { close(); void change('skipto', { position: index + 1 }); }}><PlayIcon />Play now</button>
+                <button disabled={!controllable || index === 0} onClick={() => { close(); void change('move', { from: index + 1, to: 1 }); }}><ArrowLineUpIcon />Play next</button>
                 <button disabled={!controllable || index === 0} onClick={() => { close(); void change('move', { from: index + 1, to: index }); }}><ArrowUpIcon />Move up</button>
                 <button disabled={!controllable || index === queue.length - 1} onClick={() => { close(); void change('move', { from: index + 1, to: index + 2 }); }}><ArrowDownIcon />Move down</button>
                 {radioButton(track, close)}
@@ -123,4 +164,13 @@ function Suggestions({ portal, tracks, compact, radioButton }: { portal: Portal;
       </li>)}
     </ul>
   </section>;
+}
+
+type Lift = { index: number; revision: string; guildId: string; pointer: number; startY: number; y: number; startScroll: number; row: HTMLElement; scroller: HTMLElement; target: number; frame: number };
+function scrollerOf(element: HTMLElement) {
+  for (let node = element.parentElement; node; node = node.parentElement) {
+    const overflow = getComputedStyle(node).overflowY;
+    if ((overflow === 'auto' || overflow === 'scroll') && node.scrollHeight > node.clientHeight) return node;
+  }
+  return (document.scrollingElement || document.documentElement) as HTMLElement;
 }

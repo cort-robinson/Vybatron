@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type ButtonHTMLAttributes, type ReactNode, type RefObject } from 'react';
+import { createPortal } from 'react-dom';
 import { ArrowClockwiseIcon, MusicNotesIcon, UserIcon, XIcon, WarningCircleIcon } from '@phosphor-icons/react';
 import { publicUrl } from '../api';
+import { swipe } from '../swipe';
 import type { Track } from '../types';
 
 // A caller's title (usually why the control is unavailable) replaces the label tooltip; an
@@ -65,7 +67,19 @@ function focusableElements(container: ParentNode) {
   return Array.from(container.querySelectorAll<HTMLElement>(focusableSelector)).filter(element => element.tabIndex >= 0 && !element.closest('[inert], [hidden]') && element.getClientRects().length > 0);
 }
 
-// The popover supplies .menu-panel; children supply its actions and explanatory content.
+// Phones get menus as bottom sheets, within thumb reach, as music apps present them.
+const sheetQuery = '(max-width: 599px)';
+function useSheet() {
+  const [sheet, setSheet] = useState(() => matchMedia(sheetQuery).matches);
+  useEffect(() => {
+    const media = matchMedia(sheetQuery); const change = () => setSheet(media.matches);
+    media.addEventListener('change', change); return () => media.removeEventListener('change', change);
+  }, []);
+  return sheet;
+}
+
+// The popover supplies .menu-panel; children supply its actions and explanatory content. On phones
+// the panel opens as a bottom sheet over a scrim; tapping the scrim or pulling the sheet down closes it.
 export function ActionPopover({ label, trigger, className = '', triggerClassName = 'icon-button', panelClassName = '', children }: {
   label: string; trigger: ReactNode; className?: string; triggerClassName?: string; panelClassName?: string; children: (close: () => void) => ReactNode;
 }) {
@@ -74,13 +88,17 @@ export function ActionPopover({ label, trigger, className = '', triggerClassName
   const wrapper = useRef<HTMLDivElement>(null);
   const button = useRef<HTMLButtonElement>(null);
   const panel = useRef<HTMLDivElement>(null);
+  const sheet = useSheet();
   const close = useCallback(() => { setOpen(false); button.current?.focus({ preventScroll: true }); }, []);
+  // A sheet lives in a portal, so "inside" covers both the trigger and the panel.
+  const inside = (target: EventTarget | null) => target instanceof Node && (!!wrapper.current?.contains(target) || !!panel.current?.contains(target));
+  useEffect(() => open && sheet ? swipe(panel.current, 'down', (_, settle) => { settle(); close(); }) : undefined, [open, sheet, close]);
   useLayoutEffect(() => {
     if (!open) return;
     const content = panel.current;
     if (content) (focusableElements(content)[0] || content).focus({ preventScroll: true });
     const outside = (event: PointerEvent) => {
-      if (!(event.target instanceof Node) || wrapper.current?.contains(event.target)) return;
+      if (!(event.target instanceof Node) || inside(event.target)) return;
       setOpen(false);
       // Let an outside control receive its normal pointer focus. Noninteractive
       // content needs a useful focus destination when the panel disappears.
@@ -92,7 +110,7 @@ export function ActionPopover({ label, trigger, className = '', triggerClassName
       }
     };
     const focusOutside = (event: FocusEvent) => {
-      if (event.target instanceof Node && !wrapper.current?.contains(event.target)) setOpen(false);
+      if (event.target instanceof Node && !inside(event.target)) setOpen(false);
     };
     const keyboard = (event: KeyboardEvent) => {
       if (event.defaultPrevented) return;
@@ -119,7 +137,9 @@ export function ActionPopover({ label, trigger, className = '', triggerClassName
   }, [open, close]);
   return <div ref={wrapper} className={`action-popover ${className}`}>
     <button ref={button} type="button" className={triggerClassName} aria-label={label} title={label} aria-expanded={open} aria-controls={id} onClick={() => setOpen(value => !value)}>{trigger}</button>
-    {open && <div ref={panel} id={id} className={`menu-panel ${panelClassName}`} tabIndex={-1}>{children(close)}</div>}
+    {open && !sheet && <div ref={panel} id={id} className={`menu-panel ${panelClassName}`} tabIndex={-1}>{children(close)}</div>}
+    {open && sheet && createPortal(<div className="menu-sheet-layer"><div className="menu-sheet-scrim" aria-hidden="true" />
+      <div ref={panel} id={id} className={`menu-panel menu-sheet ${panelClassName}`} role="group" aria-label={label} tabIndex={-1}><span className="sheet-grabber" aria-hidden="true" />{children(close)}</div></div>, document.body)}
   </div>;
 }
 

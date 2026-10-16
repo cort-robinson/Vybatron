@@ -84,8 +84,11 @@ for (const viewport of [{ width: 320, height: 568 }, { width: 390, height: 844 }
     await expect(player.locator('.transport')).toHaveCount(1);
     await expect(player.getByRole('slider', { name: 'Playback position' })).toHaveCount(1);
     await player.getByRole('button', { name: 'More playback controls' }).click();
-    await expect(player.locator('.player-more .menu-panel')).toHaveCount(1);
-    await visibleBounds(player.locator('.player-more > .menu-panel'), page);
+    // Phones get the menu as a bottom sheet; wider screens keep the popover inside the deck.
+    const menu = page.getByRole('group', { name: 'More playback controls' }).or(player.locator('.player-more > .menu-panel'));
+    await expect(menu).toHaveCount(1);
+    await menu.evaluate(element => Promise.all(element.getAnimations().map(animation => animation.finished)));
+    await visibleBounds(menu, page);
     await page.keyboard.press('Escape');
     const titleLines = await player.locator('.player-identity h2').evaluate(element => element.getBoundingClientRect().height / parseFloat(getComputedStyle(element).lineHeight));
     expect(titleLines).toBeGreaterThan(1.5);

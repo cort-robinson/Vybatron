@@ -16,6 +16,7 @@ import { Home } from './components/Home';
 import { ServerView, type AmbientMode, type InstallPrompt } from './components/Server';
 import { Recovery } from './components/Recovery';
 import { transition } from './motion';
+import { longPress } from './longPress';
 import { applyPerformance, applySkin, initialPerformance, initialSkin, type Skin } from './skin';
 import { Horizon } from './components/Overdrive';
 import { Earth828 } from './components/Fantastic';
@@ -60,6 +61,7 @@ export function App() {
     }).catch(() => { /* Live portal remains usable if installation is unavailable. */ });
     return () => { active = false; };
   }, []);
+  useEffect(() => longPress(), []);
   useEffect(() => {
     if (auth !== 'ready') { setExpanded(false); setSearchOpen(false); setQuery(''); }
   }, [auth]);
@@ -85,7 +87,8 @@ export function App() {
     if (value === surface && !expanded) return;
     transition(expanded ? 'collapse' : 'view', () => { setSurface(value); setExpanded(false); }, order(value) < order(surface) ? 'back' : 'forward');
   };
-  const toggleExpanded = (value: boolean) => { if (value !== expanded) transition(value ? 'expand' : 'collapse', () => setExpanded(value)); };
+  // A swipe hands over `settle` so the transition starts from wherever the finger left the player.
+  const toggleExpanded = (value: boolean, settle?: () => void) => { if (value === expanded) { settle?.(); return; } transition(value ? 'expand' : 'collapse', () => { settle?.(); setExpanded(value); }); };
   const openSearch = () => setSearchOpen(true);
   // Search stays open-able for drafts and browsing; a real permission block (not a stale read) demotes the call to action.
   const addBlocked = connection === 'live' && !!snapshot && !snapshot.session.canAdd;
@@ -119,7 +122,7 @@ export function App() {
   const room = snapshot?.session.voiceChannel; const listening = snapshot?.session.listeners.length || 0;
   // Voice room and listeners live once, in the server header; tabs name each page's sections.
   const place = portal.target === 'local' ? 'On this device' : room ? room.name : snapshot?.savedSession.voiceChannel ? `Saved in ${snapshot.savedSession.voiceChannel.name}` : 'Join a voice channel';
-  return <div className={`app-shell ${expanded ? 'player-open' : ''} ${motion ? 'motion-live' : ''} ${connection !== 'live' ? 'has-connection-notice' : ''}`}>{background}<a href="#main-content" className="skip-link">Skip to content</a>
+  return <div className={`app-shell ${expanded ? 'player-open' : ''} ${motion ? 'motion-live' : ''} ${connection !== 'live' ? 'has-connection-notice' : ''}`}>{background}<a href="#main-content" className="skip-link" onClick={event => { event.preventDefault(); document.getElementById('main-content')?.focus(); }}>Skip to content</a>
     <aside className="sidebar"><Brand /><div className="guild-card"><div className="guild-icon">{snapshot?.guild.iconUrl || bootstrap!.guilds.find(g => g.id === portal.guildId)?.iconUrl ? <img src={publicUrl(snapshot?.guild.iconUrl || bootstrap!.guilds.find(g => g.id === portal.guildId)?.iconUrl)} alt="" /> : <DiscordLogoIcon size={26} weight="fill" />}</div><div className="guild-info"><label className="sr-only" htmlFor="guild">Server</label><select id="guild" aria-label="Server" value={portal.guildId} disabled={noGuilds} onChange={event => { portal.selectGuild(event.target.value); setExpanded(false); }}><option value="" disabled>Select server</option>{bootstrap!.guilds.map(guild => <option key={guild.id} value={guild.id}>{guild.name}</option>)}</select><span className={`guild-status ${snapshot?.session.status || 'idle'}`}><span className="status-dot" /><span className="guild-status-text">{statusLabel(snapshot)} · {place}{listening > 0 && <span className="guild-listeners"> · {listening} listening</span>}</span></span></div><CaretDownIcon className="guild-caret" size={16} /></div>
       <nav className="navigation" aria-label="Main navigation">{surfaces.map(item => <button key={item.id} className={surface === item.id ? 'selected' : ''} aria-current={surface === item.id ? 'page' : undefined} onClick={() => navigate(item.id)}>{surface === item.id && <span className="nav-indicator" aria-hidden="true" />}<item.icon size={26} /><span>{item.label}</span></button>)}</nav>
       <div className="sidebar-session">{snapshot?.session.voiceChannel && snapshot.session.listeners.length > 0 && <div className="listeners"><div>{snapshot.session.listeners.slice(0, 5).map(listener => <Avatar key={listener.id} url={listener.avatarUrl} name={listener.displayName} />)}</div><span>{snapshot.session.listeners.length} listening</span></div>}</div>

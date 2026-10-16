@@ -200,7 +200,7 @@ test('phone queue keeps readable metadata, one forty-four pixel row menu, and fa
     expect(menu).not.toBeNull();
     expect(menu!.width).toBeGreaterThanOrEqual(44); expect(menu!.height).toBeGreaterThanOrEqual(44);
     await row.locator('.row-menu > button').click();
-    await expect(row.locator('.menu-panel').getByRole('button', { name: /favorite/i })).toBeVisible();
+    await expect(page.locator('.menu-sheet').getByRole('button', { name: /favorite/i })).toBeVisible();
     await page.keyboard.press('Escape');
     expect(await row.locator('.track-text strong').evaluate(el => parseFloat(getComputedStyle(el).fontSize))).toBeGreaterThanOrEqual(16);
     expect(await row.locator('.track-text > span').evaluate(el => parseFloat(getComputedStyle(el).fontSize))).toBeGreaterThanOrEqual(14);

@@ -104,3 +104,14 @@
   .queue .suggested-heading .count { margin-left: 0; font-size: 14px; }
   .queue .queue-note { font-size: 14px; padding-inline: 0; }
 }
+
+/* Phones show the reorder handle at the row's end; touch reorder lifts the row under the finger (Queue.tsx). */
+@media (max-width: 1023px) {
+  .queue .track-list > .track-row:has(> .drag-handle) { grid-template-columns: 22px minmax(0, 1fr) 44px 44px; }
+  .queue .track-row > .drag-handle { order: 1; width: 44px; opacity: .8; }
+}
+@media (min-width: 1024px) { .queue-compact .drag-handle { display: none; } }
+.queue .track-row.lifted { z-index: 5; background: var(--raised); box-shadow: var(--shadow-menu); transition: none; }
+.queue .track-row.lifted::before, .queue .track-row.lifted + .track-row::before { opacity: 0; }
+/* Holding a row opens its menu (longPress.ts), so a hold must not select text or raise the system callout. */
+@media (pointer: coarse) { .queue .track-row { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; } }

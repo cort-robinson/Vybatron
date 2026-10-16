@@ -9,12 +9,14 @@ import { ActionPopover, Artwork, Confirm, Dialog, IconButton } from './ui';
 import { SaveSessionDialog, StopDialog } from './SessionMix';
 import { Queue } from './Queue';
 import { Spectrum } from './Spectrum';
-import { pulse } from '../motion';
+import { prefersReducedMotion, pulse } from '../motion';
+import { swipe, type SwipeDirection } from '../swipe';
+import { useBackLayers } from '../backLayers';
 import { neon, skinTint, type Skin } from '../skin';
 import { Hud, tilt, untilt } from './Overdrive';
 import { Television } from './Fantastic';
 
-export function Player({ portal, expanded, setExpanded, onAdd, accent, animate, skin = 'classic' }: { portal: Portal; expanded: boolean; setExpanded: (value: boolean) => void; onAdd: () => void; accent: string; animate: boolean; skin?: Skin }) {
+export function Player({ portal, expanded, setExpanded, onAdd, accent, animate, skin = 'classic' }: { portal: Portal; expanded: boolean; setExpanded: (value: boolean, settle?: () => void) => void; onAdd: () => void; accent: string; animate: boolean; skin?: Skin }) {
   const { snapshot, bootstrap, can, run, receivedAt, connection, pending, syncing, library } = portal;
   const session = snapshot?.session;
   const local = portal.target === 'local';
@@ -28,19 +30,35 @@ export function Player({ portal, expanded, setExpanded, onAdd, accent, animate, 
   const [confirmClear, setConfirmClear] = useState(false);
   const [saveSession, setSaveSession] = useState(false);
   const [confirmHere, setConfirmHere] = useState(false);
+  const [queueOpen, setQueueOpen] = useState(false);
   const playerRef = useRef<HTMLElement>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
   const identityTriggerRef = useRef<HTMLButtonElement>(null);
   const expandTriggerRef = useRef<HTMLButtonElement>(null);
+  const sheetRef = useRef<HTMLDivElement>(null);
+  const handleRef = useRef<HTMLButtonElement>(null);
+  const songExit = useRef<Animation | null>(null);
   const wasExpanded = useRef(expanded);
   const openedFromIdentity = useRef(false);
   const reasonId = useId();
   const confirmationId = useId();
+  const queueId = useId();
+  const swiped = useRef(false);
   useEffect(() => {
-    if (expanded) headingRef.current?.focus({ preventScroll: true });
+    // A swipe, like a tap, leaves no focus ring behind; screen readers and keyboards never swipe.
+    if (swiped.current) { swiped.current = false; (document.activeElement as HTMLElement | null)?.blur(); }
+    else if (expanded) headingRef.current?.focus({ preventScroll: true });
     else if (wasExpanded.current) (openedFromIdentity.current ? identityTriggerRef : expandTriggerRef).current?.focus({ preventScroll: true });
     wasExpanded.current = expanded;
   }, [expanded]);
+  // Swipe up on the compact deck opens the player; pulling the open player down closes it.
+  const expand = useRef(setExpanded); expand.current = setExpanded;
+  useEffect(() => swipe(playerRef.current, expanded ? 'down' : 'up', (_, settle) => { swiped.current = true; expand.current(!expanded, settle); }), [expanded]);
+  // On phones the open player keeps Up next in a sheet: drag its handle up to open it, pull it down to close it.
+  useEffect(() => { if (!expanded) setQueueOpen(false); }, [expanded]);
+  useEffect(() => swipe(handleRef.current, queueOpen ? 'down' : 'up', (_, settle) => { settle(); setQueueOpen(!queueOpen); }, queueOpen ? sheetRef.current : handleRef.current), [expanded, queueOpen]);
+  useEffect(() => queueOpen ? swipe(sheetRef.current, 'down', (_, settle) => { settle(); setQueueOpen(false); }) : undefined, [queueOpen]);
+  useBackLayers(expanded ? queueOpen ? 2 : 1 : 0, layer => { if (layer < 2) setQueueOpen(false); if (layer < 1) expand.current(false); });
   useEffect(() => {
     if (!track || session?.status !== 'playing' || !live) return;
     let timer: ReturnType<typeof setInterval> | undefined;
@@ -65,6 +83,7 @@ export function Player({ portal, expanded, setExpanded, onAdd, accent, animate, 
     if (!player) return;
     const find = (selector: string) => player.querySelectorAll(selector);
     if (previous.track !== track?.id) {
+      songExit.current?.cancel(); songExit.current = null;
       if (previous.track && track) pulse(find('.player-expand-trigger > .artwork, .compact-title, .player-identity'), [{ opacity: .8, transform: 'translateY(6px) scale(.97)' }, { opacity: 1, transform: 'none' }], 460);
       // Overdrive: the new title locks on as a chromatic split converges. No slicing or jumps, so it
       // reads as focus settling rather than a flicker.
@@ -85,6 +104,27 @@ export function Player({ portal, expanded, setExpanded, onAdd, accent, animate, 
   const control = (body: Command) => run({ ...body, expectedRevision: snapshot?.revision }, 'control');
   // Early in a song Back goes to the previous one; later, or with nothing earlier, it restarts this one.
   const goesBack = !!session?.hasPrevious && (position <= RESTART_AFTER_MS || !seekable);
+  // Songs on this device can be pushed aside on the compact deck: left skips, right goes back. A shared
+  // Discord session never changes song from a stray swipe, so it keeps buttons only.
+  const aside = useRef<(direction: SwipeDirection) => boolean>(() => false);
+  aside.current = direction => {
+    if (!controllable || !track || direction === 'right' && !session?.hasPrevious) return false;
+    void control({ command: direction === 'left' ? 'skip' : 'back' });
+    return true;
+  };
+  useEffect(() => {
+    if (expanded || !local) return;
+    const identity = playerRef.current?.querySelector<HTMLElement>('.compact-identity') ?? null;
+    return swipe(playerRef.current, ['left', 'right'], (direction, settle) => {
+      if (!aside.current(direction)) return false;
+      // The song leaves the way it was pushed and stays out until the next one arrives.
+      if (identity && !prefersReducedMotion()) {
+        songExit.current = identity.animate([{ transform: identity.style.transform, opacity: identity.style.opacity || '1' }, { transform: `translateX(${direction === 'left' ? -60 : 60}%)`, opacity: 0 }], { duration: 160, easing: 'ease-in', fill: 'forwards' });
+        const exit = songExit.current; setTimeout(() => exit.cancel(), 1500);
+      }
+      settle();
+    }, identity);
+  }, [expanded, local]);
   const index = library?.favorites.findIndex(t => t.id === track?.id) ?? -1;
   const toggleFavorite = () => index < 0 ? run({ command: 'favorite', subcommand: 'add', expectedRevision: snapshot?.revision }, 'library') : run({ command: 'favorite', subcommand: 'remove', options: { index: index + 1 }, expectedTrackId: library?.favorites[index].id }, 'library');
   const active = session?.status === 'playing';
@@ -153,15 +193,17 @@ export function Player({ portal, expanded, setExpanded, onAdd, accent, animate, 
       </>}
     </ActionPopover>
   </div>;
-  return <section ref={playerRef} className={`persistent-player ${expanded ? 'expanded' : 'collapsed'} ${session?.status || 'idle'}`} aria-label="Music player" data-testid="player">
+  const upcoming = session?.queue.length || 0;
+  return <section ref={playerRef} className={`persistent-player ${expanded ? 'expanded' : 'collapsed'} ${queueOpen ? 'queue-open' : ''} ${session?.status || 'idle'}`} aria-label="Music player" data-testid="player">
     {!expanded && spectrum('player-spectrum', 56, 0)}
     {expanded && <div className="sleeve-content"><button className="mobile-collapse text-button" onClick={() => setExpanded(false)}><CaretDownIcon size={22} />Close player</button>
       <div className="sleeve-main"><div className="sleeve-artwork" onPointerMove={tilt} onPointerLeave={untilt}><Artwork track={track} large />{spectrum('sleeve-spectrum', 40)}{skin === 'overdrive' && <><span className="od-cover-plate" aria-hidden="true" /><Hud className="od-cover-hud" /><span key={track?.id || 'idle'} className="od-cover-scan" aria-hidden="true" /></>}{skin === 'fantastic' && <><Television /><span key={track?.id || 'idle'} className="ff-tune" aria-hidden="true" /></>}</div>{identity}<div className="player-context">{permissionReason && <p className="player-permission" id={reasonId}><WarningCircleIcon size={18} aria-hidden="true" /><span>{permissionReason}</span></p>}{connection === 'live' && session?.status === 'recovering' && <p className="player-state warm-text" role="status">Recovering your place. Playback controls will return when it’s ready.</p>}{session?.status === 'paused' && <p className="player-state warm-text">{connection === 'live' ? 'Paused · right here when you’re ready' : 'Last known: paused'}</p>}</div></div>
-      <div className="sleeve-queue"><Queue portal={portal} compact onAdd={onAdd} /></div>
+      <div ref={sheetRef} id={queueId} className="sleeve-queue">{queueOpen && <div className="queue-sheet-now"><span className="sheet-grabber" aria-hidden="true" /><Artwork track={track} /><span className="sheet-now-text"><strong>{track?.title || 'Nothing playing'}</strong><span>{track?.author}</span></span></div>}<Queue portal={portal} compact onAdd={onAdd} /></div>
     </div>}
     <div className="player-footer">{!expanded && <span className="compact-progress" aria-hidden="true" style={{ '--range-progress': `${track && !track.isStream && duration ? Math.min(100, (position / duration) * 100) : 0}%` } as React.CSSProperties} />}{!expanded && <div className="compact-identity"><button ref={identityTriggerRef} type="button" className="player-expand-trigger" aria-label={track ? `Open player for ${track.title}` : 'Open player details'} aria-expanded={false} onClick={() => { openedFromIdentity.current = true; setExpanded(true); }}><Artwork track={track} /><span className="compact-title"><span className="compact-track-title" title={track?.title}>{track?.title || 'Nothing playing'}</span><span className="compact-track-meta" title={track ? `${track.author} · ${track.source}` : undefined}>{metadata}</span></span></button><span className="compact-favorite">{favorite}</span></div>}
       <div className="playback-cluster">{controls}{timeline}</div>
       {extras}
+      {expanded && <button ref={handleRef} type="button" className="up-next-handle" aria-expanded={queueOpen} aria-controls={queueId} onClick={() => setQueueOpen(!queueOpen)}><span className="sheet-grabber" aria-hidden="true" /><span>{queueOpen ? 'Hide queue' : 'Up next'}</span>{!queueOpen && upcoming > 0 && <span className="count">{upcoming} {upcoming === 1 ? 'song' : 'songs'}</span>}</button>}
       {!expanded && permissionReason && <span className="sr-only" id={reasonId}>{permissionReason}</span>}
       <button ref={expandTriggerRef} className="expand-button" aria-expanded={expanded} aria-label={expanded ? 'Close player' : 'Open player'} title={expanded ? 'Close player' : 'Open player'} onClick={() => { openedFromIdentity.current = false; setExpanded(!expanded); }}>{expanded ? <CaretDownIcon size={29} /> : <CaretUpIcon size={29} />}<span>{expanded ? 'Close player' : 'Open player'}</span></button>
     </div>

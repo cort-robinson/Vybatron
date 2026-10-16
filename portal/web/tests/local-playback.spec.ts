@@ -147,3 +147,27 @@ test('home lists queue on this device from the tracks the portal already shows',
   // Saving a song that isn't a favorite needs the Discord session.
   await expect(page.getByTestId('player').getByRole('button', { name: 'Save current song to favorites' })).toBeDisabled();
 });
+
+test.describe('on a touch screen', () => {
+  test.use({ hasTouch: true });
+  test('songs on this device change with a sideways swipe on the compact deck', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    const fixture = await portal(page, { inVoice: false });
+    await addSongs(page);
+    await expect(title(page)).toHaveText('Midnight City');
+    const swipe = async (dx: number) => {
+      const box = (await title(page).boundingBox())!; const x = box.x + box.width / 2; const y = box.y + box.height / 2;
+      const cdp = await page.context().newCDPSession(page);
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] });
+      for (let i = 1; i <= 8; i++) { await page.waitForTimeout(20); await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: x + dx * i / 8, y }] }); }
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+      await cdp.detach();
+    };
+    await swipe(-200);
+    await expect(title(page)).toHaveText('Wait');
+    await swipe(200);
+    await expect(title(page)).toHaveText('Midnight City');
+    await expect(page.getByTestId('player')).toHaveClass(/collapsed/);
+    expect(fixture.commands).toEqual([]);
+  });
+});

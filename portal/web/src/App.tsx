@@ -74,9 +74,10 @@ export function App() {
     const timer = setTimeout(() => dismissNotice.current(), 4500);
     return () => clearTimeout(timer);
   }, [portal.notice]);
-  const setAmbient = (value: AmbientMode) => { changeAmbient(value); try { localStorage.setItem('vybertron.ambient', value); } catch { /* Optional, non-sensitive preference. */ } };
-  const setSkin = (value: Skin) => { applySkin(value); changeSkin(value); };
-  const setPerformance = (value: boolean) => { applyPerformance(value); changePerformance(value); };
+  // Look and lighting changes crossfade the whole page instead of repainting it in one frame.
+  const setAmbient = (value: AmbientMode) => transition('theme', () => { changeAmbient(value); try { localStorage.setItem('vybertron.ambient', value); } catch { /* Optional, non-sensitive preference. */ } });
+  const setSkin = (value: Skin) => transition('theme', () => { applySkin(value); changeSkin(value); });
+  const setPerformance = (value: boolean) => transition('theme', () => { applyPerformance(value); changePerformance(value); });
   const order = (value: Surface) => surfaces.findIndex(item => item.id === value);
   // Leaving the sleeve folds the cover back into the deck; otherwise the view slides along the nav.
   const navigate = (value: Surface) => {
@@ -101,7 +102,7 @@ export function App() {
   }, [palette]);
   const scene = (moving: boolean) => <div className={`ambient-scene ${expanded ? 'immersive' : ''} ${moving ? 'moving' : 'settled'} ${ambient === 'subtle' ? 'subtle' : ''} ${ambient === 'off' ? 'disabled' : ''}`} aria-hidden="true">
     <div className="room-light"><span className="light light-1" /><span className="light light-2" /><span className="light light-3" /></div>
-    {artwork && <img className="artwork-field" src={artwork} alt="" referrerPolicy="no-referrer" />}
+    <ArtworkField url={artwork} />
     {skin === 'overdrive' && <Horizon />}
   </div>;
   const background = scene(motion);
@@ -135,5 +136,24 @@ export function App() {
     {portal.notice && !searchOpen && <div className={`toast ${portal.notice.kind}`} role={portal.notice.kind === 'error' ? 'alert' : 'status'}><span>{portal.notice.message}</span><IconButton label="Dismiss notification" onClick={portal.dismissNotice}><XIcon size={19} /></IconButton></div>}
     {update && <div className="update-notice"><span>A fresh version of Vybatron is ready.</span><button className="text-button" onClick={() => { navigator.serviceWorker.addEventListener('controllerchange', () => location.reload(), { once: true }); update.postMessage({ type: 'ACTIVATE' }); }}>Update app</button></div>}
   </div>;
+}
+// The blurred cover behind the room crossfades between songs: the next layer joins only once it has
+// decoded, and the previous one fades out beneath it, so the room never blinks empty or snaps.
+function ArtworkField({ url }: { url?: string }) {
+  const [layers, setLayers] = useState<string[]>(() => url ? [url] : []);
+  const [shown, setShown] = useState(url);
+  useEffect(() => {
+    if (!url) { setShown(undefined); return; }
+    setLayers(current => current.includes(url) ? current : [...current.slice(-1), url]);
+    let current = true; const image = new Image(); image.referrerPolicy = 'no-referrer'; image.src = url;
+    void image.decode().catch(() => undefined).then(() => { if (current) setShown(url); });
+    return () => { current = false; };
+  }, [url]);
+  // Drop faded layers once their fade has finished.
+  useEffect(() => {
+    const timer = setTimeout(() => setLayers(current => current.filter(layer => layer === shown)), 1000);
+    return () => clearTimeout(timer);
+  }, [shown]);
+  return <>{layers.map(layer => <img key={layer} className={`artwork-field ${layer === shown ? 'shown' : ''}`} src={layer} alt="" referrerPolicy="no-referrer" />)}</>;
 }
 function Brand() { return <div className="brand"><WaveformIcon size={30} weight="bold" aria-hidden="true" /><span>Vybatron</span></div>; }

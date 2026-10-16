@@ -103,7 +103,9 @@ function extract(url: string) {
 export function useArtPalette(url: string | undefined) {
   const [palette, setPalette] = useState<Palette>(defaultPalette);
   useEffect(() => {
-    if (!url) { setPalette(defaultPalette); return; }
+    // Between songs the artwork can be briefly absent; hold the room's colors through the gap
+    // instead of flashing to the default and back.
+    if (!url) { const timer = setTimeout(() => setPalette(defaultPalette), 1500); return () => clearTimeout(timer); }
     let current = true;
     if (!cache.has(url)) { if (cache.size > 40) cache.delete(cache.keys().next().value!); cache.set(url, extract(url)); }
     void cache.get(url)!.then(result => { if (current) setPalette(result || defaultPalette); });

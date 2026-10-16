@@ -4,7 +4,7 @@ import { flushSync } from 'react-dom';
 // travels between deck and sleeve, views slide along the nav's axis); styles.css owns
 // which elements are named for each kind. Reduced motion and unsupported browsers change
 // state instantly; the CSS keeps its short fades for those paths.
-export type MotionKind = 'expand' | 'collapse' | 'view' | 'tab';
+export type MotionKind = 'expand' | 'collapse' | 'view' | 'tab' | 'theme';
 export type MotionDirection = 'forward' | 'back';
 
 type TransitionDocument = Document & { startViewTransition?: (update: () => void) => { finished: Promise<void> } };

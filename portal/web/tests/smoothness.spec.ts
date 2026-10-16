@@ -68,3 +68,19 @@ test('a song change dissolves the cover in place instead of cutting to an empty 
     await expect(ghost).toHaveCount(0);
   } finally { await server.close(); }
 });
+
+test('a song change relights the room without animating the whole page', async ({ page }) => {
+  const fixture = await mockPortal(page); await page.goto('/');
+  await page.getByRole('button', { name: 'Open player', exact: true }).click();
+  const accent = () => page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--accent'));
+  await expect.poll(accent).not.toBe('#5fdcd2');
+  const before = await accent();
+  const state = fixture.state.snapshot; state.session.current = state.session.queue.shift()!; state.revision = 'revision-relight';
+  await page.evaluate(data => (window as unknown as { portalTest: { emit: (d: unknown) => void } }).portalTest.emit(data), state);
+  await expect.poll(accent).not.toBe(before);
+  // Colors that glide on :root restyle and repaint the whole page every frame; only the light pools glide.
+  const gliding = await page.evaluate(() => document.getAnimations().filter(animation => animation instanceof CSSTransition && animation.transitionProperty.startsWith('--'))
+    .map(animation => `${((animation.effect as KeyframeEffect).target as Element).className}:${(animation as CSSTransition).transitionProperty}`));
+  expect(gliding.length).toBeGreaterThan(0);
+  expect(gliding.every(name => name.startsWith('light '))).toBe(true);
+});

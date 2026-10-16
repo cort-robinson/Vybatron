@@ -26,7 +26,7 @@ use are equally complete, commonly while Discord is already open in a dim room.
 
 ## Evidence on hand
 
-- Binding behavior and DTOs: `../docs/portal-plan.md`, `../docs/portal-contract.md`.
+- Behavior and DTOs: `../docs/portal-contract.md`.
 - Approved visuals: `../docs/portal-references/queue.png`, `player.png`, `phone.png`.
 - Root-supplied runtime aurora and cover rasters in `web/public/assets/`.
 - Browser-test fixtures are explicit synthetic local evidence, never public content.

@@ -163,7 +163,7 @@ flock -n /run/lock/vybertron-maintenance.lock sh -c '
 
 ## V2 runtime and releases
 
-The bot runs on a digest-pinned Node 22 image as the unprivileged `node` user,
+The bot runs on a digest-pinned Node 24 image as the unprivileged `node` user,
 with a read-only filesystem, a small temporary filesystem, and rotating logs.
 `bot-data:/app/data` persists the library, recoverable listening sessions and
 `stats.sqlite` play statistics (bounded to 16 MiB; see ADR-0006). The stats store
@@ -224,3 +224,26 @@ images are deliberately retained; use a reviewed retention policy instead of
 pruning them during release. A routine isolated audio check is available with
 `python3 ops/recovery.py probe`, or add `--full` to decode both complete canaries.
 This check never joins Discord voice, sends notices, or changes the plugin.
+
+## Manual listening check
+
+Automated tests, readiness and decoded canaries do not prove Discord delivery.
+Before calling a release done, listen in a test server on desktop and phone:
+
+1. `/play` a fresh autocomplete result and a direct YouTube link; listen for a
+   clean start, sustained audio and a clean transition to the next track.
+2. Play a public Spotify track or album: full songs, a matched-count notice, and
+   no previews in the player.
+3. Pause/Resume, Seek, Skip, Original/Warm filter and Stop. Stop stays responsive
+   during an import, disconnects, and allows a fresh `/play`.
+4. Favorite the playing track, save/load a small mix, and use History/Replay on
+   desktop and mobile.
+5. `/radio on` with people listening and let a short queue end: a related track
+   follows, the portal shows it as Suggested, and skipping a pick replaces it.
+6. Interrupt only the Lavalink control socket mid-song: playback resumes at the
+   last reported position with the queue intact. A terminal failure shows Audio
+   Unavailable and leaves Skip/Stop usable.
+7. Restart gracefully, confirm libraries survive, and `/session resume` in the
+   original voice channel. A paused checkpoint restores paused; Stop discards it.
+
+Record what was actually heard; connection flags or Opus counts alone do not pass.

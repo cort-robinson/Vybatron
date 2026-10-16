@@ -58,7 +58,7 @@ The bot leaves after five minutes with an empty queue, or one minute after the l
 
 ## Setup
 
-Use Node **22.13 or newer** for native development (play statistics use the built-in `node:sqlite` module); the Docker runtime is pinned to Node 22. The Compose stack includes the bot, Lavalink 4.2.2, YouTube cipher service, and WARP. The audio images and YouTube plugin are pinned to the stack verified for this release.
+Use Node **24.11 or newer** for native development (play statistics use the built-in `node:sqlite` module); the Docker runtime is pinned to Node 24. The Compose stack includes the bot, Lavalink 4.2.2, YouTube cipher service, and WARP. The audio images and YouTube plugin are pinned to the stack verified for this release.
 
 1. Create a bot in the [Discord Developer Portal](https://discord.com/developers/applications).
 2. Invite it with `bot` and `applications.commands` scopes. Grant View Channel, Send Messages, Embed Links, Connect, and Speak. Set Voice Channel Status is optional. Keep **Public Bot** off so only you can add it. After the first install, `/invite`, `/help`, and the portal offer this same link to you and to `PORTAL_OPERATOR_IDS` only; everyone else is told to ask you.
@@ -143,6 +143,8 @@ bash tests/warp-supervisor.test.sh
 
 CI also builds the container, verifies non-root persistence on a read-only filesystem, and validates Compose. Recovery tests exercise the pinned client's real event and player behavior, including late events, voice event ordering, pause/seek, and resumed sessions.
 
-The [v2 launch checklist](docs/v2-launch.md) records release gates and the final desktop/phone listening check. The current contract is [SPEC.md](SPEC.md); existing design decisions and terms are in [docs/adr](docs/adr) and [docs/GLOSSARY.md](docs/GLOSSARY.md).
+Code map: `src/commands` defines the slash commands and `deploy-commands.js` validates and registers the same catalog. `src/playback-recovery.js` adapts the pinned lavalink-client SDK and `src/playback-watchdog.js` checks progress. `src/utils/library.js` persists favorites and mixes, `src/utils/sessions.js` session checkpoints, and `src/utils/play-stats.js` play statistics (with `play-tracking`, `song-identity`, `stats-scoring` and `auto-playlists` alongside). `src/portal` is the private portal bridge. `ops/recovery.py` probes sources and performs bounded repairs; `ops/deploy.py` owns release transactions and rollback.
+
+Design decisions and terms are in [docs/adr](docs/adr) and [docs/GLOSSARY.md](docs/GLOSSARY.md). The manual listening check before a release is in the [operations runbook](ops/README.md#manual-listening-check).
 
 MIT license.

@@ -1,9 +1,10 @@
 # Private portal pilot operations
 
-The portal controls the existing Discord player. It does not transmit audio to
-the browser. The bot owns all music data; the portal owns only device sign-in
-sessions. Read [the approved plan](portal-plan.md) and
-[the integration contract](portal-contract.md) before changing these boundaries.
+The portal controls the existing Discord player. Listeners who are not in voice
+can also play songs on their own device through the bounded audio route in
+[the integration contract](portal-contract.md). The bot owns all music data; the
+portal owns only device sign-in sessions. Read the contract before changing
+these boundaries.
 
 ## Isolation
 

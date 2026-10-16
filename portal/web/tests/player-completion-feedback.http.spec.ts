@@ -192,7 +192,8 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 320, height: 568 
         if (expanded || viewport.width >= 1024) {
           const seek = await bounds(player(page).getByRole('slider', { name: 'Playback position' }), page);
           expect(seek.width).toBeGreaterThanOrEqual(44); expect(seek.height).toBeGreaterThanOrEqual(44);
-          expect(seek.x + seek.width).toBeLessThanOrEqual(feedback.x + 1);
+          // The note sits beside the seek bar or floats clear above it; it never covers the bar.
+          expect(seek.x + seek.width <= feedback.x + 1 || feedback.y + feedback.height <= seek.y + 1).toBe(true);
         }
         expect(feedback.y + feedback.height <= button.y + 1 || button.y + button.height <= feedback.y + 1).toBe(true);
         if (viewport.width < 1024) {

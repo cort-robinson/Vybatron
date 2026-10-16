@@ -31,6 +31,11 @@ updates:
     groups:
       node-base:
         patterns: ['*']
+    # Production stays on a Node LTS line; moving to the next LTS is a deliberate,
+    # verified upgrade. Odd-numbered majors (like 25) are never LTS.
+    ignore:
+      - dependency-name: node
+        update-types: ['version-update:semver-major']
 
   # Audio services: Deploy stops on these and they need an operator release
   # (docs/portal-operations.md), so they are proposed monthly, not weekly.

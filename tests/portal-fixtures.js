@@ -60,7 +60,7 @@ export async function portalFixture(t, options = {}) {
   } };
   client.channels = { cache: channelCache };
   client.users = { async fetch(id) { return users.get(id); } };
-  client.application = { async fetch() { return { owner: options.owner || users.get('900') }; } };
+  client.application = { id: '123456789012345678', async fetch() { return { owner: options.owner || users.get('900') }; } };
   client.runtimeState = { draining: false, startedAt: Date.now() };
   manager.players = new Map(); manager.getPlayer = id => manager.players.get(id);
   const node = { connected: true, async search({ query }) { if (options.search) return options.search(query); return { loadType: 'track', tracks: [track(query.startsWith('https:') ? new URL(query).searchParams.get('v') || 'abcdefghijk' : 'abcdefghijk')] }; } };

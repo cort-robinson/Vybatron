@@ -35,6 +35,7 @@ Start with `/help`. Join a voice channel and use `/play` with a song and artist,
 
 | Command | Purpose |
 | --- | --- |
+| `/invite` | Bot owner and portal operators: get a link to add Vybatron to another server |
 | `/play`, `/playnext` | Add music or request the next track |
 | `/queue`, `/remove`, `/move`, `/clear` | Browse and edit upcoming tracks; Clear keeps the current song playing |
 | `/back`, `/skip`, `/skipto`, `/voteskip` | Go back a track (or restart this one), skip, jump, or vote with a strict majority of current human listeners |
@@ -60,7 +61,7 @@ The bot leaves after five minutes with an empty queue, or one minute after the l
 Use Node **22.13 or newer** for native development (play statistics use the built-in `node:sqlite` module); the Docker runtime is pinned to Node 22. The Compose stack includes the bot, Lavalink 4.2.2, YouTube cipher service, and WARP. The audio images and YouTube plugin are pinned to the stack verified for this release.
 
 1. Create a bot in the [Discord Developer Portal](https://discord.com/developers/applications).
-2. Invite it with `bot` and `applications.commands` scopes. Grant View Channel, Send Messages, Embed Links, Connect, and Speak. Set Voice Channel Status is optional.
+2. Invite it with `bot` and `applications.commands` scopes. Grant View Channel, Send Messages, Embed Links, Connect, and Speak. Set Voice Channel Status is optional. Keep **Public Bot** off so only you can add it. After the first install, `/invite`, `/help`, and the portal offer this same link to you and to `PORTAL_OPERATOR_IDS` only; everyone else is told to ask you.
 3. Create `.env` at the repository root:
 
 ```env

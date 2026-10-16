@@ -6,6 +6,7 @@ import { searchMusic } from '../utils/search.js';
 import { validatePlaybackQuery } from '../utils/query.js';
 import { withTimeout } from '../utils/enqueue.js';
 import { validId } from '../utils/library.js';
+import { clientInviteUrl } from '../utils/invite.js';
 import { actorVoiceId, createPortalPolicy } from './policy.js';
 import { FILTERS, actorProjection, guildProjection, trackProjection, snapshotProjection, libraryProjection, activityProjection, configurationProjection, createRevisions, statsProjection, STATS_WINDOW_IDS } from './projection.js';
 import { publicCommands, executePortalCommand } from './commands.js';
@@ -120,7 +121,7 @@ export function startPortalBridge(client, {
             }));
             guilds.push(...results.filter(Boolean));
           }
-          return json(response, 200, { viewer: { id: who.user.id, username: who.user.username.slice(0, 80), displayName: actorProjection(who.user).displayName, avatarUrl: actorProjection(who.user).avatarUrl, maintainer: who.maintainer }, guilds, voiceGuildId, filters: FILTERS, commands: publicCommands(commandMap) }, maxResponseBytes);
+          return json(response, 200, { viewer: { id: who.user.id, username: who.user.username.slice(0, 80), displayName: actorProjection(who.user).displayName, avatarUrl: actorProjection(who.user).avatarUrl, maintainer: who.maintainer }, guilds, voiceGuildId, filters: FILTERS, commands: publicCommands(commandMap), inviteUrl: who.maintainer ? clientInviteUrl(client) : null }, maxResponseBytes);
         }
         if (url.pathname === '/v1/stats/requests/clear' && request.method === 'POST') {
           // Personal data across every server: identity only, never a guild grant.

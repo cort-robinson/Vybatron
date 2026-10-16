@@ -400,8 +400,11 @@ export async function createPortalServer(config, testOptions = {}) {
           if (!store.get(token)) throw unauthorized();
           if (bootstrap.viewer?.id !== session.actorId || !Array.isArray(bootstrap.guilds)) throw unavailable();
           const voiceGuildId = bootstrap.guilds.some(guild => guild?.id === bootstrap.voiceGuildId) ? bootstrap.voiceGuildId : null;
+          // Only this app's own Discord install link is ever offered to the browser.
+          const inviteUrl = typeof bootstrap.inviteUrl === 'string' && bootstrap.inviteUrl.length <= 512
+            && bootstrap.inviteUrl.startsWith(`${config.discordAuthorizeUrl}?client_id=${config.clientId}&`) ? bootstrap.inviteUrl : null;
           json(res, 200, { viewer: bootstrap.viewer, guilds: bootstrap.guilds, voiceGuildId, filters: bootstrap.filters,
-            commands: bootstrap.commands, csrfToken: session.csrfToken }); return;
+            commands: bootstrap.commands, inviteUrl, csrfToken: session.csrfToken }); return;
         }
         if (pathname === '/api/stats/requests/clear' && req.method === 'POST') {
           // Clears the signed-in listener's own request history in every server.

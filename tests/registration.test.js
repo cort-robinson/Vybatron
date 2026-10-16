@@ -10,7 +10,7 @@ test('the complete v2 command catalog is valid, unique and restricted to servers
   assert.ok(definitions.length > 0);
   assert.equal(new Set(definitions.map(c => c.name)).size, definitions.length);
   assert.ok(definitions.every(c => c.dm_permission === false));
-  for (const name of ['favorite', 'mix', 'radio', 'session', 'settings', 'voteskip', 'history', 'replay', 'filter', 'help']) assert.ok(definitions.some(c => c.name === name));
+  for (const name of ['favorite', 'mix', 'radio', 'session', 'settings', 'voteskip', 'history', 'replay', 'filter', 'help', 'invite']) assert.ok(definitions.some(c => c.name === name));
 });
 
 test('broken definitions and missing guild targets fail closed before updating Discord', async t => {

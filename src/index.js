@@ -16,6 +16,8 @@ export const client = new Client({
   // can authorize audible controls without a Discord REST round.
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildVoiceStates, GatewayIntentBits.GuildMembers],
 });
+// Trusted operators may also see the install link, alongside the application owner.
+client.operatorIds = new Set(config.portalBridge.operatorIds);
 
 initLavalink(client);
 const healthServer = startHealthServer(client, { port: config.healthPort });

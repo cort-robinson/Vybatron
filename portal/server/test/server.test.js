@@ -94,7 +94,7 @@ async function fixture(t, { limits = {}, now, dataDir, production = false, botOr
     assert.equal(req.headers.authorization, `Bearer ${secret}`);
     if (url.pathname === '/health') reply(res, 200, { ready: true });
     else if (url.pathname === '/v1/bootstrap') {
-      const data = bootstrap(); data.viewer.id = url.searchParams.get('actorId'); data.voiceGuildId = state.voiceGuildId ?? null; reply(res, 200, data);
+      const data = bootstrap(); data.viewer.id = url.searchParams.get('actorId'); data.voiceGuildId = state.voiceGuildId ?? null; if (state.inviteUrl !== undefined) data.inviteUrl = state.inviteUrl; reply(res, 200, data);
     }
     else if (url.pathname.endsWith('/commands')) reply(res, 200, { ok: true, message: 'Updated.', snapshot: state.snapshot });
     else if (url.pathname.endsWith('/configuration')) reply(res, 200, { guildId, channels: [{ id: '456789012345678901', name: 'Music', type: 'text' }], roles: [] });
@@ -1324,6 +1324,17 @@ test('bootstrap forwards the voice server only when it is a listed server', asyn
   assert.equal(await voiceGuild(guildId), guildId);
   assert.equal(await voiceGuild('567890123456789012'), null);
   assert.equal(await voiceGuild(undefined), null);
+});
+
+test('bootstrap offers only this application’s Discord install link', async t => {
+  const f = await fixture(t); const { cookie } = await f.login();
+  const invite = async value => { f.state.inviteUrl = value; return (await f.request('/api/bootstrap', { headers: { Cookie: cookie } })).json().inviteUrl; };
+  const own = 'https://discord.com/oauth2/authorize?client_id=345678901234567890&scope=bot+applications.commands&permissions=1&integration_type=0';
+  assert.equal(await invite(own), own);
+  assert.equal(await invite(undefined), null);
+  assert.equal(await invite(own.replace('345678901234567890', '999999999999999999')), null);
+  assert.equal(await invite(own.replace('discord.com', 'discord.example')), null);
+  assert.equal(await invite(`${own}&x=${'a'.repeat(600)}`), null);
 });
 
 test('transfer forwards a bounded list of public song links and nothing else', async () => {

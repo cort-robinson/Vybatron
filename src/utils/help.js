@@ -1,4 +1,4 @@
-import { ActionRowBuilder, EmbedBuilder, StringSelectMenuBuilder } from 'discord.js';
+import { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, StringSelectMenuBuilder } from 'discord.js';
 import { NO_MENTIONS, safeText } from './presentation.js';
 
 export const HELP_TOPICS = Object.freeze([
@@ -17,7 +17,8 @@ function sourceDescription(client) {
     : 'Source availability is reported when the audio server connects. If playback is unavailable, wait a moment and try again.';
 }
 
-export function buildHelpPayload(client, requestedTopic = 'start', ownerId = 'any') {
+// inviteUrl is passed only to people allowed to add the bot (see invite.js).
+export function buildHelpPayload(client, requestedTopic = 'start', ownerId = 'any', { inviteUrl = null } = {}) {
   const topic = HELP_TOPICS.find((entry) => entry.value === requestedTopic) || HELP_TOPICS[0];
   const embed = new EmbedBuilder().setColor(0x00c8ff).setTitle(`Vybatron v2 • ${topic.label}`);
   if (topic.value === 'start') {
@@ -28,6 +29,7 @@ export function buildHelpPayload(client, requestedTopic = 'start', ownerId = 'an
         { name: 'A good next move', value: 'Save a favorite with `/favorite add`, browse `/history`, or set `/filter preset:Warm` for a softer sound.' },
         { name: 'Shared listening', value: 'Join the bot’s voice channel to change playback. A configured DJ role can limit shared controls; listeners can still use `/voteskip`.' },
       );
+    if (inviteUrl) embed.addFields({ name: 'Bring it to another server', value: '`/invite` or the button below adds Vybatron to a server where you have Manage Server permission. Only you can see this.' });
   } else if (topic.value === 'controls') {
     embed.setDescription('Playback controls are shared by everyone in the bot’s voice channel. A configured DJ role may restrict changes.')
       .addFields(
@@ -62,5 +64,7 @@ export function buildHelpPayload(client, requestedTopic = 'start', ownerId = 'an
     .setCustomId(`help:v2:topic:${ownerId}`)
     .setPlaceholder('Explore Vybatron…')
     .addOptions(HELP_TOPICS.map((entry) => ({ ...entry, default: entry.value === topic.value })));
-  return { embeds: [embed], components: [new ActionRowBuilder().addComponents(select)], allowedMentions: NO_MENTIONS };
+  const components = [new ActionRowBuilder().addComponents(select)];
+  if (inviteUrl) components.push(new ActionRowBuilder().addComponents(new ButtonBuilder().setStyle(ButtonStyle.Link).setLabel('Add to another server').setURL(inviteUrl)));
+  return { embeds: [embed], components, allowedMentions: NO_MENTIONS };
 }

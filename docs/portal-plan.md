@@ -7,7 +7,10 @@ Target incremental cost is $0; do not purchase a service during implementation.
 ## Product and selected visual direction
 
 This is a production portal for existing private Vybatron servers and future
-servers the owner deliberately adds. It does not offer public bot installation.
+servers the owner deliberately adds. The bot stays private (Public Bot off), so
+only maintainers (the application owner and `PORTAL_OPERATOR_IDS`) are offered
+the add-to-server link: built by the bot, checked against `DISCORD_CLIENT_ID`
+by the portal server.
 Audio stays in Discord; the portal controls the existing hardened player.
 
 - `portal-references/queue.png`: selected refined image 1, Aurora Queue. Use for

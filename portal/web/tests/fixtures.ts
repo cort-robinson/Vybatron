@@ -27,7 +27,7 @@ export function fixtureState() {
     settings: { volume: 100, fairQueue: false, autoplay: 'off', djRoleId: null, musicTextChannelId: 'text' }, channels: [{ id: 'voice', name: 'General', type: 'voice' }, { id: 'text', name: 'General', type: 'text' }], roles: [{ id: 'dj', name: 'DJs' }],
   };
   const configuration: Configuration = { guildId: snapshot.guild.id, channels: [...structuredClone(snapshot.channels), { id: 'lounge', name: 'music-lounge', type: 'text' }], roles: structuredClone(snapshot.roles) };
-  const bootstrap: Bootstrap = { viewer: { id: 'alex', username: 'alex', displayName: 'Alex', avatarUrl: art('alex'), maintainer: false }, guilds: [snapshot.guild], csrfToken: 'local-test-csrf', filters: [{ id: 'off', label: 'Original', description: 'Unfiltered playback' }, { id: 'warm', label: 'Warm', description: 'A softer, warm sound' }], commands: [
+  const bootstrap: Bootstrap = { viewer: { id: 'alex', username: 'alex', displayName: 'Alex', avatarUrl: art('alex'), maintainer: false }, guilds: [snapshot.guild], csrfToken: 'local-test-csrf', inviteUrl: INVITE_URL, filters: [{ id: 'off', label: 'Original', description: 'Unfiltered playback' }, { id: 'warm', label: 'Warm', description: 'A softer, warm sound' }], commands: [
     { name: 'play', description: 'Add a song or public playlist', options: [{ name: 'query', type: 3, required: true, max_length: 200 }] },
     { name: 'playnext', description: 'Play a song next', options: [{ name: 'query', type: 3, required: true, max_length: 200 }] },
     { name: 'replay', description: 'Replay a visible history entry', options: [{ name: 'index', type: 4, required: true, min_value: 1, max_value: 100 }] },
@@ -67,6 +67,7 @@ export function selectedCommandError(library: Library, command: Command) {
   if (expected !== token) return { status: 409, code: 'stale_selection', message: 'The selected library item changed.' };
   return null;
 }
+export const INVITE_URL = 'https://discord.com/oauth2/authorize?client_id=123456789012345678&scope=bot+applications.commands&permissions=281474979875840&integration_type=0';
 export async function mockPortal(page: Page, options: { signedOut?: boolean; basic?: boolean; outsideVoice?: boolean; saved?: boolean; maintainerOutsideGuild?: boolean; suggested?: boolean } = {}) {
   const state = fixtureState();
   if (options.suggested) Object.assign(state.snapshot.session, { radio: true, autoplay: 'on', queue: state.snapshot.session.queue.slice(0, 1), suggestions: suggestedTracks() });

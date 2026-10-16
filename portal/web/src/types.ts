@@ -24,6 +24,8 @@ export interface Bootstrap {
   voiceGuildId?: string | null;
   filters: { id: string; label: string; description: string }[];
   commands: CommandSchema[];
+  // Discord's add-to-server page for this bot; absent when the bot can't name its application.
+  inviteUrl?: string | null;
 }
 // Transport reconciliation only; never authority or a mutation revision.
 export interface SnapshotOrdering { instanceId: string; sequence: number }

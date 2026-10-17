@@ -54,15 +54,18 @@ merge eligibility or deployment impact. Never use admin privileges, bypasses,
 
 ## 3. Merge
 
+Merge exactly the head the gate approved, never a freshly read one:
+
 ```bash
-SHA=$(gh pr view <n> --json headRefOid --jq .headRefOid)
+SHA=$(node .agents/skills/babysit-pr/scripts/pr-gate.mjs <n> --json | node -e "const r=JSON.parse(require('fs').readFileSync(0,'utf8')); if (r.verdict!=='ready') process.exit(1); console.log(r.headSha)")
 gh pr merge <n> --squash --match-head-commit "$SHA"
 ```
 
 - Squash with the conventional PR title as the commit subject (repository
-  default). `--match-head-commit` refuses if anything was pushed after the gate.
-- If required checks are still running but everything else passed, use `--auto`
-  with the same flags. GitHub merges only after the `main` ruleset is satisfied.
+  default). `--match-head-commit` makes GitHub refuse if the head moved after
+  the gate. If it refuses, re-run step 2 on the new head.
+- Never use `gh pr merge --auto`. It would let a later push merge without this
+  gate. While checks are pending, wait (the T3 watcher wakes you) and re-gate.
 - If `main` moved: update the branch (`gh pr update-branch <n>` or merge
   `origin/main`), wait for CI on the new head, and re-run the gate.
 - Leave branch deletion to GitHub (`delete_branch_on_merge` is on). Don't pass
@@ -72,15 +75,18 @@ gh pr merge <n> --squash --match-head-commit "$SHA"
 
 ```bash
 gh pr view <n> --json state,mergedAt,mergeCommit --jq '{state, mergedAt, sha: .mergeCommit.oid}'
-gh run list --branch main --workflow CI --commit <merge-sha> --json databaseId,status,conclusion,url
+gh run list --workflow CI --event push --commit <merge-sha> --json databaseId,status,conclusion,url
 gh run watch <ci-run-id> --exit-status
-gh run list --workflow Deploy --limit 3 --json databaseId,headSha,status,conclusion,url
+gh run list --workflow Deploy --event workflow_run --commit <merge-sha> --json databaseId,headSha,status,conclusion,url
 gh run watch <deploy-run-id> --exit-status
 ```
 
-Each watch is bounded by its workflow timeout (CI 20 min per job, Deploy 45 min).
-Deploy's final step confirms that both containers carry the merge SHA and report
-healthy. That is the live evidence. Report Deploy's own conclusion:
+Use only runs whose `headSha` is the merge SHA. Never use "the latest" run. A
+run can take a minute to appear, so re-list it a few times. If none appears
+within 5 minutes, report that instead of choosing another run. Each watch is
+bounded by its workflow timeout (CI 20 min per job, Deploy 45 min). Deploy's
+final step confirms that both containers carry the merge SHA and report healthy.
+That is the live evidence. Report Deploy's own conclusion:
 
 - `success` with "nothing to release": an equal or newer revision was already running.
 - `failure` at "Plan the release" on audio files: expected for audio changes. An

@@ -6,6 +6,7 @@
 // Exit 0: ready. Exit 2: pending (checks running or mergeability not computed yet).
 // Exit 1: blocked. GitHub rulesets enforce the same basics server-side; this gate adds
 // the repository's agent policy (authorized base, hold paths, the aggregate Check).
+// A READY verdict covers only the reported headSha: merge with --match-head-commit.
 import { execFileSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 
@@ -18,28 +19,22 @@ export const POLICY = {
   // merges: audio services and new environment values need an operator on the VPS,
   // and the pipeline, release drivers and agent policy govern their own enforcement.
   holdPaths: [
-    'docker-compose.yml',
-    'docker-compose.portal.yml',
-    '.env.example',
-    '.env.portal.example',
-    'lavalink/',
-    'warp/',
-    'ops/',
-    '.github/workflows/',
-    '.agents/',
-    '.claude/',
-    'AGENTS.md',
-    'CLAUDE.md',
+    /^docker-compose[^/]*\.ya?ml$/,
+    /^\.env[^/]*\.example$/,
+    /^lavalink\//,
+    /^warp\//,
+    /^ops\/(?!.*\.md$)/, // runbook prose under ops/ is documentation, not a driver
+    /^\.github\/workflows\//,
+    /^\.agents\//,
+    /^\.claude\//,
+    /^(AGENTS|CLAUDE)\.md$/,
   ],
-  // Runbook prose under ops/ is documentation, not a driver.
-  holdExempt: [/^ops\/.*\.md$/],
 };
 
 const FAILED = new Set(['failure', 'cancelled', 'timed_out', 'action_required', 'startup_failure', 'stale']);
 
-export function heldFiles(files, { holdPaths, holdExempt } = POLICY) {
-  return files.filter((file) => !holdExempt.some((exempt) => exempt.test(file))
-    && holdPaths.some((hold) => (hold.endsWith('/') ? file.startsWith(hold) : file === hold)));
+export function heldFiles(files, holdPaths = POLICY.holdPaths) {
+  return files.filter((file) => holdPaths.some((hold) => hold.test(file)));
 }
 
 // Reruns leave several runs with one name; the newest one counts.
@@ -53,7 +48,7 @@ export function latestRuns(checkRuns) {
 }
 
 export function evaluate(state, { allowHoldPaths = false, policy = POLICY } = {}) {
-  const { pr, checkRuns, behindBy, unresolvedThreads } = state;
+  const { pr, checkRuns, workflowRuns = [], statuses = [], behindBy, unresolvedThreads } = state;
   const blockers = [];
   const pending = [];
 
@@ -69,24 +64,44 @@ export function evaluate(state, { allowHoldPaths = false, policy = POLICY } = {}
   if (pr.reviewDecision === 'CHANGES_REQUESTED') blockers.push('a reviewer requested changes');
   if (unresolvedThreads > 0) blockers.push(`${unresolvedThreads} unresolved review conversation(s)`);
 
-  const runs = latestRuns(checkRuns);
-  const required = runs.find((run) => run.name === policy.requiredCheck);
-  if (!required) pending.push(`required check ${policy.requiredCheck} has not reported on ${pr.headRefOid.slice(0, 7)}`);
-  for (const run of runs) {
-    if (run.status !== 'completed') pending.push(`${run.name} is ${run.status}`);
-    else if (FAILED.has(run.conclusion)) blockers.push(`${run.name} concluded ${run.conclusion}`);
+  // A re-run keeps the previous attempt's green check runs until new ones exist,
+  // so an unfinished workflow run on the head means its results are not final.
+  for (const run of workflowRuns) {
+    if (run.status !== 'completed') pending.push(`workflow ${run.name} is ${run.status} on this head`);
   }
 
-  const held = heldFiles(pr.files, policy);
+  const runs = latestRuns(checkRuns);
+  const required = runs.find((run) => run.name === policy.requiredCheck);
+  const short = pr.headRefOid.slice(0, 7);
+  if (!required) pending.push(`required check ${policy.requiredCheck} has not reported on ${short}`);
+  else if (required.status === 'completed' && required.conclusion !== 'success') {
+    // Skipped or neutral would satisfy GitHub; it does not satisfy this gate.
+    blockers.push(`required check ${policy.requiredCheck} concluded ${required.conclusion}, not success`);
+  }
+  for (const run of runs) {
+    if (run.status !== 'completed') pending.push(`${run.name} is ${run.status}`);
+    else if (run !== required && FAILED.has(run.conclusion)) blockers.push(`${run.name} concluded ${run.conclusion}`);
+  }
+  for (const status of statuses) {
+    if (status.state === 'pending') pending.push(`status ${status.context} is pending`);
+    else if (status.state !== 'success') blockers.push(`status ${status.context} is ${status.state}`);
+  }
+
+  const held = heldFiles(pr.files, policy.holdPaths);
   if (held.length && !allowHoldPaths) {
     blockers.push(`changes hold paths that need explicit approval: ${held.join(', ')}`);
+  }
+
+  // GitHub's own verdict catches rules this gate does not model.
+  if (!blockers.length && !pending.length && ['BLOCKED', 'DIRTY', 'BEHIND'].includes(pr.mergeStateStatus)) {
+    blockers.push(`GitHub reports merge state ${pr.mergeStateStatus}`);
   }
 
   const verdict = blockers.length ? 'blocked' : pending.length ? 'pending' : 'ready';
   return { verdict, headSha: pr.headRefOid, base: pr.baseRefName, blockers, pending, held };
 }
 
-function gh(args) {
+function runGh(args) {
   return execFileSync('gh', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 32 << 20 });
 }
 
@@ -94,20 +109,40 @@ function jsonLines(text) {
   return text.split('\n').filter(Boolean).map((line) => JSON.parse(line));
 }
 
-export function collect(number) {
+const THREADS_QUERY = `query($owner:String!,$name:String!,$number:Int!,$after:String){
+  repository(owner:$owner,name:$name){pullRequest(number:$number){
+    reviewThreads(first:100,after:$after){nodes{isResolved} pageInfo{hasNextPage endCursor}}}}}`;
+
+export function countUnresolvedThreads(gh, owner, name, number) {
+  let unresolved = 0;
+  let after = null;
+  do {
+    const args = ['api', 'graphql', '-F', `owner=${owner}`, '-F', `name=${name}`, '-F', `number=${number}`, '-f', `query=${THREADS_QUERY}`];
+    if (after) args.push('-f', `after=${after}`);
+    const page = JSON.parse(gh(args)).data.repository.pullRequest.reviewThreads;
+    unresolved += page.nodes.filter((thread) => !thread.isResolved).length;
+    after = page.pageInfo.hasNextPage ? page.pageInfo.endCursor : null;
+  } while (after);
+  return unresolved;
+}
+
+export function collect(number, gh = runGh) {
   const repo = gh(['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner']).trim();
   const [owner, name] = repo.split('/');
   const fields = 'number,url,state,isDraft,isCrossRepository,baseRefName,headRefName,headRefOid,mergeable,mergeStateStatus,reviewDecision';
   const pr = JSON.parse(gh(['pr', 'view', String(number), '--repo', repo, '--json', fields]));
+  const sha = pr.headRefOid;
   pr.files = jsonLines(gh(['api', '--paginate', `repos/${repo}/pulls/${pr.number}/files?per_page=100`,
-    '--jq', '.[] | [.filename, .previous_filename] | map(select(. != null)) | .[] | tojson'])).flat();
-  const checkRuns = jsonLines(gh(['api', '--paginate', `repos/${repo}/commits/${pr.headRefOid}/check-runs?per_page=100`,
+    '--jq', '.[] | [.filename, .previous_filename] | map(select(. != null)) | .[] | tojson']));
+  const checkRuns = jsonLines(gh(['api', '--paginate', `repos/${repo}/commits/${sha}/check-runs?per_page=100`,
     '--jq', '.check_runs[] | {id, name, status, conclusion} | tojson']));
-  const behindBy = Number(gh(['api', `repos/${repo}/compare/${encodeURIComponent(pr.baseRefName)}...${pr.headRefOid}`, '--jq', '.behind_by']).trim());
-  const threads = JSON.parse(gh(['api', 'graphql', '-F', `owner=${owner}`, '-F', `name=${name}`, '-F', `number=${pr.number}`, '-f',
-    'query=query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){reviewThreads(first:100){nodes{isResolved}}}}}']));
-  const unresolvedThreads = threads.data.repository.pullRequest.reviewThreads.nodes.filter((thread) => !thread.isResolved).length;
-  return { repo, pr, checkRuns, behindBy, unresolvedThreads };
+  const workflowRuns = jsonLines(gh(['api', '--paginate', `repos/${repo}/actions/runs?head_sha=${sha}&per_page=100`,
+    '--jq', '.workflow_runs[] | {name, status} | tojson']));
+  const statuses = jsonLines(gh(['api', '--paginate', `repos/${repo}/commits/${sha}/status?per_page=100`,
+    '--jq', '.statuses[] | {context, state} | tojson']));
+  const behindBy = Number(gh(['api', `repos/${repo}/compare/${encodeURIComponent(pr.baseRefName)}...${sha}`, '--jq', '.behind_by']).trim());
+  const unresolvedThreads = countUnresolvedThreads(gh, owner, name, pr.number);
+  return { repo, pr, checkRuns, workflowRuns, statuses, behindBy, unresolvedThreads };
 }
 
 function main(argv) {
@@ -120,7 +155,7 @@ function main(argv) {
   const result = { pr: state.pr.url, ...evaluate(state, { allowHoldPaths: argv.includes('--allow-hold-paths') }) };
   if (argv.includes('--json')) console.log(JSON.stringify(result, null, 2));
   else {
-    console.log(`${result.verdict.toUpperCase()} ${result.pr} @ ${result.headSha.slice(0, 7)} -> ${result.base}`);
+    console.log(`${result.verdict.toUpperCase()} ${result.pr} @ ${result.headSha} -> ${result.base}`);
     for (const item of result.blockers) console.log(`  blocked: ${item}`);
     for (const item of result.pending) console.log(`  pending: ${item}`);
   }

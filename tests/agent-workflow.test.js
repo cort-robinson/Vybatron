@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { evaluate, heldFiles, latestRuns } from '../.agents/skills/babysit-pr/scripts/pr-gate.mjs';
+import { countUnresolvedThreads, evaluate, heldFiles, latestRuns } from '../.agents/skills/babysit-pr/scripts/pr-gate.mjs';
 
 const root = new URL('../', import.meta.url);
 const read = (path) => readFileSync(new URL(path, root), 'utf8');
@@ -18,16 +18,18 @@ function frontmatter(text) {
   return { raw: match[0], fields, body: text.slice(match[0].length) };
 }
 
-function state({ pr = {}, checkRuns, behindBy = 0, unresolvedThreads = 0 } = {}) {
+function state({ pr = {}, checkRuns, workflowRuns = [], statuses = [], behindBy = 0, unresolvedThreads = 0 } = {}) {
   return {
     pr: {
       state: 'OPEN', isDraft: false, isCrossRepository: false, baseRefName: 'main',
-      headRefOid: 'a'.repeat(40), mergeable: 'MERGEABLE', reviewDecision: '', files: ['src/index.js'], ...pr,
+      headRefOid: 'a'.repeat(40), mergeable: 'MERGEABLE', mergeStateStatus: 'CLEAN', reviewDecision: '', files: ['src/index.js'], ...pr,
     },
     checkRuns: checkRuns ?? [
       { id: 1, name: 'test', status: 'completed', conclusion: 'success' },
       { id: 2, name: 'Check', status: 'completed', conclusion: 'success' },
     ],
+    workflowRuns,
+    statuses,
     behindBy,
     unresolvedThreads,
   };
@@ -84,6 +86,10 @@ test('gate blocks unsafe merges', () => {
     [{ checkRuns: [{ id: 1, name: 'Check', status: 'completed', conclusion: 'failure' }] }, /Check concluded failure/],
     [{ checkRuns: [{ id: 1, name: 'Check', status: 'completed', conclusion: 'success' }, { id: 2, name: 'audit', status: 'completed', conclusion: 'cancelled' }] }, /audit concluded cancelled/],
     [{ pr: { files: ['lavalink/application.yml'] } }, /hold paths.*lavalink\/application\.yml/],
+    [{ checkRuns: [{ id: 1, name: 'Check', status: 'completed', conclusion: 'skipped' }] }, /Check concluded skipped, not success/],
+    [{ checkRuns: [{ id: 1, name: 'Check', status: 'completed', conclusion: 'neutral' }] }, /Check concluded neutral, not success/],
+    [{ statuses: [{ context: 'ci/external', state: 'failure' }] }, /status ci\/external is failure/],
+    [{ pr: { mergeStateStatus: 'BLOCKED' } }, /merge state BLOCKED/],
   ];
   for (const [input, reason] of cases) {
     const result = evaluate(state(input));
@@ -99,6 +105,11 @@ test('gate waits for missing or running checks instead of passing them', () => {
   const running = evaluate(state({ checkRuns: [{ id: 1, name: 'Check', status: 'in_progress', conclusion: null }] }));
   assert.equal(running.verdict, 'pending');
   assert.equal(evaluate(state({ pr: { mergeable: 'UNKNOWN' } })).verdict, 'pending');
+  // A re-run keeps the previous attempt's green check runs until new ones exist.
+  const rerun = evaluate(state({ workflowRuns: [{ name: 'CI', status: 'queued' }] }));
+  assert.equal(rerun.verdict, 'pending');
+  assert.match(rerun.pending[0], /workflow CI is queued/);
+  assert.equal(evaluate(state({ statuses: [{ context: 'ci/external', state: 'pending' }] })).verdict, 'pending');
 });
 
 test('gate judges the newest run of each check', () => {
@@ -114,5 +125,23 @@ test('gate judges the newest run of each check', () => {
 test('hold paths match whole files and directory prefixes only', () => {
   assert.deepEqual(heldFiles(['ops/deploy.py', 'docker-compose.yml', 'docs/ops/x.md', 'src/ops/y.js', 'AGENTS.md.bak', 'ops/README.md']),
     ['ops/deploy.py', 'docker-compose.yml']);
+  assert.deepEqual(heldFiles(['docker-compose.override.yml', '.env.production.example', 'portal/docker-compose.yml', '.env', 'CLAUDE.md']),
+    ['docker-compose.override.yml', '.env.production.example', 'CLAUDE.md']);
   assert.equal(evaluate(state({ pr: { files: ['ops/deploy.py'] } }), { allowHoldPaths: true }).verdict, 'ready');
+});
+
+test('unresolved conversations are counted across every page of review threads', () => {
+  const pages = [
+    { nodes: Array.from({ length: 100 }, () => ({ isResolved: true })), pageInfo: { hasNextPage: true, endCursor: 'c1' } },
+    { nodes: [{ isResolved: false }], pageInfo: { hasNextPage: false, endCursor: 'c2' } },
+  ];
+  const calls = [];
+  const gh = (args) => {
+    calls.push(args);
+    const page = pages[calls.length - 1];
+    return JSON.stringify({ data: { repository: { pullRequest: { reviewThreads: page } } } });
+  };
+  assert.equal(countUnresolvedThreads(gh, 'o', 'r', 7), 1);
+  assert.equal(calls.length, 2);
+  assert.ok(calls[1].includes('after=c1'));
 });

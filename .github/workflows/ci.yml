@@ -258,3 +258,23 @@ jobs:
           name: browser-verified-${{ needs.browser-plan.outputs.tree }}
           path: browser-verified.txt
           retention-days: 14
+
+  # The single required status check. Fails when any verification job fails, is
+  # cancelled or is skipped, except the browser shards on a main push whose exact
+  # tree already passed them on its pull request (see browser-plan).
+  check:
+    name: Check
+    if: always()
+    needs: [lint, test, portal, browser-plan, browser]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every verification job
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          echo "$RESULTS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
+          echo "$RESULTS" | jq -e '
+            (.["browser-plan"].outputs.run == "false") as $browserCovered
+            | all(to_entries[]; .value.result == "success"
+                or (.key == "browser" and .value.result == "skipped" and $browserCovered))' > /dev/null

@@ -1,0 +1,65 @@
+# Vybatron agent guide
+
+Discord music bot (`src/`, discord.js + lavalink-client) with a private web portal
+(`portal/server` API, `portal/web` React/Vite PWA), audio services (Lavalink, cipher,
+WARP via Docker Compose), and Python ops drivers (`ops/`) that run on one VPS.
+Node 24, npm, ESM. Read `README.md` (code map), `docs/adr/` and `docs/GLOSSARY.md`
+before designing. The repository is public: never commit secrets, hostnames of
+private infrastructure, guild or user IDs, or `.env*` values.
+
+## Verify
+
+Run the narrowest checks that cover your change locally. CI runs everything.
+On Windows use `npm.cmd` if `npm.ps1` is blocked.
+
+| Change | Command |
+|---|---|
+| bot `src/`, `tests/*.test.js`, agent skills | `npm test` (or `node --test tests/<file>.test.js`) |
+| `ops/`, `tests/*_test.py` | `python -m unittest discover -s tests -p '*_test.py'` |
+| `portal/server` | `npm run portal:test` |
+| `portal/web` | `npm --prefix portal/web run typecheck`, `npm run portal:build`, then `npx playwright test <spec>` in `portal/web` (build before HTTP specs) |
+| portal end-to-end | `npm run portal:integration` (rejects `data:` URLs in built CSS; production CSP) |
+| workflows, shell, lint | CI `lint` job: `actionlint`, `shellcheck warp/*.sh tests/*.sh`, `ruff check ops tests` (`pip install -r .github/lint/requirements.txt`) |
+
+Required check: **`Check`**, the CI aggregate (after the setup PR merges, the
+`main` ruleset requires it). Never weaken, skip or delete a check to get a pass.
+
+## Workflow
+
+- **Branching:** `<type>/<slug>` branch from `origin/main` → PR → `main`. `main` is
+  the only long-lived branch. There's no staging branch; don't create one.
+- **Isolation:** one task per worktree and branch. T3 Code threads get their own
+  worktree. Otherwise run `git worktree add -b <branch> ../Vybertron-<slug> origin/main`.
+  Never edit another agent's worktree, commit unrelated files, or force-push
+  shared or protected branches. Use `--force-with-lease` only on your own branch.
+- **Commits and PRs:** Conventional Commits, plain language, and one request per PR.
+  UI changes include before/after screenshots in the PR, not committed to the repo.
+- **Default for code changes: `full-stop`**: an investigated, tested,
+  independently reviewed, merge-ready PR. It never merges. Skip the PR only when
+  the user asks for investigation or local-only work.
+- **`full-send`** only when the user explicitly says "Full Send" (or "merge it")
+  for that task. If they do, read `.agents/skills/full-send/SKILL.md` and follow it.
+  A merge to `main` deploys the bot and portal to production automatically.
+- **`promote`** for releases (version tags, GitHub Releases, operator audio
+  releases). It prepares the release and stops for approval. Read
+  `.agents/skills/promote/SKILL.md` when asked.
+- **`sol-loop`** for independent review, and **`babysit-pr`** to own a PR through CI
+  and review (T3 `watch_pull_request`). A self-review is never labeled independent.
+
+Skills live in `.agents/skills/` (Codex reads them directly). `.claude/skills/`
+holds thin Claude Code entry points that point back to them. The full process is
+in `docs/agent-workflow.md`.
+
+## Hard limits
+
+- No production action without explicit approval for that action: no SSH or VPS
+  commands, Deploy re-runs, tags or releases, secret or variable changes, or
+  ruleset or repository-setting edits.
+- Approval is required to merge changes to the hold paths: audio services
+  (`docker-compose*.yml`, `lavalink/`, `warp/`), `ops/`, `.env*.example`,
+  `.github/workflows/`, `.agents/`, `.claude/`, `AGENTS.md` and `CLAUDE.md`.
+  `pr-gate.mjs` enforces this.
+- Never bypass rulesets (`--admin`, bypass actors, disabling rules). Stop and report
+  instead.
+- Search and metadata success doesn't prove playback. Audio claims need decoded
+  canaries and a listening check (`ops/README.md`).

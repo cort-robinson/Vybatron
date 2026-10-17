@@ -41,8 +41,20 @@ export function transition(kind: MotionKind, update: () => void, direction: Moti
 // frame). The page fades out under the sleeve (styles.css) and back in as it closes.
 const sheet = 'cubic-bezier(.32, .72, 0, 1)';
 const gliding = new WeakMap<Element, Animation>();
-const travelling = (element: Element) => { const animation = gliding.get(element); return !!animation && animation.playState !== 'finished' && animation.playState !== 'idle'; };
+const underway = (animation: Animation | undefined): animation is Animation => !!animation && animation.playState !== 'finished' && animation.playState !== 'idle';
+const travelling = (element: Element) => underway(gliding.get(element));
 let flight = 0;
+let flying: { slot: string; animation: Animation } | null = null;
+
+// The cover's element can be replaced mid-flight: a song without artwork swaps the picture for the
+// fallback cover, and stopping swaps it for the empty sleeve. The replacement occupies the same box,
+// so it takes over the same flight (Artwork calls this as each cover mounts) instead of appearing
+// at its destination.
+export function adoptFlight(element: Element | null) {
+  const animation = flying?.animation; const effect = animation?.effect;
+  if (!element || !underway(animation) || !(effect instanceof KeyframeEffect) || effect.target === element || !element.matches(flying!.slot)) return;
+  effect.target = element; gliding.set(element, animation);
+}
 type Box = { x: number; y: number; width: number; height: number };
 const boxOf = (rect: DOMRect): Box => ({ x: rect.left, y: rect.top, width: rect.width, height: rect.height });
 
@@ -85,7 +97,8 @@ function playerGlide(kind: 'expand' | 'collapse') {
     const token = ++flight; const player = targets[0].element?.closest<HTMLElement>('.persistent-player');
     if (player) player.dataset.coverFlight = '';
     const covered = targets.map(({ element, box, timing: pieceTiming }) => element && box ? glide(element, boxOf(box), boxOf(element.getBoundingClientRect()), pieceTiming) : undefined)[0];
-    const land = () => { if (token === flight) delete player?.dataset.coverFlight; };
+    flying = covered ? { slot: targets[0].to, animation: covered } : null;
+    const land = () => { if (token === flight) { flying = null; delete player?.dataset.coverFlight; } };
     if (covered) covered.finished.then(land, land); else land();
     const after = new Map([...scenery.keys()].filter(element => element.isConnected).map(element => [element, element.getBoundingClientRect()] as const));
     // Nested scenery starts in its travelling ancestor's own (new) frame, so it follows the ancestor.

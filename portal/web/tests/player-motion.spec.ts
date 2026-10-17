@@ -169,3 +169,38 @@ test('a song change mid-flight neither snaps the cover nor shows its dissolve ea
   expect(await deck.evaluate(element => element.getAnimations().filter(animation => !(animation instanceof CSSTransition)).length)).toBe(1);
   expect(await hold(deck)).toEqual(flying);
 });
+
+test('a cover replaced mid-flight carries on flying instead of jumping to its place', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 844 });
+  const fixture = await mockPortal(page); await page.goto('/');
+  await expect(page.getByRole('button', { name: 'Pause playback' })).toBeEnabled();
+  const emit = (change: (session: typeof fixture.state.snapshot.session) => void, revision: string) => {
+    const state = fixture.state.snapshot; change(state.session); state.revision = revision;
+    return page.evaluate(data => (window as unknown as { portalTest: { emit: (data: unknown) => void } }).portalTest.emit(data), state);
+  };
+  // Holds the current cover element partway through its flight; null while none is flying.
+  const held = (selector: string) => page.locator(selector).evaluate(element => {
+    const glide = element.getAnimations().find(animation => animation.constructor === Animation);
+    if (!glide) return null;
+    glide.pause(); glide.currentTime = 120;
+    return { tag: element.tagName, width: Math.round(element.getBoundingClientRect().width) };
+  });
+  const sleeve = '.sleeve-artwork > .artwork'; const deck = '.player-expand-trigger > .artwork';
+
+  await page.getByRole('button', { name: 'Open player', exact: true }).click();
+  await expect.poll(() => held(sleeve)).not.toBeNull();
+  const opening = (await held(sleeve))!;
+  // A song without artwork arrives mid-flight: the fallback cover replaces the picture and keeps flying.
+  await emit(session => { session.queue.push(session.current!); session.current = { ...session.queue.shift()!, artworkUrl: null }; }, 'no-art-while-opening');
+  await expect.poll(async () => (await held(sleeve))?.tag).toBe('PICTURE');
+  expect((await held(sleeve))!.width).toBe(opening.width);
+  await page.locator(sleeve).evaluate(element => element.getAnimations().find(animation => animation.constructor === Animation)!.finish());
+
+  await page.getByRole('button', { name: 'Close player', exact: true }).filter({ visible: true }).click();
+  await expect.poll(() => held(deck)).not.toBeNull();
+  const closing = (await held(deck))!;
+  // Playback stops mid-flight: the empty sleeve replaces the cover and keeps flying.
+  await emit(session => { session.current = null; session.status = 'idle'; session.queue = []; }, 'stopped-while-closing');
+  await expect.poll(async () => (await held(deck))?.tag).toBe('SPAN');
+  expect((await held(deck))!.width).toBe(closing.width);
+});

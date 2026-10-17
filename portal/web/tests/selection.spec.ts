@@ -21,7 +21,9 @@ test('every dedicated favorite action binds the displayed song, including both q
   await expect(page.getByRole('button', { name: 'Save Night Drive to favorites' })).toBeEnabled();
   expect(fixture.commands[1]).toEqual({ command: 'favorite', subcommand: 'remove', options: { index: 1 }, expectedTrackId: night.id });
   await page.getByRole('button', { name: 'Open player', exact: true }).click();
-  await page.getByRole('button', { name: 'Song options for Slow Motion' }).click();
+  const sleeveQueue = page.locator('.sleeve-queue');
+  await expect(sleeveQueue).toBeVisible();
+  await sleeveQueue.getByRole('button', { name: 'Song options for Slow Motion' }).click();
   await page.getByRole('button', { name: 'Remove favorite', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Pause playback' })).toBeEnabled();
   expect(fixture.commands[2]).toEqual({ command: 'favorite', subcommand: 'remove', options: { index: 1 }, expectedTrackId: slow.id });

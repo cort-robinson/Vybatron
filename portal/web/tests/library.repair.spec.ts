@@ -202,3 +202,23 @@ test('paused library cache removes its heavy subtree and retains the mix draft a
   await expect(page.getByLabel('Save this session as a mix')).toHaveValue('Draft to keep');
   await expect(page.getByLabel('Search shared mixes')).toHaveValue('Night');
 });
+
+test('a new song in the same room keeps the library on screen while it refreshes', async ({ page }) => {
+  const fixture = await mockPortal(page);
+  await openLibrary(page);
+  const favorites = page.locator('.library-track-list > li');
+  await expect(favorites).toHaveCount(2);
+  const reads = () => fixture.requests.filter(path => path.endsWith('/library')).length;
+  const before = reads();
+  fixture.delayLibrary(1500);
+  const next = structuredClone(fixture.state.snapshot); const session = next.session;
+  session.queue.push(session.current!); session.current = session.queue.shift()!; next.revision = 'revision-next-song';
+  await streamAction(page, 'reconnect', next);
+  // History gains the song that just ended, so the library is read again, but favorites stay listed
+  // while that read is in flight instead of blanking to a loading state.
+  await expect.poll(reads).toBe(before + 1);
+  // Sample once, well inside the delayed read; a retrying assertion would wait the blank state out.
+  await page.waitForTimeout(250);
+  expect(await page.getByText('Loading your music…').count()).toBe(0);
+  expect(await favorites.count()).toBe(2);
+});

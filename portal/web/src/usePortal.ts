@@ -146,10 +146,16 @@ export function usePortal() {
       fresh.current = true; setConnection('live');
       clearRecovery();
       clearTimeout(policyTimer); policyTimer = setTimeout(policyCheck, freshnessMs);
-      if (before && (before.session.current?.id !== next.session.current?.id || before.session.voiceChannel?.id !== next.session.voiceChannel?.id || before.guild.admin && !next.guild.admin)) {
+      const retired = !!before && (!next.session.current && !!before.session.current || before.session.voiceChannel?.id !== next.session.voiceChannel?.id || before.guild.admin && !next.guild.admin);
+      if (retired) {
         // An authorized empty/channel-changed projection must also retire older
         // protected library reads and history before asking for its new library.
         libraryController?.abort(); libraryReady = false; setLibrary(null);
+        void refreshLibrary();
+      } else if (before && before.session.current?.id !== next.session.current?.id) {
+        // A new song in the same room only adds history. The library on screen stays
+        // authorized, so keep it while a fresh read (which supersedes older ones) arrives;
+        // clearing it blanked favorites and history on every song change.
         void refreshLibrary();
       }
     };

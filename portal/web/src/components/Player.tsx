@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { CaretDownIcon, CheckIcon, DesktopIcon, DiscordLogoIcon, CaretUpIcon, DotsThreeIcon, HeartIcon, PauseIcon, PlayIcon, RepeatIcon, RepeatOnceIcon, ShuffleIcon, SkipBackIcon, SkipForwardIcon, SpeakerHighIcon, StopIcon, RadioIcon, HandPalmIcon, ArrowSquareOutIcon, TrashIcon, WarningCircleIcon, ThumbsDownIcon, VinylRecordIcon } from '@phosphor-icons/react';
 import type { Portal } from '../usePortal';
 import type { Command } from '../types';
@@ -12,7 +12,7 @@ import { Spectrum } from './Spectrum';
 import { prefersReducedMotion, pulse } from '../motion';
 import { swipe, type SwipeDirection } from '../swipe';
 import { useBackLayers } from '../backLayers';
-import { neon, skinTint, type Skin } from '../skin';
+import { skinTint, type Skin } from '../skin';
 import { Hud, tilt, untilt } from './Overdrive';
 import { Television } from './Fantastic';
 
@@ -79,17 +79,19 @@ export function Player({ portal, expanded, setExpanded, onAdd, accent, animate, 
   // into the deck, the play mark swaps, repeat cycles, and a saved heart lifts once.
   const saved = (library?.favorites.some(t => t.id === track?.id)) ?? false;
   const observed = useRef({ track: track?.id, status: session?.status, repeat: session?.repeat, saved });
-  useEffect(() => {
+  useLayoutEffect(() => {
     const previous = observed.current; const player = playerRef.current;
     observed.current = { track: track?.id, status: session?.status, repeat: session?.repeat, saved };
     if (!player) return;
     const find = (selector: string) => player.querySelectorAll(selector);
     if (previous.track !== track?.id) {
       songExit.current?.cancel(); songExit.current = null;
-      if (previous.track && track) pulse(find('.player-expand-trigger > .artwork, .compact-title, .player-identity'), [{ opacity: .8, transform: 'translateY(6px) scale(.97)' }, { opacity: 1, transform: 'none' }], 460);
-      // Overdrive: the new title locks on as a chromatic split converges. No slicing or jumps, so it
-      // reads as focus settling rather than a flicker.
-      if (previous.track && track && skin === 'overdrive') pulse(find('.player-identity h2, .compact-track-title'), [{ textShadow: `-4px 0 ${neon}, 4px 0 ${accent}` }, { textShadow: `-1px 0 ${neon}, 1px 0 ${accent}`, offset: .6 }, { textShadow: `0 0 transparent, 0 0 transparent` }], 560);
+      if (previous.track && track) {
+        pulse(find('.player-expand-trigger > .artwork'), [{ opacity: .8, transform: 'translateY(6px) scale(.97)' }, { opacity: 1, transform: 'none' }], 460);
+        // Keep the caption plate opaque and its lettering/shadow steady. Only the inner text
+        // settles, before its first paint, so neither the scenery nor a split shadow flashes through.
+        if (skin !== 'fantastic') pulse(find('.player-title-row, .player-identity > p, .compact-title'), [{ transform: 'translateY(2px)' }, { transform: 'none' }], 320);
+      }
       // Fantastic: the new title stretches like Reed Richards and snaps back into shape.
       if (previous.track && track && skin === 'fantastic') pulse(find('.player-identity h2, .compact-track-title'), [{ transform: 'none' }, { transform: 'scale(1.16, .9)', offset: .22 }, { transform: 'scale(.95, 1.04)', offset: .48 }, { transform: 'scale(1.02, .99)', offset: .72 }, { transform: 'none' }], 720);
       return;

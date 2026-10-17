@@ -158,6 +158,11 @@ between (tests/smoothness.spec.ts guards the first and last rules):
 - Song changes keep the old cover until the new one has decoded, then dissolve it over 620ms on an
   even curve. The blurred cover light crossfades layers only after the next image decodes, and it
   leaves with the sleeve instead of fading out at full-screen size.
+- Title plates stay opaque and stationary on song changes. Inner text settles with transform-only
+  motion installed before paint; the lettering's shadow stays fixed. Native view transitions own
+  the sleeve entrance without another caption or queue fade underneath them.
+- Opening the sleeve hides the selected page while retaining its mounted shelves, lists, and
+  settings. Closing restores that same content without remounting or refetching it.
 - The palette holds through a gap of up to 1.5s with no artwork instead of resetting to default.
 - Anything the travelling cover uncovers is shaded: Overdrive keeps a plate behind the cover and
   dims the sun at once when the sleeve closes.

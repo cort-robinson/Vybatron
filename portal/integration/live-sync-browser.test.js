@@ -124,7 +124,16 @@ test('two real clients recover transient authorization reads and synchronize slo
     'Each ordered client must independently verify state once after its freshness lease is lost');
   assert.equal(count('GET', '/api/guilds/100/events'), streamsBeforeTransient + 2,
     'Recovered ordered state replaces each stream once, without reconnecting on every application error');
+  // Resume updates the phone optimistically. Finish its real command response before
+  // deliberately disconnecting it, so this section tests an idle network outage rather
+  // than cancelling an in-flight Resume and rolling back to the last verified pause.
+  const resumeResponse = pages[1].waitForResponse(response => response.request().method() === 'POST'
+    && new URL(response.url()).pathname === commandPath && response.request().postDataJSON()?.command === 'resume');
   await pages[1].getByRole('button', { name: 'Resume playback' }).click();
+  const resumed = await resumeResponse;
+  assert.equal(resumed.status(), 200);
+  assert.equal(await resumed.finished(), null);
+  assert.equal((await resumed.json()).snapshot.session.status, 'playing');
   await Promise.all(pages.map(page => expect(page.getByRole('button', { name: 'Pause playback' })).toBeEnabled()));
   assert.equal(bot.player.playing, true);
 

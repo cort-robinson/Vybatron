@@ -418,11 +418,9 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
 .sleeve-content { margin-left: var(--sidebar); min-height: 0; display: grid; grid-template-columns: minmax(0, 52fr) minmax(0, 48fr); padding: 24px 32px; gap: 32px; animation: sleeve-in 520ms var(--ease-out); }
 @keyframes sleeve-in { from { opacity: 0; transform: translateY(18px); } }
 @supports (view-transition-name: none) {
-  /* The cover travels on its own; rising its container would shift where the cover lands. */
-  .sleeve-content { animation: none; }
-  .sleeve-main > .player-identity, .sleeve-main > .player-context, .sleeve-queue { animation: sleeve-in 520ms var(--ease-out) both; }
-  .sleeve-main > .player-context { animation-delay: 40ms; }
-  .sleeve-queue { animation-delay: 90ms; }
+  /* Native snapshots already dissolve the sleeve. A second entrance on the live caption or
+     queue makes it fade twice and keeps repainting behind the travelling cover. */
+  .sleeve-content, .sleeve-main > .player-identity, .sleeve-main > .player-context, .sleeve-queue { animation: none; }
 }
 .sleeve-main { min-width: 0; min-height: 0; height: 100%; display: grid; grid-template-rows: minmax(0, 1fr) auto auto; gap: 16px; justify-items: center; }
 .sleeve-artwork { --spectrum: 52px; --cover: min(100cqw, 100cqh - var(--spectrum) - 12px); container-type: size; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; width: 100%; height: 100%; min-height: 0; min-width: 0; }

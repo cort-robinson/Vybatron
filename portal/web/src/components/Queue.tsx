@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { ArrowDownIcon, ArrowLineUpIcon, ArrowUpIcon, DotsThreeIcon, HeartIcon, ListNumbersIcon, PlayIcon, PlusIcon, RadioIcon, ThumbsDownIcon, TrashIcon, DotsSixVerticalIcon, VinylRecordIcon, XIcon } from '@phosphor-icons/react';
 import type { Track } from '../types';
 import type { Portal } from '../usePortal';
@@ -137,12 +137,13 @@ export function Queue({ portal, compact = false, onAdd }: { portal: Portal; comp
 // Autoplay picks wait outside the queue: they play only after every queued song.
 function Suggestions({ portal, tracks, compact, radioButton }: { portal: Portal; tracks: Track[]; compact: boolean; radioButton: (track: Track, close: () => void) => React.ReactNode }) {
   const { run, can, pending } = portal;
+  const headingId = useId();
   const addable = can('add') && !pending.length;
   const controllable = can('control') && !pending.length;
   const edit = (subcommand: 'promote' | 'remove' | 'less', track: Track, index: number) =>
     void run({ command: 'radio', subcommand, options: { position: index + 1 }, expectedTrackId: track.id }, subcommand === 'promote' ? 'add' : 'control');
-  return <section className="suggested" aria-labelledby="suggested-heading">
-    <div className="suggested-heading"><RadioIcon size={20} aria-hidden="true" /><h3 id="suggested-heading">Suggested</h3><span className="count">Autoplay · after your queue</span></div>
+  return <section className="suggested" aria-labelledby={headingId}>
+    <div className="suggested-heading"><RadioIcon size={20} aria-hidden="true" /><h3 id={headingId}>Suggested</h3><span className="count">Autoplay · after your queue</span></div>
     <ul className="track-list suggested-list">
       {tracks.map((track, index) => <li key={`${track.id}:${index}`} className="track-row suggested-row" data-track-id={track.id}>
         <span className="track-index" aria-hidden="true"><RadioIcon size={16} /></span>

@@ -41,10 +41,12 @@ export function transition(kind: MotionKind, update: () => void, direction: Moti
 // frame). The page fades out under the sleeve (styles.css) and back in as it closes.
 const sheet = 'cubic-bezier(.32, .72, 0, 1)';
 const gliding = new WeakMap<Element, Animation>();
+const travelling = (element: Element) => { const animation = gliding.get(element); return !!animation && animation.playState !== 'finished' && animation.playState !== 'idle'; };
+let flight = 0;
 type Box = { x: number; y: number; width: number; height: number };
 const boxOf = (rect: DOMRect): Box => ({ x: rect.left, y: rect.top, width: rect.width, height: rect.height });
 
-function glide(element: Element, from: Box, to: Box, timing: KeyframeAnimationOptions) {
+function glide(element: Element, from: Box, to: Box, timing: KeyframeAnimationOptions): Animation | undefined {
   if (!from.width || !from.height || !to.width || !to.height) return;
   const sx = from.width / to.width; const sy = from.height / to.height;
   // Translate and scale about the element's own transform origin.
@@ -57,9 +59,11 @@ function glide(element: Element, from: Box, to: Box, timing: KeyframeAnimationOp
   // so it flies the whole way rather than first showing up partway along.
   if (element instanceof HTMLImageElement) {
     animation.pause();
-    const start = () => { if (gliding.get(element) === animation && animation.playState === 'paused') animation.play(); };
+    // Only a flight still held at its start resumes; one paused elsewhere stays where it was put.
+    const start = () => { if (gliding.get(element) === animation && animation.playState === 'paused' && animation.currentTime === 0) animation.play(); };
     void element.decode().catch(() => undefined).then(start); setTimeout(start, 150);
   }
+  return animation;
 }
 
 function playerGlide(kind: 'expand' | 'collapse') {
@@ -76,7 +80,13 @@ function playerGlide(kind: 'expand' | 'collapse') {
   return () => {
     const targets = pieces.map(piece => ({ ...piece, element: document.querySelector(piece.to) }));
     for (const element of [...targets.map(target => target.element), ...scenery.keys()]) if (element) gliding.get(element)?.cancel();
-    for (const { element, box, timing: pieceTiming } of targets) if (element && box) glide(element, boxOf(box), boxOf(element.getBoundingClientRect()), pieceTiming);
+    // The cover starts over the deck and, on phones, outside the sleeve's scrolling area. Until it
+    // lands, the player lets it fly above both and holds a song's dissolve layer (styles.css).
+    const token = ++flight; const player = targets[0].element?.closest<HTMLElement>('.persistent-player');
+    if (player) player.dataset.coverFlight = '';
+    const covered = targets.map(({ element, box, timing: pieceTiming }) => element && box ? glide(element, boxOf(box), boxOf(element.getBoundingClientRect()), pieceTiming) : undefined)[0];
+    const land = () => { if (token === flight) delete player?.dataset.coverFlight; };
+    if (covered) covered.finished.then(land, land); else land();
     const after = new Map([...scenery.keys()].filter(element => element.isConnected).map(element => [element, element.getBoundingClientRect()] as const));
     // Nested scenery starts in its travelling ancestor's own (new) frame, so it follows the ancestor.
     const local = (element: Element, rect: DOMRect, from: boolean): Box => {
@@ -92,8 +102,9 @@ function playerGlide(kind: 'expand' | 'collapse') {
   };
 }
 
-// Short acknowledgement on an element whose state just changed under it.
+// Short acknowledgement on an element whose state just changed under it. A piece that is still
+// gliding into place skips it: the newer transform would snap it out of its flight.
 export function pulse(elements: Iterable<Element>, keyframes: Keyframe[], duration = 320) {
   if (prefersReducedMotion() || document.hidden) return;
-  for (const element of elements) element.animate(keyframes, { duration, easing: 'cubic-bezier(.16, 1, .3, 1)' });
+  for (const element of elements) if (!travelling(element)) element.animate(keyframes, { duration, easing: 'cubic-bezier(.16, 1, .3, 1)' });
 }

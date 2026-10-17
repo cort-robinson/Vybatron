@@ -73,12 +73,14 @@ for (const width of [390, 1280]) {
     await expect(page.getByRole('button', { name: 'Pause playback' })).toBeEnabled();
     await page.evaluate(() => document.fonts.ready);
     const deck = page.locator('.player-expand-trigger > .artwork'); const sleeve = page.locator('.sleeve-artwork > .artwork');
-    // The cover's box at the start and the end of its flight.
+    // The cover's box at the start and the end of its flight, and whether it is the topmost thing at
+    // its starting point (a clipped or covered cover still reports its box).
     const ends = (cover: typeof deck) => cover.evaluate(element => {
       const glide = element.getAnimations().find(animation => animation.constructor === Animation)!;
       glide.pause(); glide.currentTime = 0; const from = element.getBoundingClientRect();
+      const seen = document.elementFromPoint(from.x + from.width / 2, from.y + from.height / 2) === element;
       glide.finish(); const to = element.getBoundingClientRect();
-      return [from, to].map(box => ({ x: box.x, y: box.y, width: box.width, height: box.height }));
+      return { seen, boxes: [from, to].map(box => ({ x: box.x, y: box.y, width: box.width, height: box.height })) };
     });
     const near = (a: Record<string, number>, b: Record<string, number> | null) => { for (const key of ['x', 'y', 'width', 'height']) expect(Math.abs(a[key] - b![key])).toBeLessThanOrEqual(1); };
     const compact = await deck.boundingBox();
@@ -86,12 +88,14 @@ for (const width of [390, 1280]) {
     await expect.poll(() => sleeve.evaluate(element => !!element.getAnimations().find(animation => animation.constructor === Animation))).toBe(true);
     // One entrance for the caption: its rise-in, with nothing fading it a second time.
     expect(await page.locator('.player-identity').evaluate(element => element.getAnimations().filter(animation => animation instanceof CSSAnimation).length)).toBe(1);
-    const [opening, opened] = await ends(sleeve);
+    const { seen: rising, boxes: [opening, opened] } = await ends(sleeve);
+    expect(rising).toBe(true);
     near(opening, compact); near(opened, await sleeve.boundingBox());
     const open = await sleeve.boundingBox();
     await page.getByRole('button', { name: 'Close player', exact: true }).filter({ visible: true }).click();
     await expect.poll(() => deck.evaluate(element => !!element.getAnimations().find(animation => animation.constructor === Animation))).toBe(true);
-    const [closing, closed] = await ends(deck);
+    const { seen: falling, boxes: [closing, closed] } = await ends(deck);
+    expect(falling).toBe(true);
     near(closing, open); near(closed, compact);
   });
 }
@@ -125,4 +129,43 @@ test('a permission update during opening still lands the cover in its live place
     return Math.max(Math.abs(arriving.x - arrived.x), Math.abs(arriving.y - arrived.y), Math.abs(arriving.width - arrived.width), Math.abs(arriving.height - arrived.height));
   });
   expect(jump).toBeLessThanOrEqual(1);
+});
+
+test('a song change mid-flight neither snaps the cover nor shows its dissolve early', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 844 });
+  const fixture = await mockPortal(page); await page.goto('/');
+  await expect(page.getByRole('button', { name: 'Pause playback' })).toBeEnabled();
+  const emitNext = (revision: string) => {
+    const state = fixture.state.snapshot; state.session.queue.push(state.session.current!); state.session.current = state.session.queue.shift()!; state.revision = revision;
+    return page.evaluate(data => (window as unknown as { portalTest: { emit: (data: unknown) => void } }).portalTest.emit(data), state);
+  };
+  // Holds a cover partway through its flight and reports where it is.
+  const hold = (cover: ReturnType<typeof page.locator>) => cover.evaluate(element => {
+    const glide = element.getAnimations().find(animation => animation.constructor === Animation);
+    if (!glide) return null;
+    glide.pause(); glide.currentTime = 120; const box = element.getBoundingClientRect();
+    return { x: Math.round(box.x), y: Math.round(box.y), width: Math.round(box.width) };
+  });
+  const sleeve = page.locator('.sleeve-artwork > .artwork'); const deck = page.locator('.player-expand-trigger > .artwork');
+
+  await page.getByRole('button', { name: 'Open player', exact: true }).click();
+  await expect.poll(() => hold(sleeve)).not.toBeNull();
+  await emitNext('next-while-opening');
+  // The previous cover's dissolve layer waits for the travelling cover instead of appearing in its place.
+  const ghost = page.locator('.sleeve-artwork > .artwork-ghost');
+  await expect(ghost).toHaveCount(1);
+  await ghost.evaluate(element => element.getAnimations().forEach(animation => animation.pause()));
+  expect(await ghost.evaluate(element => getComputedStyle(element).visibility)).toBe('hidden');
+  await sleeve.evaluate(element => element.getAnimations().find(animation => animation.constructor === Animation)!.finish());
+  await expect.poll(() => ghost.evaluate(element => getComputedStyle(element).visibility)).toBe('visible');
+  await ghost.evaluate(element => element.getAnimations().forEach(animation => animation.finish()));
+
+  await page.getByRole('button', { name: 'Close player', exact: true }).filter({ visible: true }).click();
+  await expect.poll(() => hold(deck)).not.toBeNull();
+  const flying = await hold(deck);
+  // A song change acknowledges itself on the deck's cover, but not by snapping it out of its flight.
+  await emitNext('next-while-closing');
+  await expect(page.locator('.compact-track-title')).toHaveText(fixture.state.snapshot.session.current!.title);
+  expect(await deck.evaluate(element => element.getAnimations().filter(animation => !(animation instanceof CSSTransition)).length)).toBe(1);
+  expect(await hold(deck)).toEqual(flying);
 });

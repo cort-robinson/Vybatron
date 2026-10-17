@@ -959,6 +959,11 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
    motion.ts fades it back in as the sleeve closes. */
 .surface-stage { transition: opacity 240ms linear, display 240ms allow-discrete; }
 .surface-stage[hidden] { opacity: 0; }
+/* The opening cover starts over the deck and, on phones, outside the sleeve's scrolling area; until
+   it lands (motion.ts) neither may hide it, and a song's dissolve layer waits for it. */
+[data-cover-flight] .sleeve-content { overflow: visible; }
+[data-cover-flight] .sleeve-artwork { z-index: 1; }
+[data-cover-flight] .sleeve-artwork > .artwork-ghost { visibility: hidden; }
 :root[data-motion='tab'] .tab-indicator { view-transition-name: tab-indicator; }
 :root[data-motion='tab'] [role='tabpanel'] { view-transition-name: tab-panel; }
 /* Fixed chrome stays above sliding content; otherwise lifted panels would paint over the deck. */

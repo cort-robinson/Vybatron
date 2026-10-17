@@ -30,6 +30,9 @@ export function Spectrum({ seed, color, tint, mode, animate, bands = 48, segment
     const level = new Float32Array(bands); const peak = new Float32Array(bands); const hold = new Float32Array(bands);
     const shown = [...live.current.target];
     let hit = 0; let clock = next() * 40; let frame = 0; let last = 0; let width = 0; let height = 0;
+    let intersecting = true; let pixelRatio = 0;
+    const visible = () => width > 0 && height > 0 && intersecting && !document.hidden;
+    const stop = () => { cancelAnimationFrame(frame); frame = 0; last = 0; };
 
     const targetFor = (i: number, t: number) => {
       if (live.current.mode === 'standby') return .02;
@@ -40,7 +43,7 @@ export function Spectrum({ seed, color, tint, mode, animate, bands = 48, segment
       return Math.min(1, v.base * motion * swell + punch + (i > bands * .6 ? Math.max(0, next() - .93) * .5 : 0));
     };
     const draw = () => {
-      if (!width || !height) return;
+      if (!visible()) return;
       const dpr = canvas.width / width; const unit = segment + gap;
       const rows = Math.max(1, Math.floor((height + gap) / unit)); const column = width / bands; const bar = Math.max(1, column - Math.min(gap + 1, column * .3));
       const lit = new Path2D(); const unlit = new Path2D(); const caps = new Path2D();
@@ -67,6 +70,7 @@ export function Spectrum({ seed, color, tint, mode, animate, bands = 48, segment
     };
     const tick = (now: number) => {
       frame = 0;
+      if (!visible()) { last = 0; return; }
       const dt = Math.min(.1, (now - (last || now)) / 1000);
       if (last && now - last < 30) { frame = requestAnimationFrame(tick); return; }
       last = now; clock += dt;
@@ -84,19 +88,24 @@ export function Spectrum({ seed, color, tint, mode, animate, bands = 48, segment
       if (moving && live.current.animate) frame = requestAnimationFrame(tick); else last = 0;
     };
     const wake = () => {
-      if (!live.current.animate) { cancelAnimationFrame(frame); frame = 0; last = 0; settle(); return; }
+      if (!visible()) { stop(); return; }
+      if (!live.current.animate) { stop(); settle(); return; }
       if (!frame) frame = requestAnimationFrame(tick);
     };
     live.current.wake = wake;
     const resize = () => {
       const box = canvas.getBoundingClientRect(); const dpr = Math.min(2, devicePixelRatio || 1);
-      width = box.width; height = box.height;
+      if (width === box.width && height === box.height && pixelRatio === dpr) { wake(); return; }
+      width = box.width; height = box.height; pixelRatio = dpr;
+      if (!width || !height) { stop(); return; }
       canvas.width = Math.max(1, Math.round(width * dpr)); canvas.height = Math.max(1, Math.round(height * dpr));
       if (frame) draw(); else settle();
       wake();
     };
+    const intersection = new IntersectionObserver(entries => { intersecting = entries[0].isIntersecting; wake(); }); intersection.observe(canvas);
+    document.addEventListener('visibilitychange', wake);
     const observer = new ResizeObserver(resize); observer.observe(canvas); resize();
-    return () => { observer.disconnect(); cancelAnimationFrame(frame); live.current.wake = () => {}; };
+    return () => { observer.disconnect(); intersection.disconnect(); document.removeEventListener('visibilitychange', wake); stop(); live.current.wake = () => {}; };
   }, [seed, bands, segment, gap, glow, ghost]);
 
   useEffect(() => { live.current.wake(); }, [mode, animate, color, tint]);

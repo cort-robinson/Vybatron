@@ -266,7 +266,7 @@ REVERT: everything here is scoped to :root[data-skin='overdrive']; Settings → 
     .navigation button { border-radius: 0; }
     /* The compact deck's hairline is progress; it glows instead of carrying the decorative rail. */
     .collapsed .player-footer::before, .collapsed .player-footer::after { display: none; }
-    .compact-progress { height: 2px; background: linear-gradient(90deg, var(--neon), var(--accent) var(--range-progress, 0%), transparent 0); box-shadow: 0 0 10px color-mix(in oklab, var(--accent) 60%, transparent); }
+    .compact-progress { --progress-fill: linear-gradient(90deg, var(--neon), var(--accent)); box-shadow: 0 0 10px color-mix(in oklab, var(--accent) 60%, transparent); }
     .od-cover-hud { --gap: 10px; }
     .od-hud i { width: 20px; height: 20px; }
   }
@@ -300,6 +300,8 @@ REVERT: everything here is scoped to :root[data-skin='overdrive']; Settings → 
 @keyframes od-sunrise { from { translate: -50% 38%; opacity: 0; } }
 @keyframes od-floor-in { from { opacity: 0; } }
 @keyframes od-glint { 0%, 70% { background-position: 160% 0, 0 0; } 100% { background-position: -60% 0, 0 0; } }
+/* The phone header clips the wordmark to one pixel; its glint otherwise still paints at 120Hz. */
+@media (max-width: 599px) { :root[data-skin='overdrive'] .sidebar .brand > span { animation: none; } }
 @keyframes od-pulse { 0% { translate: -200px 0; opacity: 0; } 8% { opacity: 1; } 55% { opacity: 1; } 62%, 100% { translate: 100vw 0; opacity: 0; } }
 @keyframes od-spin { to { transform: rotate(360deg); } }
 @keyframes od-scan { to { translate: 0 310%; } }

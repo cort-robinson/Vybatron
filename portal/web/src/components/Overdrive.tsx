@@ -35,10 +35,11 @@ function skyline(seed: number, scale: number) {
   return { path: points.join(' '), windows };
 }
 
-export function Horizon() {
+export function Horizon({ prepared = false }: { prepared?: boolean }) {
   // Content and controls paint first; the scenery joins on the next idle moment and fades in.
-  const [ready, setReady] = useState(false);
+  const [ready, setReady] = useState(prepared);
   useEffect(() => {
+    if (prepared) return;
     if ('requestIdleCallback' in window) { const id = requestIdleCallback(() => setReady(true), { timeout: 600 }); return () => cancelIdleCallback(id); }
     const id = setTimeout(() => setReady(true), 120); return () => clearTimeout(id);
   }, []);

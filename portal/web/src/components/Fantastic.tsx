@@ -101,10 +101,11 @@ function stars(seed: number) {
 // The 4, drawn as one counter-cut polygon so it reads at any size.
 export const FOUR = 'M11,3 H15.5 V11 H17.5 V14 H15.5 V17 H12 V14 H3 V11.3 Z M12,7.6 L7.2,11 H12 Z';
 
-export function Earth828() {
+export function Earth828({ prepared = false }: { prepared?: boolean }) {
   // Content and controls paint first; the scenery joins on the next idle moment and fades in.
-  const [ready, setReady] = useState(false);
+  const [ready, setReady] = useState(prepared);
   useEffect(() => {
+    if (prepared) return;
     if ('requestIdleCallback' in window) { const id = requestIdleCallback(() => setReady(true), { timeout: 600 }); return () => cancelIdleCallback(id); }
     const id = setTimeout(() => setReady(true), 120); return () => clearTimeout(id);
   }, []);

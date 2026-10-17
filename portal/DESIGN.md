@@ -139,7 +139,9 @@ player deck omits ghosts so it does not read as stripes behind text). Motion is 
 the track id and combines per-band oscillation, a slow swell, and irregular low-band
 transients; it is not tempo-locked. It runs at about 30fps only while playing, connected,
 visible, ambient motion is on, and reduced motion is off. Pause or disconnect decays to a
-one-segment baseline and stops drawing. Without motion it renders one still frame.
+one-segment baseline and stops drawing. Without motion it renders one still frame. The glow is
+the lit segments' canvas shadow: a canvas `filter` re-resolves page styles on every draw. A new
+song reshapes the running spectrum instead of rebuilding its canvas.
 
 ## Motion
 

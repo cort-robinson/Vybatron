@@ -15,21 +15,25 @@ export function Spectrum({ seed, color, tint, mode, animate, bands = 48, segment
   seed: string; color: string; tint?: string; mode: SpectrumMode; animate: boolean; bands?: number; segment?: number; gap?: number; glow?: boolean; ghost?: number; className?: string;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const live = useRef({ mode, animate, target: rgb(color), tint, wake: () => {} });
-  live.current.mode = mode; live.current.animate = animate; live.current.target = rgb(color); live.current.tint = tint;
+  const live = useRef({ seed, mode, animate, target: rgb(color), tint, wake: () => {}, reseed: () => {} });
+  live.current.seed = seed; live.current.mode = mode; live.current.animate = animate; live.current.target = rgb(color); live.current.tint = tint;
 
   useEffect(() => {
     const canvas = canvasRef.current; const context = canvas?.getContext('2d');
     if (!canvas || !context) return;
-    const next = random(seed);
-    const voices = Array.from({ length: bands }, (_, i) => {
-      const position = i / (bands - 1);
-      return { base: .36 + .56 * (1 - position) ** .8 + .12 * Math.exp(-(((position - .45) / .14) ** 2)), f1: .7 + next() * 2.2, f2: 2.4 + next() * 4.6, p1: next() * 6.3, p2: next() * 6.3 };
-    });
-    const swellPhase = next() * 6.3;
+    let next = random(live.current.seed); let voices: { base: number; f1: number; f2: number; p1: number; p2: number }[] = []; let swellPhase = 0; let clock = 0;
+    const voice = () => {
+      next = random(live.current.seed);
+      voices = Array.from({ length: bands }, (_, i) => {
+        const position = i / (bands - 1);
+        return { base: .36 + .56 * (1 - position) ** .8 + .12 * Math.exp(-(((position - .45) / .14) ** 2)), f1: .7 + next() * 2.2, f2: 2.4 + next() * 4.6, p1: next() * 6.3, p2: next() * 6.3 };
+      });
+      swellPhase = next() * 6.3; clock = next() * 40;
+    };
+    voice();
     const level = new Float32Array(bands); const peak = new Float32Array(bands); const hold = new Float32Array(bands);
     const shown = [...live.current.target];
-    let hit = 0; let clock = next() * 40; let frame = 0; let last = 0; let width = 0; let height = 0;
+    let hit = 0; let frame = 0; let last = 0; let width = 0; let height = 0;
     let intersecting = true; let pixelRatio = 0;
     const visible = () => width > 0 && height > 0 && intersecting && !document.hidden;
     const stop = () => { cancelAnimationFrame(frame); frame = 0; last = 0; };
@@ -60,8 +64,12 @@ export function Spectrum({ seed, color, tint, mode, animate, bands = 48, segment
       if (live.current.tint) { fill = context.createLinearGradient(0, height, 0, 0); fill.addColorStop(0, base); fill.addColorStop(.55, base); fill.addColorStop(1, live.current.tint); }
       context.setTransform(dpr, 0, 0, dpr, 0, 0); context.clearRect(0, 0, width, height);
       context.fillStyle = fill; if (ghost) { context.globalAlpha = ghost; context.fill(unlit); }
-      if (glow) { context.save(); context.filter = 'blur(5px)'; context.globalAlpha = .55; context.fill(lit); context.restore(); }
-      context.globalAlpha = 1; context.fill(lit); context.globalAlpha = .75; context.fill(caps); context.globalAlpha = 1;
+      // The phosphor glow is the lit segments' own shadow (blur 10 ~ the former 5px filter, in device
+      // pixels like it). A canvas filter re-resolved against page styles on every use, which forced a
+      // style recalculation of the whole page about 30 times a second.
+      if (glow) { context.shadowColor = `rgb(${shown.map(Math.round).join(' ')} / .55)`; context.shadowBlur = 10; }
+      context.globalAlpha = 1; context.fill(lit); context.shadowBlur = 0; context.shadowColor = 'transparent';
+      context.globalAlpha = .75; context.fill(caps); context.globalAlpha = 1;
     };
     const settle = () => {
       // A still frame: the track's own shape when playing, a quiet baseline otherwise.
@@ -93,6 +101,9 @@ export function Spectrum({ seed, color, tint, mode, animate, bands = 48, segment
       if (!frame) frame = requestAnimationFrame(tick);
     };
     live.current.wake = wake;
+    // A new song reshapes the running spectrum; rebuilding the canvas and its observers on every
+    // song reset the drawing surface and forced layout in the middle of the song change.
+    live.current.reseed = () => { voice(); if (!frame) settle(); wake(); };
     const resize = () => {
       const box = canvas.getBoundingClientRect(); const dpr = Math.min(2, devicePixelRatio || 1);
       if (width === box.width && height === box.height && pixelRatio === dpr) { wake(); return; }
@@ -105,9 +116,11 @@ export function Spectrum({ seed, color, tint, mode, animate, bands = 48, segment
     const intersection = new IntersectionObserver(entries => { intersecting = entries[0].isIntersecting; wake(); }); intersection.observe(canvas);
     document.addEventListener('visibilitychange', wake);
     const observer = new ResizeObserver(resize); observer.observe(canvas); resize();
-    return () => { observer.disconnect(); intersection.disconnect(); document.removeEventListener('visibilitychange', wake); stop(); live.current.wake = () => {}; };
-  }, [seed, bands, segment, gap, glow, ghost]);
+    return () => { observer.disconnect(); intersection.disconnect(); document.removeEventListener('visibilitychange', wake); stop(); live.current.wake = () => {}; live.current.reseed = () => {}; };
+  }, [bands, segment, gap, glow, ghost]);
 
+  const reseeded = useRef(seed);
+  useEffect(() => { if (reseeded.current !== seed) { reseeded.current = seed; live.current.reseed(); } }, [seed]);
   useEffect(() => { live.current.wake(); }, [mode, animate, color, tint]);
   return <canvas ref={canvasRef} className={`spectrum ${className}`} aria-hidden="true" />;
 }

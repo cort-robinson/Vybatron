@@ -36,6 +36,25 @@ export function Spectrum({ seed, color, tint, mode, animate, bands = 48, segment
     let hit = 0; let frame = 0; let last = 0; let width = 0; let height = 0;
     let intersecting = true; let pixelRatio = 0;
     const visible = () => width > 0 && height > 0 && intersecting && !document.hidden;
+    // The phosphor glow is the lit segments' canvas shadow (blur 10, in device pixels), but blurred
+    // once instead of on every draw: a strip holds every possible lit column (1 to rows segments),
+    // already blurred in white, and each draw stamps one per column and tints them in one pass.
+    // Blurring every lit segment 30 times a second was the most expensive drawing on the page on
+    // phones. (A canvas filter is worse still: it re-resolves page styles on every use.)
+    const reach = 16; const on = new Uint16Array(bands);
+    let glowStrip: { key: string; strip: HTMLCanvasElement; layer: HTMLCanvasElement; slot: number } | null = null;
+    const glowFor = (dpr: number, rows: number, bar: number) => {
+      const key = [canvas.width, canvas.height, height, rows, bar].join();
+      if (glowStrip?.key === key) return glowStrip;
+      const strip = glowStrip?.strip || document.createElement('canvas'); const layer = glowStrip?.layer || document.createElement('canvas');
+      const slot = Math.ceil(bar * dpr) + 2 * reach;
+      strip.width = slot * rows; strip.height = canvas.height + 2 * reach; layer.width = canvas.width; layer.height = canvas.height;
+      // Only the shadows land in the strip: each column is drawn one strip-width left of its shadow.
+      const pen = strip.getContext('2d')!; const columns = new Path2D();
+      for (let count = 1; count <= rows; count++) for (let r = 0; r < count; r++) columns.rect((count - 1) * slot + reach - strip.width, (height - (r + 1) * (segment + gap) + gap) * dpr + reach, bar * dpr, segment * dpr);
+      pen.shadowColor = '#fff'; pen.shadowBlur = 10; pen.shadowOffsetX = strip.width; pen.fill(columns);
+      return glowStrip = { key, strip, layer, slot };
+    };
     const stop = () => { cancelAnimationFrame(frame); frame = 0; last = 0; };
 
     const targetFor = (i: number, t: number) => {
@@ -52,10 +71,10 @@ export function Spectrum({ seed, color, tint, mode, animate, bands = 48, segment
       const rows = Math.max(1, Math.floor((height + gap) / unit)); const column = width / bands; const bar = Math.max(1, column - Math.min(gap + 1, column * .3));
       const lit = new Path2D(); const unlit = new Path2D(); const caps = new Path2D();
       for (let i = 0; i < bands; i++) {
-        const x = i * column + (column - bar) / 2; const on = Math.max(1, Math.round(level[i] * rows)); const cap = Math.min(rows - 1, Math.round(peak[i] * rows));
+        const x = i * column + (column - bar) / 2; on[i] = Math.max(1, Math.round(level[i] * rows)); const cap = Math.min(rows - 1, Math.round(peak[i] * rows));
         for (let r = 0; r < rows; r++) {
           const y = height - (r + 1) * unit + gap;
-          (r < on ? lit : r === cap && cap >= on ? caps : unlit).rect(x, y, bar, segment);
+          (r < on[i] ? lit : r === cap && cap >= on[i] ? caps : unlit).rect(x, y, bar, segment);
         }
       }
       const base = `rgb(${shown.map(Math.round).join(' ')})`;
@@ -64,11 +83,17 @@ export function Spectrum({ seed, color, tint, mode, animate, bands = 48, segment
       if (live.current.tint) { fill = context.createLinearGradient(0, height, 0, 0); fill.addColorStop(0, base); fill.addColorStop(.55, base); fill.addColorStop(1, live.current.tint); }
       context.setTransform(dpr, 0, 0, dpr, 0, 0); context.clearRect(0, 0, width, height);
       context.fillStyle = fill; if (ghost) { context.globalAlpha = ghost; context.fill(unlit); }
-      // The phosphor glow is the lit segments' own shadow (blur 10 ~ the former 5px filter, in device
-      // pixels like it). A canvas filter re-resolved against page styles on every use, which forced a
-      // style recalculation of the whole page about 30 times a second.
-      if (glow) { context.shadowColor = `rgb(${shown.map(Math.round).join(' ')} / .55)`; context.shadowBlur = 10; }
-      context.globalAlpha = 1; context.fill(lit); context.shadowBlur = 0; context.shadowColor = 'transparent';
+      if (glow) {
+        const { strip, layer, slot } = glowFor(dpr, rows, bar); const stamp = layer.getContext('2d')!;
+        stamp.clearRect(0, 0, layer.width, layer.height);
+        // Neighbouring columns' blurs add up where they overlap, as they did within one shadow.
+        stamp.globalCompositeOperation = 'lighter';
+        for (let i = 0; i < bands; i++) stamp.drawImage(strip, (on[i] - 1) * slot, 0, slot, strip.height, (i * column + (column - bar) / 2) * dpr - reach, -reach, slot, strip.height);
+        stamp.globalCompositeOperation = 'source-in'; stamp.fillStyle = `rgb(${shown.map(Math.round).join(' ')} / .55)`; stamp.fillRect(0, 0, layer.width, layer.height);
+        stamp.globalCompositeOperation = 'source-over';
+        context.setTransform(1, 0, 0, 1, 0, 0); context.globalAlpha = 1; context.drawImage(layer, 0, 0); context.setTransform(dpr, 0, 0, dpr, 0, 0);
+      }
+      context.globalAlpha = 1; context.fill(lit);
       context.globalAlpha = .75; context.fill(caps); context.globalAlpha = 1;
     };
     const settle = () => {
@@ -116,7 +141,10 @@ export function Spectrum({ seed, color, tint, mode, animate, bands = 48, segment
     const intersection = new IntersectionObserver(entries => { intersecting = entries[0].isIntersecting; wake(); }); intersection.observe(canvas);
     document.addEventListener('visibilitychange', wake);
     const observer = new ResizeObserver(resize); observer.observe(canvas); resize();
-    return () => { observer.disconnect(); intersection.disconnect(); document.removeEventListener('visibilitychange', wake); stop(); live.current.wake = () => {}; live.current.reseed = () => {}; };
+    return () => {
+      observer.disconnect(); intersection.disconnect(); document.removeEventListener('visibilitychange', wake); stop(); live.current.wake = () => {}; live.current.reseed = () => {};
+      if (glowStrip) glowStrip.strip.width = glowStrip.layer.width = 0;
+    };
   }, [bands, segment, gap, glow, ghost]);
 
   const reseeded = useRef(seed);

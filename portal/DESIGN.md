@@ -140,8 +140,10 @@ the track id and combines per-band oscillation, a slow swell, and irregular low-
 transients; it is not tempo-locked. It runs at about 30fps only while playing, connected,
 visible, ambient motion is on, and reduced motion is off. Pause or disconnect decays to a
 one-segment baseline and stops drawing. Without motion it renders one still frame. The glow is
-the lit segments' canvas shadow: a canvas `filter` re-resolves page styles on every draw. A new
-song reshapes the running spectrum instead of rebuilding its canvas.
+the lit segments' canvas shadow, blurred once per canvas size into a strip of every column height;
+each draw stamps and tints those instead of blurring again (that blur was the costliest drawing on
+phones, and a canvas `filter` also re-resolves page styles on every draw). A new song reshapes the
+running spectrum instead of rebuilding its canvas.
 
 ## Motion
 
@@ -251,6 +253,9 @@ so switching looks is one attribute and removing it is two files and their impor
   energon windows, and a perspective neon floor that rolls toward the viewer. The horizon
   sits on top of the deck while browsing and rises to 70% in the sleeve, where the cover
   eclipses the sun. Sign-in stands the cover and spectrum on the horizon, with the sign-in copy on the floor below.
+  CRT scanlines are painted into the sky, sun, and floor rather than laid over the scene.
+- **Phone chrome:** on phones and tablets the deck and tabs are solid ground with a faint neon cast
+  instead of glass, because the floor rolls right behind them.
 - **Color:** one fixed orchid neon (`--neon`) and sunset orange are scenery and gradient
   partners only. The cover accent still drives every action and state.
 - **Caption plate:** in the sleeve the title, artist, and any state note sit on a smoked plate (ground
@@ -259,7 +264,7 @@ so switching looks is one attribute and removing it is two files and their impor
 - **Plating:** 4/12px alternating radii (true bevels where `corner-shape` is supported),
   targeting brackets on framed panels, gradient rails instead of hairline borders, and a
   chrome wordmark.
-- **Alive:** the floor, windows, CRT band, rail pulse, and reactor ring run only while the
+- **Alive:** the floor, windows, rail pulse, and reactor ring run only while the
   session plays live with ambient motion on. On track change the title locks on with a
   chromatic split while a scan beam crosses the cover. The sleeve cover leans toward a fine
   pointer. On page load the sun rises and the floor and skyline fade in once; the chrome never
@@ -328,6 +333,8 @@ Overflowing shelves fade at whichever edge still has more to show.
 ### Don't:
 - **Don't** label the spectrum as live, measured, or synced audio, or tempo-lock it.
 - **Don't** add `backdrop-filter` to an element that contains fixed-position descendants.
+- **Don't** put glass blur or a full-screen overlay over scenery that keeps moving: the compositor
+  redoes them every frame, which phone GPUs feel most.
 - **Don't** let room light rise behind reading text in browse state; brighten it only in the sleeve.
 - **Don't** duplicate current identity, timeline, or transport between compact and expanded states.
 - **Don't** replay an uncertain or stale mutation after reconnect.

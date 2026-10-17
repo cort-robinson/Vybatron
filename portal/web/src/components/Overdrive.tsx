@@ -56,7 +56,6 @@ export function Horizon({ prepared = false }: { prepared?: boolean }) {
       {near.windows.map((light, index) => <rect key={index} className="od-window" x={light.x} y={light.y} width="5" height="2" style={{ animationDelay: `${light.delay.toFixed(2)}s` }} />)}
     </svg>
     <div className="od-floor" data-travel><div className="od-plane" /></div>
-    <div className="od-crt" />
   </div>;
 }
 

@@ -54,16 +54,18 @@ merge eligibility or deployment impact. Never use admin privileges, bypasses,
 
 ## 3. Merge
 
-Merge exactly the head the gate approved, never a freshly read one:
+Merge only through the gate. It evaluates the PR and merges in the same
+process, and only on `READY`, pinned to the head SHA it just approved:
 
 ```bash
-SHA=$(node .agents/skills/babysit-pr/scripts/pr-gate.mjs <n> --json | node -e "const r=JSON.parse(require('fs').readFileSync(0,'utf8')); if (r.verdict!=='ready') process.exit(1); console.log(r.headSha)")
-gh pr merge <n> --squash --match-head-commit "$SHA"
+node .agents/skills/babysit-pr/scripts/pr-gate.mjs <n> --merge    # add --allow-hold-paths only if approved
 ```
 
-- Squash with the conventional PR title as the commit subject (repository
-  default). `--match-head-commit` makes GitHub refuse if the head moved after
-  the gate. If it refuses, re-run step 2 on the new head.
+- Don't call `gh pr merge` yourself. The gate runs it as
+  `--squash --match-head-commit <approved sha>`, so GitHub refuses if the head
+  moved. On a refusal or a non-zero exit, re-run step 2.
+- The squash commit uses the conventional PR title as its subject
+  (repository default).
 - Never use `gh pr merge --auto`. It would let a later push merge without this
   gate. While checks are pending, wait (the T3 watcher wakes you) and re-gate.
 - If `main` moved: update the branch (`gh pr update-branch <n>` or merge

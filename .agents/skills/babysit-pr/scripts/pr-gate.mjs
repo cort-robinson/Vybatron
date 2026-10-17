@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 // Reports whether a pull request may be merged by an agent, from live GitHub state.
 //
-//   node .agents/skills/babysit-pr/scripts/pr-gate.mjs <pr> [--allow-hold-paths] [--json]
+//   node .agents/skills/babysit-pr/scripts/pr-gate.mjs <pr> [--allow-hold-paths] [--json] [--merge]
 //
+// --merge (full-send only) squash-merges in the same process, and only on READY,
+// pinned to the head SHA this run approved.
 // Exit 0: ready. Exit 2: pending (checks running or mergeability not computed yet).
 // Exit 1: blocked. GitHub rulesets enforce the same basics server-side; this gate adds
 // the repository's agent policy (authorized base, hold paths, the aggregate Check).
@@ -145,10 +147,17 @@ export function collect(number, gh = runGh) {
   return { repo, pr, checkRuns, workflowRuns, statuses, behindBy, unresolvedThreads };
 }
 
+// Never merges unless the verdict is ready; the SHA comes from the same evaluation.
+export function mergeIfReady(result, number, gh = runGh) {
+  if (result.verdict !== 'ready' || !/^[0-9a-f]{40}$/.test(result.headSha)) return false;
+  gh(['pr', 'merge', String(number), '--squash', '--match-head-commit', result.headSha]);
+  return true;
+}
+
 function main(argv) {
   const number = argv.find((arg) => /^\d+$/.test(arg));
   if (!number) {
-    console.error('usage: pr-gate.mjs <pr-number> [--allow-hold-paths] [--json]');
+    console.error('usage: pr-gate.mjs <pr-number> [--allow-hold-paths] [--json] [--merge]');
     return 1;
   }
   const state = collect(number);
@@ -158,6 +167,13 @@ function main(argv) {
     console.log(`${result.verdict.toUpperCase()} ${result.pr} @ ${result.headSha} -> ${result.base}`);
     for (const item of result.blockers) console.log(`  blocked: ${item}`);
     for (const item of result.pending) console.log(`  pending: ${item}`);
+  }
+  if (argv.includes('--merge')) {
+    if (!mergeIfReady(result, number)) {
+      console.error('not merged: the gate did not report READY');
+      return result.verdict === 'pending' ? 2 : 1;
+    }
+    console.log(`merged ${result.pr} at ${result.headSha}`);
   }
   return { ready: 0, pending: 2, blocked: 1 }[result.verdict];
 }

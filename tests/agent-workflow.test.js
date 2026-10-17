@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { countUnresolvedThreads, evaluate, heldFiles, latestRuns } from '../.agents/skills/babysit-pr/scripts/pr-gate.mjs';
+import { countUnresolvedThreads, evaluate, heldFiles, latestRuns, mergeIfReady } from '../.agents/skills/babysit-pr/scripts/pr-gate.mjs';
 
 const root = new URL('../', import.meta.url);
 const read = (path) => readFileSync(new URL(path, root), 'utf8');
@@ -144,4 +144,16 @@ test('unresolved conversations are counted across every page of review threads',
   assert.equal(countUnresolvedThreads(gh, 'o', 'r', 7), 1);
   assert.equal(calls.length, 2);
   assert.ok(calls[1].includes('after=c1'));
+});
+
+test('merge runs only on a ready verdict, pinned to the evaluated head', () => {
+  const calls = [];
+  const gh = (args) => { calls.push(args); return ''; };
+  for (const input of [{ pr: { isDraft: true } }, { checkRuns: [] }, { pr: { files: ['warp/start.sh'] } }]) {
+    assert.equal(mergeIfReady(evaluate(state(input)), 7, gh), false);
+  }
+  assert.equal(mergeIfReady({ verdict: 'ready', headSha: '' }, 7, gh), false);
+  assert.deepEqual(calls, []);
+  assert.equal(mergeIfReady(evaluate(state()), 7, gh), true);
+  assert.deepEqual(calls, [['pr', 'merge', '7', '--squash', '--match-head-commit', 'a'.repeat(40)]]);
 });

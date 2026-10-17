@@ -168,6 +168,9 @@ between (tests/smoothness.spec.ts guards the first and last rules):
 - The palette holds through a gap of up to 1.5s with no artwork instead of resetting to default.
 - Anything the travelling cover uncovers is shaded: Overdrive keeps a plate behind the cover and
   dims the sun at once when the sleeve closes.
+- Scenery that changes place between browse and the sleeve (sun or planet, skyline, floor or bay,
+  sky) is marked `data-travel` and glides as a compositor transform from its measured old box to
+  its new one (`src/motion.ts`), never by animating `top`, `left`, or size.
 
 ## Components
 
@@ -315,6 +318,9 @@ Overflowing shelves fade at whichever edge still has more to show.
 - **Do** keep favorites, pause/recovery, and destructive states on fixed colors.
 - **Do** use server-projected capabilities and fresh state to decide whether an action is available.
 - **Do** settle the spectrum and light drift on pause, recovery, disconnection, hidden tabs, and reduced motion.
+- **Do** animate ambient scenery only with transform and opacity on elements that can be their own
+  layer (an HTML element or a whole `<svg>`), and rest scenery that reading pages hide. Shapes inside
+  one SVG, and backgrounds, animate on the main thread every frame.
 
 ### Don't:
 - **Don't** label the spectrum as live, measured, or synced audio, or tempo-lock it.

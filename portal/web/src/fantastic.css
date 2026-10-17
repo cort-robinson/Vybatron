@@ -74,23 +74,31 @@ REVERT: everything here is scoped to :root[data-skin='fantastic']; Settings → 
 .auth-page .ff-scene { opacity: .94; }
 
 /* Dusk: navy overhead, suit blue at altitude, and a Torch-orange band where the sun just went down. */
-.ff-sky { position: absolute; left: 0; right: 0; top: 0; height: var(--ff-horizon); transition: height 900ms var(--ease-out); background:
+.ff-sky { position: absolute; left: 0; right: 0; top: 0; height: var(--ff-horizon); background:
   radial-gradient(38% 46% at var(--planet-x) 100%, color-mix(in oklab, var(--accent) 24%, transparent), transparent 72%),
   linear-gradient(to bottom, transparent 18%, color-mix(in oklab, var(--ff-suit) 13%, transparent) 55%, color-mix(in oklab, var(--ff-flame) 22%, transparent) 88%, color-mix(in oklab, var(--ff-mustard) 34%, transparent)); }
-.ff-stars { position: absolute; left: 0; top: 0; width: 100%; height: var(--ff-horizon); transition: height 900ms var(--ease-out); }
+.ff-stars { position: absolute; left: 0; top: 0; width: 100%; height: var(--ff-horizon); container-type: size; }
+.ff-specks { display: block; width: 100%; height: 100%; }
 .ff-speck { fill: var(--ff-cream); opacity: .5; }
-.ff-burst { fill: var(--ff-cream); opacity: .85; transform-box: fill-box; transform-origin: center; animation: ff-twinkle 6s ease-in-out infinite paused; }
+/* Each starburst is its own small layer, so its twinkle runs on the compositor (shapes inside one SVG
+   animate on the main thread every frame). It sits where the specks' slice-fitted 1600x600 frame
+   puts that point: one frame unit is the larger of the two fitting scales, centred horizontally. */
+.ff-burst { --unit: max(100cqw / 1600, 100cqh / 600); position: absolute; left: calc(50cqw + (var(--x) - 800) * var(--unit)); top: calc(var(--y) * var(--unit));
+  width: calc(var(--size) * var(--unit)); height: calc(var(--size) * var(--unit)); translate: -50% -50%; overflow: visible;
+  fill: var(--ff-cream); opacity: .85; animation: ff-twinkle 6s ease-in-out infinite paused; }
 
 /* Kirby krackle: black voids rimmed in cosmic energy, tinted by the cover. */
-.ff-krackle { position: absolute; left: var(--sidebar); top: 1vh; width: min(1000px, 70vw); height: auto; opacity: .85; overflow: visible; transition: opacity 700ms var(--ease-out); }
+.ff-krackle { position: absolute; left: var(--sidebar); top: 1vh; width: min(1000px, 70vw); aspect-ratio: 2; opacity: .85; transition: opacity 700ms var(--ease-out); }
+/* The storm's energy rims: one element, one gradient layer per rim (Fantastic.tsx glowField). */
+.ff-krackle-glow { position: absolute; background-repeat: no-repeat;
+  --ff-rim: radial-gradient(closest-side, color-mix(in oklab, var(--ff-cream) 55%, var(--accent)), color-mix(in oklab, color-mix(in oklab, var(--accent) 55%, var(--ff-flame)) 50%, transparent) 55%, color-mix(in oklab, var(--accent) 0%, transparent)); }
 /* Reading pages keep a clear sky: the storm joins the sleeve and the sign-in, and the monorail
    runs only behind the sleeve, where no headline sits on the skyline. */
 .app-shell .ambient-scene:not(.immersive) :is(.ff-krackle, .ff-rail, .ff-train), .auth-page :is(.ff-rail, .ff-train) { opacity: 0; transition-duration: 160ms; }
 .ff-rail, .ff-train { transition: opacity 700ms var(--ease-out); }
-.ff-energy-core { stop-color: color-mix(in oklab, var(--ff-cream) 55%, var(--accent)); stop-opacity: 1; }
-.ff-energy-mid { stop-color: color-mix(in oklab, var(--accent) 55%, var(--ff-flame)); stop-opacity: .5; }
-.ff-energy-edge { stop-color: var(--accent); stop-opacity: 0; }
-.ff-krackle-voids circle { fill: color-mix(in oklab, var(--ff-base), black 40%); transform-box: fill-box; transform-origin: center; animation: ff-crackle 3.4s ease-in-out infinite alternate paused; }
+/* Each cluster of voids is its own small layer laid over the glow in the storm's 800x400 frame, so its
+   crackle runs on the compositor. */
+.ff-void { position: absolute; overflow: visible; fill: color-mix(in oklab, var(--ff-base), black 40%); animation: ff-crackle 3.4s ease-in-out infinite alternate paused; }
 
 /* The Silver Surfer, now and then, on his way somewhere important. */
 .ff-herald { position: absolute; left: 0; top: 30%; width: clamp(140px, 16vw, 260px); height: 2px; border-radius: 2px; opacity: 0; pointer-events: none;
@@ -98,8 +106,8 @@ REVERT: everything here is scoped to :root[data-skin='fantastic']; Settings → 
 .ff-herald::after { content: ''; position: absolute; right: -2px; top: -2px; width: 6px; height: 6px; border-radius: 50%; background: #fff; box-shadow: 0 0 10px 3px rgb(214 230 255 / .8); }
 
 .ff-planet { position: absolute; left: var(--planet-x); top: calc(var(--ff-horizon) - var(--planet) * .74); width: var(--planet); aspect-ratio: 1; translate: -50% 0; overflow: visible;
-  opacity: .92; transition: opacity 700ms var(--ease-out) 260ms, top 900ms var(--ease-out), left 900ms var(--ease-out), width 900ms var(--ease-out); }
-.ambient-scene:not(.immersive) .ff-planet { top: calc(var(--ff-horizon) - var(--planet) * .6); opacity: .5; transition-duration: 160ms, 900ms, 900ms, 900ms; transition-delay: 0ms; }
+  opacity: .92; transition: opacity 700ms var(--ease-out) 260ms; }
+.ambient-scene:not(.immersive) .ff-planet { top: calc(var(--ff-horizon) - var(--planet) * .6); opacity: .5; transition-duration: 160ms; transition-delay: 0ms; }
 .auth-page .ambient-scene .ff-planet { top: calc(var(--ff-horizon) - var(--planet) * 1.02); opacity: .86; }
 .ff-planet-light { stop-color: color-mix(in oklab, var(--ff-cream) 88%, var(--accent)); }
 .ff-planet-mid { stop-color: color-mix(in oklab, color-mix(in oklab, var(--ff-flame) 50%, var(--ff-mustard)) 82%, var(--accent)); }
@@ -108,7 +116,7 @@ REVERT: everything here is scoped to :root[data-skin='fantastic']; Settings → 
 .ff-ring { fill: none; stroke: color-mix(in oklab, var(--ff-cream) 80%, var(--ff-flame)); stroke-width: 4.5; }
 .ff-band { fill: none; stroke: color-mix(in oklab, var(--ff-cream) 20%, transparent); stroke-width: 3; stroke-linecap: round; }
 
-.ff-skyline { position: absolute; left: 0; bottom: calc(100% - var(--ff-horizon)); width: 100%; height: clamp(84px, 16vh, 184px); overflow: visible; transition: bottom 900ms var(--ease-out), height 900ms var(--ease-out); }
+.ff-skyline { position: absolute; left: 0; bottom: calc(100% - var(--ff-horizon)); width: 100%; height: clamp(84px, 16vh, 184px); overflow: visible; }
 .ambient-scene:not(.immersive) .ff-skyline { height: clamp(64px, 12vh, 140px); }
 .auth-page .ambient-scene .ff-skyline { height: clamp(84px, 16vh, 176px); }
 .ff-skyline-far { fill: color-mix(in oklab, var(--ff-suit) 30%, var(--ff-base)); opacity: .72; }
@@ -125,17 +133,22 @@ REVERT: everything here is scoped to :root[data-skin='fantastic']; Settings → 
 .ff-train-windows { fill: var(--ff-navy); }
 
 /* The bay: a cream-and-blue horizon line, the planet's reflection, and Ben-Day dots in the shallows. */
-.ff-bay { position: absolute; left: 0; right: 0; top: var(--ff-horizon); bottom: 0; overflow: hidden; transition: top 900ms var(--ease-out);
+.ff-bay { position: absolute; left: 0; right: 0; top: var(--ff-horizon); bottom: 0; overflow: hidden;
   background: linear-gradient(to bottom, color-mix(in oklab, var(--ff-flame) 22%, var(--ff-base)), color-mix(in oklab, var(--ff-suit) 14%, var(--ff-base)) 35%, var(--ff-base) 85%); }
 .ff-bay::before { content: ''; position: absolute; z-index: 1; left: 0; right: 0; top: 0; height: 5px; background: var(--piping); --ff-pipe: color-mix(in oklab, var(--ff-cream) 70%, transparent); }
 .ff-bay::after { content: ''; position: absolute; inset: 0; background: radial-gradient(circle, color-mix(in oklab, var(--ff-cream) 20%, transparent) 1.3px, transparent 1.8px) 0 0 / 9px 9px;
   -webkit-mask-image: linear-gradient(to bottom, #000, transparent 75%); mask-image: linear-gradient(to bottom, #000, transparent 75%); }
-.ff-glint { position: absolute; left: var(--planet-x); top: 6px; width: calc(var(--planet) * .42); height: 80%; translate: -50% 0; opacity: .55; transition: left 900ms var(--ease-out), width 900ms var(--ease-out);
+/* The reflection's ripples drift down through a still mask: the striped layer slides one stripe
+   and repeats, as a transform the compositor runs (sliding the background repainted every frame). */
+.ff-glint { position: absolute; left: var(--planet-x); top: 6px; width: calc(var(--planet) * .42); height: 80%; translate: -50% 0; opacity: .55; overflow: hidden;
+  -webkit-mask-image: radial-gradient(50% 100% at 50% 0, #000, transparent); mask-image: radial-gradient(50% 100% at 50% 0, #000, transparent); }
+.ff-glint::before { content: ''; position: absolute; left: 0; right: 0; top: -8px; bottom: 0;
   background: repeating-linear-gradient(to bottom, color-mix(in oklab, var(--ff-cream) 55%, var(--accent)) 0 2px, transparent 2px 8px);
-  -webkit-mask-image: radial-gradient(50% 100% at 50% 0, #000, transparent); mask-image: radial-gradient(50% 100% at 50% 0, #000, transparent);
   animation: ff-shimmer 2.4s linear infinite paused; }
 
-.ambient-scene.moving :is(.ff-burst, .ff-window, .ff-krackle-voids circle, .ff-herald, .ff-train, .ff-glint) { animation-play-state: running; }
+.ambient-scene.moving :is(.ff-burst, .ff-window, .ff-void, .ff-herald, .ff-train), .ambient-scene.moving .ff-glint::before { animation-play-state: running; }
+/* Behind reading pages the storm and the monorail are faded out; they rest instead of animating unseen. */
+.app-shell .ambient-scene:not(.immersive) :is(.ff-void, .ff-train) { animation-play-state: paused; }
 
 @keyframes ff-fade { from { opacity: 0; } }
 @keyframes ff-twinkle { 0%, 70%, 100% { transform: none; opacity: .85; } 80% { transform: scale(1.5) rotate(22deg); opacity: 1; } 90% { transform: scale(.7); opacity: .5; } }
@@ -143,7 +156,7 @@ REVERT: everything here is scoped to :root[data-skin='fantastic']; Settings → 
 @keyframes ff-blink { 0% { opacity: .85; } 37% { opacity: .2; } 44% { opacity: .85; } 81% { opacity: .45; } }
 @keyframes ff-herald { 0% { transform: rotate(-11deg) translateX(-40vw); opacity: 0; } 1% { opacity: 1; } 9% { opacity: 1; } 11%, 100% { transform: rotate(-11deg) translateX(130vw); opacity: 0; } }
 @keyframes ff-monorail { 0% { offset-distance: 34%; } 66% { offset-distance: 100%; } 66.01% { offset-distance: 0%; } 100% { offset-distance: 34%; } }
-@keyframes ff-shimmer { to { background-position: 0 8px; } }
+@keyframes ff-shimmer { to { transform: translateY(8px); } }
 
 /* ── Faceplate: sidebar, wordmark, navigation ───────────────────────────── */
 :root[data-skin='fantastic'] {
@@ -340,12 +353,9 @@ REVERT: everything here is scoped to :root[data-skin='fantastic']; Settings → 
 
 @media (prefers-reduced-motion: reduce) {
   :root[data-skin='fantastic'] {
-    .ff-scene, .ff-burst, .ff-window, .ff-krackle-voids circle, .ff-train, .ff-glint, .transport .play-button::after { animation: none !important; }
+    .ff-scene, .ff-burst, .ff-window, .ff-void, .ff-train, .ff-glint::before, .transport .play-button::after { animation: none !important; }
     .ff-herald, .ff-tune { display: none; }
     .shelf-row > li:hover .shelf-art .artwork, .playlist-tile:hover .playlist-cover, .button.primary:hover:not(:disabled) { transform: none; }
-    /* The horizon changes place between browse and the sleeve without travelling; the planet only fades. */
-    .ff-sky, .ff-stars, .ff-skyline, .ff-bay, .ff-glint { transition: none; }
-    .ff-planet { transition-property: opacity; }
   }
   :root[data-skin='fantastic'][data-boot] :is(.ff-planet, .ff-bay, .ff-skyline, .ff-krackle) { animation: none; }
 }

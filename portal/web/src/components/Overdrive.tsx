@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState, type PointerEvent } from 'react';
 
 // Overdrive scenery: a cover-tinted sunset over an angular Cybertronian skyline and a neon
 // floor that rolls toward the viewer while music plays. Pure decoration behind the content;
-// every piece is aria-hidden, and motion is gated by the ambient scene's moving state.
+// every piece is aria-hidden, and motion is gated by the ambient scene's moving state. Pieces
+// marked data-travel glide between the browse and sleeve layouts (motion.ts).
 
 function random(seed: number) {
   return () => { seed = (seed + 0x6d2b79f5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
@@ -48,13 +49,13 @@ export function Horizon({ prepared = false }: { prepared?: boolean }) {
   if (!ready) return null;
   return <div className="od-horizon">
     <div className="od-sky" />
-    <div className="od-sun" />
-    <svg className="od-skyline" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="xMidYMax slice" focusable="false">
+    <div className="od-sun" data-travel />
+    <svg className="od-skyline" data-travel viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="xMidYMax slice" focusable="false">
       <polygon className="od-skyline-far" points={far.path} />
       <polygon className="od-skyline-near" points={near.path} />
       {near.windows.map((light, index) => <rect key={index} className="od-window" x={light.x} y={light.y} width="5" height="2" style={{ animationDelay: `${light.delay.toFixed(2)}s` }} />)}
     </svg>
-    <div className="od-floor"><div className="od-plane" /></div>
+    <div className="od-floor" data-travel><div className="od-plane" /></div>
     <div className="od-crt" />
   </div>;
 }

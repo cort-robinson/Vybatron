@@ -56,18 +56,17 @@ REVERT: everything here is scoped to :root[data-skin='overdrive']; Settings → 
   mask-image: linear-gradient(to bottom, #000 0 48%, transparent 48% 50.5%, #000 50.5% 58%, transparent 58% 61.5%, #000 61.5% 67.5%, transparent 67.5% 72%, #000 72% 77%, transparent 77% 82.5%, #000 82.5% 86.5%, transparent 86.5% 93%, #000 93%);
   /* Entering the sleeve, the sun brightens once the cover is in place; leaving it, the sun dims at
      once so it never shows uncovered while it travels back down. */
-  opacity: .78; transition: opacity 700ms var(--ease-out) 260ms, top 900ms var(--ease-out), left 900ms var(--ease-out), width 900ms var(--ease-out);
+  opacity: .78; transition: opacity 700ms var(--ease-out) 260ms;
 }
-.ambient-scene:not(.immersive) .od-sun { top: calc(var(--horizon) - var(--sun) * .52); opacity: .34; mix-blend-mode: screen; transition-duration: 160ms, 900ms, 900ms, 900ms; transition-delay: 0ms; }
+.ambient-scene:not(.immersive) .od-sun { top: calc(var(--horizon) - var(--sun) * .52); opacity: .34; mix-blend-mode: screen; transition-duration: 160ms; transition-delay: 0ms; }
 .auth-page .ambient-scene .od-sun { opacity: .78; mix-blend-mode: normal; }
-.od-skyline { position: absolute; left: 0; bottom: calc(100% - var(--horizon)); width: 100%; height: clamp(72px, 14vh, 156px); transition: bottom 900ms var(--ease-out); overflow: visible; }
+.od-skyline { position: absolute; left: 0; bottom: calc(100% - var(--horizon)); width: 100%; height: clamp(72px, 14vh, 156px); overflow: visible; }
 .od-skyline-far { fill: color-mix(in oklab, var(--glow-2) 55%, var(--ground)); opacity: .85; }
 .od-skyline-near { fill: color-mix(in oklab, var(--ground), black 30%); stroke: color-mix(in oklab, var(--accent) 55%, transparent); stroke-width: 1; vector-effect: non-scaling-stroke; stroke-linejoin: bevel; }
 .od-window { fill: color-mix(in oklab, var(--accent) 80%, white); opacity: .85; animation: od-blink 9s steps(1) infinite paused; }
 .od-floor {
   position: absolute; left: 0; right: 0; top: var(--horizon); bottom: 0; overflow: hidden; perspective: 300px; perspective-origin: var(--sun-x) 0;
   background: linear-gradient(to bottom, color-mix(in oklab, var(--neon) 20%, var(--ground)), color-mix(in oklab, var(--glow-2) 25%, var(--ground)) 40%, var(--ground) 90%);
-  transition: top 900ms var(--ease-out);
 }
 .od-floor::before { content: ''; position: absolute; z-index: 1; left: 0; right: 0; top: 0; height: 2px; background: var(--rail); box-shadow: 0 0 22px 3px color-mix(in oklab, var(--neon) 45%, transparent); }
 .od-plane {
@@ -88,16 +87,26 @@ REVERT: everything here is scoped to :root[data-skin='overdrive']; Settings → 
 @keyframes od-breathe { to { opacity: .72; } }
 
 /* ── Faceplate: sidebar, wordmark, navigation ───────────────────────────── */
+/* The glint's frame, which also clips its sliding window to the wordmark (it never shows outside
+   the letters, and must not widen the page); specificity-free so narrow layouts can still hide the name. */
+:where(:root[data-skin='overdrive']) .brand > span { position: relative; overflow: clip; }
 :root[data-skin='overdrive'] {
   .brand > span {
     /* 80s chrome: sky over a hard horizon over a warm ground, with a slow glint. */
-    background: linear-gradient(105deg, transparent 40%, rgb(255 255 255 / .9) 50%, transparent 60%) 160% 0 / 260% 100% no-repeat,
-      linear-gradient(180deg, #f1f8ff 0%, #a9cbff 40%, #ffffff 50%, #3a1f63 51%, #7a46b8 60%, #ff9ad8 84%, #fff1fa 100%);
+    background: linear-gradient(180deg, #f1f8ff 0%, #a9cbff 40%, #ffffff 50%, #3a1f63 51%, #7a46b8 60%, #ff9ad8 84%, #fff1fa 100%);
     -webkit-background-clip: text; background-clip: text; color: transparent;
     filter: drop-shadow(0 0 10px color-mix(in oklab, var(--neon) 45%, transparent));
   }
   .brand svg { color: var(--accent); filter: drop-shadow(0 0 8px color-mix(in oklab, var(--accent) 70%, transparent)); }
-  .motion-live .brand > span, .auth-page:has(.moving) .brand > span { animation: od-glint 8s ease-in-out 1.5s infinite; }
+  /* The glint is a white copy of the wordmark seen through a soft, slanted window. The window
+     slides across while the copy slides back by the same amount, so the copy holds still under it:
+     two transforms the compositor runs alone. (Sliding a background instead repainted the wordmark
+     on the main thread every frame of every eight seconds.) Resting, the window sits past the end. */
+  .brand-glint { display: block; position: absolute; top: 0; bottom: 0; left: 0; width: 260%; pointer-events: none;
+    -webkit-mask-image: linear-gradient(105deg, transparent 40%, #000 50%, transparent 60%); mask-image: linear-gradient(105deg, transparent 40%, #000 50%, transparent 60%); }
+  .brand-glint::before { content: attr(data-text); position: absolute; top: 0; left: 0; width: 100%; color: rgb(255 255 255 / .9); }
+  .motion-live .brand-glint, .auth-page:has(.moving) .brand-glint { animation: od-glint 8s ease-in-out 1.5s infinite; }
+  .motion-live .brand-glint::before, .auth-page:has(.moving) .brand-glint::before { animation: od-glint-hold 8s ease-in-out 1.5s infinite; }
 
   .sidebar { border-right-color: transparent; background: linear-gradient(to bottom, transparent, color-mix(in oklab, var(--neon) 5%, transparent)), var(--chrome); }
   .sidebar::after { content: ''; position: absolute; top: 0; bottom: 0; right: -1px; width: 1px; pointer-events: none; background: linear-gradient(to bottom, transparent, color-mix(in oklab, var(--accent) 45%, transparent) 30%, color-mix(in oklab, var(--neon) 55%, transparent) 75%, transparent); }
@@ -299,7 +308,8 @@ REVERT: everything here is scoped to :root[data-skin='overdrive']; Settings → 
 
 @keyframes od-sunrise { from { translate: -50% 38%; opacity: 0; } }
 @keyframes od-floor-in { from { opacity: 0; } }
-@keyframes od-glint { 0%, 70% { background-position: 160% 0, 0 0; } 100% { background-position: -60% 0, 0 0; } }
+@keyframes od-glint { 0%, 70% { transform: translateX(-98.5%); } 100% { transform: translateX(37%); } }
+@keyframes od-glint-hold { 0%, 70% { transform: translateX(98.5%); } 100% { transform: translateX(-37%); } }
 /* The phone header clips the wordmark to one pixel; its glint otherwise still paints at 120Hz. */
 @media (max-width: 599px) { :root[data-skin='overdrive'] .sidebar .brand > span { animation: none; } }
 @keyframes od-pulse { 0% { translate: -200px 0; opacity: 0; } 8% { opacity: 1; } 55% { opacity: 1; } 62%, 100% { translate: 100vw 0; opacity: 0; } }
@@ -309,12 +319,9 @@ REVERT: everything here is scoped to :root[data-skin='overdrive']; Settings → 
 
 @media (prefers-reduced-motion: reduce) {
   :root[data-skin='overdrive'] {
-    .od-horizon, .od-plane, .od-window, .od-crt::after, .od-sky, .brand > span, .player-footer::after, .transport .play-button::before, .od-cover-scan::before, .od-cover-scan::after { animation: none !important; }
+    .od-horizon, .od-plane, .od-window, .od-crt::after, .od-sky, .brand-glint, .brand-glint::before, .player-footer::after, .transport .play-button::before, .od-cover-scan::before, .od-cover-scan::after { animation: none !important; }
     .od-cover-scan, .player-footer::after { display: none; }
     .sleeve-artwork > .artwork { transform: none; transition: none; }
-    /* The horizon changes place between browse and the sleeve without travelling; the sun only fades. */
-    .od-skyline, .od-floor { transition: none; }
-    .od-sun { transition-property: opacity; }
     .range::-webkit-slider-thumb, .range:active:not(:disabled)::-webkit-slider-thumb { transform: rotate(45deg); }
     .range::-moz-range-thumb, .range:active:not(:disabled)::-moz-range-thumb { transform: rotate(45deg); }
     .shelf-row > li:hover .shelf-art .artwork, .playlist-tile:hover .playlist-cover { transform: none; }

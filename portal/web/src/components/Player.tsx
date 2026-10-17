@@ -1,7 +1,7 @@
-import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { CaretDownIcon, CheckIcon, DesktopIcon, DiscordLogoIcon, CaretUpIcon, DotsThreeIcon, HeartIcon, PauseIcon, PlayIcon, RepeatIcon, RepeatOnceIcon, ShuffleIcon, SkipBackIcon, SkipForwardIcon, SpeakerHighIcon, StopIcon, RadioIcon, HandPalmIcon, ArrowSquareOutIcon, TrashIcon, WarningCircleIcon, ThumbsDownIcon, VinylRecordIcon } from '@phosphor-icons/react';
 import type { Portal } from '../usePortal';
-import type { Command } from '../types';
+import type { Command, GuildSnapshot, Track } from '../types';
 import { publicUrl } from '../api';
 import { time, timestamp } from '../format';
 import { RESTART_AFTER_MS } from '../playback';
@@ -23,8 +23,6 @@ export function Player({ portal, expanded, setExpanded, onAdd, accent, animate, 
   // This device's own playback needs no live Discord state to keep time.
   const live = local || connection === 'live';
   const track = session?.current || null;
-  const [clock, setClock] = useState(Date.now());
-  const [scrub, setScrub] = useState<number | null>(null);
   const [volumeDraft, setVolumeDraft] = useState<number | null>(null);
   const [confirmStop, setConfirmStop] = useState(false);
   const [confirmClear, setConfirmClear] = useState(false);
@@ -61,20 +59,7 @@ export function Player({ portal, expanded, setExpanded, onAdd, accent, animate, 
   useEffect(() => swipe(handleRef.current, queueOpen ? 'down' : 'up', (_, settle) => { settle(); setQueueOpen(!queueOpen); }, queueOpen ? sheetRef.current : handleRef.current), [expanded, queueOpen]);
   useEffect(() => queueOpen ? swipe(sheetRef.current, 'down', (_, settle) => { settle(); setQueueOpen(false); }) : undefined, [queueOpen]);
   useBackLayers(expanded ? queueOpen ? 2 : 1 : 0, layer => { if (layer < 2) setQueueOpen(false); if (layer < 1) expand.current(false); });
-  useEffect(() => {
-    if (!track || session?.status !== 'playing' || !live) return;
-    let timer: ReturnType<typeof setInterval> | undefined;
-    const visibility = () => {
-      clearInterval(timer); timer = undefined;
-      if (!document.hidden) {
-        setClock(Date.now());
-        timer = setInterval(() => setClock(Date.now()), 500);
-      }
-    };
-    document.addEventListener('visibilitychange', visibility); visibility();
-    return () => { document.removeEventListener('visibilitychange', visibility); clearInterval(timer); };
-  }, [track?.id, session?.status, live]);
-  useEffect(() => { setScrub(null); setVolumeDraft(null); setClock(Date.now()); }, [track?.id, snapshot?.guild.id]);
+  useEffect(() => { setVolumeDraft(null); }, [track?.id, snapshot?.guild.id]);
   // Acknowledge state that changes under the controls, whoever changed it: a new song settles
   // into the deck, the play mark swaps, repeat cycles, and a saved heart lifts once.
   const saved = (library?.favorites.some(t => t.id === track?.id)) ?? false;
@@ -102,12 +87,10 @@ export function Player({ portal, expanded, setExpanded, onAdd, accent, animate, 
   }, [track?.id, session?.status, session?.repeat, saved]);
   // With no current song there is no timeline, whatever position an idle snapshot still carries.
   const duration = track ? session?.durationMs || track.durationMs || 0 : 0;
-  const position = !track ? 0 : Math.min(duration || Infinity, Math.max(0, (session?.positionMs || 0) + (session?.status === 'playing' && live ? Math.max(0, clock - receivedAt) : 0)));
   const controllable = can('control') && !pending.length;
   const seekable = controllable && !!track && !track.isStream && duration > 0 && !['recovering', 'unavailable'].includes(session?.status || '');
   const control = (body: Command) => run({ ...body, expectedRevision: snapshot?.revision }, 'control');
-  // Early in a song Back goes to the previous one; later, or with nothing earlier, it restarts this one.
-  const goesBack = !!session?.hasPrevious && (position <= RESTART_AFTER_MS || !seekable);
+  const clock = { session, receivedAt, live };
   // Songs on this device can be pushed aside on the compact deck: left skips, right goes back. A shared
   // Discord session never changes song from a stray swipe, so it keeps buttons only.
   const aside = useRef<(direction: SwipeDirection) => boolean>(() => false);
@@ -154,19 +137,12 @@ export function Player({ portal, expanded, setExpanded, onAdd, accent, animate, 
   </div>;
   const spectrumMode = track && active && live ? 'playing' : 'standby';
   const spectrum = (className: string, bands: number, ghost?: number) => <Spectrum className={className} seed={track?.id || 'idle'} color={accent} tint={skinTint(skin)} mode={spectrumMode} animate={animate} bands={bands} ghost={ghost} />;
-  const seek = () => { if (scrub === null) return; const value = scrub; setScrub(null); if (seekable) void control({ command: 'seek', options: { timestamp: timestamp(value) } }); };
-  const timeline = <div className="playback-timeline"><div className={`timeline ${track?.isStream ? 'is-live' : ''}`}>
-    <span>{track?.isStream ? 'LIVE' : time(scrub ?? position)}</span>
-    <input className="range seek-range" aria-label="Playback position" type="range" min={0} max={duration || 1} step={1000} value={scrub ?? Math.min(position, duration || 1)} disabled={!seekable}
-      aria-valuetext={track?.isStream ? 'Live stream' : `${time(scrub ?? position)} of ${time(duration)}`}
-      style={{ '--range-progress': `${Math.min(100, ((scrub ?? position) / (duration || 1)) * 100)}%` } as React.CSSProperties}
-      onChange={event => setScrub(Number(event.target.value))} onPointerUp={seek} onKeyUp={event => { if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown'].includes(event.key)) seek(); }} onBlur={seek} />
-    <span>{track?.isStream ? 'Streaming' : time(duration)}</span>
-  </div><div className="player-confirmation" id={confirmationId} role="status" aria-live="polite" aria-atomic="true">{pending.length ? <><span className="spinner" aria-hidden="true" /><span className="sr-only">{pendingObservation}</span><span>Waiting for confirmation</span><span className="sr-only">. {connection !== 'live' ? portal.blockedReason : 'Playback controls are temporarily unavailable.'}</span></>
+  const timeline = <div className="playback-timeline"><Timeline clock={clock} track={track} duration={duration} seekable={seekable} reset={snapshot?.guild.id}
+    onSeek={value => void control({ command: 'seek', options: { timestamp: timestamp(value) } })} /><div className="player-confirmation" id={confirmationId} role="status" aria-live="polite" aria-atomic="true">{pending.length ? <><span className="spinner" aria-hidden="true" /><span className="sr-only">{pendingObservation}</span><span>Waiting for confirmation</span><span className="sr-only">. {connection !== 'live' ? portal.blockedReason : 'Playback controls are temporarily unavailable.'}</span></>
     : syncing ? <><span className="spinner" aria-hidden="true" /><span>Syncing with Discord…</span></> : null}</div></div>;
   const controls = <div className="transport" role="group" aria-label="Playback controls" aria-describedby={controlDescription} aria-busy={!!pending.length}>
     <IconButton label="Shuffle queue" disabled={!controllable || !session?.queue.length} title={blockedTitle} onClick={() => void control({ command: 'shuffle' })}><ShuffleIcon size={24} /></IconButton>
-    <IconButton label={goesBack ? 'Previous song' : 'Restart current song'} disabled={goesBack ? !controllable : !seekable} title={blockedTitle} onClick={() => void control(goesBack ? { command: 'back' } : { command: 'seek', options: { timestamp: '00:00' } })}><SkipBackIcon size={27} weight="fill" /></IconButton>
+    <BackButton clock={clock} seekable={seekable} disabled={!controllable} title={blockedTitle} onPress={back => void control(back ? { command: 'back' } : { command: 'seek', options: { timestamp: '00:00' } })} />
     <IconButton className={`play-button ${session?.status === 'paused' || session?.status === 'recovering' ? 'settled' : ''}`} label={active ? 'Pause playback' : 'Resume playback'} disabled={!controllable || !track || !['playing', 'paused'].includes(session?.status || '')} title={blockedTitle} aria-describedby={controlDescription}
       onClick={() => void control({ command: active ? 'pause' : 'resume' })}>{active ? <PauseIcon size={31} weight="fill" /> : <PlayIcon size={31} weight="fill" />}</IconButton>
     <IconButton label="Skip current song" disabled={!controllable || !track} title={blockedTitle} onClick={() => void control({ command: 'skip' })}><SkipForwardIcon size={27} weight="fill" /></IconButton>
@@ -204,7 +180,7 @@ export function Player({ portal, expanded, setExpanded, onAdd, accent, animate, 
       <div className="sleeve-main"><div className="sleeve-artwork" onPointerMove={tilt} onPointerLeave={untilt}><Artwork track={track} large />{spectrum('sleeve-spectrum', 40)}{skin === 'overdrive' && <><span className="od-cover-plate" aria-hidden="true" /><Hud className="od-cover-hud" /><span key={track?.id || 'idle'} className="od-cover-scan" aria-hidden="true" /></>}{skin === 'fantastic' && <><Television /><span key={track?.id || 'idle'} className="ff-tune" aria-hidden="true" /></>}</div>{identity}<div className="player-context">{permissionReason && <p className="player-permission" id={reasonId}><WarningCircleIcon size={18} aria-hidden="true" /><span>{permissionReason}</span></p>}{connection === 'live' && session?.status === 'recovering' && <p className="player-state warm-text" role="status">Recovering your place. Playback controls will return when it’s ready.</p>}{session?.status === 'paused' && <p className="player-state warm-text">{connection === 'live' ? 'Paused · right here when you’re ready' : 'Last known: paused'}</p>}</div></div>
       <div ref={sheetRef} id={queueId} className="sleeve-queue">{queueOpen && <div className="queue-sheet-now"><span className="sheet-grabber" aria-hidden="true" /><Artwork track={track} /><span className="sheet-now-text"><strong>{track?.title || 'Nothing playing'}</strong><span>{track?.author}</span></span></div>}{queue}</div>
     </div>}
-    <div className="player-footer">{!expanded && <span className="compact-progress" aria-hidden="true" style={{ '--progress-scale': track && !track.isStream && duration ? Math.min(1, position / duration) : 0 } as React.CSSProperties} />}{!expanded && <div className="compact-identity"><button ref={identityTriggerRef} type="button" className="player-expand-trigger" aria-label={track ? `Open player for ${track.title}` : 'Open player details'} aria-expanded={false} onClick={() => { openedFromIdentity.current = true; setExpanded(true); }}><Artwork track={track} /><span className="compact-title"><span className="compact-track-title" title={track?.title}>{track?.title || 'Nothing playing'}</span><span className="compact-track-meta" title={track ? `${track.author} · ${track.source}` : undefined}>{metadata}</span></span></button><span className="compact-favorite">{favorite}</span></div>}
+    <div className="player-footer">{!expanded && <CompactProgress clock={clock} track={track} duration={duration} />}{!expanded && <div className="compact-identity"><button ref={identityTriggerRef} type="button" className="player-expand-trigger" aria-label={track ? `Open player for ${track.title}` : 'Open player details'} aria-expanded={false} onClick={() => { openedFromIdentity.current = true; setExpanded(true); }}><Artwork track={track} /><span className="compact-title"><span className="compact-track-title" title={track?.title}>{track?.title || 'Nothing playing'}</span><span className="compact-track-meta" title={track ? `${track.author} · ${track.source}` : undefined}>{metadata}</span></span></button><span className="compact-favorite">{favorite}</span></div>}
       <div className="playback-cluster">{controls}{timeline}</div>
       {extras}
       {expanded && <button ref={handleRef} type="button" className="up-next-handle" aria-expanded={queueOpen} aria-controls={queueId} onClick={() => setQueueOpen(!queueOpen)}><span className="sheet-grabber" aria-hidden="true" /><span>{queueOpen ? 'Hide queue' : 'Up next'}</span>{!queueOpen && upcoming > 0 && <span className="count">{upcoming} {upcoming === 1 ? 'song' : 'songs'}</span>}</button>}
@@ -223,4 +199,53 @@ export function Player({ portal, expanded, setExpanded, onAdd, accent, animate, 
     </Dialog>}
     {confirmClear && <Confirm title="Clear the upcoming queue?" detail={`Removes ${session?.queue.length || 0} queued songs. The current song keeps its position and playback state${local ? '' : ' in Discord'}.`} action="Clear queue" onClose={() => setConfirmClear(false)} onConfirm={() => { setConfirmClear(false); void control({ command: 'clear' }); }} />}
   </section>;
+}
+
+// The position advances locally between snapshots while a song plays. One shared clock ticks only
+// while something shows a moving position, and only those readouts re-render on each tick, not
+// the whole player twice a second.
+const ticks = new Set<() => void>();
+let now = Date.now(); let ticker: ReturnType<typeof setInterval> | undefined;
+const tick = () => { now = Date.now(); ticks.forEach(listener => listener()); };
+const resume = () => { clearInterval(ticker); ticker = undefined; if (!document.hidden && ticks.size) { tick(); ticker = setInterval(tick, 500); } };
+function subscribe(listener: () => void) {
+  ticks.add(listener);
+  if (ticks.size === 1) { document.addEventListener('visibilitychange', resume); resume(); }
+  return () => { ticks.delete(listener); if (!ticks.size) { document.removeEventListener('visibilitychange', resume); clearInterval(ticker); ticker = undefined; } };
+}
+const still = () => () => {};
+type Clock = { session: GuildSnapshot['session'] | undefined; receivedAt: number; live: boolean };
+// With no current song there is no timeline, whatever position an idle snapshot still carries.
+function usePosition({ session, receivedAt, live }: Clock) {
+  const track = session?.current;
+  const moving = !!track && session.status === 'playing' && live;
+  const clock = useSyncExternalStore(moving ? subscribe : still, () => moving ? now : 0);
+  if (!track) return 0;
+  const duration = session.durationMs || track.durationMs || 0;
+  return Math.min(duration || Infinity, Math.max(0, (session.positionMs || 0) + (moving ? Math.max(0, clock - receivedAt) : 0)));
+}
+function Timeline({ clock, track, duration, seekable, reset, onSeek }: { clock: Clock; track: Track | null; duration: number; seekable: boolean; reset?: string; onSeek: (value: number) => void }) {
+  const position = usePosition(clock);
+  const [scrub, setScrub] = useState<number | null>(null);
+  useEffect(() => { setScrub(null); }, [track?.id, reset]);
+  const seek = () => { if (scrub === null) return; const value = scrub; setScrub(null); if (seekable) onSeek(value); };
+  return <div className={`timeline ${track?.isStream ? 'is-live' : ''}`}>
+    <span>{track?.isStream ? 'LIVE' : time(scrub ?? position)}</span>
+    <input className="range seek-range" aria-label="Playback position" type="range" min={0} max={duration || 1} step={1000} value={scrub ?? Math.min(position, duration || 1)} disabled={!seekable}
+      aria-valuetext={track?.isStream ? 'Live stream' : `${time(scrub ?? position)} of ${time(duration)}`}
+      style={{ '--range-progress': `${Math.min(100, ((scrub ?? position) / (duration || 1)) * 100)}%` } as React.CSSProperties}
+      onChange={event => setScrub(Number(event.target.value))} onPointerUp={seek} onKeyUp={event => { if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown'].includes(event.key)) seek(); }} onBlur={seek} />
+    <span>{track?.isStream ? 'Streaming' : time(duration)}</span>
+  </div>;
+}
+// Early in a song Back goes to the previous one; later, or with nothing earlier, it restarts this one.
+function BackButton({ clock, seekable, disabled, title, onPress }: { clock: Clock; seekable: boolean; disabled: boolean; title?: string; onPress: (back: boolean) => void }) {
+  const position = usePosition(clock);
+  const back = !!clock.session?.hasPrevious && (position <= RESTART_AFTER_MS || !seekable);
+  return <IconButton label={back ? 'Previous song' : 'Restart current song'} disabled={back ? disabled : !seekable} title={title} onClick={() => onPress(back)}><SkipBackIcon size={27} weight="fill" /></IconButton>;
+}
+// The compact deck's passive progress hairline; it glides between ticks on the compositor.
+function CompactProgress({ clock, track, duration }: { clock: Clock; track: Track | null; duration: number }) {
+  const position = usePosition(clock);
+  return <span className="compact-progress" aria-hidden="true" style={{ '--progress-scale': track && !track.isStream && duration ? Math.min(1, position / duration) : 0 } as React.CSSProperties} />;
 }

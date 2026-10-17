@@ -30,7 +30,8 @@ async function burst(page: Page, locator: Locator, moves: number[] = [], { holdA
   if (holdAfter) { await page.waitForTimeout(holdAfter); await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); }
   await cdp.detach();
 }
-const settled = (page: Page) => page.waitForFunction(() => !document.documentElement.dataset.motion);
+// Motion has settled once view transitions end and the player's cover has landed (motion.ts).
+const settled = (page: Page) => page.waitForFunction(() => !document.documentElement.dataset.motion && !document.querySelector('[data-cover-flight]'));
 // Like a tap, a swipe leaves no keyboard focus ring behind.
 const ringless = async (page: Page) => expect(await page.evaluate(() => document.querySelector(':focus-visible')?.outerHTML.slice(0, 80) ?? null)).toBeNull();
 

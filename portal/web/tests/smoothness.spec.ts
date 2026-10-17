@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { mockPortal } from './fixtures';
+import { mockPortal, landed } from './fixtures';
 import { startHttpFixture } from './http-fixture';
 import { fileURLToPath } from 'node:url';
 
@@ -56,6 +56,8 @@ test('a song change dissolves the cover in place instead of cutting to an empty 
     await page.getByRole('button', { name: 'Open player', exact: true }).click();
     const cover = page.locator('.sleeve-artwork > .artwork');
     await expect(cover).toHaveAttribute('alt', 'Artwork for Evening Light');
+    // The cover flies in from the deck as the player opens; let it land before the song changes.
+    await landed(cover);
     const state = server.state.snapshot; const next = state.session.queue.shift()!;
     state.session.queue.push(state.session.current!); state.session.current = next; state.revision = 'revision-next-song';
     server.broadcast();

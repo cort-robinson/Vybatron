@@ -170,4 +170,4 @@ function ArtworkField({ url }: { url?: string }) {
   }, [shown]);
   return <>{layers.map(layer => <img key={layer} className={`artwork-field ${layer === shown ? 'shown' : ''}`} src={layer} alt="" referrerPolicy="no-referrer" />)}</>;
 }
-function Brand() { return <div className="brand"><WaveformIcon size={30} weight="bold" aria-hidden="true" /><span>Vybatron</span></div>; }
+function Brand() { return <div className="brand"><WaveformIcon size={30} weight="bold" aria-hidden="true" /><span>Vybatron<span className="brand-glint" data-text="Vybatron" aria-hidden="true" /></span></div>; }

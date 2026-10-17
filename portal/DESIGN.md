@@ -139,7 +139,9 @@ player deck omits ghosts so it does not read as stripes behind text). Motion is 
 the track id and combines per-band oscillation, a slow swell, and irregular low-band
 transients; it is not tempo-locked. It runs at about 30fps only while playing, connected,
 visible, ambient motion is on, and reduced motion is off. Pause or disconnect decays to a
-one-segment baseline and stops drawing. Without motion it renders one still frame.
+one-segment baseline and stops drawing. Without motion it renders one still frame. The glow is
+the lit segments' canvas shadow: a canvas `filter` re-resolves page styles on every draw. A new
+song reshapes the running spectrum instead of rebuilding its canvas.
 
 ## Motion
 
@@ -151,21 +153,27 @@ hover lifts while keeping color changes and the static pending mark.
 No frame may flash. Every change either glides or dissolves, and nothing ever drops to empty in
 between (tests/smoothness.spec.ts guards the first and last rules):
 
-- View transitions crossfade the page in equal, linear halves (240ms; 420ms for a look, lighting,
-  or performance change). Unequal halves leave both snapshots partly transparent and dim the
+- View transitions (views, tabs and looks) crossfade the page in equal, linear halves (240ms; 420ms
+  for a look, lighting, or performance change). Unequal halves leave both snapshots partly transparent and dim the
   whole screen.
 - Outgoing and incoming views overlap (170ms out, in from 20ms) so the content area never empties.
 - Song changes keep the old cover until the new one has decoded, then dissolve it over 620ms on an
   even curve. The blurred cover light crossfades layers only after the next image decodes, and it
   leaves with the sleeve instead of fading out at full-screen size.
 - Title plates stay opaque and stationary on song changes. Inner text settles with transform-only
-  motion installed before paint; the lettering's shadow stays fixed. Native view transitions own
-  the sleeve entrance without another caption or queue fade underneath them.
+  motion installed before paint; the lettering's shadow stays fixed. The sleeve's caption, context
+  and queue rise in once; nothing fades them a second time.
 - Opening the sleeve hides the selected page while retaining its mounted shelves, lists, and
   settings. Closing restores that same content without remounting or refetching it.
 - The palette holds through a gap of up to 1.5s with no artwork instead of resetting to default.
 - Anything the travelling cover uncovers is shaded: Overdrive keeps a plate behind the cover and
   dims the sun at once when the sleeve closes.
+- Opening and closing the sleeve use no view transition: capturing the page and restyling the whole
+  document at both ends made the player hitch, most visibly on phones. Each moving piece glides as
+  a compositor transform from its measured old box to its new one (`src/motion.ts`): the cover flies
+  between deck and sleeve, the play control and nav marker follow, and scenery that changes place
+  (sun or planet, skyline, floor or bay, sky; marked `data-travel`) travels, never by animating
+  `top`, `left`, or size. The page fades out under the rising sleeve and back in as it closes.
 
 ## Components
 
@@ -313,6 +321,9 @@ Overflowing shelves fade at whichever edge still has more to show.
 - **Do** keep favorites, pause/recovery, and destructive states on fixed colors.
 - **Do** use server-projected capabilities and fresh state to decide whether an action is available.
 - **Do** settle the spectrum and light drift on pause, recovery, disconnection, hidden tabs, and reduced motion.
+- **Do** animate ambient scenery only with transform and opacity on elements that can be their own
+  layer (an HTML element or a whole `<svg>`), and rest scenery that reading pages hide. Shapes inside
+  one SVG, and backgrounds, animate on the main thread every frame.
 
 ### Don't:
 - **Don't** label the spectrum as live, measured, or synced audio, or tempo-lock it.

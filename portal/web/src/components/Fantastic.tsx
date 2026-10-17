@@ -1,15 +1,18 @@
-import { useEffect, useId, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useState, type CSSProperties } from 'react';
 
 // Fantastic scenery: Earth-828 at dusk, as a 1964 broadcast would paint it. A ringed planet
 // rises over a Googie skyline (the Baxter Building flies the 4), a monorail glides past, Kirby
 // krackle trails the cosmic storm across the sky, and the bay below prints in Ben-Day dots.
 // Pure decoration behind the content; every piece is aria-hidden, and motion is gated by the
-// ambient scene's moving state.
+// ambient scene's moving state. Pieces marked data-travel glide between layouts (motion.ts).
 
 function random(seed: number) {
   return () => { seed = (seed + 0x6d2b79f5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
 }
 const f = (value: number) => value.toFixed(1);
+const percent = (value: number) => `${value.toFixed(3)}%`;
+// Several same-coloured dots as one path, so a scene copy (RoomLight) mounts few elements.
+const dots = (list: { x: number; y: number; r: number }[]) => list.map(({ x, y, r }) => `M${f(x - r)},${f(y)} a${f(r)},${f(r)} 0 1,0 ${f(r * 2)},0 a${f(r)},${f(r)} 0 1,0 ${f(-r * 2)},0 Z`).join(' ');
 
 const W = 1600; const H = 180;
 // The Baxter Building sits right of centre, where both the phone crop and the desktop deck see it.
@@ -67,32 +70,55 @@ function skyline(seed: number, scale: number, baxter: boolean) {
   return { path: parts.join(' '), windows };
 }
 
-// Kirby krackle: clusters of black voids rimmed in cosmic energy along the storm's arc.
+// Kirby krackle: clusters of black voids rimmed in cosmic energy along the storm's arc. Each
+// cluster's voids breathe together around its lead void, in a box (in the storm's 800x400 frame)
+// that becomes one small compositor layer.
 function krackle(seed: number) {
   const next = random(seed);
-  const dots: { x: number; y: number; r: number; delay: number }[] = [];
+  const clusters: { voids: { x: number; y: number; r: number }[]; delay: number; box: { x: number; y: number; width: number; height: number } }[] = [];
   for (let cluster = 0; cluster < 26; cluster++) {
     const t = (cluster + next() * .8) / 26; const u = 1 - t;
     const cx = u * u * 30 + 2 * u * t * 300 + t * t * 780; const cy = u * u * 330 + 2 * u * t * 40 + t * t * 70;
     const swell = Math.sin(t * Math.PI); const count = 2 + Math.floor(next() * 4);
+    const voids: { x: number; y: number; r: number }[] = []; let delay = 0;
     for (let index = 0; index < count; index++) {
       const angle = next() * Math.PI * 2; const reach = next() * 30 * (.4 + swell);
-      dots.push({ x: cx + Math.cos(angle) * reach, y: cy + Math.sin(angle) * reach, r: (index === 0 ? 5 + next() * 7 : 1.4 + next() * 4.5) * (.45 + swell * .7), delay: next() * 4 });
+      voids.push({ x: cx + Math.cos(angle) * reach, y: cy + Math.sin(angle) * reach, r: (index === 0 ? 5 + next() * 7 : 1.4 + next() * 4.5) * (.45 + swell * .7) });
+      const voidDelay = next() * 4; if (index === 0) delay = voidDelay;
     }
+    const left = Math.min(...voids.map(dot => dot.x - dot.r)); const top = Math.min(...voids.map(dot => dot.y - dot.r));
+    clusters.push({ voids, delay, box: { x: left, y: top, width: Math.max(...voids.map(dot => dot.x + dot.r)) - left, height: Math.max(...voids.map(dot => dot.y + dot.r)) - top } });
   }
-  return dots;
+  return clusters;
+}
+// The energy rims never move, so they paint as one element: a radial-gradient background layer per
+// rim, each sized to its own square (percentages of the field, so they scale with the storm). Layers
+// list topmost first, so the rims stack as the original circles did, later ones above.
+function glowField(clusters: ReturnType<typeof krackle>) {
+  const rims = clusters.flatMap(cluster => cluster.voids).map(dot => ({ x: dot.x, y: dot.y, r: dot.r * 3 })).reverse();
+  const x0 = Math.min(...rims.map(rim => rim.x - rim.r)); const y0 = Math.min(...rims.map(rim => rim.y - rim.r));
+  const width = Math.max(...rims.map(rim => rim.x + rim.r)) - x0; const height = Math.max(...rims.map(rim => rim.y + rim.r)) - y0;
+  // A background-position percentage aligns that fraction of the layer with that fraction of the box.
+  const place = (start: number, size: number, extent: number) => percent((start / extent) / (1 - size / extent) * 100);
+  return {
+    left: percent(x0 / 8), top: percent(y0 / 4), width: percent(width / 8), height: percent(height / 4),
+    backgroundImage: rims.map(() => 'var(--ff-rim)').join(', '),
+    backgroundSize: rims.map(rim => `${percent(rim.r * 2 / width * 100)} ${percent(rim.r * 2 / height * 100)}`).join(', '),
+    backgroundPosition: rims.map(rim => `${place(rim.x - rim.r - x0, rim.r * 2, width)} ${place(rim.y - rim.r - y0, rim.r * 2, height)}`).join(', '),
+  };
 }
 
-// Googie starbursts and plain stars across the upper sky.
+// Googie starbursts and plain stars across the upper sky. Bursts are drawn about their own centre,
+// each as its own small layer placed in the sky's 1600x600 frame (fantastic.css).
 function stars(seed: number) {
   const next = random(seed);
   const bursts = Array.from({ length: 11 }, () => {
     const x = next() * 1600; const y = 30 + next() * 380; const R = 6 + next() * 10;
     const points = Array.from({ length: 16 }, (_, index) => {
       const r = index % 2 ? R * .12 : index % 4 === 0 ? R : R * .45; const angle = index * Math.PI / 8;
-      return `${f(x + Math.sin(angle) * r)},${f(y - Math.cos(angle) * r)}`;
+      return `${f(Math.sin(angle) * r)},${f(-Math.cos(angle) * r)}`;
     }).join(' ');
-    return { points, delay: next() * 6 };
+    return { x, y, R, points, delay: next() * 6 };
   });
   const specks = Array.from({ length: 70 }, () => ({ x: next() * 1600, y: next() * 460, r: .7 + next() * 1.3 }));
   return { bursts, specks };
@@ -113,22 +139,26 @@ export function Earth828({ prepared = false }: { prepared?: boolean }) {
   const far = useMemo(() => skyline(11, .7, false), []);
   const near = useMemo(() => skyline(4, 1, true), []);
   const storm = useMemo(() => krackle(1961), []);
+  const rims = useMemo(() => glowField(storm), [storm]);
   const sky = useMemo(() => stars(828), []);
+  const specks = useMemo(() => dots(sky.specks), [sky]);
   if (!ready) return null;
   const mid = BAXTER.x + BAXTER.width / 2;
   return <div className="ff-scene">
-    <div className="ff-sky" />
-    <svg className="ff-stars" viewBox="0 0 1600 600" preserveAspectRatio="xMidYMin slice" focusable="false">
-      {sky.specks.map((star, index) => <circle key={index} className="ff-speck" cx={f(star.x)} cy={f(star.y)} r={f(star.r)} />)}
-      {sky.bursts.map((burst, index) => <polygon key={index} className="ff-burst" points={burst.points} style={{ animationDelay: `${burst.delay.toFixed(2)}s` }} />)}
-    </svg>
-    <svg className="ff-krackle" viewBox="0 0 800 400" focusable="false">
-      <defs><radialGradient id={`${id}-energy`}><stop offset="0" className="ff-energy-core" /><stop offset=".55" className="ff-energy-mid" /><stop offset="1" className="ff-energy-edge" /></radialGradient></defs>
-      <g className="ff-krackle-glow">{storm.map((dot, index) => <circle key={index} cx={f(dot.x)} cy={f(dot.y)} r={f(dot.r * 3)} fill={`url(#${id}-energy)`} />)}</g>
-      <g className="ff-krackle-voids">{storm.map((dot, index) => <circle key={index} cx={f(dot.x)} cy={f(dot.y)} r={f(dot.r)} style={{ animationDelay: `${dot.delay.toFixed(2)}s` }} />)}</g>
-    </svg>
+    <div className="ff-sky" data-travel />
+    <div className="ff-stars" data-travel>
+      <svg className="ff-specks" viewBox="0 0 1600 600" preserveAspectRatio="xMidYMin slice" focusable="false"><path className="ff-speck" d={specks} /></svg>
+      {sky.bursts.map((burst, index) => <svg key={index} className="ff-burst" viewBox={`${f(-burst.R)} ${f(-burst.R)} ${f(burst.R * 2)} ${f(burst.R * 2)}`} focusable="false"
+        style={{ '--x': f(burst.x), '--y': f(burst.y), '--size': f(burst.R * 2), animationDelay: `${burst.delay.toFixed(2)}s` } as CSSProperties}><polygon points={burst.points} /></svg>)}
+    </div>
+    <div className="ff-krackle">
+      <span className="ff-krackle-glow" style={rims} />
+      {storm.map(({ voids, delay, box }, group) => <svg key={group} className="ff-void" viewBox={`${f(box.x)} ${f(box.y)} ${f(box.width)} ${f(box.height)}`} focusable="false"
+        style={{ left: percent(box.x / 8), top: percent(box.y / 4), width: percent(box.width / 8), height: percent(box.height / 4), animationDelay: `${delay.toFixed(2)}s`,
+          transformOrigin: `${percent((voids[0].x - box.x) / box.width * 100)} ${percent((voids[0].y - box.y) / box.height * 100)}` }}><path d={dots(voids)} /></svg>)}
+    </div>
     <span className="ff-herald" />
-    <svg className="ff-planet" viewBox="-100 -100 200 200" focusable="false">
+    <svg className="ff-planet" data-travel viewBox="-100 -100 200 200" focusable="false">
       <defs>
         <linearGradient id={`${id}-planet`} x1="0" y1="0" x2=".35" y2="1"><stop offset="0" className="ff-planet-light" /><stop offset=".55" className="ff-planet-mid" /><stop offset="1" className="ff-planet-dark" /></linearGradient>
         <pattern id={`${id}-dots`} width="6" height="6" patternUnits="userSpaceOnUse"><circle cx="3" cy="3" r="1.5" className="ff-planet-dot" /></pattern>
@@ -144,7 +174,7 @@ export function Earth828({ prepared = false }: { prepared?: boolean }) {
         <ellipse className="ff-ring" rx="94" ry="20" clipPath={`url(#${id}-front)`} />
       </g>
     </svg>
-    <svg className="ff-skyline" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="xMidYMax slice" focusable="false">
+    <svg className="ff-skyline" data-travel viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="xMidYMax slice" focusable="false">
       <path className="ff-skyline-far" d={far.path} />
       <path className="ff-skyline-near" d={near.path} />
       {near.windows.map((light, index) => <rect key={index} className="ff-window" x={f(light.x)} y={f(light.y)} width="4" height="3" rx="1" style={{ animationDelay: `${light.delay.toFixed(2)}s` }} />)}
@@ -152,7 +182,7 @@ export function Earth828({ prepared = false }: { prepared?: boolean }) {
       <path className="ff-rail" d={RAIL} />
       <g className="ff-train" style={{ offsetPath: `path('${RAIL}')` }}><rect x="-38" y="-6" width="76" height="11" rx="5.5" /><path className="ff-train-windows" d="M-26,-2.5 h7 v3 h-7 Z M-14,-2.5 h7 v3 h-7 Z M-2,-2.5 h7 v3 h-7 Z M10,-2.5 h7 v3 h-7 Z M22,-2.5 h7 v3 h-7 Z" /></g>
     </svg>
-    <div className="ff-bay"><span className="ff-glint" /></div>
+    <div className="ff-bay" data-travel><span className="ff-glint" data-travel /></div>
   </div>;
 }
 

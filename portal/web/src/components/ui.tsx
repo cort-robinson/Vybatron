@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { ArrowClockwiseIcon, MusicNotesIcon, UserIcon, XIcon, WarningCircleIcon } from '@phosphor-icons/react';
 import { publicUrl } from '../api';
 import { swipe } from '../swipe';
+import { adoptFlight } from '../motion';
 import type { Track } from '../types';
 
 // A caller's title (usually why the control is unavailable) replaces the label tooltip; an
@@ -12,7 +13,7 @@ export function IconButton({ label, children, className = '', title, ...props }:
 }
 export function FallbackCover({ className = '', alt = '', large = false }: { className?: string; alt?: string; large?: boolean }) {
   const sizes = large ? '(max-width: 960px) calc(100vw - 40px), (max-width: 1100px) 45vw, 560px' : '180px';
-  return <picture className={className}>
+  return <picture ref={adoptFlight} className={className}>
     <source type="image/webp" srcSet="/assets/fallback-cover-320.webp 320w, /assets/fallback-cover-640.webp 640w, /assets/fallback-cover-1024.webp 1024w" sizes={sizes} />
     <img src="/assets/fallback-cover-320.webp" alt={alt} width={320} height={320} loading={large ? 'eager' : 'lazy'} decoding="async"
       style={{ display: 'block', width: '100%', height: '100%', objectFit: 'cover', borderRadius: 'inherit' }} />
@@ -43,9 +44,9 @@ export function Artwork({ track, className = '', large = false }: { track: Track
   }, [source, large]);
   const alt = large && track ? `Artwork for ${track.title}` : '';
   // No current song: an honest empty sleeve rather than a photo that reads as a track.
-  if (!track) return <span className={`artwork artwork-empty ${className}`}><MusicNotesIcon size={large ? 56 : 24} aria-hidden="true" /></span>;
+  if (!track) return <span ref={adoptFlight} className={`artwork artwork-empty ${className}`}><MusicNotesIcon size={large ? 56 : 24} aria-hidden="true" /></span>;
   if (!source || source === failedSource) return <FallbackCover className={`artwork ${className}`} alt={alt} large={large} />;
-  return <><img className={`artwork ${className}`} src={source} alt={alt}
+  return <><img ref={adoptFlight} className={`artwork ${className}`} src={source} alt={alt}
     loading={large ? 'eager' : 'lazy'} decoding="async" onError={() => setFailedSource(source)} />
     {ghost && <img key={ghost} className="artwork-ghost" src={ghost} alt="" aria-hidden="true" onAnimationEnd={() => setGhost(undefined)} />}</>;
 }

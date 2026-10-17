@@ -229,8 +229,8 @@ REVERT: everything here is scoped to :root[data-skin='overdrive']; Settings → 
     box-shadow: var(--shadow-sleeve), 0 40px 90px -40px color-mix(in oklab, var(--neon) 75%, transparent), 0 0 0 1px color-mix(in oklab, var(--accent) 20%, transparent); }
   .sleeve-artwork > .artwork-ghost { border-radius: 6px 20px 6px 20px; }
   .od-cover-hud, .od-cover-scan, .od-cover-plate { position: absolute; left: 50%; translate: -50% 0; pointer-events: none; }
-  /* Behind the cover, unseen until the cover travels on its own during a transition: the page
-     snapshot then shows this shade where the cover was, not the eclipsed sun. */
+  /* Behind the cover, unseen until the cover travels on its own as the player opens or closes:
+     its landing spot then shows this shade, not the eclipsed sun. */
   .od-cover-plate { z-index: -1; top: calc((100cqh - var(--cover) - 12px - var(--spectrum)) / 2); width: var(--cover); height: var(--cover); border-radius: 6px 20px 6px 20px; background: color-mix(in oklab, var(--ground), black 25%); box-shadow: 0 30px 70px -30px rgb(0 0 0 / .8); }
   .od-cover-hud { --gap: 14px; top: calc((100cqh - var(--cover) - 12px - var(--spectrum)) / 2 - var(--gap)); width: calc(var(--cover) + var(--gap) * 2); height: calc(var(--cover) + var(--gap) * 2); }
   .od-hud i { position: absolute; width: 26px; height: 26px; border: 2px solid var(--hud-c); filter: drop-shadow(0 0 6px color-mix(in oklab, var(--accent) 60%, transparent)); }

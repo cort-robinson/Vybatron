@@ -7,7 +7,7 @@ import { prefersReducedMotion } from './motion';
 // button never presses it. The innermost surface along an axis owns a touch, so a sheet inside the
 // player closes the sheet rather than the player.
 export type SwipeDirection = 'up' | 'down' | 'left' | 'right';
-// `settle` clears the drag offset. Call it inside the state change so a view transition starts from
+// `settle` clears the drag offset. Call it inside the state change so the transition starts from
 // where the finger left off instead of snapping back first. Return false to spring back instead.
 export type SwipeCommit = (direction: SwipeDirection, settle: () => void) => boolean | void;
 const slop = 4;

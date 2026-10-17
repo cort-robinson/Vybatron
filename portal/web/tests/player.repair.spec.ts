@@ -1,5 +1,5 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
-import { mockPortal, streamAction, gotoSession } from './fixtures';
+import { landed, mockPortal, streamAction, gotoSession } from './fixtures';
 
 const longTitle = 'Evening Light — a very long live performance title with extended artist credits, a remastered collection name, and a full recording description';
 
@@ -189,6 +189,7 @@ test('phone sleeve centers the empty cover icon and rings the whole filter pill'
   const player = page.getByTestId('player');
   await player.getByRole('button', { name: 'Open player', exact: true }).click();
   const cover = player.locator('.sleeve-artwork > .artwork-empty');
+  await landed(cover);
   const [coverBox, iconBox] = await Promise.all([visibleBounds(cover, page), visibleBounds(cover.locator('svg'), page)]);
   expect(Math.abs((iconBox.x + iconBox.width / 2) - (coverBox.x + coverBox.width / 2))).toBeLessThanOrEqual(1);
   expect(Math.abs((iconBox.y + iconBox.height / 2) - (coverBox.y + coverBox.height / 2))).toBeLessThanOrEqual(1);

@@ -1,5 +1,5 @@
 // Explicit loopback browser-test fixtures. Not imported by src or emitted in production.
-import type { Page } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
 import type { Activity, Bootstrap, Command, Configuration, Diagnostics, GuildSnapshot, Library, Track, Stats } from '../src/types';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
@@ -194,6 +194,11 @@ export async function streamAction(page: Page, action: 'disconnect' | 'reconnect
     const test = (window as unknown as { portalTest: { emit: (data: unknown) => void; disconnect: () => void; reconnect: () => void } }).portalTest;
     if (data) test.emit(data); else test[action]();
   }, { action, data });
+}
+// Opening or closing the player glides the cover and controls into place; measure them once landed.
+export async function landed(locator: Locator) {
+  await locator.evaluate(element => Promise.all(element.getAnimations({ subtree: true })
+    .filter(animation => animation.effect?.getComputedTiming().endTime !== Infinity).map(animation => animation.finished)));
 }
 // Home is the landing view; queue-focused tests start from the Session view.
 export async function gotoSession(page: Page, path = '/') {

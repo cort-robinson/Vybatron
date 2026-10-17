@@ -420,13 +420,15 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
 .persistent-player.expanded { pointer-events: none; inset: var(--topbar) 0 0; height: auto; border: none; background: transparent; backdrop-filter: none; box-shadow: none; display: grid; grid-template-rows: minmax(0, 1fr) var(--player); }
 .has-connection-notice .persistent-player.expanded { top: calc(var(--topbar) + var(--connection-notice)); }
 .expanded .player-footer, .sleeve-content { pointer-events: auto; }
-.sleeve-content { margin-left: var(--sidebar); min-height: 0; display: grid; grid-template-columns: minmax(0, 52fr) minmax(0, 48fr); padding: 24px 32px; gap: 32px; animation: sleeve-in 520ms var(--ease-out); }
+.sleeve-content { margin-left: var(--sidebar); min-height: 0; display: grid; grid-template-columns: minmax(0, 52fr) minmax(0, 48fr); padding: 24px 32px; gap: 32px; }
 @keyframes sleeve-in { from { opacity: 0; transform: translateY(18px); } }
-@supports (view-transition-name: none) {
-  /* Native snapshots already dissolve the sleeve. A second entrance on the live caption or
-     queue makes it fade twice and keeps repainting behind the travelling cover. */
-  .sleeve-content, .sleeve-main > .player-identity, .sleeve-main > .player-context, .sleeve-queue { animation: none; }
-}
+/* The cover travels on its own (motion.ts); rising its container would shift where the cover lands.
+   The caption, context and queue rise in once, and that is their only entrance. */
+.sleeve-main > .player-identity, .sleeve-main > .player-context, .sleeve-queue { animation: sleeve-in 520ms var(--ease-out) backwards; }
+.sleeve-main > .player-context { animation-delay: 40ms; }
+.sleeve-queue { animation-delay: 90ms; }
+/* Closing the player, the deck's title settles back in while its cover lands. */
+.compact-title { animation: fade-in 240ms ease-out; }
 .sleeve-main { min-width: 0; min-height: 0; height: 100%; display: grid; grid-template-rows: minmax(0, 1fr) auto auto; gap: 16px; justify-items: center; }
 .sleeve-artwork { --spectrum: 52px; --cover: min(100cqw, 100cqh - var(--spectrum) - 12px); container-type: size; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; width: 100%; height: 100%; min-height: 0; min-width: 0; }
 .sleeve-artwork > .artwork { display: block; width: var(--cover); height: var(--cover); aspect-ratio: 1; object-fit: cover; border-radius: 18px; box-shadow: var(--shadow-sleeve); }
@@ -943,24 +945,20 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
 :root[data-direction='back']::view-transition { --vt-sign: -1; }
 /* A sheet-like curve: travel reads as one continuous glide rather than a snap and a long tail. */
 ::view-transition-group(*) { animation-duration: 480ms; animation-timing-function: cubic-bezier(.32, .72, 0, 1); }
-/* The page snapshots already dissolve the scenery between its two compositions. Animating its
-   geometry underneath them adds layout and gradient painting to every opening/closing frame. */
-:root:is([data-motion='expand'], [data-motion='collapse']) :is(.od-sun, .od-skyline, .od-floor, .ff-sky, .ff-stars, .ff-planet, .ff-skyline, .ff-bay, .ff-glint) { transition-property: opacity; }
 /* The page behind the travelling pieces crossfades with equal, linear halves. Unequal durations
    left both snapshots partly transparent at once, which dimmed the whole screen for a moment. */
 ::view-transition-old(root), ::view-transition-new(root) { animation-duration: 240ms; animation-timing-function: linear; }
 /* A look or lighting change repaints everything, so it gets a slower, even dissolve. */
 :root[data-motion='theme']::view-transition-old(root), :root[data-motion='theme']::view-transition-new(root) { animation-duration: 420ms; }
-:root[data-motion='expand'] .player-expand-trigger > .artwork, :root[data-motion='expand'] .sleeve-artwork > .artwork,
-:root[data-motion='collapse'] .player-expand-trigger > .artwork, :root[data-motion='collapse'] .sleeve-artwork > .artwork { view-transition-name: player-cover; }
-:root[data-motion='expand'] .transport .play-button, :root[data-motion='collapse'] .transport .play-button { view-transition-name: player-play; }
-:root[data-motion='collapse']::view-transition-group(*) { animation-duration: 360ms; }
-::view-transition-old(player-cover), ::view-transition-new(player-cover) { height: 100%; object-fit: cover; }
-/* The indicator travels only when the view changes (closing the sleeve can change it too); naming
-   it for every transition captured and animated it even when it stayed put. */
-:root:is([data-motion='view'], [data-motion='collapse']) .nav-indicator { view-transition-name: nav-indicator; }
+/* The indicator travels when the view changes; naming it for every transition captured and
+   animated it even when it stayed put. (Opening and closing the player glide instead: motion.ts.) */
+:root[data-motion='view'] .nav-indicator { view-transition-name: nav-indicator; }
 ::view-transition-group(nav-indicator) { animation-duration: 380ms; }
 :root[data-motion='view'] .surface-stage { view-transition-name: surface; }
+/* The open sleeve hides the page (still mounted) after fading it out under the rising sleeve;
+   motion.ts fades it back in as the sleeve closes. */
+.surface-stage { transition: opacity 240ms linear, display 240ms allow-discrete; }
+.surface-stage[hidden] { opacity: 0; }
 :root[data-motion='tab'] .tab-indicator { view-transition-name: tab-indicator; }
 :root[data-motion='tab'] [role='tabpanel'] { view-transition-name: tab-panel; }
 /* Fixed chrome stays above sliding content; otherwise lifted panels would paint over the deck. */
@@ -987,6 +985,7 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
   .sleeve-content, .sleeve-main > .player-identity, .sleeve-main > .player-context, .sleeve-queue { animation: none; }
   .queue-open .sleeve-queue, body > .menu-sheet-layer > .menu-panel.menu-sheet { animation: fade-in 160ms ease-out both; }
   .sleeve-content { animation: fade-in 200ms ease-out; }
+  .surface-stage { transition: none; }
   .compact-progress::before { transition: none; }
   .button, .icon-button, .transport .play-button, .player-expand-trigger > .artwork, .mix-art .artwork { transition-property: background-color, color, border-color, box-shadow; }
   .button:active:not(:disabled), .icon-button:active:not(:disabled), .transport .play-button:hover:not(:disabled), .player-expand-trigger:hover > .artwork, .mix-open:hover .artwork { transform: none; }

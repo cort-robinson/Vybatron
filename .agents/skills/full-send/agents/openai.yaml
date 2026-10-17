@@ -1,0 +1,6 @@
+interface:
+  display_name: Full Send
+  short_description: Full Stop, then merge to main once every gate passes
+policy:
+  # Merging to main releases to production; only an explicit request may start it.
+  allow_implicit_invocation: false

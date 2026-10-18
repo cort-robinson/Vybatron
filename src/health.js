@@ -27,6 +27,7 @@ export function getStatus(client) {
     recentPlaybackFailures: playbackHealth(client).failures.length,
     recovery: client.lavalink?.playbackRecovery?.summary?.() || null,
     stats: client.stats?.status?.() || null,
+    library: client.library?.capacity?.() || null,
   };
 }
 

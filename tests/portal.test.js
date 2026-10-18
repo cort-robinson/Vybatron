@@ -1,7 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { setTimeout as delay } from 'node:timers/promises';
-import { PermissionFlagsBits as P, PermissionsBitField } from 'discord.js';
 import { portalFixture, deferred } from './portal-fixtures.js';
 import { startPortalBridge } from '../src/portal/index.js';
 import { withGuildMutation } from '../src/utils/requests.js';

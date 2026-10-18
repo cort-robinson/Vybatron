@@ -172,7 +172,7 @@ export async function handleTrackError(player, track, payload, logger = console)
   if (payload?.type !== 'TrackExceptionEvent') return;
   try {
     await player.skip(0, false);
-  } catch (error) {
+  } catch {
     logger.error('[Lavalink] failed to advance after a track error.');
   }
 }
@@ -220,7 +220,7 @@ export function initLavalink(client) {
       onDisconnect: { autoReconnect: false, destroyPlayer: true },
       onEmptyQueue: {
         autoPlayFunction: async (player, lastTrack) => {
-          try { await fillRadioQueue(player, lastTrack, client); } catch (error) {
+          try { await fillRadioQueue(player, lastTrack, client); } catch {
             console.error('[Lavalink] autoplay lookup failed.');
           }
         },

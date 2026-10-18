@@ -152,6 +152,96 @@ has no record; its post-update check compares the loaded jar with the one recove
 downloaded and tested. Changing a committed pin means recording the new jar's
 checksum (`sha256sum <jar>`) and an operator audio release with decoded canaries.
 
+## Music data backups
+
+`ops/backup.py` backs up every durable file in the `vybertron_bot-data` volume
+(favorites, mixes, settings, history, activity, checkpoints, play statistics and
+alert mutes) while the bot keeps running:
+
+- `stats.sqlite` and `listening-state.sqlite` are copied with SQLite's online
+  backup API, so the copies include changes still in the WAL. Never copy a live
+  database by hand. Each copy is a single self-contained file and must pass
+  `PRAGMA integrity_check`.
+- `library.json` is replaced atomically by the bot, so a plain copy is
+  consistent. The copy must parse and have the document and server structure the
+  bot requires to start (version 1 or 2). It is copied before the databases and
+  checked again after them; if the bot rewrote it meanwhile, the whole snapshot is
+  retaken (up to three times), so its listening-state copy never lags the store.
+- `operator-alerts.json` (also replaced atomically) and the bot's own migration
+  backups (`library.json.v1.*.bak`, `library.json.pre-listening-state.bak`) are
+  copied as they are.
+- Each backup is a `bot-data-<UTC time>` directory (mode `700`, files `600`) under
+  `/var/lib/vybertron-backups` with a manifest of sizes, SHA-256 hashes and the
+  original owners and modes. It is built in a `.partial-*` directory and renamed
+  only after verification.
+- The newest 14 backups are kept (`--keep`). A failed backup never removes older ones.
+- It waits up to 30 minutes for `/run/lock/vybertron-maintenance.lock`, so it never
+  overlaps a deployment, rollback or recovery run.
+- Output is one JSON status line with the backup name and counts. File contents are
+  never logged.
+
+Backups contain Discord server and user IDs. Treat them as private data.
+
+### Install the schedule
+
+Nothing is installed automatically. On the VPS, after updating `/root/Vybertron`:
+
+```bash
+cd /root/Vybertron
+python3 ops/backup.py backup        # first run by hand; prints {"status": "ok", ...}
+install -m 644 ops/vybertron-backup.service ops/vybertron-backup.timer /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable --now vybertron-backup.timer
+systemctl list-timers vybertron-backup.timer
+journalctl -u vybertron-backup.service --since today
+```
+
+The timer runs daily around 04:30 server time and catches up after downtime. With
+cron instead: `30 4 * * * cd /root/Vybertron && python3 ops/backup.py backup`.
+
+### Copy backups off the VPS
+
+A backup on the same disk doesn't survive losing the VPS. Pull copies from a
+trusted machine, for example weekly:
+
+```bash
+rsync -a --chmod=D700,F600 root@YOUR_VPS:/var/lib/vybertron-backups/ ./vybatron-backups/
+python3 ops/backup.py verify --backup-dir ./vybatron-backups --name bot-data-YYYYMMDDTHHMMSSZ
+```
+
+`verify` and `list` need neither Docker nor the lock. Keep off-box copies on
+encrypted storage. Don't commit them or upload them to shared services.
+
+### Restore
+
+Restore needs the bot stopped. It verifies the whole backup (hashes, library
+parse, SQLite integrity) before changing anything. It copies everything currently in
+the volume to `/var/lib/vybertron-backups/pre-restore-<UTC time>` and writes every
+replacement first. Then it removes the databases' old WAL sidecars and any durable
+file the backup doesn't contain (for example a `listening-state.sqlite` newer than
+the backup, which the bot then rebuilds from `library.json`), and atomically
+replaces each backed-up file with its original owner and mode. Other files, such
+as interrupted `*.tmp` writes, are left in place.
+
+```bash
+cd /root/Vybertron
+python3 ops/backup.py list
+python3 ops/backup.py verify --name bot-data-YYYYMMDDTHHMMSSZ
+docker compose stop bot
+python3 ops/backup.py restore --name bot-data-YYYYMMDDTHHMMSSZ
+docker compose start bot
+```
+
+To restore an off-box copy, copy its directory back into
+`/var/lib/vybertron-backups/` with mode `700` first. Remove `pre-restore-*`
+directories yourself once the restored bot looks right. They aren't pruned
+automatically.
+
+Restore drill: `tests/backup_test.py` backs up a live WAL database, damages the
+data, restores it and checks the result in CI. Every few months, also pull the
+latest backup, run `verify` on it and open its `stats.sqlite` with `sqlite3` to
+confirm off-box copies are usable.
+
 ## Device audio plugin
 
 `lavalink/plugins/vybatron-audio` is a small Lavalink plugin that streams a song's

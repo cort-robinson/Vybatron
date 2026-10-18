@@ -1,0 +1,11 @@
+[Unit]
+Description=Back up Vybertron bot-data daily
+
+[Timer]
+OnCalendar=*-*-* 04:30:00
+RandomizedDelaySec=20min
+Persistent=true
+Unit=vybertron-backup.service
+
+[Install]
+WantedBy=timers.target

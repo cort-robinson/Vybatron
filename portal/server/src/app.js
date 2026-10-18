@@ -439,7 +439,7 @@ export async function createPortalServer(config, testOptions = {}) {
           if (range !== undefined && !/^bytes=\d{0,15}-\d{0,15}$/.test(range)) throw invalid();
           await transport.audio(`/v1/guilds/${audio[1]}/audio/${audio[2]}`, session.actorId, { range, signal: controller.signal, res }); return;
         }
-        const match = /^\/api\/guilds\/(\d{1,20})(?:\/(configuration|library|search|commands|diagnostics|activity|events|stats|recap))?$/.exec(pathname);
+        const match = /^\/api\/guilds\/(\d{1,20})(?:\/(configuration|library|search|commands|diagnostics|activity|events|stats|recap|lyrics))?$/.exec(pathname);
         if (!match) throw notFound();
         const [, guildId, resource] = match;
         queryOnly(url, resource === 'search' ? ['query'] : ['stats', 'recap'].includes(resource) ? ['window'] : []);

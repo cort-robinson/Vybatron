@@ -24,7 +24,7 @@ export function buildHelpPayload(client, requestedTopic = 'start', ownerId = 'an
   if (topic.value === 'start') {
     embed.setDescription('Your voice channel, your soundtrack. Join a voice channel, then use `/play` with a song name or supported track/playlist link.')
       .addFields(
-        { name: 'Make it yours', value: '`/play` adds music. `/playnext` puts it next. `/nowplaying` shows the track and links to the shared player.' },
+        { name: 'Make it yours', value: '`/play` adds music. `/playnext` puts it next. `/nowplaying` shows the track and links to the shared player. `/lyrics` shows its lyrics, only to you.' },
         { name: 'One player, less noise', value: 'Use the player’s Pause, Skip, Queue, Seek, and Favorite controls. It updates in place as music changes. Refresh updates its progress snapshot.' },
         { name: 'A good next move', value: 'Save a favorite with `/favorite add`, browse `/history`, or set `/filter preset:Warm` for a softer sound.' },
         { name: 'Shared listening', value: 'Join the bot’s voice channel to change playback. A configured DJ role can limit shared controls; listeners can still use `/voteskip`.' },

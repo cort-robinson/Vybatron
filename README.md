@@ -27,6 +27,8 @@ Powered by [Lavalink](https://lavalink.dev/), [discord.js](https://discord.js.or
 | SoundCloud | Public track and playlist links |
 | Bandcamp | Public track and album links supported by the audio server |
 
+Lyrics come from [LRCLIB](https://lrclib.net) through the LavaLyrics Lavalink plugin, matched by title and artist, so some songs (especially video uploads with decorated titles) have none.
+
 Spotify is a catalog import, not a Spotify audio stream. If native catalog lookup is unavailable, the bot reads public Spotify embeds and conservatively matches title, artist, version, and duration to YouTube Music/YouTube results. It never uses embed credentials, cookies, or preview audio. Public collections may expose only part of a playlist: imports are limited to 100 displayed tracks and report unmatched or remaining displayed entries. Private, removed, region-restricted, and unmatched recordings can remain unavailable. Source lookup success alone does not prove audio delivery.
 
 ## Commands
@@ -43,6 +45,7 @@ Start with `/help`. Join a voice channel and use `/play` with a song and artist,
 | `/sleep in/after-track/cancel/show` | Stop playback after 1–720 minutes, or when the current track ends; it ends like Stop |
 | `/volume`, `/loop`, `/shuffle`, `/nowplaying` | Volume, repetition, queue order, and player details |
 | `/filter` | Inspect or select an audio preset |
+| `/lyrics [position]` | Lyrics for the current song, or a queued one, shown only to you and paged to fit Discord |
 | `/favorite add/list/play/remove/import/clear` | Global private favorites across supported servers; Import adds a public playlist after a preview; Clear requires confirmation |
 | `/mix save/list/load/import/delete` | Save up to 100 tracks in a shared mix, or import them from a public playlist; owner or server manager can change it. `session:true` also keeps songs already played this session |
 | `/history`, `/replay` | Browse recent tracks and queue one to replay next |
@@ -112,7 +115,7 @@ browse permitted sessions and use their allowed music controls. Server owners,
 Manage Server members and the verified bot maintainer can manage configuration;
 playback still follows voice and DJ rules. Sign-in lasts seven days per device.
 
-Home is the landing view: Continue listening (the live or saved session and recent songs), On repeat in this server, Your mixes, Rediscover and Forgotten gems, each with Play, Shuffle or Add, then a Listening recap (your requests and the server's plays over a chosen week, month, three months or year, with played time and top tracks and artists) and Clear my request stats. The queue view has one persistent player that expands into an artwork view.
+Home is the landing view: Continue listening (the live or saved session and recent songs), On repeat in this server, Your mixes, Rediscover and Forgotten gems, each with Play, Shuffle or Add, then a Listening recap (your requests and the server's plays over a chosen week, month, three months or year, with played time and top tracks and artists) and Clear my request stats. The queue view has one persistent player that expands into an artwork view; its Lyrics button shows the current song's lyrics in place of the cover, following the song when the lyrics are synced.
 Artwork colors and subtle aurora motion set the atmosphere; motion can be reduced
 or disabled. The installable PWA supports desktop and phone, retains typed search
 input when disconnected, and waits for fresh state before enabling controls.

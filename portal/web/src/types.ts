@@ -57,6 +57,9 @@ export interface GuildSnapshot {
   settings: { volume: number; fairQueue: boolean; autoplay: AutoplayMode; djRoleId: string | null; musicTextChannelId: string | null } | null;
   channels: Channel[]; roles: { id: string; name: string }[];
 }
+// Lyrics for the session's current song (GET /lyrics). Synced lines carry startMs.
+export interface Lyrics { source: string; provider: string | null; synced: boolean; lines: { startMs: number | null; text: string }[] }
+export interface LyricsResponse { trackId: string | null; status: 'idle' | 'found' | 'not_found' | 'unavailable'; lyrics: Lyrics | null }
 export interface Library {
   favorites: Track[];
   mixes: { id: string; name: string; ownerId: string; version: string; tracks: Track[]; canEdit: boolean }[];

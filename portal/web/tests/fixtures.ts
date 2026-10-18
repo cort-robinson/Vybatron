@@ -1,6 +1,6 @@
 // Explicit loopback browser-test fixtures. Not imported by src or emitted in production.
 import type { Locator, Page } from '@playwright/test';
-import type { Activity, Bootstrap, Command, Configuration, Diagnostics, GuildSnapshot, Library, Track, Recap, Stats } from '../src/types';
+import type { Activity, Bootstrap, Command, Configuration, Diagnostics, GuildSnapshot, Library, Track, Recap, Stats, LyricsResponse } from '../src/types';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 
@@ -51,13 +51,16 @@ export function fixtureState() {
       { id: 'rediscover', kind: 'rediscover', title: 'Rediscover', artist: null, refreshesAt: null, tracks: [tracks[0]] },
       { id: 'artist-1', kind: 'artist', title: 'Solara mix', artist: 'Solara', refreshesAt: null, tracks: [tracks[0], tracks[3]] },
     ] } };
+  // Synced to the fixture's 107-second position: line 3 is being sung.
+  const verses = ['Streetlights hum along the avenue', 'Every window holds a different view', 'We keep the evening light between us two', '', 'Hold on, the night is almost through', 'Hold on, the night is almost through'];
+  const lyrics: LyricsResponse = { trackId: current.id, status: 'found', lyrics: { source: 'lrclib', provider: 'LRCLIB', synced: true, lines: verses.map((text, index) => ({ startMs: 90_000 + index * 6_000, text })) } };
   const recap: Recap = { window: '30d', since: 1_788_555_600_000,
     personal: { plays: 23, playedMs: 4_380_000, songs: 9,
       topTracks: [{ track: current, plays: 7, lastPlayedAt: 1_791_147_600_000 }, { track: tracks[1], plays: 4, lastPlayedAt: 1_791_000_000_000 }],
       topArtists: [{ name: 'Glass Avenue', plays: 9, lastPlayedAt: 1_791_147_600_000, track: current }, { name: tracks[2].author, plays: 4, lastPlayedAt: 1_791_000_000_000, track: tracks[2] }] },
     server: { plays: 184, playedMs: 33_120_000, songs: 61,
       topTracks: tracks.slice(0, 4).map((item, index) => ({ track: item, plays: 18 - index * 3, lastPlayedAt: 1_791_147_600_000 - index * 86_400_000 })) } };
-  return { snapshot, configuration, bootstrap, library, diagnostics, activity, stats, recap };
+  return { snapshot, configuration, bootstrap, library, diagnostics, activity, stats, recap, lyrics };
 }
 // Model the selected-item HTTP contract independently of the browser's capture logic.
 export function selectedCommandError(library: Library, command: Command) {
@@ -124,6 +127,7 @@ export async function mockPortal(page: Page, options: { signedOut?: boolean; bas
     else if (path.endsWith('/diagnostics')) await route.fulfill(reply(state.diagnostics));
     else if (path.endsWith('/activity')) await route.fulfill(reply(state.activity));
     else if (path.endsWith('/stats')) await route.fulfill(reply(state.stats));
+    else if (path.endsWith('/lyrics')) await route.fulfill(reply(state.lyrics));
     else if (path.endsWith('/recap')) {
       const window = new URL(route.request().url()).searchParams.get('window') || '30d';
       recapWindows.push(window);

@@ -1,5 +1,5 @@
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { CaretDownIcon, CheckIcon, DesktopIcon, DiscordLogoIcon, CaretUpIcon, DotsThreeIcon, HeartIcon, PauseIcon, PlayIcon, RepeatIcon, RepeatOnceIcon, ShuffleIcon, SkipBackIcon, SkipForwardIcon, SpeakerHighIcon, StopIcon, RadioIcon, HandPalmIcon, ArrowSquareOutIcon, TrashIcon, WarningCircleIcon, ThumbsDownIcon, VinylRecordIcon, MoonIcon } from '@phosphor-icons/react';
+import { CaretDownIcon, CheckIcon, DesktopIcon, DiscordLogoIcon, CaretUpIcon, DotsThreeIcon, HeartIcon, PauseIcon, PlayIcon, RepeatIcon, RepeatOnceIcon, ShuffleIcon, SkipBackIcon, SkipForwardIcon, SpeakerHighIcon, StopIcon, RadioIcon, HandPalmIcon, ArrowSquareOutIcon, TrashIcon, WarningCircleIcon, ThumbsDownIcon, VinylRecordIcon, MoonIcon, MicrophoneStageIcon } from '@phosphor-icons/react';
 import type { Portal } from '../usePortal';
 import type { Command, GuildSnapshot, Track } from '../types';
 import { publicUrl } from '../api';
@@ -14,6 +14,7 @@ import { prefersReducedMotion, pulse } from '../motion';
 import { swipe, type SwipeDirection } from '../swipe';
 import { useBackLayers } from '../backLayers';
 import { skinLook, skinTint, type Skin } from '../skin';
+import { activeLine, LyricsPanel, useLyrics } from './Lyrics';
 
 export function Player({ portal, expanded, setExpanded, onAdd, accent, animate, skin = 'classic' }: { portal: Portal; expanded: boolean; setExpanded: (value: boolean, settle?: () => void) => void; onAdd: () => void; accent: string; animate: boolean; skin?: Skin }) {
   const { snapshot, bootstrap, can, run, receivedAt, connection, pending, syncing, library } = portal;
@@ -29,6 +30,8 @@ export function Player({ portal, expanded, setExpanded, onAdd, accent, animate, 
   const [confirmHere, setConfirmHere] = useState(false);
   const [sleepOpen, setSleepOpen] = useState(false);
   const [queueOpen, setQueueOpen] = useState(false);
+  // The open player can show the current song's lyrics in place of its cover.
+  const [lyricsOpen, setLyricsOpen] = useState(false);
   const playerRef = useRef<HTMLElement>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
   const identityTriggerRef = useRef<HTMLButtonElement>(null);
@@ -41,6 +44,7 @@ export function Player({ portal, expanded, setExpanded, onAdd, accent, animate, 
   const reasonId = useId();
   const confirmationId = useId();
   const queueId = useId();
+  const lyricsId = useId();
   // Timeline ticks belong to the deck; unchanged queue artwork and row menus can keep their tree.
   const queue = useMemo(() => <Queue portal={portal} compact onAdd={onAdd} />, [portal, onAdd]);
   const swiped = useRef(false);
@@ -55,7 +59,7 @@ export function Player({ portal, expanded, setExpanded, onAdd, accent, animate, 
   const expand = useRef(setExpanded); expand.current = setExpanded;
   useEffect(() => swipe(playerRef.current, expanded ? 'down' : 'up', (_, settle) => { swiped.current = true; expand.current(!expanded, settle); }), [expanded]);
   // On phones the open player keeps Up next in a sheet: drag its handle up to open it, pull it down to close it.
-  useEffect(() => { if (!expanded) setQueueOpen(false); }, [expanded]);
+  useEffect(() => { if (!expanded) { setQueueOpen(false); setLyricsOpen(false); } }, [expanded]);
   useEffect(() => swipe(handleRef.current, queueOpen ? 'down' : 'up', (_, settle) => { settle(); setQueueOpen(!queueOpen); }, queueOpen ? sheetRef.current : handleRef.current), [expanded, queueOpen]);
   useEffect(() => queueOpen ? swipe(sheetRef.current, 'down', (_, settle) => { settle(); setQueueOpen(false); }) : undefined, [queueOpen]);
   useBackLayers(expanded ? queueOpen ? 2 : 1 : 0, layer => { if (layer < 2) setQueueOpen(false); if (layer < 1) expand.current(false); });
@@ -135,7 +139,8 @@ export function Player({ portal, expanded, setExpanded, onAdd, accent, animate, 
   const favorite = track && <IconButton className={`favorite ${index >= 0 ? 'active' : ''}`} label={index >= 0 ? 'Remove current song from favorites' : 'Save current song to favorites'} aria-pressed={index >= 0} disabled={!can('library') || !library || !!pending.length || local && index < 0} title={local && index < 0 ? 'Save favorites while a song plays in Discord.' : undefined} onClick={() => void toggleFavorite()}><HeartIcon size={expanded ? 28 : 25} weight={index >= 0 ? 'fill' : 'regular'} /></IconButton>;
   // An autoplay pick names its provenance in place of the source.
   const metadata = track ? <>{track.author}<span className="metadata-dot" aria-hidden="true">·</span><span className="track-source">{track.suggested ? 'Autoplay pick' : track.source}</span></> : 'Add a song to start the room.';
-  const identity = <div className="player-identity"><div className="player-title-row"><h2 ref={headingRef} tabIndex={-1} title={track?.title}>{track?.title || 'Nothing playing'}</h2>{favorite}</div><p title={track ? `${track.author} · ${track.source}` : undefined}>{metadata}</p>
+  const lyricsToggle = <IconButton className={`lyrics-toggle ${lyricsOpen ? 'active-control' : ''}`} label={lyricsOpen ? 'Hide lyrics' : 'Show lyrics'} aria-pressed={lyricsOpen} aria-controls={lyricsOpen ? lyricsId : undefined} onClick={() => setLyricsOpen(!lyricsOpen)}><MicrophoneStageIcon size={26} weight={lyricsOpen ? 'fill' : 'regular'} /></IconButton>;
+  const identity = <div className="player-identity"><div className="player-title-row"><h2 ref={headingRef} tabIndex={-1} title={track?.title}>{track?.title || 'Nothing playing'}</h2>{favorite}{lyricsToggle}</div><p title={track ? `${track.author} · ${track.source}` : undefined}>{metadata}</p>
   </div>;
   const spectrumMode = track && active && live ? 'playing' : 'standby';
   const look = skinLook(skin);
@@ -181,7 +186,8 @@ export function Player({ portal, expanded, setExpanded, onAdd, accent, animate, 
   return <section ref={playerRef} className={`persistent-player ${expanded ? 'expanded' : 'collapsed'} ${queueOpen ? 'queue-open' : ''} ${session?.status || 'idle'}`} aria-label="Music player" data-testid="player">
     {!expanded && spectrum('player-spectrum', 56, 0)}
     {expanded && <div className="sleeve-content"><button className="mobile-collapse text-button" onClick={() => setExpanded(false)}><CaretDownIcon size={22} />Close player</button>
-      <div className="sleeve-main"><div className="sleeve-artwork" onPointerMove={look?.tilt} onPointerLeave={look?.untilt}><Artwork track={track} large />{spectrum('sleeve-spectrum', 40)}{look && <look.Sleeve track={track?.id || 'idle'} />}</div>{identity}<div className="player-context">{permissionReason && <p className="player-permission" id={reasonId}><WarningCircleIcon size={18} aria-hidden="true" /><span>{permissionReason}</span></p>}{connection === 'live' && session?.status === 'recovering' && <p className="player-state warm-text" role="status">Recovering your place. Playback controls will return when it’s ready.</p>}{sleep && <p className="player-state sleep-state"><MoonIcon size={16} aria-hidden="true" /><span>Sleep timer · {sleep}</span></p>}{session?.status === 'paused' && <p className="player-state warm-text">{connection === 'live' ? 'Paused · right here when you’re ready' : 'Last known: paused'}</p>}</div></div>
+      <div className="sleeve-main">{lyricsOpen ? <div className="sleeve-artwork showing-lyrics"><LyricsView id={lyricsId} clock={clock} guildId={snapshot?.guild.id} trackId={track?.id || null} local={local} /></div>
+        : <div className="sleeve-artwork" onPointerMove={look?.tilt} onPointerLeave={look?.untilt}><Artwork track={track} large />{spectrum('sleeve-spectrum', 40)}{look && <look.Sleeve track={track?.id || 'idle'} />}</div>}{identity}<div className="player-context">{permissionReason && <p className="player-permission" id={reasonId}><WarningCircleIcon size={18} aria-hidden="true" /><span>{permissionReason}</span></p>}{connection === 'live' && session?.status === 'recovering' && <p className="player-state warm-text" role="status">Recovering your place. Playback controls will return when it’s ready.</p>}{sleep && <p className="player-state sleep-state"><MoonIcon size={16} aria-hidden="true" /><span>Sleep timer · {sleep}</span></p>}{session?.status === 'paused' && <p className="player-state warm-text">{connection === 'live' ? 'Paused · right here when you’re ready' : 'Last known: paused'}</p>}</div></div>
       <div ref={sheetRef} id={queueId} className="sleeve-queue">{queueOpen && <div className="queue-sheet-now"><span className="sheet-grabber" aria-hidden="true" /><Artwork track={track} /><span className="sheet-now-text"><strong>{track?.title || 'Nothing playing'}</strong><span>{track?.author}</span></span></div>}{queue}</div>
     </div>}
     <div className="player-footer">{!expanded && <CompactProgress clock={clock} track={track} duration={duration} />}{!expanded && <div className="compact-identity"><button ref={identityTriggerRef} type="button" className="player-expand-trigger" aria-label={track ? `Open player for ${track.title}` : 'Open player details'} aria-expanded={false} onClick={() => { openedFromIdentity.current = true; setExpanded(true); }}><Artwork track={track} /><span className="compact-title"><span className="compact-track-title" title={track?.title}>{track?.title || 'Nothing playing'}</span><span className="compact-track-meta" title={track ? `${track.author} · ${track.source}` : undefined}>{metadata}</span></span></button><span className="compact-favorite">{favorite}</span></div>}
@@ -242,6 +248,13 @@ function Timeline({ clock, track, duration, seekable, reset, onSeek }: { clock: 
       onChange={event => setScrub(Number(event.target.value))} onPointerUp={seek} onKeyUp={event => { if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown'].includes(event.key)) seek(); }} onBlur={seek} />
     <span>{track?.isStream ? 'Streaming' : time(duration)}</span>
   </div>;
+}
+// Synced lyrics follow the shared clock; only a change of sung line re-renders the panel.
+function LyricsView({ id, clock, guildId, trackId, local }: { id: string; clock: Clock; guildId?: string; trackId: string | null; local: boolean }) {
+  const [state, retry] = useLyrics(guildId, trackId, local);
+  const position = usePosition(clock);
+  const lyrics = state.status === 'found' ? state.lyrics : null;
+  return <LyricsPanel id={id} state={state} active={activeLine(lyrics, position)} onRetry={retry} />;
 }
 // Early in a song Back goes to the previous one; later, or with nothing earlier, it restarts this one.
 function BackButton({ clock, seekable, disabled, title, onPress }: { clock: Clock; seekable: boolean; disabled: boolean; title?: string; onPress: (back: boolean) => void }) {

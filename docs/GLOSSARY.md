@@ -15,6 +15,7 @@ Domain terms for Vybatron. One meaning per term; commands, code, and docs use th
 - **Announce channel** — the text channel where `/play` was invoked; receives the one "Now Playing" embed per track start.
 - **Control command** — any command that mutates playback (`/skip`, `/stop`, `/volume`, `/shuffle`, `/pause`, `/resume`, `/skipto`). Requires invoker in the bot's voice channel.
 - **Idle timeout** — 5-minute timer started when the queue empties or the voice channel becomes humanless; on expiry the player disconnects and is destroyed.
+- **Sleep timer** — an in-memory, per-player control (`/sleep`) that ends the session like an intentional Stop after 1–720 minutes, or when the current track finishes (**stop after this track**, which also stops autoplay from continuing). It ends with its player.
 - **Play** — one recorded start of a track in a server's voice channel, kept in the play statistics store. Records the **requester** (or that the bot queued it), how long it played, completion, and early skip. Never records who was listening.
 - **Early skip** — a play ended by moving on (skip, jump, replacement) before 30 seconds or 40% of the track. Stopping, disconnecting, or a source failure is not an early skip.
 - **Unattended pick** — a track queued by the bot user (radio, autoplay) rather than a person. Counts half in server favorites.

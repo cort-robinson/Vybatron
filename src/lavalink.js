@@ -20,6 +20,7 @@ import {
 import { createPlaybackWatchdog } from './playback-watchdog.js';
 import { retirePresentationPlayer } from './utils/presentation-updates.js';
 import { LIBRARY_LIMITS } from './utils/library.js';
+import { cancelSleepTimer } from './utils/sleep-timer.js';
 
 export const IDLE_MS = 5 * 60 * 1000;
 // A short grace covers a listener's reconnect blip without holding an empty room open.
@@ -174,6 +175,8 @@ export async function handleTrackError(player, track, payload, logger = console)
 }
 
 export function handlePlayerDestroy(client, player) {
+  // A sleep timer belongs to its player and ends with it.
+  cancelSleepTimer(player);
   client.playTracker?.ended(player, 'ended');
   const lavalink = client.lavalink;
   lavalink.playbackRecovery?.invalidate(player);

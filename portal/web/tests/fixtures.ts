@@ -137,8 +137,9 @@ export async function mockPortal(page: Page, options: { signedOut?: boolean; bas
       const s = state.snapshot.session; const o = body.options || {};
       if (body.command === 'pause') s.status = 'paused';
       if (body.command === 'resume') s.status = 'playing';
-      if (body.command === 'stop') { s.status = 'idle'; s.current = null; s.queue = []; state.snapshot.savedSession.exists = false; }
+      if (body.command === 'stop') { s.status = 'idle'; s.current = null; s.queue = []; s.sleep = null; state.snapshot.savedSession.exists = false; }
       if (body.command === 'clear') s.queue = [];
+      if (body.command === 'sleep') s.sleep = body.subcommand === 'cancel' ? null : body.subcommand === 'after-track' ? { mode: 'track' } : { mode: 'time', endsAt: Date.now() + Number(o.minutes) * 60_000 };
       if (body.command === 'remove') s.queue.splice(Number(o.position) - 1, 1);
       if (body.command === 'move') { const moved = s.queue.splice(Number(o.from) - 1, 1)[0]; s.queue.splice(Number(o.to) - 1, 0, moved); }
       if (body.command === 'shuffle') s.queue.reverse();

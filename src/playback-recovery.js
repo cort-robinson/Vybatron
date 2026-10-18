@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { Player } from 'lavalink-client';
+import { claimFinishedTrack } from './utils/sleep-timer.js';
 
 export const ATTEMPT_KEY = 'vybertronPlaybackAttempt';
 export const RESUME_SECONDS = 120;
@@ -1040,6 +1041,9 @@ export function createPlaybackRecovery({
       if (payload.type === 'TrackEndEvent' && payload.reason !== 'replaced') {
         rememberEnd(state, state.token);
         invalidate(player, { preservePassiveVoice: true });
+        // Stop after this track ends the session here, before the library
+        // advances to a queued track or asks autoplay for a pick.
+        if (payload.reason === 'finished' && claimFinishedTrack(player)) return;
       }
       return dispatch(payload);
     };

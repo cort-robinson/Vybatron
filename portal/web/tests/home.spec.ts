@@ -176,6 +176,26 @@ test('the listening recap explains empty and unavailable states without affectin
   await expect.poll(() => failures).toBe(2);
 });
 
+test('the listening recap never shows one range’s numbers under another', async ({ page }) => {
+  const fixture = await mockPortal(page);
+  const empty = { plays: 0, playedMs: 0, songs: 0 };
+  fixture.state.recap = { ...fixture.state.recap, personal: { ...empty, topTracks: [], topArtists: [] }, server: { ...empty, topTracks: [] } };
+  await page.goto('/');
+  const recap = shelf(page, 'Listening recap');
+  await expect(recap).toContainText('in the past month');
+  let release!: () => void; const held = new Promise<void>(resolve => { release = resolve; });
+  await page.route('**/api/guilds/*/recap*', async route => { await held; await route.fulfill({ status: 429, json: { error: { code: 'rate_limited', message: 'Too many requests. Try again shortly.' } } }); });
+  await recap.getByLabel('Recap range').selectOption('365d');
+  await expect(recap).toContainText('Loading your listening recap');
+  await expect(recap).not.toContainText('Nothing played');
+  release();
+  await expect(recap.getByRole('alert')).toContainText('Too many requests');
+  await expect(recap).not.toContainText('Nothing played');
+  await page.unroute('**/api/guilds/*/recap*');
+  await recap.getByRole('button', { name: 'Try again' }).click();
+  await expect(recap).toContainText('Nothing played in voice channels you can see in the past year');
+});
+
 test('Stop offers to save the session as a mix first', async ({ page }) => {
   const fixture = await mockPortal(page);
   await page.goto('/');

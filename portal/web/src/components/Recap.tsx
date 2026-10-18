@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { ArrowClockwiseIcon, WarningCircleIcon } from '@phosphor-icons/react';
 import type { Recap, RecapTotals, RecapWindow, Track } from '../types';
-import { api, ApiError, errorMessage } from '../api';
+import { api, errorMessage } from '../api';
 import { totalTime } from '../format';
 import { Artwork, Loading } from './ui';
 
@@ -22,14 +22,13 @@ export function ListeningRecap({ guildId, version, range, onRange }: { guildId: 
   const refresh = useCallback(async (window: RecapWindow) => {
     controller.current?.abort();
     const request = new AbortController(); controller.current = request;
-    setError('');
+    // Numbers from another range or from before a clear never show under the new label.
+    setRecap(null); setError('');
     try {
       const next = await api.recap(guildId, window, request.signal);
       if (!request.signal.aborted) setRecap(next);
     } catch (failure) {
       if (request.signal.aborted) return;
-      // Lost access or an unavailable store clears the numbers rather than leaving stale ones.
-      if (failure instanceof ApiError && [401, 403, 404, 503].includes(failure.status)) setRecap(null);
       setError(errorMessage(failure));
     }
   }, [guildId]);
@@ -64,7 +63,6 @@ export function ListeningRecap({ guildId, version, range, onRange }: { guildId: 
         <select value={range} onChange={event => onRange(event.target.value as RecapWindow)}>{windows.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label></div>
     </header>
     {body}
-    {error && recap && <p className="library-note" role="alert">{error}</p>}
   </section>;
 }
 

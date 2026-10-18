@@ -61,7 +61,7 @@ export function deferredInteraction(interaction) {
 
 export function commandMutationPolicy(name, action) {
   const readOnly = ['queue', 'nowplaying', 'help', 'history', 'invite'].includes(name)
-    || (['favorite', 'mix', 'session', 'settings', 'top', 'mymix'].includes(name) && ['list', 'show'].includes(action))
+    || (['favorite', 'mix', 'session', 'settings', 'top', 'mymix', 'sleep'].includes(name) && ['list', 'show'].includes(action))
     // An import preview only reads; its confirmation is a library write.
     || (['favorite', 'mix'].includes(name) && action === 'import');
   const libraryOnly = (['favorite', 'mix'].includes(name) && !['play', 'load'].includes(action)) || name === 'settings';

@@ -43,6 +43,8 @@ export interface GuildSnapshot {
     volume: number; filter: string; repeat: 'off' | 'track' | 'queue';
     // radio: autoplay is active for this session (server mode or /radio override).
     radio: boolean; autoplay: AutoplayMode; fairQueue: boolean;
+    // Stops the session at endsAt (epoch ms) or when the current song ends; older bots omit it.
+    sleep?: SleepTimer | null;
     listeners: { id: string; displayName: string; avatarUrl: string | null }[];
     canAdd: boolean; canControl: boolean; canVote: boolean; reason: string | null;
     // The viewer's own voice channel in this server; older bots omit it.
@@ -96,6 +98,7 @@ export interface Diagnostics {
 export interface Activity {
   items: { id: string; at: number; actor: { id: string; displayName: string }; action: string; detail: string }[];
 }
+export type SleepTimer = { mode: 'time'; endsAt: number } | { mode: 'track' };
 export interface Command {
   command: string; subcommand?: string; options?: Record<string, string | number | boolean | null>; expectedRevision?: string;
   expectedTrackId?: string; expectedHistoryId?: string; expectedMixVersion?: string;

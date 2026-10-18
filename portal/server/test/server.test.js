@@ -1375,6 +1375,15 @@ test('transfer forwards a bounded list of public song links and nothing else', a
   assert.throws(() => validateCommand({ command: 'transfer', options: { ...options, repeat: 'all' }, tracks }));
 });
 
+test('sleep commands accept 1-720 minutes and their hyphenated subcommand', async () => {
+  const { validateCommand } = await import('../src/commands.js');
+  for (const minutes of [1, 720]) assert.deepEqual(validateCommand({ command: 'sleep', subcommand: 'in', options: { minutes } }), { command: 'sleep', subcommand: 'in', options: { minutes } });
+  for (const minutes of [0, 721, 1.5, '30', null]) assert.throws(() => validateCommand({ command: 'sleep', subcommand: 'in', options: { minutes } }), undefined, String(minutes));
+  assert.throws(() => validateCommand({ command: 'sleep', subcommand: 'in' }));
+  for (const subcommand of ['after-track', 'cancel', 'show']) assert.deepEqual(validateCommand({ command: 'sleep', subcommand }), { command: 'sleep', subcommand, options: {} });
+  for (const subcommand of ['after-', '-track', 'after--track', 'After-track', 'after_track']) assert.throws(() => validateCommand({ command: 'sleep', subcommand }), undefined, subcommand);
+});
+
 test('device audio passes byte ranges through and nothing but audio', { timeout: 5000 }, async t => {
   const f = await fixture(t); const device = await f.login(); const headers = { Cookie: device.cookie };
   const route = `/api/guilds/${guildId}/audio/abcdefghijk`;

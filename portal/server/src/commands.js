@@ -54,6 +54,7 @@ const schemas = {
   'radio/on': { track: opt(string(200)) }, 'radio/off': {},
   'radio/promote': { position: required(integer(1, 3)) }, 'radio/remove': { position: required(integer(1, 3)) }, 'radio/less': { position: opt(integer(1, 3)) }, replay: { index: required(integer(1, 100)) },
   'session/resume': {}, 'session/discard': {}, 'session/show': {},
+  'sleep/in': { minutes: required(integer(1, 720)) }, 'sleep/after-track': {}, 'sleep/cancel': {}, 'sleep/show': {},
   'favorite/add': { position: opt(integer(1, 500)) }, 'favorite/list': { page: opt(integer(1, 1000)) },
   'favorite/play': { index: required(integer(1, Number.MAX_SAFE_INTEGER)) }, 'favorite/remove': { index: required(integer(1, Number.MAX_SAFE_INTEGER)) },
   'favorite/clear': { confirm: required(boolean) }, 'favorite/import': { link: required(publicLink) },
@@ -73,7 +74,7 @@ export function validateCommand(body) {
   if (!body || typeof body !== 'object' || Array.isArray(body) ||
       Object.keys(body).some(key => !['command', 'subcommand', 'options', 'expectedRevision', 'tracks', ...Object.keys(selectionFields)].includes(key)) ||
       typeof body.command !== 'string' || !/^[a-z]+$/.test(body.command) ||
-      (body.subcommand !== undefined && (typeof body.subcommand !== 'string' || !/^[a-z]+$/.test(body.subcommand))) ||
+      (body.subcommand !== undefined && (typeof body.subcommand !== 'string' || !/^[a-z]+(?:-[a-z]+)*$/.test(body.subcommand))) ||
       (body.expectedRevision !== undefined && !string(256)(body.expectedRevision))) throw invalid();
   const key = body.subcommand ? `${body.command}/${body.subcommand}` : body.command;
   if (!Object.hasOwn(schemas, key)) throw invalid();

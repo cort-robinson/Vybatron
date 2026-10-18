@@ -240,7 +240,7 @@ test('unavailable and paused presentation reject invalid reported positions with
   for (const reported of [undefined, -1, Infinity, NaN, '107420', Number.MAX_SAFE_INTEGER + 1]) {
     const player = makePlayer(1);
     player.lastPosition = reported;
-    Object.defineProperty(player, 'position', { get() { assert.fail('inactive audio must not read extrapolated position'); } });
+    Object.defineProperty(player, 'position', { get() { return assert.fail('inactive audio must not read extrapolated position'); } });
     const unavailable = buildPlayerPayload(player, { state: 'unavailable' }).embeds[0].data.description;
     assert.match(unavailable, /0:00 \/ 1:00/);
     const paused = buildPlayerPayload(player, { state: 'paused' }).embeds[0].data.description;

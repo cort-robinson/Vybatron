@@ -1,0 +1,11 @@
+[Unit]
+Description=Vybertron daily bot-data backup
+After=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/root/Vybertron
+ExecStart=/usr/bin/python3 /root/Vybertron/ops/backup.py backup
+Environment=PYTHONUNBUFFERED=1
+UMask=0077
+TimeoutStartSec=45min

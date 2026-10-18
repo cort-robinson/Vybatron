@@ -1,5 +1,8 @@
 import importlib.util
+import os
 from pathlib import Path
+import shutil
+import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -43,6 +46,7 @@ class FakeBackend:
         self.available, self.calls = [], []
         self.failures, self.probed_tracks, self.queued = [], [], []
         self.results, self.verify_ok, self.deploy_error, self.fix_recovery = {}, True, False, False
+        self.mirror_error = None
 
     def current(self):
         return r.version_of(self.config_path.read_text())
@@ -79,6 +83,11 @@ class FakeBackend:
     def verify(self, version):
         self.calls.append(('verify', version))
         return self.verify_ok
+
+    def mirror_plugins(self):
+        self.calls.append(('mirror',))
+        if self.mirror_error:
+            raise r.RecoveryError(self.mirror_error)
 
     def recover(self, kind):
         self.calls.append(('recover', kind))
@@ -459,6 +468,107 @@ class RecoveryTests(unittest.TestCase):
             r.pin_config(CONFIG, '../../untrusted')
         with self.assertRaises(r.RecoveryError):
             r.pin_config(CONFIG + CONFIG, NEW)
+
+    def test_healthy_cycle_mirrors_loaded_plugins(self):
+        self.assertEqual(self.cycle()['status'], 'healthy')
+        self.assertEqual(len(self.calls('mirror')), 1)
+        self.cycle(observe_only=True)
+        self.assertEqual(len(self.calls('mirror')), 1)
+
+    def test_checksum_mismatch_alerts_and_other_mirror_errors_keep_health(self):
+        self.backend.mirror_error = 'command_failed'
+        state = self.cycle()
+        self.assertEqual((state['status'], state['mirror_error']), ('healthy', 'command_failed'))
+        self.backend.mirror_error = 'plugin_checksum_mismatch'
+        self.assertEqual(self.cycle()['status'], 'plugin_checksum')
+        self.backend.mirror_error = None
+        state = self.cycle()
+        self.assertEqual(state['status'], 'healthy')
+        self.assertNotIn('mirror_error', state)
+
+
+class PluginMirrorTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        root = Path(self.temp.name)
+        self.repo = root / 'repo'
+        self.mirror = self.repo / 'lavalink/plugins'
+        r.atomic_write(self.repo / 'lavalink/application.yml', CONFIG)
+        self.backend = r.Backend(self.repo, root / 'state', {})
+        self.installed = {f'youtube-plugin-{OLD}.jar': b'youtube', 'unrelated-1.0.0.jar': b'unrelated'}
+        self.copies = []
+        self.docker = patch.object(r, 'command', side_effect=self.docker_cp)
+        self.docker.start()
+        self.addCleanup(self.docker.stop)
+
+    def docker_cp(self, args, **kwargs):
+        self.assertEqual(args[:2], ['docker', 'cp'])
+        source = args[2].removeprefix('vybertron-lavalink:/opt/Lavalink/plugins/')
+        self.copies.append(source)
+        Path(args[3]).write_bytes(self.installed[source])
+        return ''
+
+    def record(self, **checksums):
+        lines = [f'{digest}  {name}\n' for name, digest in checksums.items()]
+        r.atomic_write(self.repo / r.CHECKSUMS, ''.join(lines), 0o644)
+
+    def test_committed_pins_have_recorded_checksums(self):
+        repo = Path(__file__).resolve().parents[1]
+        jars = r.plugin_jars((repo / 'lavalink/application.yml').read_text())
+        self.assertIn('youtube-plugin', jars)
+        self.assertLessEqual(set(jars.values()), set(r.recorded_checksums(repo)))
+
+    def test_mirrors_loaded_jars_once_and_prunes_superseded_versions(self):
+        self.record(**{f'youtube-plugin-{OLD}.jar': r.hashlib.sha256(b'youtube').hexdigest()})
+        r.atomic_write(self.mirror / f'youtube-plugin-{NEW}.jar', 'superseded')
+        r.atomic_write(self.mirror / 'vybatron-audio.jar', 'local build')
+        self.backend.mirror_plugins()
+        self.assertEqual((self.mirror / f'youtube-plugin-{OLD}.jar').read_bytes(), b'youtube')
+        self.assertEqual((self.mirror / 'unrelated-1.0.0.jar').read_bytes(), b'unrelated')
+        self.assertFalse((self.mirror / f'youtube-plugin-{NEW}.jar').exists())
+        self.assertTrue((self.mirror / 'vybatron-audio.jar').exists())
+        self.backend.mirror_plugins()
+        self.assertEqual(len(self.copies), 2)
+
+    def test_rejects_a_loaded_jar_that_differs_from_its_recorded_checksum(self):
+        self.record(**{f'youtube-plugin-{OLD}.jar': '0' * 64})
+        with self.assertRaisesRegex(r.RecoveryError, 'plugin_checksum_mismatch'):
+            self.backend.mirror_plugins()
+        self.assertEqual(list(self.mirror.glob('youtube-plugin-*')), [])
+
+    def test_replaces_a_kept_jar_that_differs_from_its_recorded_checksum(self):
+        self.record(**{f'youtube-plugin-{OLD}.jar': r.hashlib.sha256(b'youtube').hexdigest()})
+        r.atomic_write(self.mirror / f'youtube-plugin-{OLD}.jar', 'corrupted')
+        self.backend.mirror_plugins()
+        self.assertEqual((self.mirror / f'youtube-plugin-{OLD}.jar').read_bytes(), b'youtube')
+        self.installed[f'youtube-plugin-{OLD}.jar'] = b'corrupted'
+        r.atomic_write(self.mirror / f'youtube-plugin-{OLD}.jar', 'corrupted')
+        with self.assertRaisesRegex(r.RecoveryError, 'plugin_checksum_mismatch'):
+            self.backend.mirror_plugins()
+        self.assertEqual(list(self.mirror.glob('youtube-plugin-*')), [])
+
+    @unittest.skipUnless(shutil.which('sh'), 'needs a POSIX shell')
+    def test_entrypoint_seeds_only_declared_plugin_jars(self):
+        root = Path(self.temp.name) / 'lavalink'
+        (root / 'bin').mkdir(parents=True)
+        java = root / 'bin/java'
+        java.write_text('#!/bin/sh\nls plugins\n', newline='\n')
+        java.chmod(0o755)
+        r.atomic_write(root / 'application.yml', CONFIG)
+        for name in [f'youtube-plugin-{OLD}.jar', f'youtube-plugin-{NEW}.jar', 'removed-plugin-1.0.0.jar',
+                     'unrelated-1.0.0.jar', 'vybatron-audio.jar']:
+            r.atomic_write(self.mirror / name, name)
+        script = Path(__file__).resolve().parents[1] / 'lavalink/plugins/start.sh'
+        environment = {**os.environ, 'PATH': f'{root / "bin"}{os.pathsep}{os.environ["PATH"]}'}
+        output = subprocess.run(['sh', script.as_posix(), self.mirror.as_posix()], cwd=root, env=environment,
+                                capture_output=True, text=True, check=True).stdout.split()
+        self.assertEqual(sorted(output), sorted([f'youtube-plugin-{OLD}.jar', 'unrelated-1.0.0.jar', 'vybatron-audio.jar']))
+
+    def test_rejects_malformed_checksum_records(self):
+        r.atomic_write(self.repo / r.CHECKSUMS, 'not a checksum\n')
+        with self.assertRaisesRegex(r.RecoveryError, 'invalid_plugin_checksums'):
+            self.backend.mirror_plugins()
 
 
 if __name__ == '__main__':

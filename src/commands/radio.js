@@ -33,6 +33,8 @@ async function turnOn(interaction, player) {
     if (expired) return interaction.reply(ephemeralText('That search suggestion expired. Type your search again and choose a fresh result.'));
     if (!result?.tracks?.length) return interaction.reply(ephemeralText(searchFailureMessage(result, query)));
     await interaction.portalRecheck?.();
+    // requireControl marked this command as writing before the seed lookup.
+    interaction.portalAssertLive?.();
     if (sessionChanged(interaction, player)) return interaction.reply(ephemeralText('The listening session changed while loading. Try again.'));
     seed = result.tracks[0];
   }

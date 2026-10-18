@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { ArrowClockwiseIcon, ArrowCounterClockwiseIcon, CaretUpIcon, PlayIcon, PlusIcon, ShuffleIcon, WarningCircleIcon } from '@phosphor-icons/react';
 import type { Portal } from '../usePortal';
-import type { AutoPlaylist, Command, Stats, StatsWindow, Track } from '../types';
+import type { AutoPlaylist, Command, RecapWindow, Stats, StatsWindow, Track } from '../types';
 import { api, ApiError, errorMessage } from '../api';
 import { date, totalTime } from '../format';
 import { Artwork, Confirm, IconButton, Loading } from './ui';
 import { dragScroll } from '../dragScroll';
+import { ListeningRecap } from './Recap';
 import './home.css';
 
 const windows: { id: StatsWindow; label: string }[] = [
@@ -35,6 +36,8 @@ export function Home({ portal, active, onOpenPlayer }: { portal: Portal; active:
   const [statsWindow, setWindow] = useState<StatsWindow>('30d');
   const [confirmClear, setConfirmClear] = useState(false);
   const [clearing, setClearing] = useState(false);
+  const [recapVersion, setRecapVersion] = useState(0);
+  const [recapWindow, setRecapWindow] = useState<RecapWindow>('30d');
   const controller = useRef<AbortController | null>(null);
   const ready = !!snapshot;
   const addable = can('add') && !pending.length;
@@ -54,7 +57,7 @@ export function Home({ portal, active, onOpenPlayer }: { portal: Portal; active:
       setError(errorMessage(failure));
     }
   }, [guildId]);
-  useEffect(() => { setStats(null); setError(''); setWindow('30d'); }, [guildId]);
+  useEffect(() => { setStats(null); setError(''); setWindow('30d'); setRecapWindow('30d'); }, [guildId]);
   useEffect(() => {
     if (!active || !ready || !guildId) return;
     void refresh(statsWindow);
@@ -104,6 +107,7 @@ export function Home({ portal, active, onOpenPlayer }: { portal: Portal; active:
     {ready && !can('add') && <div className="permission-note"><WarningCircleIcon size={20} aria-hidden="true" /><span>{blockedReason} You can still browse; Play, Shuffle and Add unlock once you can add music.</span></div>}
     <ContinueListening portal={portal} onOpenPlayer={onOpenPlayer} add={add} disabled={!addable} title={disabledTitle} />
     {statsShelves}
+    {ready && <ListeningRecap guildId={guildId} version={recapVersion} range={recapWindow} onRange={setRecapWindow} />}
     <section className="home-privacy" aria-labelledby="home-privacy-title">
       <div><h2 id="home-privacy-title">Your request stats</h2>
         <p>Your mixes, top tracks and Rediscover come from the songs you request. Clearing removes you from every request you’ve made, in every server. Server totals stay, anonymized, so On repeat and Forgotten gems keep their counts. Favorites, shared mixes and history aren’t touched. Vybatron never records who was listening, only who asked for a song.</p></div>
@@ -117,7 +121,7 @@ export function Home({ portal, active, onOpenPlayer }: { portal: Portal; active:
         void api.clearRequestStats(bootstrap.csrfToken).then(result => {
           setConfirmClear(false);
           notify(result.cleared ? `Cleared you from ${result.cleared.toLocaleString()} ${result.cleared === 1 ? 'request' : 'requests'}. Server totals stay, anonymized.` : 'There were no requests to clear.', 'success');
-          void refresh(statsWindow);
+          void refresh(statsWindow); setRecapVersion(value => value + 1);
         }).catch(failure => notify(errorMessage(failure), 'error')).finally(() => setClearing(false));
       }} />}
   </div>;

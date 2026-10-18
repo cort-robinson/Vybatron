@@ -8,6 +8,9 @@ import { attachSessionSnapshots } from './sessions.js';
 export const LIBRARY_LIMITS = Object.freeze({ favorites: 1000, mixes: 25, mixTracks: 100, queue: 500, history: 100, activity: 200, bytes: 5 * 1024 * 1024, guilds: 1000 });
 export const HISTORY_RETENTION_MS = 30 * 24 * 60 * 60_000;
 export const ACTIVITY_RETENTION_MS = 24 * 60 * 60_000;
+// One size cap is shared by every server, so warn operators well before it fills.
+export const LIBRARY_WARNING_RATIO = 0.8;
+const LIBRARY_WARNING_INTERVAL_MS = 60 * 60_000;
 // Smart autoplay (ADR-0008): off, on, or on only while someone in voice is listening.
 export const AUTOPLAY_MODES = Object.freeze(['off', 'on', 'listening']);
 export const DEFAULT_SETTINGS = Object.freeze({ volume: 100, fairQueue: false, djRoleId: null, musicTextChannelId: null, autoplay: 'off' });
@@ -134,16 +137,23 @@ export function migrateLibrary(value) {
   return validateDocument(migrated);
 }
 
+function retained(item, at, now, retentionMs) { return at <= now + 60_000 && now - at <= retentionMs; }
+function expired(guild, now = Date.now()) {
+  return guild.history.some(item => !retained(item, item.playedAt, now, HISTORY_RETENTION_MS))
+    || guild.activity.some(item => !retained(item, item.at, now, ACTIVITY_RETENTION_MS));
+}
+
 function prune(guild, now = Date.now()) {
-  guild.history = guild.history.filter(item => item.playedAt <= now + 60_000 && now - item.playedAt <= HISTORY_RETENTION_MS).slice(0, LIBRARY_LIMITS.history);
-  guild.activity = guild.activity.filter(item => item.at <= now + 60_000 && now - item.at <= ACTIVITY_RETENTION_MS).slice(0, LIBRARY_LIMITS.activity);
+  guild.history = guild.history.filter(item => retained(item, item.playedAt, now, HISTORY_RETENTION_MS)).slice(0, LIBRARY_LIMITS.history);
+  guild.activity = guild.activity.filter(item => retained(item, item.at, now, ACTIVITY_RETENTION_MS)).slice(0, LIBRARY_LIMITS.activity);
 }
 
 // One transaction queue and atomic replacement: failed disk writes never publish
 // a half-saved library in memory, and simultaneous saves cannot lose each other.
 export class MusicLibrary {
-  constructor(filePath, { io = fs } = {}) {
-    this.filePath = filePath; this.io = io;
+  constructor(filePath, { io = fs, logger = console, now = Date.now } = {}) {
+    this.filePath = filePath; this.io = io; this.logger = logger; this.now = now;
+    this.bytes = 0; this.warnedAt = -Infinity;
     this.document = { version: 2, guilds: {}, favorites: {}, favoriteOverflow: {} };
     this.pending = Promise.resolve();
   }
@@ -155,6 +165,7 @@ export class MusicLibrary {
       if (stat.size > LIBRARY_LIMITS.bytes) throw new Error('Music library exceeds its size limit.');
       json = await this.io.readFile(this.filePath, 'utf8');
     } catch (error) { if (error.code === 'ENOENT') return this; throw error; }
+    this.bytes = Buffer.byteLength(json);
     const original = validateDocument(JSON.parse(json));
     const migrated = migrateLibrary(original);
     const beforePrune = JSON.stringify(migrated);
@@ -167,6 +178,7 @@ export class MusicLibrary {
       await this.writeDocument(migrated);
     } else if (beforePrune !== JSON.stringify(migrated)) await this.writeDocument(migrated);
     this.document = migrated;
+    this.warnIfNearlyFull();
     return this;
   }
   guildIds() { return Object.keys(this.document.guilds); }
@@ -184,9 +196,21 @@ export class MusicLibrary {
       try { await file.writeFile(json); await file.sync(); } finally { await file.close(); }
       await this.io.rename(temporary, this.filePath);
     } finally { await this.io.unlink(temporary).catch(() => {}); }
+    this.bytes = Buffer.byteLength(json);
+    this.warnIfNearlyFull();
   }
-  async updateDocument(mutate) {
+  // Size only: no server, listener or track details.
+  capacity() { return { bytes: this.bytes, limitBytes: LIBRARY_LIMITS.bytes }; }
+  warnIfNearlyFull() {
+    const now = this.now();
+    if (this.bytes < LIBRARY_LIMITS.bytes * LIBRARY_WARNING_RATIO || now - this.warnedAt < LIBRARY_WARNING_INTERVAL_MS) return;
+    this.warnedAt = now;
+    this.logger.warn(`[Library] Music library is ${Math.floor(this.bytes / LIBRARY_LIMITS.bytes * 100)}% full (${this.bytes} of ${LIBRARY_LIMITS.bytes} bytes). Saves fail for every server once it is full.`);
+  }
+  // `skip` sees the committed document; returning true leaves the file untouched.
+  async updateDocument(mutate, { skip } = {}) {
     const transaction = this.pending.catch(() => {}).then(async () => {
+      if (skip?.(this.document)) return undefined;
       const draft = structuredClone(this.document);
       const result = await mutate(draft);
       for (const guild of Object.values(draft.guilds)) prune(guild);
@@ -197,12 +221,16 @@ export class MusicLibrary {
     this.pending = transaction;
     return transaction;
   }
-  async updateGuild(guildId, mutate) {
+  async updateGuild(guildId, mutate, { skip } = {}) {
     assertId(guildId);
     return this.updateDocument(async draft => {
       const guild = draft.guilds[guildId] ||= emptyGuild();
       return mutate(guild);
-    });
+    }, { skip: skip && (document => skip(document.guilds[guildId])) });
+  }
+  // Rewrites the file only when retention actually removes something.
+  async pruneExpired() {
+    return this.updateDocument(() => {}, { skip: document => !Object.values(document.guilds).some(guild => expired(guild)) });
   }
   async updateFavorites(userId, mutate, { clearOverflow = false } = {}) {
     assertId(userId);
@@ -235,7 +263,7 @@ export async function initializeLibrary(client) {
   client.library = await new MusicLibrary(path.join(dataDir, 'library.json')).open();
   client.library.stopSnapshots = attachSessionSnapshots(client);
   client.library.retentionTimer = setInterval(() => {
-    void client.library.updateDocument(() => {}).catch(() => console.error('[Library] Retention cleanup failed.'));
+    void client.library.pruneExpired().catch(() => console.error('[Library] Retention cleanup failed.'));
   }, 60 * 60_000);
   client.library.retentionTimer.unref?.();
   return client.library;

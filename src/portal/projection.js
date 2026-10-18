@@ -182,3 +182,29 @@ export function statsProjection(client, context, window = '30d', now = Date.now(
     return unavailable();
   }
 }
+
+export const RECAP_WINDOW_IDS = Object.freeze(Object.keys(STATS_WINDOWS));
+
+// A listening recap over one window, under the same rules as statsProjection:
+// visible voice channels only, the actor's own requests for personal numbers,
+// and no requester identity in server numbers.
+export function recapProjection(client, context, window = '30d', now = Date.now()) {
+  const stats = client.stats;
+  const unavailable = () => fail(503, 'stats_unavailable', 'Listening stats are unavailable right now. Playback is unaffected.');
+  if (!stats?.available) unavailable();
+  try {
+    const guildId = context.guild.id;
+    const visibleChannelIds = context.member ? stats.voiceChannelIds(guildId).filter(id => visibleHistory(context, { voiceChannelId: id })) : [];
+    const since = now - STATS_WINDOWS[window];
+    const { personal, server } = stats.recap(guildId, context.user.id, { since, visibleChannelIds });
+    const totals = part => ({ plays: boundedNumber(part.plays), playedMs: boundedNumber(part.playedMs), songs: boundedNumber(part.songs) });
+    return { window, since,
+      personal: { ...totals(personal), topTracks: personal.topTracks.map(statEntry),
+        topArtists: personal.topArtists.map(artist => ({ name: plainText(artist.artist, { fallback: 'Unknown artist', maxLength: 120 }),
+          plays: boundedNumber(artist.plays), lastPlayedAt: boundedNumber(artist.lastPlayedAt), track: trackProjection(artist.track) })) },
+      server: { ...totals(server), topTracks: server.topTracks.map(statEntry) } };
+  } catch (error) {
+    if (error instanceof PortalError) throw error;
+    return unavailable();
+  }
+}

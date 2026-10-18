@@ -21,7 +21,10 @@ It now also holds `stats.sqlite` (play statistics, capped at 16 MiB), which keep
 volume well inside the 64 MiB release snapshot limit. Releases stop the bot before the
 snapshot, and the bot checkpoints the stats WAL on shutdown, so the copy is consistent.
 Rolling back to a release without stats quarantines `stats.sqlite` with other
-candidate-only files.
+candidate-only files. `listening-state.sqlite` (history, activity, checkpoints,
+capped at 8 MiB) works the same way: the bot copies its contents into
+`library.json` at shutdown, so an older release keeps them after a rollback, and
+the next release adopts anything the older one changed (ADR-0009).
 Build images on the workstation or CI, then transfer the tested images. Avoid
 frontend builds on the 2 GiB VPS while music and recovery probes are running.
 

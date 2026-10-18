@@ -9,8 +9,9 @@ import {
 } from '../src/utils/radio.js';
 import { skipCurrent } from '../src/utils/operations.js';
 import { maintenanceStatus, setMaintenance } from '../src/utils/maintenance.js';
-import { MusicLibrary, trackReference } from '../src/utils/library.js';
+import { trackReference } from '../src/utils/library.js';
 import { track } from './fixtures.js';
+import { openLibrary, closeLibraries } from './library-fixture.js';
 
 const song = (id, { title = `Song ${id}`, author = `Artist ${id}`, duration = 200_000, isStream = false, requester = '200', source = 'youtube' } = {}) => {
   const value = track(id, requester);
@@ -229,19 +230,19 @@ test('removing a suggestion excludes only that song', async () => {
 
 test('the autoplay setting validates and older saved documents migrate to off', async t => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'vybertron-autoplay-'));
-  t.after(() => fs.rm(directory, { recursive: true, force: true }));
+  t.after(async () => { await closeLibraries(); await fs.rm(directory, { recursive: true, force: true }); });
   const filePath = path.join(directory, 'library.json');
   const legacySettings = { volume: 80, fairQueue: true, djRoleId: null, musicTextChannelId: null };
   await fs.writeFile(filePath, JSON.stringify({ version: 2, favorites: {}, favoriteOverflow: {}, guilds: { 100: { settings: legacySettings, mixes: {}, session: null, history: [], activity: [] } } }));
-  const library = await new MusicLibrary(filePath).open();
+  const library = await openLibrary(filePath);
   assert.deepEqual(library.settings('100'), { ...legacySettings, autoplay: 'off' });
   assert.equal(library.settings('101').autoplay, 'off');
   await library.updateGuild('100', guild => { guild.settings.autoplay = 'listening'; });
-  assert.equal((await new MusicLibrary(filePath).open()).settings('100').autoplay, 'listening');
+  assert.equal((await openLibrary(filePath)).settings('100').autoplay, 'listening');
   await assert.rejects(library.updateGuild('100', guild => { guild.settings.autoplay = 'always'; }), /Invalid saved server settings/);
   assert.equal(library.settings('100').autoplay, 'listening');
 
   const v1 = path.join(directory, 'v1.json');
   await fs.writeFile(v1, JSON.stringify({ version: 1, guilds: { 100: { settings: { volume: 50, fairQueue: false, djRoleId: null }, favorites: {}, mixes: {}, session: null } } }));
-  assert.equal((await new MusicLibrary(v1).open()).settings('100').autoplay, 'off');
+  assert.equal((await openLibrary(v1)).settings('100').autoplay, 'off');
 });

@@ -1,4 +1,5 @@
 import { maintenanceStatus, setMaintenance } from './utils/maintenance.js';
+import { cancelSleepTimer } from './utils/sleep-timer.js';
 
 // Never serialize arbitrary errors: upstream errors can carry tokens or signed
 // media URLs. Known error codes are enough to identify an operational failure.
@@ -45,6 +46,9 @@ export function installRuntime(client, {
     if (shutdownTask) return shutdownTask;
     client.runtimeState.draining = true;
     setMaintenance(client, true);
+    // A restart keeps the session checkpoint; a sleep timer must not end the
+    // session while shutdown drains. Timers live in memory and end here anyway.
+    for (const player of client.lavalink?.players?.values() || []) cancelSleepTimer(player);
     logEvent(logger, 'info', reason);
     shutdownTask = (async () => {
       let deadline;

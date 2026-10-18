@@ -16,11 +16,11 @@ import { LibraryView } from './components/Library';
 import { Home } from './components/Home';
 import { ServerView, type AmbientMode, type InstallPrompt } from './components/Server';
 import { Recovery } from './components/Recovery';
+import { ShareDialog } from './components/Share';
+import { holdForSignIn, initialShare } from './share';
 import { transition } from './motion';
 import { longPress } from './longPress';
-import { applyPerformance, applySkin, initialPerformance, initialSkin, type Skin } from './skin';
-import { Horizon } from './components/Overdrive';
-import { Earth828 } from './components/Fantastic';
+import { applyPerformance, applySkin, initialPerformance, initialSkin, loadLook, skinLook, type Skin } from './skin';
 
 function initialAmbient(): AmbientMode {
   try { const value = localStorage.getItem('vybertron.ambient'); return value === 'off' || value === 'subtle' || value === 'on' ? value : 'on'; } catch { return 'on'; }
@@ -42,6 +42,7 @@ export function App() {
   const [reduced, setReduced] = useState(() => matchMedia('(prefers-reduced-motion: reduce)').matches);
   const [installPrompt, setInstallPrompt] = useState<InstallPrompt | null>(null);
   const [update, setUpdate] = useState<ServiceWorker | null>(null);
+  const [shared, setShared] = useState(initialShare);
   const navigationState = useRef({ surface, expanded });
   const { bootstrap, snapshot, connection, auth } = portal;
   useEffect(() => {
@@ -80,7 +81,16 @@ export function App() {
   }, [portal.notice]);
   // Look and lighting changes crossfade the whole page instead of repainting it in one frame.
   const setAmbient = (value: AmbientMode) => transition('theme', () => { changeAmbient(value); try { localStorage.setItem('vybertron.ambient', value); } catch { /* Optional, non-sensitive preference. */ } });
-  const setSkin = (value: Skin) => transition('theme', () => { applySkin(value); changeSkin(value); });
+  // A look's chunk loads before it applies, so the switch stays one atomic crossfade. The
+  // latest choice wins if an earlier one is still loading. The browser won't refetch a script
+  // chunk that failed, so a failed look asks for a reload; the current look stays meanwhile.
+  const skinChoice = useRef(0);
+  const setSkin = (value: Skin) => {
+    const choice = ++skinChoice.current;
+    loadLook(value).then(() => {
+      if (choice === skinChoice.current) transition('theme', () => { applySkin(value); changeSkin(value); });
+    }, () => { if (choice === skinChoice.current) portal.notify('That look couldn’t load. Check your connection, then reload the page and try again.', 'error'); });
+  };
   const setPerformance = (value: boolean) => transition('theme', () => { applyPerformance(value); changePerformance(value); });
   const order = (value: Surface) => surfaces.findIndex(item => item.id === value);
   // Leaving the sleeve folds the cover back into the deck; otherwise the view slides along the nav.
@@ -107,18 +117,18 @@ export function App() {
     document.documentElement.style.setProperty('--ground', palette.ground);
     document.querySelector('meta[name="theme-color"]')?.setAttribute('content', palette.ground);
   }, [palette]);
+  const Look = skinLook(skin);
   const scene = (moving: boolean) => <div className={`ambient-scene ${expanded ? 'immersive' : ''} ${moving ? 'moving' : 'settled'} ${ambient === 'subtle' ? 'subtle' : ''} ${ambient === 'off' ? 'disabled' : ''}`} aria-hidden="true">
     <RoomLight palette={palette} instant={hidden} quick={reduced}>{prepared => <>
     <ArtworkField url={artwork} />
-    {skin === 'overdrive' && <Horizon prepared={prepared} />}
-    {skin === 'fantastic' && <Earth828 prepared={prepared} />}
+    {Look && <Look.Scenery prepared={prepared} />}
     </>}</RoomLight>
   </div>;
   const background = scene(motion);
   // Sign-in has no session to wait for; the horizon idles there whenever ambient motion is allowed.
   const welcome = scene(!still);
   if (auth === 'loading') return <div className="auth-page">{welcome}<Brand /><Loading label="Finding your listening space…" /></div>;
-  if (auth === 'signed-out' || auth === 'error') return <div className="auth-page">{welcome}<Brand /><main className="sign-in"><h1 className="sr-only">Sign in to Vybatron</h1><div className="signin-sleeve"><FallbackCover /></div><Spectrum className="signin-spectrum" seed="vybertron" color={palette.accent} mode="playing" animate={!still} bands={36} /><p>Sign in with Discord to pick songs and control the music in your server.</p>{auth === 'error' ? <ErrorState message={portal.authError} retry={() => void portal.loadBootstrap()} /> : <a className="button primary discord-signin" href="/auth/discord"><DiscordLogoIcon size={25} weight="fill" />Continue with Discord<ArrowRightIcon size={20} /></a>}<span className="signin-footnote">Plays in your Discord voice channel, or right here when you’re not in one.</span></main></div>;
+  if (auth === 'signed-out' || auth === 'error') return <div className="auth-page">{welcome}<Brand /><main className="sign-in"><h1 className="sr-only">Sign in to Vybatron</h1><div className="signin-sleeve"><FallbackCover /></div><Spectrum className="signin-spectrum" seed="vybertron" color={palette.accent} mode="playing" animate={!still} bands={36} /><p>{shared?.link ? 'Sign in with Discord to add the link you shared.' : 'Sign in with Discord to pick songs and control the music in your server.'}</p>{auth === 'error' ? <ErrorState message={portal.authError} retry={() => void portal.loadBootstrap()} /> : <a className="button primary discord-signin" href="/auth/discord" onClick={() => holdForSignIn(shared)}><DiscordLogoIcon size={25} weight="fill" />Continue with Discord<ArrowRightIcon size={20} /></a>}<span className="signin-footnote">Plays in your Discord voice channel, or right here when you’re not in one.</span></main></div>;
   const viewer = bootstrap!.viewer;
   const noGuilds = !bootstrap!.guilds.length;
   const inviteUrl = bootstrap!.inviteUrl;
@@ -143,8 +153,9 @@ export function App() {
         <ServerView portal={portal} active={surface === 'server'} ambient={ambient} setAmbient={setAmbient} skin={skin} setSkin={setSkin} performance={performance} setPerformance={setPerformance} installPrompt={installPrompt} install={install} />
       </>}</div>{!noGuilds && <Player portal={portal} expanded={expanded} setExpanded={toggleExpanded} onAdd={openSearch} accent={palette.accent} animate={!still} skin={skin} />}</main>
     </div>
+    {shared && <ShareDialog portal={portal} link={shared.link} onClose={() => setShared(null)} />}
     <Search portal={portal} open={searchOpen} onClose={() => setSearchOpen(false)} query={query} setQuery={setQuery} />
-    {portal.notice && !searchOpen && <div className={`toast ${portal.notice.kind}`} role={portal.notice.kind === 'error' ? 'alert' : 'status'}><span>{portal.notice.message}</span><IconButton label="Dismiss notification" onClick={portal.dismissNotice}><XIcon size={19} /></IconButton></div>}
+    {portal.notice && !searchOpen && !shared && <div className={`toast ${portal.notice.kind}`} role={portal.notice.kind === 'error' ? 'alert' : 'status'}><span>{portal.notice.message}</span><IconButton label="Dismiss notification" onClick={portal.dismissNotice}><XIcon size={19} /></IconButton></div>}
     {update && <div className="update-notice"><span>A fresh version of Vybatron is ready.</span><button className="text-button" onClick={() => { navigator.serviceWorker.addEventListener('controllerchange', () => location.reload(), { once: true }); update.postMessage({ type: 'ACTIVATE' }); }}>Update app</button></div>}
   </div>;
 }

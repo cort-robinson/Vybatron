@@ -58,6 +58,7 @@ runtime objects and credential-bearing data. Maintain existing command meanings.
     positionMs: number, durationMs: number,
     volume: number, filter: string, repeat: 'off'|'track'|'queue',
     radio: boolean, autoplay: 'off'|'on'|'listening', fairQueue: boolean,
+    sleep: {mode:'time', endsAt:number}|{mode:'track'}|null,
     listeners: {id,displayName,avatarUrl:string|null}[],
     canAdd: boolean, canControl: boolean, canVote: boolean, reason: string|null,
     viewerVoice: {id,name}|null
@@ -76,6 +77,9 @@ reason; do not reveal restricted channel ids/name/tracks/listeners/checkpoint.
 they are not queue positions and are empty when hidden or inactive. `radio` is
 whether autoplay is active for the session (server `autoplay` mode or a /radio
 override). Clients must treat missing `suggestions`/`autoplay` as empty/off.
+`sleep` is the session's sleep timer: `time` stops at `endsAt` (epoch ms), `track`
+stops when the current track finishes. It is null when unset or hidden; clients must
+treat a missing field as null.
 `hasPrevious` is whether this session has an earlier track for `back` to return
 to; clients must treat it as false when missing.
 `viewerVoice` is the actor's own visible voice channel in this guild, or null; clients
@@ -153,6 +157,23 @@ for the others. Artist mixes add visible server plays by that artist without req
 Stats are optional: an unavailable store returns 503 `stats_unavailable` and nothing else
 changes. Fetch on demand; stats are not part of snapshots or the change feed.
 
+`RecapTotals = { plays: number, playedMs: number, songs: number }`
+
+`Recap = { window: '7d'|'30d'|'90d'|'365d', since: number,
+  personal: RecapTotals & { topTracks: StatEntry[],
+    topArtists: { name: string, plays: number, lastPlayedAt: number, track: Track }[] },
+  server: RecapTotals & { topTracks: StatEntry[] } }`
+
+A listening recap for plays since `since` (now minus `window`, default `30d`), computed on
+read under the Stats rules: only plays in voice channels the actor can currently see, and a
+nonmember gets zeros. `personal` counts only the actor's own requests in this guild: `plays`
+is every request including early skips, `songs` the distinct songs, and topTracks (at most 10)
+and topArtists (at most 5) exclude early skips like the Stats lists. `server` counts every
+visible play, including autoplay, imported and cleared ones, without identifying requesters;
+its topTracks (at most 10) exclude early skips. `playedMs` sums recorded playback time, so
+imported history and plays still in progress add none. Nothing describes who was listening.
+Unavailable stats return 503 `stats_unavailable`.
+
 ## Public browser endpoints (portal API)
 
 - GET `/health`: credential-free portal responsiveness/readiness, never music data.
@@ -170,6 +191,8 @@ changes. Fetch on demand; stats are not part of snapshots or the change feed.
 - GET `/api/guilds/:guildId/diagnostics` -> Diagnostics (admin only).
 - GET `/api/guilds/:guildId/activity` -> Activity (admin only).
 - GET `/api/guilds/:guildId/stats?window=7d|30d|90d|365d|all` -> Stats. Only `window` is
+  accepted; omitted means `30d`.
+- GET `/api/guilds/:guildId/recap?window=7d|30d|90d|365d` -> Recap. Only `window` is
   accepted; omitted means `30d`.
 - POST `/api/stats/requests/clear` -> `{ok:true,cleared:number}`. Same-origin + CSRF, no body.
   Anonymizes the signed-in listener's recorded requests in every server; server totals remain.
@@ -205,6 +228,8 @@ Core playback command names and options: play/playnext(query), pause/resume,
 seek(timestamp), skip/skipto(position), back, stop, clear, remove(position), move(from,to),
 shuffle, loop(mode:off|track|queue), volume(level), filter(preset), voteskip,
 radio on(track?)/off/promote(position)/remove(position)/less(position?), replay(index),
+sleep in(minutes: 1-720)/after-track/cancel/show (Stop's DJ and voice rules, no revision;
+show is a read like nowplaying),
 session resume/discard. radio promote/remove/less carry `expectedTrackId` (the
 selected suggestion, or the current autoplay pick for less without a position);
 promote is an ordinary addition (the pick stays bot-requested and `suggested`), the others need playback control.
@@ -271,6 +296,15 @@ refresh the library, allow a deliberate user retry and never replay the write.
 References and authority still come entirely from the bot. Native numbered/name
 slash commands keep their existing behavior.
 
+Playlist imports: `favorite/import {link}` and `mix/import {name,link}` without
+`expectedImportId` are a read-only preview. The response adds `preview`:
+`{id,target,name,title,found,toAdd,duplicates,unmatched,overLimit,limit,notes,tracks}`
+(`tracks` holds at most 100 `{title,author}`; `id` is null when nothing can be
+added). Sending the same command and link with `expectedImportId: id` (32
+lowercase hex) saves that preview once, rechecking membership, mix ownership or
+Manage Server, and the favorite, mix and mix-count limits at the write. A preview
+is bound to its listener, server, target and link, and expires after 10 minutes.
+
 Errors: `{error:{code:string,message:string}}` with safe useful text. HTTP401
 unauthenticated,403 forbidden/wrong voice/DJ/hidden channel,404 inaccessible
 guild or missing resource,409 stale/changed session,400 invalid input,429 busy,
@@ -291,6 +325,8 @@ browser access or CORS. Portal sets the trusted session's actorId itself.
 - GET `/v1/guilds/:guildId/activity?actorId=...` -> Activity.
 - GET `/v1/guilds/:guildId/stats?actorId=...&window=...` -> Stats (history channel scope,
   including the guild's most recent 50 voice channels with plays).
+- GET `/v1/guilds/:guildId/recap?actorId=...&window=...` -> Recap (history channel scope,
+  like stats).
 - POST `/v1/stats/requests/clear?actorId=...` -> `{ok:true,cleared:number}`. Requires a fresh
   verified identity; no guild grant is involved.
 - GET `/v1/guilds/:guildId/audio/:videoId?actorId=...` -> audio bytes by range (see the

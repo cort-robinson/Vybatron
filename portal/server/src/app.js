@@ -50,6 +50,20 @@ function configurationData(data, guildId) {
   return data;
 }
 
+// A playlist import preview: counts, short notes and up to 100 song names.
+function importPreview(data) {
+  const text = max => value => typeof value === 'string' && value.length <= max;
+  const count = value => Number.isSafeInteger(value) && value >= 0 && value <= 1000;
+  if (!data || typeof data !== 'object' || !/^[a-f0-9]{32}$/.test(data.id ?? '') && data.id !== null
+    || !['favorites', 'mix'].includes(data.target) || !(data.name === null || text(40)(data.name)) || !text(100)(data.title)
+    || !['found', 'toAdd', 'duplicates', 'unmatched', 'overLimit', 'limit'].every(key => count(data[key]))
+    || !Array.isArray(data.notes) || data.notes.length > 4 || !data.notes.every(text(200))
+    || !Array.isArray(data.tracks) || data.tracks.length > 100 || data.tracks.length !== data.toAdd
+    || !data.tracks.every(track => track && text(180)(track.title) && text(120)(track.author))) throw unavailable();
+  return { id: data.id, target: data.target, name: data.name, title: data.title, found: data.found, toAdd: data.toAdd, duplicates: data.duplicates,
+    unmatched: data.unmatched, overLimit: data.overLimit, limit: data.limit, notes: data.notes, tracks: data.tracks.map(({ title, author }) => ({ title, author })) };
+}
+
 // Test endpoints/timing overrides can only be supplied by a loopback nonproduction
 // caller; the production entrypoint has no fixture/test authentication mechanism.
 export async function createPortalServer(config, testOptions = {}) {
@@ -106,7 +120,8 @@ export async function createPortalServer(config, testOptions = {}) {
       if (res.destroyed) return;
       const ext = path.extname(file).toLowerCase();
       const isWorker = /(?:^|[/\\])(?:sw|service-worker|workbox[^/\\]*)\.js$/i.test(file);
-      res.setHeader('Cache-Control', isWorker ? 'no-store' : /[-.][a-zA-Z0-9_-]{8,}\.(?:js|css|woff2?)$/.test(file) ? 'public, max-age=31536000, immutable' : 'no-cache');
+      // The PWA share target's query holds shared text: no browser cache may keep it.
+      res.setHeader('Cache-Control', isWorker || pathname === '/share' ? 'no-store' : /[-.][a-zA-Z0-9_-]{8,}\.(?:js|css|woff2?)$/.test(file) ? 'public, max-age=31536000, immutable' : 'no-cache');
       if (isWorker) res.setHeader('Service-Worker-Allowed', '/');
       res.writeHead(200, { 'Content-Type': types[ext], 'Content-Length': stat.size });
       if (req.method === 'HEAD') { res.end(); return; }
@@ -328,7 +343,8 @@ export async function createPortalServer(config, testOptions = {}) {
         // Wake only existing same-guild streams; each uses its own trusted actor
         // and fresh bridge read. Never distribute the command actor's snapshot.
         for (const stream of streams) if (stream.guildId === guildId) stream.wake();
-        json(res, 200, { ok: true, message: result.message, snapshot: result.snapshot }); return;
+        const preview = result.preview === undefined ? undefined : importPreview(result.preview);
+        json(res, 200, { ok: true, message: result.message, snapshot: result.snapshot, ...(preview && { preview }) }); return;
       }
       admitOrdinary();
       if (pathname === '/health' && req.method === 'GET') {
@@ -423,10 +439,10 @@ export async function createPortalServer(config, testOptions = {}) {
           if (range !== undefined && !/^bytes=\d{0,15}-\d{0,15}$/.test(range)) throw invalid();
           await transport.audio(`/v1/guilds/${audio[1]}/audio/${audio[2]}`, session.actorId, { range, signal: controller.signal, res }); return;
         }
-        const match = /^\/api\/guilds\/(\d{1,20})(?:\/(configuration|library|search|commands|diagnostics|activity|events|stats))?$/.exec(pathname);
+        const match = /^\/api\/guilds\/(\d{1,20})(?:\/(configuration|library|search|commands|diagnostics|activity|events|stats|recap))?$/.exec(pathname);
         if (!match) throw notFound();
         const [, guildId, resource] = match;
-        queryOnly(url, resource === 'search' ? ['query'] : resource === 'stats' ? ['window'] : []);
+        queryOnly(url, resource === 'search' ? ['query'] : ['stats', 'recap'].includes(resource) ? ['window'] : []);
         const endpoint = `/v1/guilds/${guildId}${resource ? `/${resource}` : ''}`;
         if (req.method !== 'GET' || resource === 'commands') throw notFound();
         if (resource === 'events') { await events(req, res, guildId, token, session, controller.signal); return; }
@@ -439,6 +455,11 @@ export async function createPortalServer(config, testOptions = {}) {
         if (resource === 'stats' && url.searchParams.has('window')) {
           const window = url.searchParams.get('window');
           if (!['7d', '30d', '90d', '365d', 'all'].includes(window)) throw invalid();
+          query.window = window;
+        }
+        if (resource === 'recap' && url.searchParams.has('window')) {
+          const window = url.searchParams.get('window');
+          if (!['7d', '30d', '90d', '365d'].includes(window)) throw invalid();
           query.window = window;
         }
         const data = await transport.bridge(endpoint, session.actorId, { query, signal: controller.signal });

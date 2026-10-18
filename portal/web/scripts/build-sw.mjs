@@ -33,6 +33,11 @@ self.addEventListener('fetch', event => {
   const url = new URL(event.request.url);
   if (event.request.method !== 'GET' || url.origin !== self.location.origin || /^\\/(api|auth)(\\/|$)/.test(url.pathname)) return;
   if (event.request.mode === 'navigate') {
+    // A shared link stays on this device: the share target opens the shell without sending its query.
+    if (url.pathname === '/share') {
+      event.respondWith(caches.open(CACHE).then(cache => cache.match('/index.html')).then(cached => cached || fetch('/index.html')));
+      return;
+    }
     event.respondWith(fetch(event.request).catch(() => caches.open(CACHE).then(cache => cache.match('/index.html'))));
     return;
   }

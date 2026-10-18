@@ -38,6 +38,7 @@ export class SessionStore {
         if (record.expiresAt > this.now()) this.sessions.set(record.key, record);
       }
     } catch (error) {
+      // eslint-disable-next-line preserve-caught-error -- the cause can quote stored session data.
       if (error.code !== 'ENOENT') throw new Error('Auth storage cannot be safely opened');
     } finally { await handle?.close(); }
   }

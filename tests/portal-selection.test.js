@@ -8,7 +8,7 @@ import { trackReference } from '../src/utils/library.js';
 import { execute as favorite } from '../src/commands/favorite.js';
 import { execute as mix } from '../src/commands/mix.js';
 import { execute as replay } from '../src/commands/replay.js';
-import { openLibrary, closeLibraries } from './library-fixture.js';
+import { openLibrary } from './library-fixture.js';
 
 const A = 'aaaaaaaaaaa', B = 'bbbbbbbbbbb', C = 'ccccccccccc';
 const reference = id => trackReference(track(id));

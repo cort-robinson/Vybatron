@@ -8,7 +8,7 @@ test.beforeEach(resetAutocompleteCache);
 test('search failures distinguish no matches from source errors', () => {
   assert.match(searchFailureMessage({ loadType: 'empty' }, 'track name'), /No matches/);
   assert.match(searchFailureMessage({ loadType: 'error' }, 'track name'), /Couldn’t load/);
-  assert.match(searchFailureMessage({ loadType: 'error' }, '@everyone **bad**'), /@​everyone/);
+  assert.match(searchFailureMessage({ loadType: 'error' }, '@everyone **bad**'), /@\u200Beveryone/);
   assert.equal(
     searchFailureMessage({ loadType: 'error' }, 'https://www.youtube.com/watch?v=abc'),
     'Couldn’t load that link. Try another result or paste a different YouTube, Spotify, or SoundCloud link.'

@@ -71,8 +71,8 @@ custom daemon.
 | `pr-gate.mjs` (agents) | the above on the exact head SHA, plus: base is `main`, not a draft, not a fork, no hold-path changes without explicit approval |
 | Deploy | only same-repo `main` pushes with green CI; refuses audio changes and non-ancestor rollbacks; idle-guarded with journal rollback |
 
-**CI.** `lint` (actionlint, shellcheck, ruff, Lavalink YAML), `test` (bot and
-driver tests, container build and hardening, compose), `portal` (API, build, OAuth
+**CI.** `lint` (actionlint, shellcheck, ruff, Lavalink YAML), `test` (JavaScript lint, bot
+and driver tests, container build and hardening, compose), `portal` (API, build, OAuth
 integration, image, encrypted persistence), `browser (1/3…3/3)` (Playwright), and
 the `Check` aggregate. `Dependency audit` runs nightly and on dependency PRs. All
 workflows use read-only tokens, and fork PR runs need maintainer approval.

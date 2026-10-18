@@ -142,6 +142,7 @@ The optional GitHub deployment workflow activates only with `DEPLOY_ENABLED=true
 
 ```bash
 npm ci
+npm run lint
 npm test
 npm audit --omit=dev --audit-level=high
 python3 -m unittest discover -s tests -p '*_test.py'

@@ -146,7 +146,9 @@ alert mutes) while the bot keeps running:
   `PRAGMA integrity_check`.
 - `library.json` is replaced atomically by the bot, so a plain copy is
   consistent. The copy must parse and have the document and server structure the
-  bot requires to start (version 1 or 2).
+  bot requires to start (version 1 or 2). It is copied before the databases and
+  checked again after them; if the bot rewrote it meanwhile, the whole snapshot is
+  retaken (up to three times), so its listening-state copy never lags the store.
 - `operator-alerts.json` (also replaced atomically) and the bot's own migration
   backups (`library.json.v1.*.bak`, `library.json.pre-listening-state.bak`) are
   copied as they are.

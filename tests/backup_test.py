@@ -142,6 +142,31 @@ class BackupTest(unittest.TestCase):
         retained = self.backups / result['pre_restore']
         self.assertEqual(len(rows(retained / 'listening-state.sqlite', 'history')), 20)
 
+    def test_library_rewritten_during_the_snapshot_is_copied_again(self):
+        # The bot refreshes the library mirror and records new digests in the store
+        # while the backup is between library.json and listening-state.sqlite.
+        refreshed = {**LIBRARY, 'favorites': {'2' * 18: []}}
+        real, changes = module.copy_database, []
+
+        def refresh_once(source, target):
+            if source.name == 'listening-state.sqlite' and not changes:
+                changes.append(1)
+                (self.data / 'library.json').write_text(json.dumps(refreshed))
+            return real(source, target)
+        with mock.patch.object(module, 'copy_database', refresh_once):
+            name = self.store.create(self.data, keep=14)['backup']
+        self.assertEqual(json.loads((self.backups / name / 'library.json').read_text()), refreshed)
+
+        def always_refresh(source, target):
+            (self.data / 'library.json').write_text(json.dumps({**refreshed, 'n': len(changes)}))
+            changes.append(1)
+            return real(source, target)
+        with mock.patch.object(module, 'copy_database', always_refresh), \
+                self.assertRaisesRegex(BackupError, 'backup_source_changed'):
+            self.store.create(self.data, keep=14)
+        self.assertEqual(self.store.backups(), [name])
+        self.assertEqual([p.name for p in self.backups.iterdir() if p.name.startswith('.partial')], [])
+
     def test_failed_restore_leaves_the_volume_and_its_wal_untouched(self):
         name = self.store.create(self.data, keep=14)['backup']
         self.live.executemany('INSERT INTO plays (track) VALUES (?)', [('later',)] * 5)

@@ -33,6 +33,7 @@ NAME = re.compile(r'^bot-data-\d{8}T\d{6}Z$')
 VOLUME = re.compile(r'^[a-z0-9][a-z0-9_.-]{0,127}$')
 SIDECARS = ('-wal', '-shm', '-journal')
 MAX_BYTES = 64 * 1024 * 1024
+SNAPSHOT_ATTEMPTS = 3
 LIBRARY_BYTES = 5 * 1024 * 1024
 
 
@@ -173,34 +174,60 @@ class BotData:
         for stale in self.backup_dir.glob('.partial-bot-data-*'):
             if stale.is_dir() and not stale.is_symlink():
                 shutil.rmtree(stale)
-        names = self.sources(data)
-        partial.mkdir(mode=0o700)
-        try:
-            files = {}
-            for entry in names:
-                source, target = data / entry, partial / entry
-                stat = source.stat()
-                if entry in DATABASES:
-                    copy_database(source, target)
-                    check_database(target)
-                else:
-                    shutil.copyfile(source, target)
-                    if entry == LIBRARY:
-                        check_library(target)
-                target.chmod(0o600)
-                sync(target)
-                files[entry] = {'uid': stat.st_uid, 'gid': stat.st_gid, 'mode': stat.st_mode & 0o777,
-                                'size': target.stat().st_size, 'hash': digest(target)}
-            total = sum(item['size'] for item in files.values())
-            if total > MAX_BYTES:
-                raise BackupError('backup_too_large')
-            write(partial / MANIFEST, json.dumps({'version': 1, 'file_count': len(files),
-                                                  'total_bytes': total, 'files': files}))
-            os.rename(partial, final)
-        except BaseException:
-            shutil.rmtree(partial, ignore_errors=True)
-            raise
+        for _ in range(SNAPSHOT_ATTEMPTS):
+            names = self.sources(data)
+            partial.mkdir(mode=0o700)
+            try:
+                files = self.snapshot(data, partial, names)
+                if files is None:
+                    shutil.rmtree(partial)
+                    continue
+                total = sum(item['size'] for item in files.values())
+                if total > MAX_BYTES:
+                    raise BackupError('backup_too_large')
+                write(partial / MANIFEST, json.dumps({'version': 1, 'file_count': len(files),
+                                                      'total_bytes': total, 'files': files}))
+                os.rename(partial, final)
+                break
+            except BaseException:
+                shutil.rmtree(partial, ignore_errors=True)
+                raise
+        else:
+            raise BackupError('backup_source_changed')
         return {'backup': name, 'files': len(files), 'bytes': total, 'removed': self.prune(keep)}
+
+    @staticmethod
+    def snapshot(data, partial, names):
+        """Copies one consistent generation, or returns None if the library changed.
+
+        library.json goes first. Its listening-state mirror must not be older than
+        the store's mirror digests, or the bot adopts the stale mirror on restart
+        and replaces the backed-up checkpoint (src/utils/listening-state.js adopt).
+        The bot renames library.json before it records new digests, so a library
+        that is unchanged after the databases are copied is never the older side.
+        """
+        files = {}
+        for entry in sorted(names, key=lambda n: n != LIBRARY):
+            source, target = data / entry, partial / entry
+            stat = source.stat()
+            if entry in DATABASES:
+                copy_database(source, target)
+                check_database(target)
+            else:
+                shutil.copyfile(source, target)
+                if entry == LIBRARY:
+                    check_library(target)
+            target.chmod(0o600)
+            sync(target)
+            files[entry] = {'uid': stat.st_uid, 'gid': stat.st_gid, 'mode': stat.st_mode & 0o777,
+                            'size': target.stat().st_size, 'hash': digest(target)}
+        if LIBRARY in files:
+            try:
+                if digest(data / LIBRARY) != files[LIBRARY]['hash']:
+                    return None
+            except FileNotFoundError:
+                return None
+        return files
 
     def backups(self):
         if not self.backup_dir.is_dir():

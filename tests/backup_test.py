@@ -35,9 +35,19 @@ class Docker:
         raise AssertionError(args)
 
 
-def rows(path):
+def rows(path, table='plays'):
     with contextlib.closing(sqlite3.connect(path)) as db:
-        return db.execute('SELECT track FROM plays ORDER BY id').fetchall()
+        return db.execute('SELECT track FROM %s ORDER BY id' % table).fetchall()
+
+
+def live_store(path, table, count):
+    """A database the running bot holds open: WAL mode, nothing checkpointed yet."""
+    db = sqlite3.connect(path, isolation_level=None)
+    db.execute('PRAGMA journal_mode = WAL')
+    db.execute('PRAGMA wal_autocheckpoint = 0')
+    db.execute('CREATE TABLE %s (id INTEGER PRIMARY KEY, track TEXT)' % table)
+    db.executemany('INSERT INTO %s (track) VALUES (?)' % table, [('song-%d' % i,) for i in range(count)])
+    return db
 
 
 class BackupTest(unittest.TestCase):
@@ -47,18 +57,17 @@ class BackupTest(unittest.TestCase):
         self.data, self.backups = self.root / 'data', self.root / 'backups'
         self.data.mkdir()
         (self.data / 'library.json').write_text(json.dumps(LIBRARY))
-        # The running bot: WAL mode, nothing checkpointed into the main file yet.
-        self.live = sqlite3.connect(self.data / 'stats.sqlite', isolation_level=None)
-        self.live.execute('PRAGMA journal_mode = WAL')
-        self.live.execute('PRAGMA wal_autocheckpoint = 0')
-        self.live.execute('CREATE TABLE plays (id INTEGER PRIMARY KEY, track TEXT)')
-        self.live.executemany('INSERT INTO plays (track) VALUES (?)', [('song-%d' % i,) for i in range(50)])
+        (self.data / 'operator-alerts.json').write_text('{"version":1,"muted":[]}')
+        (self.data / 'library.json.pre-listening-state.bak').write_text(json.dumps(LIBRARY))
+        self.live = live_store(self.data / 'stats.sqlite', 'plays', 50)
+        self.state = live_store(self.data / 'listening-state.sqlite', 'history', 20)
         self.now = 1_792_000_000
         self.docker = Docker(self.data)
         self.store = BotData(self.backups, runner=self.docker, clock=self.tick)
 
     def tearDown(self):
         self.live.close()
+        self.state.close()
         self.temp.cleanup()
 
     def tick(self):
@@ -74,21 +83,28 @@ class BackupTest(unittest.TestCase):
         shutil.copyfile(self.data / 'stats.sqlite', raw)
         with self.assertRaises(sqlite3.OperationalError):
             rows(raw)
+        self.assertEqual(len(rows(copy.parent / 'listening-state.sqlite', 'history')), 20)
         self.assertEqual(sorted(p.name for p in copy.parent.iterdir()),
-                         ['.backup-manifest.json', 'library.json', 'stats.sqlite'])
+                         ['.backup-manifest.json', 'library.json', 'library.json.pre-listening-state.bak',
+                          'listening-state.sqlite', 'operator-alerts.json', 'stats.sqlite'])
         # The bot keeps writing to its database afterwards.
         self.live.execute("INSERT INTO plays (track) VALUES ('after')")
         self.assertEqual(self.live.execute('SELECT count(*) FROM plays').fetchone(), (51,))
 
     def test_restore_drill_recovers_library_and_stats_and_keeps_damaged_state(self):
         name = self.store.create(self.data, keep=14)['backup']
-        self.assertEqual(self.store.verify(name).keys(), {'library.json', 'stats.sqlite'})
+        self.assertEqual(self.store.verify(name).keys(), {'library.json', 'stats.sqlite', 'listening-state.sqlite',
+                                                          'operator-alerts.json', 'library.json.pre-listening-state.bak'})
         # Damage: newer rows only in the WAL and a library the bot would refuse.
         self.live.executemany('INSERT INTO plays (track) VALUES (?)', [('later',)] * 5)
+        self.state.executemany('INSERT INTO history (track) VALUES (?)', [('later',)] * 3)
         (self.data / 'library.json').write_text('{"version": 9')
         stale = (self.data / 'stats.sqlite-wal').read_bytes()
+        stale_state = (self.data / 'listening-state.sqlite-wal').read_bytes()
         self.live.close()
+        self.state.close()
         (self.data / 'stats.sqlite-wal').write_bytes(stale)
+        (self.data / 'listening-state.sqlite-wal').write_bytes(stale_state)
         self.docker.running = True
         with self.assertRaisesRegex(BackupError, 'backup_restore_requires_stopped_bot'):
             self.store.restore(name, self.data)
@@ -98,16 +114,40 @@ class BackupTest(unittest.TestCase):
 
         self.assertEqual(json.loads((self.data / 'library.json').read_text()), LIBRARY)
         self.assertEqual(rows(self.data / 'stats.sqlite'), [('song-%d' % i,) for i in range(50)])
+        self.assertEqual(rows(self.data / 'listening-state.sqlite', 'history'), [('song-%d' % i,) for i in range(20)])
         self.assertFalse((self.data / 'stats.sqlite-wal').exists())
+        self.assertFalse((self.data / 'listening-state.sqlite-wal').exists())
         retained = self.backups / result['pre_restore']
         self.assertEqual((retained / 'library.json').read_text(), '{"version": 9')
         self.assertEqual((retained / 'stats.sqlite-wal').read_bytes(), stale)
+
+    def test_restore_removes_durable_files_newer_than_the_backup(self):
+        # A backup from before the listening-state store existed (PR #79).
+        self.live.close()
+        self.state.close()
+        moved = self.root / 'later'
+        moved.mkdir()
+        for path in self.data.glob('listening-state.sqlite*'):
+            path.rename(moved / path.name)
+        name = self.store.create(self.data, keep=14)['backup']
+        for path in moved.iterdir():
+            path.rename(self.data / path.name)
+        (self.data / 'listening-state.sqlite-wal').write_bytes(b'newer wal')
+        (self.data / 'library.json.0f0e.tmp').write_text('unrelated')
+
+        result = self.store.restore(name, self.data)
+
+        self.assertEqual(sorted(p.name for p in self.data.glob('listening-state.sqlite*')), [])
+        self.assertTrue((self.data / 'library.json.0f0e.tmp').exists())
+        retained = self.backups / result['pre_restore']
+        self.assertEqual(len(rows(retained / 'listening-state.sqlite', 'history')), 20)
 
     def test_failed_restore_leaves_the_volume_and_its_wal_untouched(self):
         name = self.store.create(self.data, keep=14)['backup']
         self.live.executemany('INSERT INTO plays (track) VALUES (?)', [('later',)] * 5)
         (self.data / 'library.json').write_text(json.dumps({**LIBRARY, 'favorites': {'2' * 18: []}}))
         # A bot that crashed before checkpointing: committed rows exist only in the WAL.
+        self.state.close()
         crashed = {p.name: p.read_bytes() for p in self.data.iterdir() if p.name != 'stats.sqlite-shm'}
         self.live.close()
         for path in self.data.glob('stats.sqlite*'):
@@ -162,22 +202,22 @@ class BackupTest(unittest.TestCase):
         with self.assertRaisesRegex(BackupError, 'backup_unavailable'):
             self.store.verify('../data')
 
-    def test_corrupt_stats_database_is_not_kept(self):
-        self.live.close()
+    def test_corrupt_database_is_not_kept(self):
+        self.state.close()
         for suffix in ('-wal', '-shm'):
-            (self.data / ('stats.sqlite' + suffix)).unlink(missing_ok=True)
-        (self.data / 'stats.sqlite').write_bytes(b'not a database' * 100)
-        with self.assertRaisesRegex(BackupError, 'backup_stats_'):
+            (self.data / ('listening-state.sqlite' + suffix)).unlink(missing_ok=True)
+        (self.data / 'listening-state.sqlite').write_bytes(b'not a database' * 100)
+        with self.assertRaisesRegex(BackupError, 'backup_database_'):
             self.store.create(self.data, keep=14)
         self.assertEqual(self.store.backups(), [])
 
     def test_backup_of_stopped_bot_and_library_only_volume(self):
         self.live.close()
+        self.state.close()
         self.assertFalse((self.data / 'stats.sqlite-wal').exists())
         name = self.store.create(self.data, keep=14)['backup']
         self.assertEqual(len(rows(self.backups / name / 'stats.sqlite')), 50)
-        (self.data / 'stats.sqlite').unlink()
-        for leftover in self.data.glob('stats.sqlite-*'):
+        for leftover in [*self.data.glob('*.sqlite*'), *self.data.glob('*alerts*'), *self.data.glob('*.bak')]:
             leftover.unlink()
         name = self.store.create(self.data, keep=14)['backup']
         self.assertEqual(self.store.verify(name).keys(), {'library.json'})

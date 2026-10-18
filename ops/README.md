@@ -136,16 +136,20 @@ Tests: `python3 -m unittest discover -s tests -p '*_test.py'` and `npm test`.
 
 ## Music data backups
 
-`ops/backup.py` backs up the `vybertron_bot-data` volume (favorites, mixes,
-settings, checkpoints and play statistics) while the bot keeps running:
+`ops/backup.py` backs up every durable file in the `vybertron_bot-data` volume
+(favorites, mixes, settings, history, activity, checkpoints, play statistics and
+alert mutes) while the bot keeps running:
 
-- `stats.sqlite` is copied with SQLite's online backup API, so the copy includes
-  changes still in the WAL. Never copy a live `stats.sqlite` by hand. The copy is
-  a single self-contained file and must pass `PRAGMA integrity_check`.
+- `stats.sqlite` and `listening-state.sqlite` are copied with SQLite's online
+  backup API, so the copies include changes still in the WAL. Never copy a live
+  database by hand. Each copy is a single self-contained file and must pass
+  `PRAGMA integrity_check`.
 - `library.json` is replaced atomically by the bot, so a plain copy is
   consistent. The copy must parse and have the document and server structure the
-  bot requires to start (version 1 or 2). Any
-  `library.json.v1.*.bak` migration backups are kept too.
+  bot requires to start (version 1 or 2).
+- `operator-alerts.json` (also replaced atomically) and the bot's own migration
+  backups (`library.json.v1.*.bak`, `library.json.pre-listening-state.bak`) are
+  copied as they are.
 - Each backup is a `bot-data-<UTC time>` directory (mode `700`, files `600`) under
   `/var/lib/vybertron-backups` with a manifest of sizes, SHA-256 hashes and the
   original owners and modes. It is built in a `.partial-*` directory and renamed
@@ -192,9 +196,12 @@ encrypted storage. Don't commit them or upload them to shared services.
 
 Restore needs the bot stopped. It verifies the whole backup (hashes, library
 parse, SQLite integrity) before changing anything. It copies everything currently in
-the volume to `/var/lib/vybertron-backups/pre-restore-<UTC time>`, removes the old
-`stats.sqlite` WAL sidecars and atomically replaces each backed-up file with its
-original owner and mode. Files the backup doesn't contain are left in place.
+the volume to `/var/lib/vybertron-backups/pre-restore-<UTC time>` and writes every
+replacement first. Then it removes the databases' old WAL sidecars and any durable
+file the backup doesn't contain (for example a `listening-state.sqlite` newer than
+the backup, which the bot then rebuilds from `library.json`), and atomically
+replaces each backed-up file with its original owner and mode. Other files, such
+as interrupted `*.tmp` writes, are left in place.
 
 ```bash
 cd /root/Vybertron

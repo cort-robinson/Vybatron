@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Back up and restore the bot's music data (`bot-data`) while the bot runs.
 
-stats.sqlite is copied with SQLite's online backup API, never as raw files of a
-live WAL database. The bot replaces library.json atomically, so a plain copy is
-consistent. Each backup is verified before it is kept and before it is restored.
+The SQLite stores (play statistics and listening state) are copied with SQLite's
+online backup API, never as raw files of a live WAL database. The bot replaces
+library.json and operator-alerts.json atomically, so plain copies are consistent. Each backup is verified before it is kept and before it is restored.
 Output is limited to status codes, backup names and counts; file contents,
 paths inside the volume and environment values are never logged.
 """
@@ -24,7 +24,10 @@ import time
 
 from deploy import DeploymentError, LOCK, read, run, write
 
-LIBRARY, STATS, MANIFEST = 'library.json', 'stats.sqlite', '.backup-manifest.json'
+LIBRARY, MANIFEST = 'library.json', '.backup-manifest.json'
+# Every durable file the bot keeps in bot-data (src/utils, src/operator-alerts.js).
+DATABASES = ('stats.sqlite', 'listening-state.sqlite')
+COPIED = (LIBRARY, 'operator-alerts.json', 'library.json.pre-listening-state.bak')
 LEGACY = re.compile(r'^library\.json\.v1\.[0-9a-f-]{36}\.bak$')
 NAME = re.compile(r'^bot-data-\d{8}T\d{6}Z$')
 VOLUME = re.compile(r'^[a-z0-9][a-z0-9_.-]{0,127}$')
@@ -87,17 +90,21 @@ def library_shape(value):
     return True
 
 
-def check_stats(path):
+def durable(name):
+    return name in DATABASES or name in COPIED or bool(LEGACY.fullmatch(name))
+
+
+def check_database(path):
     try:
         with contextlib.closing(connect_ro(path)) as db:
             result = db.execute('PRAGMA integrity_check').fetchall()
     except sqlite3.Error:
-        raise BackupError('backup_stats_invalid') from None
+        raise BackupError('backup_database_invalid') from None
     if result != [('ok',)]:
-        raise BackupError('backup_stats_invalid')
+        raise BackupError('backup_database_invalid')
 
 
-def copy_stats(source, target):
+def copy_database(source, target):
     """Consistent snapshot of a live WAL database, including uncheckpointed pages."""
     try:
         # As root, SQLite gives any sidecar it creates the database file's owner
@@ -108,7 +115,7 @@ def copy_stats(source, target):
             # A self-contained single file: no -wal/-shm beside the backup.
             copy.execute('PRAGMA journal_mode = DELETE')
     except sqlite3.Error:
-        raise BackupError('backup_stats_copy_failed') from None
+        raise BackupError('backup_database_copy_failed') from None
 
 
 class BotData:
@@ -148,10 +155,10 @@ class BotData:
     def sources(data):
         if not data.is_dir() or data.is_symlink():
             raise BackupError('backup_data_unavailable')
-        names = [p.name for p in data.iterdir() if p.name in (LIBRARY, STATS) or LEGACY.fullmatch(p.name)]
+        names = [p.name for p in data.iterdir() if durable(p.name)]
         if any((data / name).is_symlink() or not (data / name).is_file() for name in names):
             raise BackupError('backup_unsafe_data_volume')
-        if LIBRARY not in names and STATS not in names:
+        if not {LIBRARY, *DATABASES} & set(names):
             raise BackupError('backup_no_data')
         return sorted(names)
 
@@ -173,9 +180,9 @@ class BotData:
             for entry in names:
                 source, target = data / entry, partial / entry
                 stat = source.stat()
-                if entry == STATS:
-                    copy_stats(source, target)
-                    check_stats(target)
+                if entry in DATABASES:
+                    copy_database(source, target)
+                    check_database(target)
                 else:
                     shutil.copyfile(source, target)
                     if entry == LIBRARY:
@@ -222,7 +229,7 @@ class BotData:
         files = envelope.get('files')
         if (set(envelope) != {'version', 'file_count', 'total_bytes', 'files'} or envelope['version'] != 1 or
                 not isinstance(files, dict) or envelope['file_count'] != len(files) or
-                any(n not in (LIBRARY, STATS) and not LEGACY.fullmatch(n) for n in files) or
+                not all(durable(n) for n in files) or
                 type(envelope['total_bytes']) is not int or not 0 <= envelope['total_bytes'] <= MAX_BYTES):
             raise BackupError('backup_manifest_invalid')
         present = {p.name for p in backup.iterdir() if p.name != MANIFEST}
@@ -241,8 +248,9 @@ class BotData:
             raise BackupError('backup_manifest_invalid')
         if LIBRARY in files:
             check_library(backup / LIBRARY)
-        if STATS in files:
-            check_stats(backup / STATS)
+        for entry in DATABASES:
+            if entry in files:
+                check_database(backup / entry)
         return files
 
     def restore(self, name, data):
@@ -285,11 +293,17 @@ class BotData:
                 with contextlib.suppress(FileNotFoundError):
                     os.unlink(temporary)
             raise
-        if STATS in files:
-            # A stale WAL from the replaced database would corrupt the restored one.
+        # The volume returns to the backup's moment: durable files it didn't have
+        # yet go (they're retained above), so the bot rebuilds listening state
+        # from library.json as after a rollback. A stale WAL from a replaced or
+        # removed database would corrupt the restored one, so sidecars go too.
+        for path in current:
+            if durable(path.name) and path.name not in files:
+                path.unlink()
+        for entry in DATABASES:
             for suffix in SIDECARS:
                 with contextlib.suppress(FileNotFoundError):
-                    (data / (STATS + suffix)).unlink()
+                    (data / (entry + suffix)).unlink()
         for temporary, entry in staged:
             os.replace(temporary, data / entry)
         if any(digest(data / entry) != meta['hash'] for entry, meta in files.items()):

@@ -291,7 +291,7 @@ export function useListening(remote: RemotePortal): Portal {
         case 'shuffle:': commit({ queue: shuffled(deck.queue) }, true); return true;
         case 'stop:': stop(); return true;
         // Library edits don't touch playback, so the bot still owns them.
-        case 'favorite:remove': case 'favorite:clear': case 'mix:delete': return latest.current.run(body, capability);
+        case 'favorite:remove': case 'favorite:clear': case 'mix:delete': case 'favorite:import': case 'mix:import': return latest.current.run(body, capability);
         case 'play:': case 'playnext:': case 'replay:': case 'favorite:play': case 'mix:load': case 'top:play': case 'mymix:play': {
           if (pendingRef.current) return false;
           pendingRef.current = true; setPending([key]);

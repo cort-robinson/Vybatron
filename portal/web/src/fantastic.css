@@ -218,6 +218,9 @@ REVERT: everything here is scoped to :root[data-skin='fantastic']; Settings → 
   .continue-feature { border-radius: 24px; outline: 1px solid var(--trim); outline-offset: -6px;
     background: linear-gradient(100deg, color-mix(in oklab, var(--accent) 14%, transparent), color-mix(in oklab, var(--ff-flame) 7%, transparent) 60%, transparent), var(--surface); }
   .continue-art { border-radius: 12px; }
+  .recap-tiles > div { border-radius: 16px; outline: 1px solid var(--trim); outline-offset: -5px; }
+  .recap-tiles dd { font-family: var(--display); font-weight: 400; font-stretch: normal; letter-spacing: .03em; }
+  .recap-list .recap-art { border-radius: 10px; }
 
   /* Home shelves: each heading ends in a length of suit piping; cards lift off the page on hover. */
   .home-shelf-header h2 { display: flex; align-items: center; gap: 14px; font-family: var(--display); font-weight: 400; font-stretch: normal; font-size: 19px; letter-spacing: .05em; text-transform: uppercase; }

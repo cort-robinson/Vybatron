@@ -1,4 +1,5 @@
 import { useEffect, useId, useMemo, useState, type CSSProperties } from 'react';
+import type { Look } from '../skin';
 
 // Fantastic scenery: Earth-828 at dusk, as a 1964 broadcast would paint it. A ringed planet
 // rises over a Googie skyline (the Baxter Building flies the 4), a monorail glides past, Kirby
@@ -188,6 +189,9 @@ export function Earth828({ prepared = false }: { prepared?: boolean }) {
 
 // The sleeve's cover sits in a 1960s television: an enamel cabinet with two dials and curved
 // glass. The frame stays still; only the cover inside changes.
-export function Television() {
-  return <><span className="ff-tv" aria-hidden="true"><i /><i /></span><span className="ff-tv-glass" aria-hidden="true" /></>;
+// The set warms up (ff-tune) on each new track.
+function Sleeve({ track }: { track: string }) {
+  return <><span className="ff-tv" aria-hidden="true"><i /><i /></span><span className="ff-tv-glass" aria-hidden="true" /><span key={track} className="ff-tune" aria-hidden="true" /></>;
 }
+
+export const look: Look = { Scenery: Earth828, Sleeve };

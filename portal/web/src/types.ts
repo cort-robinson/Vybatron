@@ -43,6 +43,8 @@ export interface GuildSnapshot {
     volume: number; filter: string; repeat: 'off' | 'track' | 'queue';
     // radio: autoplay is active for this session (server mode or /radio override).
     radio: boolean; autoplay: AutoplayMode; fairQueue: boolean;
+    // Stops the session at endsAt (epoch ms) or when the current song ends; older bots omit it.
+    sleep?: SleepTimer | null;
     listeners: { id: string; displayName: string; avatarUrl: string | null }[];
     canAdd: boolean; canControl: boolean; canVote: boolean; reason: string | null;
     // The viewer's own voice channel in this server; older bots omit it.
@@ -75,6 +77,15 @@ export interface Stats {
     playlists: AutoPlaylist[];
   };
 }
+// A listening recap over one window. Personal numbers come from the viewer's own
+// requests; server numbers never identify a requester. playedMs is recorded playback.
+export type RecapWindow = Exclude<StatsWindow, 'all'>;
+export interface RecapTotals { plays: number; playedMs: number; songs: number }
+export interface Recap {
+  window: RecapWindow; since: number;
+  personal: RecapTotals & { topTracks: StatEntry[]; topArtists: { name: string; plays: number; lastPlayedAt: number; track: Track }[] };
+  server: RecapTotals & { topTracks: StatEntry[] };
+}
 export type PlaylistKind = 'mix' | 'top' | 'rediscover' | 'artist';
 export interface AutoPlaylist {
   id: string; kind: PlaylistKind; title: string; artist: string | null; tracks: Track[];
@@ -87,13 +98,22 @@ export interface Diagnostics {
 export interface Activity {
   items: { id: string; at: number; actor: { id: string; displayName: string }; action: string; detail: string }[];
 }
+export type SleepTimer = { mode: 'time'; endsAt: number } | { mode: 'track' };
 export interface Command {
   command: string; subcommand?: string; options?: Record<string, string | number | boolean | null>; expectedRevision?: string;
   expectedTrackId?: string; expectedHistoryId?: string; expectedMixVersion?: string;
+  // favorite/import and mix/import: confirms the preview with this id.
+  expectedImportId?: string;
   // transfer only: public links for the current song, then the queue.
   tracks?: string[];
 }
-export interface CommandResult { ok: true; message: string; snapshot: GuildSnapshot }
+// What a playlist import would save. id is null when nothing can be added.
+export interface ImportPreview {
+  id: string | null; target: 'favorites' | 'mix'; name: string | null; title: string;
+  found: number; toAdd: number; duplicates: number; unmatched: number; overLimit: number; limit: number;
+  notes: string[]; tracks: { title: string; author: string }[];
+}
+export interface CommandResult { ok: true; message: string; snapshot: GuildSnapshot; preview?: ImportPreview }
 export type Connection = 'connecting' | 'refreshing' | 'live' | 'offline';
 export type Capability = 'add' | 'control' | 'vote' | 'library' | 'admin' | 'resume';
 export type Surface = 'home' | 'session' | 'music' | 'server';

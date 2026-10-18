@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type PointerEvent } from 'react';
+import type { Look } from '../skin';
 
 // Overdrive scenery: a cover-tinted sunset over an angular Cybertronian skyline and a neon
 // floor that rolls toward the viewer while music plays. Pure decoration behind the content;
@@ -76,3 +77,10 @@ export function tilt(event: PointerEvent<HTMLElement>) {
 export function untilt(event: PointerEvent<HTMLElement>) {
   event.currentTarget.style.removeProperty('--tilt-x'); event.currentTarget.style.removeProperty('--tilt-y');
 }
+
+// The sleeve cover's plate, targeting brackets and the scan beam that crosses each new track.
+function Sleeve({ track }: { track: string }) {
+  return <><span className="od-cover-plate" aria-hidden="true" /><Hud className="od-cover-hud" /><span key={track} className="od-cover-scan" aria-hidden="true" /></>;
+}
+
+export const look: Look = { Scenery: Horizon, Sleeve, tilt, untilt };

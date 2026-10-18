@@ -2,6 +2,7 @@ import { MessageFlags, SlashCommandBuilder } from 'discord.js';
 import { requireUserVoice } from '../utils/guards.js';
 import { addCurrentFavorite, collectionPayload, loadCollection } from '../utils/library-actions.js';
 import { ephemeralText } from '../utils/messages.js';
+import { commitImport, importLink, previewImport } from '../utils/playlist-import.js';
 
 export const data = new SlashCommandBuilder().setName('favorite').setDescription('Your personal music shelf, saved across restarts')
   .addSubcommand(s => s.setName('add').setDescription('Save the current song or an upcoming queue entry')
@@ -9,11 +10,18 @@ export const data = new SlashCommandBuilder().setName('favorite').setDescription
   .addSubcommand(s => s.setName('list').setDescription('Browse your global private favorites').addIntegerOption(o => o.setName('page').setDescription('Page number').setMinValue(1).setMaxValue(100)))
   .addSubcommand(s => s.setName('play').setDescription('Queue a saved favorite').addIntegerOption(o => o.setName('index').setDescription('Number from /favorite list').setMinValue(1).setMaxValue(1000).setRequired(true)))
   .addSubcommand(s => s.setName('remove').setDescription('Remove a saved favorite').addIntegerOption(o => o.setName('index').setDescription('Number from /favorite list').setMinValue(1).setMaxValue(1000).setRequired(true)))
+  .addSubcommand(s => s.setName('import').setDescription('Preview and save a public playlist to your favorites')
+    .addStringOption(o => o.setName('link').setDescription('Public YouTube, YouTube Music, Spotify or SoundCloud playlist link').setMaxLength(200).setRequired(true)))
   .addSubcommand(s => s.setName('clear').setDescription('Clear your personal favorites').addBooleanOption(o => o.setName('confirm').setDescription('Confirm removal of all your saved favorites').setRequired(true)));
 
 export async function execute(interaction) {
   const action = interaction.options.getSubcommand();
   if (action === 'add') return addCurrentFavorite(interaction, null, interaction.options.getInteger('position'));
+  if (action === 'import') {
+    // The portal confirms a preview it showed; Discord confirms with a button.
+    if (interaction.portalImportId) return commitImport(interaction, interaction.portalImportId, { kind: 'favorites', key: undefined, link: importLink(interaction.options.getString('link')) });
+    return previewImport(interaction, { kind: 'favorites' });
+  }
   const library = interaction.client.library;
   const tracks = library.favorites(interaction.user.id);
   const overflow = library.favoriteOverflowCount(interaction.user.id);

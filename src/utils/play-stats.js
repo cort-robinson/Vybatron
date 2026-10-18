@@ -56,6 +56,18 @@ const MIGRATIONS = [
 ];
 export const STATS_SCHEMA_VERSION = MIGRATIONS.length;
 
+// Recap reads. Each is bounded by one server and window and searches an existing
+// index: personal totals use plays_requester, server reads use plays_guild_time.
+// Parameters: 1 guild, 2 since, 3 visible channel IDs (JSON), 4 requester or limit.
+const visiblePlays = 'guild_id = ?1 AND played_at >= ?2 AND voice_channel_id IN (SELECT value FROM json_each(?3))';
+export const RECAP_QUERIES = Object.freeze({
+  personalTotals: `SELECT COUNT(*) AS plays, COALESCE(SUM(played_ms), 0) AS played_ms, COUNT(DISTINCT song_key) AS songs FROM plays
+    WHERE requester_id = ?4 AND ${visiblePlays}`,
+  serverTotals: `SELECT COUNT(*) AS plays, COALESCE(SUM(played_ms), 0) AS played_ms, COUNT(DISTINCT song_key) AS songs FROM plays WHERE ${visiblePlays}`,
+  serverTopTracks: `SELECT song_key, COUNT(*) AS plays, MAX(played_at) AS last FROM plays WHERE ${visiblePlays} AND skipped = 0
+    GROUP BY song_key ORDER BY plays DESC, last DESC LIMIT ?4`,
+});
+
 export class StatsUnavailableError extends Error {
   constructor() { super('Listening stats are unavailable right now.'); this.name = 'StatsUnavailableError'; this.code = 'STATS_UNAVAILABLE'; }
 }
@@ -328,6 +340,30 @@ export class PlayStats {
     const songs = this.songs(ranked.map(artist => artist.top.song_key));
     return ranked.filter(artist => songs.has(artist.top.song_key)).map(({ top, ...artist }) => ({
       ...artist, artist: songs.get(top.song_key).artist, track: reference(songs.get(top.song_key)) }));
+  }
+
+  /**
+   * A listening recap for one window, computed on read. Personal numbers count
+   * only the listener's own requests; server numbers count every visible play and
+   * never identify a requester, so cleared requests stay anonymous. Played time
+   * comes from recorded playback: imported history and plays in progress add none.
+   */
+  recap(guildId, userId, { since = 0, visibleChannelIds = [], limit = 10, artistLimit = 5 } = {}) {
+    this.assertAvailable();
+    this.flush();
+    const channels = ids(visibleChannelIds);
+    const totals = row => ({ plays: row.plays, playedMs: row.played_ms, songs: row.songs });
+    const mine = validId(userId);
+    const personal = mine ? totals(this.db.prepare(RECAP_QUERIES.personalTotals).get(guildId, since, channels, userId)) : { plays: 0, playedMs: 0, songs: 0 };
+    const scope = { since, visibleChannelIds };
+    return {
+      personal: { ...personal,
+        topTracks: personal.plays ? this.topTracks(guildId, userId, { ...scope, limit }) : [],
+        topArtists: personal.plays ? this.topArtists(guildId, userId, { ...scope, limit: artistLimit }) : [] },
+      server: { ...totals(this.db.prepare(RECAP_QUERIES.serverTotals).get(guildId, since, channels)),
+        topTracks: this.withTracks(this.db.prepare(RECAP_QUERIES.serverTopTracks).all(guildId, since, channels, limit)
+          .map(row => ({ songKey: row.song_key, plays: row.plays, lastPlayedAt: row.last }))) },
+    };
   }
 
   /**

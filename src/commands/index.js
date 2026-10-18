@@ -7,6 +7,7 @@ import { errorPayload, SESSION_MIX_MODAL_ID } from '../utils/messages.js';
 import { MessageFlags } from 'discord.js';
 import { guardedMutation, commandMutationPolicy } from '../utils/requests.js';
 import { publicError } from '../runtime.js';
+import { handleAlertInteraction, isAlertInteraction } from '../operator-alerts.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -33,7 +34,7 @@ export function friendlyInteractionError(error, context) {
   if (/queued music request was cancelled by stop/.test(details)) return 'Stop cancelled that waiting music request. Use /play to start a new session.';
   if (/favorites changed|mix changed/.test(details)) return 'The collection changed while saving. Refresh before trying again.';
   if (error?.name === 'AbortError') return 'That playback request was cancelled. Use /play to start a new session.';
-  if (/queue holds at most|favorites hold at most|music library is full|name your mix|server can save/.test(error?.message || '')) return error.message;
+  if (/queue holds at most|favorites hold at most|music library is full|name your mix|server can save/i.test(error?.message || '')) return error.message;
   if (/enospc|erofs|eacces|eperm|library/.test(details)) return 'The music library could not be saved. Playback still works; the server administrator should check the data volume.';
   if (context.startsWith('/play') && /youtube|spotify|soundcloud|load|search|track/.test(details)) {
     return 'That track couldn’t be loaded. Try another result or paste a direct YouTube, Spotify, or SoundCloud link.';
@@ -86,6 +87,11 @@ export async function loadCommands(client) {
   await loadCommandsData();
 
   client.on('interactionCreate', async (interaction) => {
+    // Alert DMs carry the only controls that work outside a server.
+    if (isAlertInteraction(interaction)) {
+      try { await handleAlertInteraction(interaction); } catch (error) { await reportInteractionError(interaction, error, 'audio alerts'); }
+      return;
+    }
     if (!interaction.guildId && !interaction.isAutocomplete()) {
       await interaction.reply({ content: 'Use Vybatron in a server with a voice channel.', flags: MessageFlags.Ephemeral }).catch(() => {});
       return;

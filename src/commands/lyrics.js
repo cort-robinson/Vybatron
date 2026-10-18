@@ -28,5 +28,7 @@ export async function execute(interaction) {
   }
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
   const result = await trackLyrics(player.node, track);
+  // Access may change during a slow lookup. Recheck before disclosure.
+  if (!await requireSessionVisibility(interaction, player)) return;
   return interaction.editReply(buildLyricsPayload(track, result, 0, interaction.user.id));
 }

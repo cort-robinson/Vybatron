@@ -6,6 +6,7 @@ import { execute } from '../src/commands/lyrics.js';
 import { handleMessageComponent } from '../src/utils/components.js';
 import { commandMutationPolicy } from '../src/utils/requests.js';
 import { portalFixture } from './portal-fixtures.js';
+import { trackIdentity } from '../src/utils/presentation.js';
 import { track } from './fixtures.js';
 
 const synced = { sourceName: 'lrclib', provider: 'LRCLIB', text: null, lines: [
@@ -78,16 +79,18 @@ test('long lyrics paginate within Discord embed limits and neutralize mentions a
   assert.match(buildLyricsPayload(song, { status: 'unavailable' }).embeds[0].data.description, /unavailable right now/);
 });
 
-function interaction(player, { position = null, customId, user = 'listener' } = {}) {
+function interaction(player, { position = null, customId, user = 'listener', component = false } = {}) {
   const calls = [];
-  const channels = new Map(['voice', 'text'].map(id => [id, { guildId: 'guild', permissionsFor: () => ({ has: () => true }) }]));
+  const access = { visible: true };
+  const channels = new Map(['voice', 'text'].map(id => [id, { guildId: 'guild', permissionsFor: () => ({ has: () => access.visible }) }]));
   return {
+    access, deferred: false, isMessageComponent: () => component,
     calls, guildId: 'guild', user: { id: user }, member: { id: user }, customId, guild: { channels: { cache: channels } },
     client: { lavalink: { getPlayer: () => player } },
     options: { getInteger: () => position },
     isButton: () => true,
-    async reply(payload) { calls.push(['reply', payload]); }, async deferReply(payload) { calls.push(['deferReply', payload]); },
-    async editReply(payload) { calls.push(['editReply', payload]); }, async deferUpdate() { calls.push(['deferUpdate']); },
+    async reply(payload) { calls.push(['reply', payload]); }, async deferReply(payload) { this.deferred = true; calls.push(['deferReply', payload]); },
+    async editReply(payload) { calls.push(['editReply', payload]); }, async deferUpdate() { this.deferred = true; calls.push(['deferUpdate']); },
     async update(payload) { calls.push(['update', payload]); }, async followUp(payload) { calls.push(['followUp', payload]); },
   };
 }
@@ -185,4 +188,29 @@ test('access lost during a slow lookup withholds the lyrics', async t => {
   const response = await pending;
   assert.equal(response.status, 200);
   assert.deepEqual(response.body, { trackId: null, status: 'idle', lyrics: null });
+});
+
+test('/lyrics and its pages withhold lyrics when access is lost during the lookup', async () => {
+  clearLyricsCache();
+  let release;
+  const node = { connected: true, request: () => new Promise(resolve => { release = () => resolve(synced); }) };
+  const song = track('slowlookup1');
+  const player = { voiceChannelId: 'voice', textChannelId: 'text', node, queue: { current: song, tracks: [] } };
+  const command = interaction(player);
+  const running = execute(command);
+  while (!release) await new Promise(resolve => setTimeout(resolve, 5));
+  command.access.visible = false; release();
+  await running;
+  assert.equal(command.calls.at(-1)[0], 'editReply');
+  assert.match(JSON.stringify(command.calls.at(-1)[1]), /not visible to you/);
+  assert.doesNotMatch(JSON.stringify(command.calls), /First line/);
+
+  clearLyricsCache(); release = null;
+  const page = interaction(player, { customId: `lyrics:v1:page:listener:${trackIdentity(song)}:1:next`, component: true });
+  const turning = handleMessageComponent(page);
+  while (!release) await new Promise(resolve => setTimeout(resolve, 5));
+  page.access.visible = false; release();
+  await turning;
+  assert.equal(page.calls.at(-1)[0], 'followUp');
+  assert.doesNotMatch(JSON.stringify(page.calls), /First line/);
 });

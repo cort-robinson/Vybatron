@@ -278,7 +278,9 @@ async function handleLyricsPage(interaction, ownerId, identity, page) {
     return interaction.followUp(ephemeralText('That song has left the session. Use /lyrics for the current song.'));
   }
   await interaction.deferUpdate();
-  return interaction.editReply(buildLyricsPayload(track, await trackLyrics(player.node, track), page, ownerId));
+  const result = await trackLyrics(player.node, track);
+  if (!await requireSessionVisibility(interaction, player)) return null;
+  return interaction.editReply(buildLyricsPayload(track, result, page, ownerId));
 }
 
 export async function handleMessageComponent(interaction) {

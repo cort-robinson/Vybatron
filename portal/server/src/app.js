@@ -106,7 +106,8 @@ export async function createPortalServer(config, testOptions = {}) {
       if (res.destroyed) return;
       const ext = path.extname(file).toLowerCase();
       const isWorker = /(?:^|[\/\\])(?:sw|service-worker|workbox[^\/\\]*)\.js$/i.test(file);
-      res.setHeader('Cache-Control', isWorker ? 'no-store' : /[-.][a-zA-Z0-9_-]{8,}\.(?:js|css|woff2?)$/.test(file) ? 'public, max-age=31536000, immutable' : 'no-cache');
+      // The PWA share target's query holds shared text: no browser cache may keep it.
+      res.setHeader('Cache-Control', isWorker || pathname === '/share' ? 'no-store' : /[-.][a-zA-Z0-9_-]{8,}\.(?:js|css|woff2?)$/.test(file) ? 'public, max-age=31536000, immutable' : 'no-cache');
       if (isWorker) res.setHeader('Service-Worker-Allowed', '/');
       res.writeHead(200, { 'Content-Type': types[ext], 'Content-Length': stat.size });
       if (req.method === 'HEAD') { res.end(); return; }

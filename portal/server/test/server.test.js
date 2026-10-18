@@ -636,6 +636,10 @@ test('Static serving blocks encoded/double-encoded traversal, hidden files, syml
   assert.equal((await f.request('/')).status, 200); assert.equal((await f.request('/guilds/123')).status, 200);
   assert.equal((await f.request('/app-abcdefgh.js', { method: 'HEAD' })).headers['content-type'], 'text/javascript; charset=utf-8');
   assert.equal((await f.request('/sw.js')).headers['cache-control'], 'no-store');
+  // The PWA share target carries shared text in its query: never let a browser cache keep it.
+  const shared = await f.request('/share?text=' + encodeURIComponent('https://youtu.be/abcdefghijk'));
+  assert.equal(shared.status, 200); assert.equal(shared.headers['cache-control'], 'no-store');
+  assert.equal((await f.request('/guilds/123')).headers['cache-control'], 'no-cache');
   for (const pathname of ['/../outside.txt', '/%2e%2e/outside.txt', '/%252e%252e/outside.txt', '/..%5coutside.txt', '/%00', '/%xy', '//outside.txt']) assert.equal((await f.request(pathname)).status, 400, pathname);
   for (const pathname of ['/.env', '/missing.js', '/app.js.map']) assert.equal((await f.request(pathname)).status, 404, pathname);
   assert.equal((await f.request('/api/missing')).status, 401);

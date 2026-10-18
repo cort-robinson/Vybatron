@@ -106,7 +106,8 @@ export async function createPortalServer(config, testOptions = {}) {
       if (res.destroyed) return;
       const ext = path.extname(file).toLowerCase();
       const isWorker = /(?:^|[\/\\])(?:sw|service-worker|workbox[^\/\\]*)\.js$/i.test(file);
-      res.setHeader('Cache-Control', isWorker ? 'no-store' : /[-.][a-zA-Z0-9_-]{8,}\.(?:js|css|woff2?)$/.test(file) ? 'public, max-age=31536000, immutable' : 'no-cache');
+      // The PWA share target's query holds shared text: no browser cache may keep it.
+      res.setHeader('Cache-Control', isWorker || pathname === '/share' ? 'no-store' : /[-.][a-zA-Z0-9_-]{8,}\.(?:js|css|woff2?)$/.test(file) ? 'public, max-age=31536000, immutable' : 'no-cache');
       if (isWorker) res.setHeader('Service-Worker-Allowed', '/');
       res.writeHead(200, { 'Content-Type': types[ext], 'Content-Length': stat.size });
       if (req.method === 'HEAD') { res.end(); return; }
@@ -423,10 +424,10 @@ export async function createPortalServer(config, testOptions = {}) {
           if (range !== undefined && !/^bytes=\d{0,15}-\d{0,15}$/.test(range)) throw invalid();
           await transport.audio(`/v1/guilds/${audio[1]}/audio/${audio[2]}`, session.actorId, { range, signal: controller.signal, res }); return;
         }
-        const match = /^\/api\/guilds\/(\d{1,20})(?:\/(configuration|library|search|commands|diagnostics|activity|events|stats))?$/.exec(pathname);
+        const match = /^\/api\/guilds\/(\d{1,20})(?:\/(configuration|library|search|commands|diagnostics|activity|events|stats|recap))?$/.exec(pathname);
         if (!match) throw notFound();
         const [, guildId, resource] = match;
-        queryOnly(url, resource === 'search' ? ['query'] : resource === 'stats' ? ['window'] : []);
+        queryOnly(url, resource === 'search' ? ['query'] : ['stats', 'recap'].includes(resource) ? ['window'] : []);
         const endpoint = `/v1/guilds/${guildId}${resource ? `/${resource}` : ''}`;
         if (req.method !== 'GET' || resource === 'commands') throw notFound();
         if (resource === 'events') { await events(req, res, guildId, token, session, controller.signal); return; }
@@ -439,6 +440,11 @@ export async function createPortalServer(config, testOptions = {}) {
         if (resource === 'stats' && url.searchParams.has('window')) {
           const window = url.searchParams.get('window');
           if (!['7d', '30d', '90d', '365d', 'all'].includes(window)) throw invalid();
+          query.window = window;
+        }
+        if (resource === 'recap' && url.searchParams.has('window')) {
+          const window = url.searchParams.get('window');
+          if (!['7d', '30d', '90d', '365d'].includes(window)) throw invalid();
           query.window = window;
         }
         const data = await transport.bridge(endpoint, session.actorId, { query, signal: controller.signal });

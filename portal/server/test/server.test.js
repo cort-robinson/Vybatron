@@ -103,6 +103,7 @@ async function fixture(t, { limits = {}, now, dataDir, production = false, botOr
     else if (url.pathname.endsWith('/diagnostics')) reply(res, 200, { botReady: true, audioReady: true, uptimeSeconds: 10, recoveryState: 'ready', lastError: null });
     else if (url.pathname.endsWith('/activity')) reply(res, 200, { items: [] });
     else if (url.pathname.endsWith('/stats')) reply(res, 200, { serverFavorites: { onRepeat: [], forgottenGems: [] }, personal: { window: url.searchParams.get('window') || '30d', topTracks: [], topArtists: [], rediscover: [] } });
+    else if (url.pathname.endsWith('/recap')) reply(res, 200, { window: url.searchParams.get('window') || '30d', since: 0, personal: { plays: 0, playedMs: 0, songs: 0, topTracks: [], topArtists: [] }, server: { plays: 0, playedMs: 0, songs: 0, topTracks: [] } });
     else if (url.pathname === '/v1/stats/requests/clear') reply(res, 200, { ok: true, cleared: 2 });
     else reply(res, 200, state.snapshot);
   });
@@ -636,6 +637,10 @@ test('Static serving blocks encoded/double-encoded traversal, hidden files, syml
   assert.equal((await f.request('/')).status, 200); assert.equal((await f.request('/guilds/123')).status, 200);
   assert.equal((await f.request('/app-abcdefgh.js', { method: 'HEAD' })).headers['content-type'], 'text/javascript; charset=utf-8');
   assert.equal((await f.request('/sw.js')).headers['cache-control'], 'no-store');
+  // The PWA share target carries shared text in its query: never let a browser cache keep it.
+  const shared = await f.request('/share?text=' + encodeURIComponent('https://youtu.be/abcdefghijk'));
+  assert.equal(shared.status, 200); assert.equal(shared.headers['cache-control'], 'no-store');
+  assert.equal((await f.request('/guilds/123')).headers['cache-control'], 'no-cache');
   for (const pathname of ['/../outside.txt', '/%2e%2e/outside.txt', '/%252e%252e/outside.txt', '/..%5coutside.txt', '/%00', '/%xy', '//outside.txt']) assert.equal((await f.request(pathname)).status, 400, pathname);
   for (const pathname of ['/.env', '/missing.js', '/app.js.map']) assert.equal((await f.request(pathname)).status, 404, pathname);
   assert.equal((await f.request('/api/missing')).status, 401);
@@ -1286,6 +1291,25 @@ test('stats reads forward only a supported window, and clearing request stats ne
   const forwarded = f.state.calls.findLast(item => item.path === '/v1/stats/requests/clear');
   assert.equal(forwarded.params.get('actorId'), actorId);
   assert.equal(forwarded.body, null);
+});
+
+test('recap reads forward only a recap window and the trusted actor', async t => {
+  const f = await fixture(t); const device = await f.login();
+  const read = await f.request(`/api/guilds/${guildId}/recap?window=7d`, { headers: { Cookie: device.cookie } });
+  assert.equal(read.status, 200);
+  assert.equal(read.json().window, '7d');
+  const call = f.state.calls.findLast(item => item.path.endsWith('/recap'));
+  assert.equal(call.path, `/v1/guilds/${guildId}/recap`);
+  assert.deepEqual([...call.params.keys()].sort(), ['actorId', 'window']);
+  assert.equal(call.params.get('actorId'), actorId);
+  assert.equal((await f.request(`/api/guilds/${guildId}/recap`, { headers: { Cookie: device.cookie } })).status, 200, 'window is optional');
+  assert.deepEqual([...f.state.calls.findLast(item => item.path.endsWith('/recap')).params.keys()], ['actorId']);
+  // All time stays on the stats endpoint; a recap covers at most a year of retention.
+  for (const query of ['window=all', 'window=forever', 'window=30d&window=7d', 'actorId=1', 'other=1']) {
+    assert.equal((await f.request(`/api/guilds/${guildId}/recap?${query}`, { headers: { Cookie: device.cookie } })).status, 400, query);
+  }
+  assert.equal((await f.request(`/api/guilds/${guildId}/recap`)).status, 401);
+  assert.equal((await f.request(`/api/guilds/${guildId}/recap`, { method: 'POST', headers: { Cookie: device.cookie, Origin: origin, 'X-CSRF-Token': device.csrf } })).status, 404);
 });
 
 test('top commands accept only their published lists and options', async t => {

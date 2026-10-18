@@ -1006,3 +1006,8 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
 :root[data-performance] .light { animation: none; will-change: auto; }
 :root[data-performance] .sleeve-queue { background: color-mix(in oklab, var(--ground) 92%, transparent); }
 :root[data-performance] .dialog::backdrop { backdrop-filter: none; }
+/* A link shared to the installed app, shown in full before it is added. */
+.share-dialog .share-link { display: flex; align-items: flex-start; gap: 10px; color: var(--text); background: var(--field); border: 1px solid var(--field-line); border-radius: 12px; padding: 12px 14px; overflow-wrap: anywhere; }
+.share-dialog .share-link svg { flex: none; margin-top: 2px; color: var(--accent); }
+.share-server { display: grid; gap: 8px; margin-top: 17px; color: var(--text-soft); font-size: 14px; }
+.share-server select { width: 100%; }

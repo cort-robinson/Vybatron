@@ -8,6 +8,7 @@ import { installRuntime, logEvent } from './runtime.js';
 import { initializeLibrary } from './utils/library.js';
 import { initializeStats } from './utils/play-stats.js';
 import { startPortalBridge } from './portal/index.js';
+import { startOperatorAlerts } from './operator-alerts.js';
 
 assertConfig();
 
@@ -40,6 +41,9 @@ client.once('clientReady', () => {
 async function init() {
   await initializeLibrary(client);
   await initializeStats(client, { dataDir: config.dataDir });
+  // Alerts are diagnostics: a failure here never stops the bot from starting.
+  await startOperatorAlerts(client, { dataDir: config.dataDir })
+    .catch((error) => logEvent(console, 'error', 'operator_alerts_unavailable', error));
   await loadCommands(client);
   // A bind failure is isolated inside the optional bridge; it never becomes a
   // fatal audio initialization or runtime failure.

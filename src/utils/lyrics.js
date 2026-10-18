@@ -105,13 +105,16 @@ function cachedTask(key, work) {
 // -> {status:'found', lyrics} | {status:'not_found'} | {status:'unavailable'}.
 // Lavalink's LavaLyrics first, then LRCLIB directly by the song's own title and artist
 // or its "Artist - Song" upload title. Found and not-found answers are cached per
-// track; failures are not.
-export async function trackLyrics(node, track, { timeoutMs = 8000, fetchImpl = (...args) => fetch(...args) } = {}) {
+// track; failures are not. One deadline bounds every step, inside the portal's
+// 10-second upstream limit; LavaLyrics gets at most half of it (4 seconds) so LRCLIB keeps time.
+export const LYRICS_BUDGET_MS = 8000;
+const LAVALYRICS_MS = 4000;
+export async function trackLyrics(node, track, { deadline = Date.now() + LYRICS_BUDGET_MS, fetchImpl = (...args) => fetch(...args) } = {}) {
   if (!track?.encoded) return { status: 'not_found' };
   return cachedTask(trackIdentity(track), async () => {
     if (node?.connected && typeof node.request === 'function') {
       try {
-        const lyrics = await lookup(node, track, timeoutMs);
+        const lyrics = await lookup(node, track, Math.min(LAVALYRICS_MS, (deadline - Date.now()) / 2));
         if (lyrics) return { status: 'found', lyrics };
       } catch (error) {
         if (!(error instanceof LyricsUnavailable)) throw error;
@@ -120,7 +123,7 @@ export async function trackLyrics(node, track, { timeoutMs = 8000, fetchImpl = (
     const info = track.info || {};
     try {
       const raw = await lrclibLyrics([{ artist: info.author, song: info.title }, songFromTitle(info.title)].filter(Boolean),
-        info.isStream ? 0 : info.duration, { fetchImpl, timeoutMs: Math.min(timeoutMs, 6000) });
+        info.isStream ? 0 : info.duration, { fetchImpl, deadline });
       const lyrics = normalizeLyrics(raw);
       return lyrics ? { status: 'found', lyrics } : { status: 'not_found' };
     } catch (error) {
@@ -132,17 +135,20 @@ export async function trackLyrics(node, track, { timeoutMs = 8000, fetchImpl = (
 
 // Songs playing on a listener's own device: the portal names the YouTube video.
 // -> the same answers, plus the loaded track when there is one.
-export async function videoLyrics(node, videoId, { timeoutMs = 8000 } = {}) {
+// Loading the video takes at most 3.5 seconds of the same deadline.
+export async function videoLyrics(node, videoId, { deadline = Date.now() + LYRICS_BUDGET_MS, fetchImpl } = {}) {
   if (!/^[\w-]{11}$/.test(String(videoId))) return { status: 'not_found', track: null };
   if (!node?.connected || typeof node.search !== 'function') return { status: 'unavailable', track: null };
   let track = null;
   const answer = await cachedTask(`video:${videoId}`, async () => {
     try {
-      const loaded = await withTimeout(node.search({ query: `https://www.youtube.com/watch?v=${videoId}` }, null), timeoutMs);
+      const loaded = await withTimeout(node.search({ query: `https://www.youtube.com/watch?v=${videoId}` }, null), Math.min(3500, deadline - Date.now()));
+      // A load error (YouTube briefly failing) is retried later, never cached as "no lyrics".
+      if (loaded?.loadType === 'error') return { status: 'unavailable' };
       track = loaded?.tracks?.[0] || null;
     } catch { return { status: 'unavailable' }; }
     if (!track) return { status: 'not_found' };
-    return { ...await trackLyrics(node, track, { timeoutMs }), track };
+    return { ...await trackLyrics(node, track, { deadline, ...(fetchImpl ? { fetchImpl } : {}) }), track };
   });
   return { track: answer.track || track, ...answer };
 }

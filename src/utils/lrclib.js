@@ -25,16 +25,32 @@ export function parseSynced(text) {
   return lines.sort((a, b) => a.timestamp - b.timestamp);
 }
 
-async function search(params, { fetchImpl, timeoutMs }) {
-  let response;
+// Reads at most MAX_BYTES, cancelling the download as soon as it grows past them.
+async function boundedText(response) {
+  if (!response.body) return response.text();
+  const reader = response.body.getReader();
+  const chunks = []; let bytes = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    bytes += value.byteLength;
+    if (bytes > MAX_BYTES) { await reader.cancel().catch(() => {}); throw new LrclibUnavailable(); }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks).toString('utf8');
+}
+
+async function search(params, { fetchImpl, deadline }) {
+  const timeoutMs = deadline - Date.now();
+  if (timeoutMs <= 0) throw new LrclibUnavailable();
+  let body;
   try {
-    response = await fetchImpl(`${API}?${new URLSearchParams(params)}`, {
+    const response = await fetchImpl(`${API}?${new URLSearchParams(params)}`, {
       headers: { 'User-Agent': USER_AGENT, Accept: 'application/json' }, signal: AbortSignal.timeout(timeoutMs),
     });
+    if (!response.ok) throw new LrclibUnavailable();
+    body = await boundedText(response);
   } catch { throw new LrclibUnavailable(); }
-  if (!response.ok) throw new LrclibUnavailable();
-  const body = await response.text().catch(() => { throw new LrclibUnavailable(); });
-  if (body.length > MAX_BYTES) throw new LrclibUnavailable();
   try {
     const value = JSON.parse(body);
     return Array.isArray(value) ? value : [];
@@ -43,12 +59,12 @@ async function search(params, { fetchImpl, timeoutMs }) {
 
 // candidates: [{artist, song}] in order of preference; durationMs: the song's length.
 // -> LavaLyrics-shaped lyrics {sourceName, provider, text, lines}, or null when none match.
-// Throws LrclibUnavailable when LRCLIB can't be reached.
-export async function lrclibLyrics(candidates, durationMs, { fetchImpl = fetch, timeoutMs = 6000 } = {}) {
+// Throws LrclibUnavailable when LRCLIB can't be reached before the deadline (epoch ms).
+export async function lrclibLyrics(candidates, durationMs, { fetchImpl = (...args) => fetch(...args), deadline = Date.now() + 6000 } = {}) {
   const seconds = Number(durationMs) / 1000;
   for (const { artist, song } of candidates) {
     if (!artist || !song) continue;
-    const results = await search({ track_name: song.slice(0, 200), artist_name: artist.slice(0, 120) }, { fetchImpl, timeoutMs });
+    const results = await search({ track_name: song.slice(0, 200), artist_name: artist.slice(0, 120) }, { fetchImpl, deadline });
     const fits = results.filter(result => result && !result.instrumental
       && (!seconds || (Number.isFinite(result.duration) && Math.abs(result.duration - seconds) <= DURATION_TOLERANCE_S))
       && (typeof result.syncedLyrics === 'string' || typeof result.plainLyrics === 'string'));

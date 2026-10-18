@@ -15,8 +15,11 @@ const realFetch = globalThis.fetch;
 let lrclib = () => [];
 globalThis.fetch = async (url, init) => {
   if (!String(url).startsWith('https://lrclib.net/')) return realFetch(url, init);
-  const answer = await lrclib(new URL(url));
+  // Like fetch, a stalled answer gives way to the request's abort signal.
+  const aborted = new Promise((_, reject) => init?.signal?.addEventListener('abort', () => reject(init.signal.reason), { once: true }));
+  const answer = await Promise.race([lrclib(new URL(url)), aborted]);
   if (answer instanceof Error) throw answer;
+  if (answer instanceof Response) return answer;
   return new Response(JSON.stringify(answer), { status: 200, headers: { 'Content-Type': 'application/json' } });
 };
 test.afterEach(() => { lrclib = () => []; });
@@ -320,4 +323,44 @@ test('the portal bridge serves device lyrics to server members only', async t =>
   const outsider = await f.request('/lyrics/dX3k_QDnzHE', { actor: '900' });
   assert.notEqual(outsider.status, 200);
   assert.equal(outsider.body.lyrics, undefined);
+});
+
+test('a slow LavaLyrics leaves LRCLIB time to answer within one deadline', async () => {
+  clearLyricsCache();
+  lrclib = () => [{ duration: 180, syncedLyrics: '[00:01.00]Found in time' }];
+  const hung = { connected: true, request: () => new Promise(() => {}) };
+  const started = Date.now();
+  const result = await trackLyrics(hung, track('slowlavaly1'), { deadline: Date.now() + 600 });
+  assert.equal(result.status, 'found');
+  assert.ok(Date.now() - started < 600, 'answered before the deadline');
+  clearLyricsCache();
+  // A real stalled request holds its socket open; hold the event loop the same way.
+  const socket = setTimeout(() => {}, 2000);
+  lrclib = () => new Promise(() => {});
+  const late = await trackLyrics(hung, track('slowlavaly2'), { deadline: Date.now() + 300 });
+  clearTimeout(socket);
+  assert.deepEqual(late, { status: 'unavailable' }, 'nothing outlives the deadline');
+});
+
+test('a failed video load is retried later, not remembered as no lyrics', async () => {
+  clearLyricsCache();
+  const song = upload('erroredload', 'Midnight City', 'M83', 244_000);
+  const node = lyricsNode(path => path.includes(encodeURIComponent(song.encoded)) ? synced : undefined);
+  node.search = async () => ({ loadType: 'error', tracks: [], exception: { message: 'YouTube unavailable' } });
+  assert.deepEqual(await videoLyrics(node, 'erroredload'), { status: 'unavailable', track: null });
+  node.search = async () => ({ loadType: 'track', tracks: [song] });
+  assert.equal((await videoLyrics(node, 'erroredload')).status, 'found');
+});
+
+test('an oversized LRCLIB response is abandoned as soon as it passes the cap', async () => {
+  clearLyricsCache();
+  let pulled = 0;
+  const chunk = new Uint8Array(256 * 1024).fill(0x5b);
+  lrclib = () => new Response(new ReadableStream({ pull(controller) { pulled += chunk.byteLength; controller.enqueue(chunk); } }), { status: 200 });
+  assert.deepEqual(await trackLyrics(lyricsNode([undefined]), track('hugeanswer1')), { status: 'unavailable' });
+  assert.ok(pulled <= 2 * 1024 * 1024, `read ${pulled} bytes`);
+  // Multibyte text counts in bytes, not characters.
+  const wide = JSON.stringify([{ duration: 180, plainLyrics: 'é'.repeat(600 * 1024) }]);
+  lrclib = () => new Response(wide, { status: 200 });
+  assert.deepEqual(await trackLyrics(lyricsNode([undefined]), track('hugeanswer2')), { status: 'unavailable' });
 });

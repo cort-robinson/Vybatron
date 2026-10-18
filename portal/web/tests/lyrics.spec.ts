@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { mockPortal } from './fixtures';
+import { landed, mockPortal } from './fixtures';
 import type { GuildSnapshot } from '../src/types';
 
 const emit = (page: Page, data: GuildSnapshot) => page.evaluate(snapshot => (window as unknown as { portalTest: { emit: (data: unknown) => void } }).portalTest.emit(snapshot), data);
@@ -82,6 +82,8 @@ for (const skin of ['overdrive', 'fantastic', 'classic'] as const) {
       await page.addInitScript(look => localStorage.setItem('vybertron.skin', look), skin);
       await mockPortal(page);
       await openLyrics(page);
+      // Measure the settled layout, not a frame of the sleeve or title entrance.
+      await landed(page.getByTestId('player'));
       const panel = page.getByRole('region', { name: 'Lyrics' });
       const box = (await panel.boundingBox())!;
       expect(box.x).toBeGreaterThanOrEqual(0);

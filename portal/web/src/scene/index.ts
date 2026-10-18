@@ -151,7 +151,7 @@ export function startScene(canvas: HTMLCanvasElement, scene: HTMLElement, fail: 
     dropTarget();
   };
 
-  let clock = 0; let last = 0; let drawn = 0; let frame = 0; let stopped = false;
+  let clock = 0; let last = 0; let drawn = 0; let frame = 0; let stopped = false; let paneKey = '';
   const opacity = (element: Element | null) => element ? parseFloat(getComputedStyle(element).opacity) || 0 : 0;
   const panes = () => [...document.querySelectorAll<HTMLElement>('[data-glass]')].flatMap(element => {
     const style = getComputedStyle(element); const blur = /blur\(([\d.]+)px\)/.exec(style.getPropertyValue('--glass'));
@@ -159,6 +159,7 @@ export function startScene(canvas: HTMLCanvasElement, scene: HTMLElement, fail: 
     if (!blur || !box.width || !box.height || style.visibility === 'hidden' || box.bottom < 0 || box.top > height) return [];
     return [{ box, radius: Math.min(parseFloat(style.borderTopLeftRadius) || 0, box.width / 2, box.height / 2), blur: parseFloat(blur[1]), saturate: parseFloat(/saturate\(([\d.]+)\)/.exec(style.getPropertyValue('--glass'))?.[1] || '1') }];
   }).slice(0, MAX_GLASS);
+  const keyOf = (list: ReturnType<typeof panes>) => list.map(({ box, radius, blur }) => [box.left, box.top, box.width, box.height, radius, blur].map(Math.round).join()).join(';');
 
   const draw = (now: number) => {
     frame = 0;
@@ -215,7 +216,7 @@ export function startScene(canvas: HTMLCanvasElement, scene: HTMLElement, fail: 
     gl.uniform1i(u.uArtT0, 0); gl.uniform1i(u.uArtT1, 1);
     ready.feed({ gl, u, top, scene, clock, moving, auth: !!scene.closest('.auth-page'), performance, width, height, opacity });
 
-    const glassPanes = performance ? [] : panes();
+    const glassPanes = performance ? [] : panes(); paneKey = keyOf(glassPanes);
     gl.viewport(0, 0, canvas.width, canvas.height);
     gl.bindFramebuffer(gl.FRAMEBUFFER, glassPanes.length ? roomTarget() : null);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
@@ -240,10 +241,12 @@ export function startScene(canvas: HTMLCanvasElement, scene: HTMLElement, fail: 
   const changed = new MutationObserver(wake);
   changed.observe(scene, { attributes: true, attributeFilter: ['class', 'style', 'src'], childList: true, subtree: true });
   changed.observe(document.documentElement, { attributes: true, attributeFilter: ['data-performance', 'data-skin'] });
-  // Glass panes come and go with the page (opening the player, lyrics); their boxes follow resizes.
-  const page = new MutationObserver(wake); page.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
+  // Glass panes come and go with the page (lyrics, the queue sheet); redraw only when one does, not
+  // on every update of the page around them.
+  const page = new MutationObserver(() => { if (!frame && keyOf(document.documentElement.hasAttribute('data-performance') ? [] : panes()) !== paneKey) wake(); });
+  page.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
   const events = ['transitionrun', 'animationstart', 'transitionend', 'animationend'] as const;
-  for (const name of events) document.addEventListener(name, wake, true);
+  for (const name of events) scene.addEventListener(name, wake, true);
   window.addEventListener('resize', wake);
   coarse.addEventListener('change', resize);
   const lost = (event: Event) => { event.preventDefault(); stopped = true; fail(); };
@@ -252,7 +255,7 @@ export function startScene(canvas: HTMLCanvasElement, scene: HTMLElement, fail: 
   return () => {
     stopped = true; cancelAnimationFrame(frame); resized.disconnect(); changed.disconnect(); page.disconnect();
     delete document.documentElement.dataset.glRoom;
-    for (const name of events) document.removeEventListener(name, wake, true);
+    for (const name of events) scene.removeEventListener(name, wake, true);
     window.removeEventListener('resize', wake); coarse.removeEventListener('change', resize); canvas.removeEventListener('webglcontextlost', lost);
     // The context stays alive: a remount of the same canvas (React's development double mount) gets
     // it back from getContext, and an unmounted canvas releases it when collected.

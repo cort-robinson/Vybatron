@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { MessageFlags } from 'discord.js';
 import { data, execute, sleepStop } from '../src/commands/sleep.js';
-import { handlePlayerDestroy } from '../src/lavalink.js';
+import { clearIdleTimer, handlePlayerDestroy, startIdleTimer } from '../src/lavalink.js';
 import { buildPlayerPayload } from '../src/utils/messages.js';
 import { commandMutationPolicy } from '../src/utils/requests.js';
 import {
@@ -145,6 +145,25 @@ test('destroying the player discards its sleep timer', async t => {
   t.mock.timers.tick(60_000);
   await flush();
   assert.equal(fired, 0);
+});
+
+test('an idle or empty-channel disconnect cancels the sleep timer before it awaits anything', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: 0 });
+  const player = fakePlayer();
+  const client = { lavalink: { getPlayer: () => player } };
+  let fired = 0;
+  setSleepTimer(player, { minutes: 1, onFire: () => { fired++; } });
+  t.after(() => { clearIdleTimer(player.guildId); cancelSleepTimer(player); });
+  startIdleTimer(player, { ms: 59_000, reason: 'voice-empty', client });
+  t.mock.timers.tick(59_000);
+  // The disconnect has started but has not reached destroy() yet.
+  assert.equal(sleepTimer(player), null);
+  t.mock.timers.tick(1_000);
+  await flush();
+  t.mock.timers.tick(1_000);
+  await flush();
+  assert.equal(fired, 0);
+  assert.deepEqual(player.calls.filter(([name]) => name === 'stopPlaying'), []);
 });
 
 test('/sleep follows Stop’s voice-channel and DJ-role checks', async () => {

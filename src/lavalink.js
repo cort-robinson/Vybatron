@@ -37,6 +37,9 @@ export function startIdleTimer(player, options = IDLE_MS) {
   clearIdleTimer(player.guildId);
   const timer = setTimeout(() => {
     idleTimers.delete(player.guildId);
+    // This disconnect keeps the checkpoint. A sleep timer firing while the
+    // voice status clears would stop the session and discard it instead.
+    cancelSleepTimer(player);
     retirePresentationPlayer(player);
     const message = reason === 'voice-empty'
       ? 'Left the voice channel because everyone else left.'

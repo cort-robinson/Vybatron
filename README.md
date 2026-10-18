@@ -99,9 +99,11 @@ The bot DMs its owner and `PORTAL_OPERATOR_IDS` when audio degrades and again wh
 
 Compose mounts `bot-data` at `/app/data`. The library contains public catalog references and server/user IDs needed for ownership; it never saves audio, encoded tracks, cookies, or bot/provider tokens. Sources are freshly resolved when loading saved music. Failed writes leave the previous library intact, and invalid persisted data stops startup instead of silently replacing it.
 
+Server history, actor activity and session checkpoints are kept in `listening-state.sqlite` next to the library (ADR-0009), so a track start never rewrites `library.json`. At shutdown the bot copies them back into `library.json`, so an older release can still read them after a rollback. If the store cannot be opened, playback continues from that copy and the file is left in place; stop the bot and move it aside to rebuild it from `library.json`.
+
 Play statistics are kept separately in `stats.sqlite` next to the library: server, song, voice channel, time, who requested it (or that the bot queued it), and whether it finished or was skipped early. Who was merely listening is never recorded. The store is bounded to one year, 10,000 plays per server and 16 MiB, and imports existing history once. If it cannot be opened or written, playback continues and stats show as unavailable; the file is left in place for inspection. Listeners can clear their own request stats from the portal API, which anonymizes their requests everywhere.
 
-Back up `bot-data` before moving the VPS. Normal rebuilds preserve it; deleting the volume removes favorites, mixes, settings, checkpoints, and play statistics. Native mode uses `data/library.json`; set an absolute `VYBERTRON_DATA_DIR` to change it.
+Back up `bot-data` before moving the VPS. Normal rebuilds preserve it; deleting the volume removes favorites, mixes, settings, history, checkpoints, and play statistics. Native mode uses `data/library.json`; set an absolute `VYBERTRON_DATA_DIR` to change it.
 
 ## Web portal
 
@@ -148,7 +150,7 @@ bash tests/warp-supervisor.test.sh
 
 CI also builds the container, verifies non-root persistence on a read-only filesystem, and validates Compose. Recovery tests exercise the pinned client's real event and player behavior, including late events, voice event ordering, pause/seek, and resumed sessions.
 
-Code map: `src/commands` defines the slash commands and `deploy-commands.js` validates and registers the same catalog. `src/playback-recovery.js` adapts the pinned lavalink-client SDK and `src/playback-watchdog.js` checks progress. `src/utils/library.js` persists favorites and mixes, `src/utils/sessions.js` session checkpoints, and `src/utils/play-stats.js` play statistics (with `play-tracking`, `song-identity`, `stats-scoring` and `auto-playlists` alongside). `src/portal` is the private portal bridge. `ops/recovery.py` probes sources and performs bounded repairs; `ops/deploy.py` owns release transactions and rollback.
+Code map: `src/commands` defines the slash commands and `deploy-commands.js` validates and registers the same catalog. `src/playback-recovery.js` adapts the pinned lavalink-client SDK and `src/playback-watchdog.js` checks progress. `src/utils/library.js` persists favorites and mixes, `src/utils/listening-state.js` stores history, activity and checkpoints, `src/utils/sessions.js` takes session checkpoints, and `src/utils/play-stats.js` play statistics (with `play-tracking`, `song-identity`, `stats-scoring` and `auto-playlists` alongside). `src/portal` is the private portal bridge. `ops/recovery.py` probes sources and performs bounded repairs; `ops/deploy.py` owns release transactions and rollback.
 
 Design decisions and terms are in [docs/adr](docs/adr) and [docs/GLOSSARY.md](docs/GLOSSARY.md). The manual listening check before a release is in the [operations runbook](ops/README.md#manual-listening-check).
 

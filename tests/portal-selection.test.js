@@ -4,10 +4,11 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { portalFixture, deferred } from './portal-fixtures.js';
 import { track } from './fixtures.js';
-import { MusicLibrary, trackReference } from '../src/utils/library.js';
+import { trackReference } from '../src/utils/library.js';
 import { execute as favorite } from '../src/commands/favorite.js';
 import { execute as mix } from '../src/commands/mix.js';
 import { execute as replay } from '../src/commands/replay.js';
+import { openLibrary, closeLibraries } from './library-fixture.js';
 
 const A = 'aaaaaaaaaaa', B = 'bbbbbbbbbbb', C = 'ccccccccccc';
 const reference = id => trackReference(track(id));
@@ -97,7 +98,7 @@ test('favorite removal retains its selected ID and URI while another guild delet
   try { await secondWrite.promise; } finally { release.resolve(); }
   await blocker; assert.equal((await first).status, 200); assert.equal((await stale).status, 409);
   assert.deepEqual(favoriteIds(f), [B, C]);
-  assert.deepEqual((await new MusicLibrary(f.library.filePath).open()).favorites('200').map(item => item.identifier), [B, C]);
+  assert.deepEqual((await openLibrary(f.library.filePath)).favorites('200').map(item => item.identifier), [B, C]);
 });
 
 test('favorite play keeps the captured ID through slow resolution and rejects a shifted or removed selection before enqueue', async t => {
@@ -182,7 +183,7 @@ test('mix deletion repeats version and ownership checks after waiting for the du
     const pending = f.command({ command: 'mix', subcommand: 'delete', options: { name: 'night' }, expectedMixVersion: selected.version });
     try { await deleting.promise; } finally { release.resolve(); }
     await blocker; assert.equal((await pending).status, change === 'owner' ? 403 : 409);
-    const durable = (await new MusicLibrary(f.library.filePath).open()).readGuild('100').mixes.night;
+    const durable = (await openLibrary(f.library.filePath)).readGuild('100').mixes.night;
     assert.ok(durable); assert.equal(durable.ownerId, change === 'owner' ? '201' : '200');
     if (change === 'replacement') assert.equal(durable.tracks[0].identifier, C);
   });

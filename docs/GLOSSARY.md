@@ -23,5 +23,8 @@ Domain terms for Vybatron. One meaning per term; commands, code, and docs use th
 - **Server favorites** — per-server lists built from visible plays: **On repeat** (rolling top 25, recency-decayed, repeat requests and early skips discounted) and **Forgotten gems** (popular 60–120 days ago, unplayed since). Queued with `/top play` or the portal's Play all/Shuffle.
 - **Personal playlist** — a listener's generated playlist, computed on read from their request stats and favorites: **Your mix**, **Your top tracks**, **Rediscover**, and an **artist mix** for each of their top three artists. Queued with `/mymix play` or the portal's Home tab.
 - **Your mix** — a blend of the listener's top requests (past 90 days) and favorites, lightly randomized with a seed that changes every Monday 00:00 UTC.
+- **Server history** — the last 100 tracks that started in a server over 30 days, each with the voice channel it played in. Listeners see only entries from channels they can currently see.
+- **Activity** — who changed a server's queue or settings in the last 24 hours (up to 200 entries). Favorites are never recorded.
+- **Session checkpoint** — the saved queue, position, volume, pause and repeat state of a server's player, restorable for 72 hours after an outage or restart. Stop discards it.
 - **Session mix** — a shared mix saved from the live session: songs already played, then the current song and queue (`/mix save session:true`, Save as mix on Stop).
 - **Request stats** — a listener's own requests: top tracks, top artists, and favorites not requested recently. "Clear my request stats" anonymizes them everywhere.

@@ -96,7 +96,7 @@ async function fixture(t, { limits = {}, now, dataDir, production = false, botOr
     else if (url.pathname === '/v1/bootstrap') {
       const data = bootstrap(); data.viewer.id = url.searchParams.get('actorId'); data.voiceGuildId = state.voiceGuildId ?? null; if (state.inviteUrl !== undefined) data.inviteUrl = state.inviteUrl; reply(res, 200, data);
     }
-    else if (url.pathname.endsWith('/commands')) reply(res, 200, { ok: true, message: 'Updated.', snapshot: state.snapshot });
+    else if (url.pathname.endsWith('/commands')) reply(res, 200, { ok: true, message: 'Updated.', snapshot: state.snapshot, ...state.commandExtra });
     else if (url.pathname.endsWith('/configuration')) reply(res, 200, { guildId, channels: [{ id: '456789012345678901', name: 'Music', type: 'text' }], roles: [] });
     else if (url.pathname.endsWith('/library')) reply(res, 200, { favorites: [], mixes: [], history: [] });
     else if (url.pathname.endsWith('/search')) reply(res, 200, { tracks: [], notice: null });
@@ -1392,4 +1392,28 @@ test('device audio streams a song still arriving and cuts off anything past the 
   assert.equal(streamed.headers['content-type'], 'audio/ogg'); assert.equal(streamed.headers['content-length'], undefined);
   f.state.bridgeResponse = res => { res.writeHead(200, { 'Content-Type': 'audio/ogg' }); res.write('0123456789'); setTimeout(() => res.end('0123456789'), 20); };
   await assert.rejects(f.request(route, { headers }));
+});
+
+test('playlist imports accept a public link, an optional preview id, and pass through only a bounded preview', async t => {
+  const f = await fixture(t); const device = await f.login();
+  const link = 'https://music.youtube.com/playlist?list=PL1';
+  const id = 'b'.repeat(32);
+  const preview = { id, target: 'mix', name: 'road trip', title: 'Road trip', found: 3, toAdd: 2, duplicates: 1, unmatched: 0, overLimit: 0, limit: 100,
+    notes: [], tracks: [{ title: 'Open Road', author: 'Northline' }, { title: 'Mile Marker', author: 'Solara' }] };
+  f.state.commandExtra = { preview: { ...preview, encoded: 'never-forward' } };
+  const shown = await sendCommand(f, device, { command: 'mix', subcommand: 'import', options: { name: 'road trip', link } });
+  assert.equal(shown.status, 200, shown.text);
+  assert.deepEqual(shown.json().preview, preview);
+  f.state.commandExtra = {};
+  for (const command of [{ command: 'favorite', subcommand: 'import', options: { link }, expectedImportId: id }, { command: 'favorite', subcommand: 'import', options: { link } }]) {
+    assert.equal((await sendCommand(f, device, command)).status, 200, JSON.stringify(command));
+    assert.deepEqual(f.state.calls.findLast(call => call.path.endsWith('/commands')).body, { actorId, ...command });
+  }
+  for (const command of [{ command: 'favorite', subcommand: 'import', options: { link: 'http://example.com/list' } },
+    { command: 'favorite', subcommand: 'import', options: { link }, expectedImportId: 'nope' },
+    { command: 'favorite', subcommand: 'list', expectedImportId: id }, { command: 'mix', subcommand: 'import', options: { link } }]) {
+    assert.equal((await sendCommand(f, device, command)).status, 400, JSON.stringify(command));
+  }
+  f.state.commandExtra = { preview: { ...preview, tracks: Array.from({ length: 101 }, () => preview.tracks[0]), toAdd: 101 } };
+  assert.equal((await sendCommand(f, device, { command: 'favorite', subcommand: 'import', options: { link } })).status, 503, 'an oversized preview is refused');
 });

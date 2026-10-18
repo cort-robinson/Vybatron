@@ -135,6 +135,23 @@ export async function mockPortal(page: Page, options: { signedOut?: boolean; bas
       if (commandGate) await commandGate;
       if (conflict) { conflict = false; state.snapshot.revision = `revision-${commands.length + 1}`; state.snapshot.session.queue.reverse(); await route.fulfill({ status: 409, json: { error: { code: 'stale_revision', message: 'The queue changed.' } } }); return; }
       const s = state.snapshot.session; const o = body.options || {};
+      if (body.subcommand === 'import') {
+        // Three songs found: one already in favorites, two new.
+        const found = [s.queue[0], track('road-song-1', 'Open Road', 'Northline', 201_000, 'golden'), track('road-song-2', 'Mile Marker', 'Solara', 188_000, 'night')];
+        const mixTracks = state.library.mixes.find(mix => mix.name.toLowerCase() === String(o.name || '').trim().toLowerCase())?.tracks;
+        const existing = body.command === 'favorite' ? state.library.favorites : mixTracks || [];
+        const add = found.filter(item => !existing.some(saved => saved.id === item.id));
+        if (!body.expectedImportId) {
+          const preview = { id: 'b'.repeat(32), target: body.command === 'favorite' ? 'favorites' : 'mix', name: body.command === 'mix' ? String(o.name) : null, title: 'Road trip',
+            found: found.length + 1, toAdd: add.length, duplicates: found.length - add.length, unmatched: 1, overLimit: 0, limit: body.command === 'favorite' ? 1000 : 100,
+            notes: ['Spotify shows only part of some playlists, so this may not be the whole list.'], tracks: add.map(({ title, author }) => ({ title, author })) };
+          await route.fulfill(reply({ ok: true, message: 'Preview ready.', snapshot: state.snapshot, preview })); return;
+        }
+        if (body.command === 'favorite') state.library.favorites.push(...add);
+        else if (mixTracks) mixTracks.push(...add);
+        else state.library.mixes.push({ id: `import-${commands.length}`, name: String(o.name), ownerId: 'alex', version: 'c'.repeat(32), canEdit: true, tracks: add });
+        await route.fulfill(reply({ ok: true, message: `Added ${add.length} tracks. ${found.length - add.length} track is already saved. 1 track couldn’t be matched to a public recording.`, snapshot: state.snapshot })); return;
+      }
       if (body.command === 'pause') s.status = 'paused';
       if (body.command === 'resume') s.status = 'playing';
       if (body.command === 'stop') { s.status = 'idle'; s.current = null; s.queue = []; state.snapshot.savedSession.exists = false; }

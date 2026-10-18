@@ -109,8 +109,8 @@ export async function loadCommands(client) {
         const id = interaction.customId || '';
         const mutates = /^player:v1:(toggle|skip|shuffle|loop|stop-confirm)$/.test(id)
           || /^queue:v[12]:jump:/.test(id) || /^history:.*:replay:/.test(id)
-          || /^player:v2:favorite:/.test(id);
-        if (mutates) await guardedMutation(interaction, handleMessageComponent, { playback: !id.includes('favorite'), urgent: id === 'player:v1:stop-confirm' });
+          || /^player:v2:favorite:/.test(id) || /^import:v1:confirm:/.test(id);
+        if (mutates) await guardedMutation(interaction, handleMessageComponent, { playback: !id.includes('favorite') && !id.startsWith('import:'), urgent: id === 'player:v1:stop-confirm' });
         else await handleMessageComponent(interaction);
       } catch (error) {
         await reportInteractionError(interaction, error, 'player controls');

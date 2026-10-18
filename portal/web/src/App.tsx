@@ -79,13 +79,14 @@ export function App() {
   // Look and lighting changes crossfade the whole page instead of repainting it in one frame.
   const setAmbient = (value: AmbientMode) => transition('theme', () => { changeAmbient(value); try { localStorage.setItem('vybertron.ambient', value); } catch { /* Optional, non-sensitive preference. */ } });
   // A look's chunk loads before it applies, so the switch stays one atomic crossfade. The
-  // latest choice wins if an earlier one is still loading.
+  // latest choice wins if an earlier one is still loading. The browser won't refetch a script
+  // chunk that failed, so a failed look asks for a reload; the current look stays meanwhile.
   const skinChoice = useRef(0);
   const setSkin = (value: Skin) => {
     const choice = ++skinChoice.current;
     loadLook(value).then(() => {
       if (choice === skinChoice.current) transition('theme', () => { applySkin(value); changeSkin(value); });
-    }, () => { if (choice === skinChoice.current) portal.notify('That look couldn’t load. Check your connection and try again.', 'error'); });
+    }, () => { if (choice === skinChoice.current) portal.notify('That look couldn’t load. Check your connection, then reload the page and try again.', 'error'); });
   };
   const setPerformance = (value: boolean) => transition('theme', () => { applyPerformance(value); changePerformance(value); });
   const order = (value: Surface) => surfaces.findIndex(item => item.id === value);

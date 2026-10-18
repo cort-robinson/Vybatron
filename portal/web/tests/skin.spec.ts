@@ -76,12 +76,28 @@ test('a look that fails to load keeps the current one, and choosing it again fet
   await page.getByRole('button', { name: 'Server', exact: true }).click();
   const look = page.getByLabel('Portal look');
   await look.selectOption('fantastic');
-  await expect(page.getByText('That look couldn’t load. Check your connection and try again.')).toBeVisible();
+  await expect(page.getByText('That look couldn’t load. Check your connection, then reload the page and try again.')).toBeVisible();
   await expect(page.locator('html')).toHaveAttribute('data-skin', 'overdrive');
   await expect(look).toHaveValue('overdrive');
   await look.selectOption('fantastic');
   await expect(page.locator('.ff-scene')).toHaveCount(1);
   expect((await looks()).filter(entry => !entry.startsWith('flip:overdrive'))).toEqual(['commit:overdrive:od', 'flip:fantastic:ff']);
+});
+
+test('a look whose script fails keeps the current one across the reload it asks for, then applies when chosen again', async ({ page }) => {
+  let failures = 1;
+  await page.route(/\/assets\/Fantastic-[^/]*\.js$/, route => failures-- > 0 ? route.fulfill({ status: 503, body: '' }) : route.continue());
+  await mockPortal(page); await page.goto('/');
+  await expect(page.getByRole('button', { name: 'Pause playback' })).toBeEnabled();
+  await page.getByRole('button', { name: 'Server', exact: true }).click();
+  await page.getByLabel('Portal look').selectOption('fantastic');
+  await expect(page.getByText('That look couldn’t load. Check your connection, then reload the page and try again.')).toBeVisible();
+  await expect(page.locator('html')).toHaveAttribute('data-skin', 'overdrive');
+  await page.reload();
+  await expect(page.locator('.od-horizon')).toHaveCount(1);
+  await page.getByRole('button', { name: 'Server', exact: true }).click();
+  await page.getByLabel('Portal look').selectOption('fantastic');
+  await expect(page.locator('.ff-scene')).toHaveCount(1);
 });
 
 test('performance mode drops glass blur and stills the scene, and stays on after a reload', async ({ page }) => {

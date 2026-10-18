@@ -3,15 +3,16 @@ import assert from 'node:assert/strict';
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { MusicLibrary, trackReference, catalogUrl, LIBRARY_LIMITS, LIBRARY_WARNING_RATIO, HISTORY_RETENTION_MS } from '../src/utils/library.js';
+import { trackReference, catalogUrl, LIBRARY_LIMITS, LIBRARY_WARNING_RATIO, HISTORY_RETENTION_MS } from '../src/utils/library.js';
 import { sessionSnapshot, savedSession, attachSessionSnapshots, SESSION_RETENTION_MS } from '../src/utils/sessions.js';
 import { track } from './fixtures.js';
+import { openLibrary, closeLibraries } from './library-fixture.js';
 
 async function fixture(t, options = {}) {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'vybertron-library-'));
-  t.after(() => fs.rm(directory, { recursive: true, force: true }));
+  t.after(async () => { await closeLibraries(); await fs.rm(directory, { recursive: true, force: true }); });
   const filePath = path.join(directory, 'library.json');
-  return { filePath, library: await new MusicLibrary(filePath, options).open() };
+  return { filePath, library: await openLibrary(filePath, options) };
 }
 
 test('concurrent library writes survive reopening without losing a listener’s favorites', async t => {
@@ -19,7 +20,7 @@ test('concurrent library writes survive reopening without losing a listener’s 
   await Promise.all(Array.from({ length: 30 }, (_, i) => library.updateFavorites('200', list => {
     list.push(trackReference(track(String(i).padStart(11, '0'))));
   })));
-  const reopened = await new MusicLibrary(filePath).open();
+  const reopened = await openLibrary(filePath);
   assert.equal(reopened.favorites('200').length, 30);
   assert.equal(reopened.favorites('201').length, 0);
   assert.deepEqual(library.document, reopened.document);
@@ -31,13 +32,13 @@ test('disk replacement failure leaves both in-memory and durable library unchang
   const { filePath } = await fixture(t);
   let fail = false;
   const io = { ...fs, rename: async (...args) => { if (fail) throw Object.assign(new Error('Disk unavailable'), { code: 'ENOSPC' }); return fs.rename(...args); } };
-  const library = await new MusicLibrary(filePath, { io }).open();
+  const library = await openLibrary(filePath, { io });
   await library.updateGuild('100', guild => { guild.settings.volume = 40; });
   fail = true;
   await assert.rejects(library.updateGuild('100', guild => { guild.settings.volume = 90; }), { code: 'ENOSPC' });
   assert.equal(library.settings('100').volume, 40);
-  assert.equal((await new MusicLibrary(filePath).open()).settings('100').volume, 40);
-  assert.deepEqual((await fs.readdir(path.dirname(filePath))).sort(), ['library.json']);
+  assert.equal((await openLibrary(filePath)).settings('100').volume, 40);
+  assert.deepEqual((await fs.readdir(path.dirname(filePath))).filter(name => name.startsWith('library.json')), ['library.json']);
   fail = false;
   await library.updateGuild('100', guild => { guild.settings.fairQueue = true; });
   assert.equal(library.settings('100').fairQueue, true);
@@ -46,10 +47,10 @@ test('disk replacement failure leaves both in-memory and durable library unchang
 test('damaged and oversized libraries fail startup without overwriting the evidence', async t => {
   const { filePath } = await fixture(t);
   await fs.writeFile(filePath, '{broken');
-  await assert.rejects(new MusicLibrary(filePath).open());
+  await assert.rejects(openLibrary(filePath));
   assert.equal(await fs.readFile(filePath, 'utf8'), '{broken');
   await fs.writeFile(filePath, 'x'.repeat(LIBRARY_LIMITS.bytes + 1));
-  await assert.rejects(new MusicLibrary(filePath).open(), /size limit/);
+  await assert.rejects(openLibrary(filePath), /size limit/);
 });
 
 test('library snapshots contain public catalog references only and isolate returned state', async t => {
@@ -81,11 +82,18 @@ function countingWrites() {
   const io = { ...fs, writes: 0, rename: async (...args) => { io.writes += 1; return fs.rename(...args); } };
   return io;
 }
+// Checkpoints live in the listening state store (ADR-0009); count its writes.
+function countingCheckpoints(library) {
+  const counter = { writes: 0 };
+  const setSession = library.state.setSession.bind(library.state);
+  library.state.setSession = (...args) => { counter.writes += 1; return setSession(...args); };
+  return counter;
+}
 
 test('checkpoints skip unchanged snapshots, step playing progress by 30 s and keep exact shutdown progress', async t => {
   t.mock.timers.enable({ apis: ['setTimeout', 'setInterval', 'Date'], now: 1_000_000 });
-  const io = countingWrites();
-  const { library } = await fixture(t, { io });
+  const { library } = await fixture(t);
+  const io = countingCheckpoints(library);
   const handlers = new Map();
   const player = { guildId: '100', voiceChannelId: '300', textChannelId: '400', lastPosition: 10_000, paused: false, volume: 80, repeatMode: 'off', queue: { current: track(), tracks: [] } };
   const client = { library, lavalink: { players: new Map([['100', player]]), on: (name, fn) => handlers.set(name, fn), off: name => handlers.delete(name) } };
@@ -104,7 +112,7 @@ test('checkpoints skip unchanged snapshots, step playing progress by 30 s and ke
   await tick(31_000);
   assert.equal(io.writes, 3, 'a pause is a real change');
   for (let i = 0; i < 230; i += 1) await tick(31_000);
-  assert.equal(io.writes, 3, 'a paused player does not rewrite the library');
+  assert.equal(io.writes, 3, 'a paused player does not rewrite its checkpoint');
   for (let i = 0; i < 20; i += 1) await tick(31_000);
   assert.equal(io.writes, 4, 'an unchanged checkpoint is refreshed hourly so it never expires while live');
   player.lastPosition = 44_321;
@@ -113,26 +121,26 @@ test('checkpoints skip unchanged snapshots, step playing progress by 30 s and ke
   assert.equal(library.readGuild('100').session.position, 44_321);
 });
 
-test('clearing an absent checkpoint and no-op retention leave the library file untouched', async t => {
+test('clearing an absent checkpoint, history and retention leave the library file untouched', async t => {
   const io = countingWrites();
   const { library } = await fixture(t, { io });
+  const checkpoints = countingCheckpoints(library);
   const handlers = new Map();
   const client = { library, lavalink: { players: new Map(), on: (name, fn) => handlers.set(name, fn), off: name => handlers.delete(name) } };
   const stop = attachSessionSnapshots(client);
   t.after(stop);
   handlers.get('queueEnd')({ guildId: '100', queue: { tracks: [] } });
   await library.pending;
-  assert.equal(io.writes, 0);
+  assert.equal(checkpoints.writes, 0, 'an absent checkpoint is not cleared again');
   assert.deepEqual(library.guildIds(), []);
   await library.recordHistory({ guildId: '100', voiceChannelId: '300' }, track());
-  assert.equal(io.writes, 1);
-  await library.pruneExpired();
-  assert.equal(io.writes, 1, 'nothing expired, so nothing is rewritten');
+  assert.equal(library.readGuild('100').history.length, 1);
+  library.maintain();
   const now = Date.now();
   t.mock.method(Date, 'now', () => now + HISTORY_RETENTION_MS + 1);
-  await library.pruneExpired();
-  assert.equal(io.writes, 2);
+  library.maintain();
   assert.equal(library.readGuild('100').history.length, 0);
+  assert.equal(io.writes, 0, 'track starts and retention never rewrite library.json');
 });
 
 test('library size is reported and a rate-limited warning fires past 80% of the shared cap', async t => {
@@ -161,7 +169,7 @@ test('library size is reported and a rate-limited warning fires past 80% of the 
   await library.updateGuild('100', guild => { guild.settings.volume = 70; });
   assert.equal(warnings.length, 2);
   const reopenedWarnings = [];
-  const reopened = await new MusicLibrary(filePath, { logger: { warn: message => reopenedWarnings.push(message) } }).open();
+  const reopened = await openLibrary(filePath, { logger: { warn: message => reopenedWarnings.push(message) } });
   assert.equal(reopened.capacity().bytes, (await fs.stat(filePath)).size);
   assert.equal(reopenedWarnings.length, 1, 'startup warns when the library is already nearly full');
 });

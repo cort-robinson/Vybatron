@@ -35,14 +35,22 @@ and roll back independently, and deleting stats never touches history or a saved
   checkpoint, never favorites (still fsynced JSON) and never a corrupt file. `node:sqlite` is
   synchronous, so this keeps fsync off the event loop on every track start. Shutdown
   checkpoints and truncates the WAL, leaving one self-contained file for snapshots.
-- **Size.** An 8 MiB guard sheds the oldest history and activity, then the oldest checkpoints.
-  The pre-deploy snapshot copies the whole volume under 64 MiB: library ≤ 5 MiB, its one-time
-  backups (v1 and this migration) ≤ 10 MiB, stats ≤ 16 MiB (plus a ≤ 4 MiB WAL only while
-  running) and listening state ≤ 8 MiB stay below 45 MiB.
+- **Size.** Listening state still counts against the 5 MiB `library.json` cap, exactly as when
+  it lived inside the document: a write that would make the mirror (below) overflow it is
+  rejected with "Music library is full", so the mirror always fits. If adopting an older
+  image's mirror would overflow it, the oldest history and activity are shed until it fits, and
+  servers beyond the 1,000-server limit lose the listening state of the least recently active
+  ones that have no settings or mixes. A document write that only the stale frozen mirror would
+  overflow refreshes the mirror instead of failing. That bounds the store's
+  content to about 5 MiB; an 8 MiB guard (oldest history and activity first, then checkpoints)
+  is a backstop, and shutdown prunes and vacuums before the snapshot. The pre-deploy snapshot
+  copies the whole volume under 64 MiB: library ≤ 5 MiB, its one-time backups (v1 and this
+  migration) ≤ 10 MiB, stats ≤ 16 MiB (plus a ≤ 4 MiB WAL only while running) and listening
+  state ≤ 8 MiB stay below 45 MiB.
 - **Failure isolation.** Listening state is optional, like stats, because losing it must never
-  stop music. A failed open (corrupt file, newer schema, full disk) leaves the file untouched for
-  an operator, logs `listening_state_unavailable`, and runs from memory seeded from
-  `library.json`; that memory is written back to `library.json` hourly and at shutdown. A failed
+  stop music. Any failure while opening, backing up or adopting (corrupt file, newer schema, full
+  disk) leaves the file untouched for an operator, logs `listening_state_unavailable`, and runs
+  from memory seeded from `library.json`; the migration is retried on the next start; that memory is written back to `library.json` hourly and at shutdown. A failed
   write rejects only that write, which callers already log and drop, as before. Favorites,
   mixes and settings keep their stricter rule: a damaged `library.json` still fails startup.
   Repair: stop the bot and move the file aside; the next start rebuilds it from `library.json`.
@@ -58,9 +66,9 @@ last read or wrote.
   activity are merged by ID and its checkpoint, including an absent one, replaces the stored
   checkpoint. Matching guilds are left alone, so restarts import nothing and repeats are
   idempotent.
-- Before the first import the exact `library.json` bytes are copied once to
-  `library.json.pre-listening-state.bak` (never overwritten). The migration itself never
-  rewrites `library.json`.
+- Before the first import the exact `library.json` bytes are written, synced and then renamed
+  to `library.json.pre-listening-state.bak`, so only a complete backup counts and it is never
+  overwritten. The migration itself never rewrites `library.json`.
 - Deploy stops the bot gracefully before its snapshot, so the mirror is current when an older
   image starts after a rollback: it sees the latest history and can restore the session. An
   automatic portal rollback restores the pre-release volume and quarantines
@@ -79,7 +87,7 @@ last read or wrote.
 - After a crash (no graceful shutdown) followed by a rollback, the older image sees the mirror
   from the previous shutdown. The newer data stays in `listening-state.sqlite` and returns on
   roll-forward.
-- A mirror that would push `library.json` past 5 MiB is skipped and logged. The store keeps
-  the data; an older image after a rollback would see the previous mirror.
+- A mirror that cannot be written (disk error) is logged. The store keeps the data, the next
+  start adopts nothing stale, and an older image after a rollback would see the previous mirror.
 - An `updateGuild` that changes both settings or mixes and listening state commits the document
   first, then the store; a failure between them leaves the document change applied.

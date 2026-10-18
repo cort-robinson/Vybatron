@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 import { mockPortal } from './fixtures';
 
 test('Classic look renders without Overdrive scenery and switches back live from Settings', async ({ page }) => {
@@ -29,6 +29,42 @@ test('Fantastic Four is opt-in: it swaps in the Earth-828 scenery and the sleeve
   await page.getByRole('button', { name: 'Open player', exact: true }).click();
   await expect(page.locator('.sleeve-artwork .ff-tv')).toHaveCount(1);
   await expect(page.locator('.sleeve-artwork .od-cover-hud')).toHaveCount(0);
+});
+
+// Record the look's styles at the instant the app first commits and whenever data-skin flips;
+// a look applied before its stylesheet arrives would flash another one.
+async function watchLook(page: Page) {
+  await page.addInitScript(() => {
+    const seen: string[] = []; (window as unknown as { looks: string[] }).looks = seen;
+    const record = (moment: string) => {
+      const style = getComputedStyle(document.documentElement);
+      seen.push(`${moment}:${document.documentElement.dataset.skin}:${style.getPropertyValue('--neon').trim() ? 'od' : ''}${style.getPropertyValue('--ff-cream').trim() ? 'ff' : ''}`);
+    };
+    // Init scripts run before <html> exists, so watch the whole document.
+    new MutationObserver(() => record('flip')).observe(document, { subtree: true, attributeFilter: ['data-skin'] });
+    const first = new MutationObserver(() => { if (document.getElementById('root')?.firstElementChild) { first.disconnect(); record('commit'); } });
+    first.observe(document, { subtree: true, childList: true });
+  });
+  return () => page.evaluate(() => (window as unknown as { looks: string[] }).looks);
+}
+
+test('Fantastic loads only when chosen, and every look is styled the moment it applies', async ({ page }) => {
+  const requested: string[] = [];
+  page.on('request', request => { if (/\/assets\/Fantastic-/.test(request.url())) requested.push(request.url()); });
+  const looks = await watchLook(page);
+  await mockPortal(page); await page.goto('/');
+  await expect(page.getByRole('button', { name: 'Pause playback' })).toBeEnabled();
+  await expect(page.locator('.od-horizon')).toHaveCount(1);
+  expect(requested).toEqual([]);
+  await page.getByRole('button', { name: 'Server', exact: true }).click();
+  await page.getByLabel('Portal look').selectOption('fantastic');
+  await expect(page.locator('.ff-scene')).toHaveCount(1);
+  expect(requested.some(url => url.endsWith('.css'))).toBe(true);
+  // Overdrive is styled at first commit; Fantastic's stylesheet is in place before it applies.
+  expect((await looks()).filter(entry => !entry.startsWith('flip:overdrive'))).toEqual(['commit:overdrive:od', 'flip:fantastic:ff']);
+  await page.reload();
+  await expect(page.locator('.ff-scene')).toHaveCount(1);
+  expect(await looks()).toEqual(['flip:fantastic:', 'commit:fantastic:ff']);
 });
 
 test('performance mode drops glass blur and stills the scene, and stays on after a reload', async ({ page }) => {

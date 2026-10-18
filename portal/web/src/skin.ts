@@ -2,7 +2,40 @@
 // Fantastic tunes it to a 1960s retro-future broadcast (Earth-828); Classic is the original
 // receiver, untouched. Every skin's styles are scoped to :root[data-skin='…'], so switching
 // is a single attribute change. Overdrive stays the default; the others are opt-in.
+import type { ComponentType, PointerEvent } from 'react';
+import { look as overdrive } from './components/Overdrive';
+
 export type Skin = 'overdrive' | 'fantastic' | 'classic';
+
+// The default look ships in the main bundle. Opt-in looks keep their stylesheet and scenery in
+// their own chunk, so no device downloads, parses or style-matches a look it doesn't show.
+// Load a look before applying it; it never flashes.
+export type Look = {
+  Scenery: ComponentType<{ prepared?: boolean }>;
+  Sleeve: ComponentType<{ track: string }>;
+  tilt?: (event: PointerEvent<HTMLElement>) => void;
+  untilt?: (event: PointerEvent<HTMLElement>) => void;
+};
+const loaders: Record<Skin, () => Promise<Look | undefined>> = {
+  overdrive: async () => overdrive,
+  fantastic: () => import('./components/Fantastic').then(module => module.look),
+  classic: async () => undefined,
+};
+const looks = new Map<Skin, Look | undefined>();
+const loading = new Map<Skin, Promise<void>>();
+
+export function loadLook(skin: Skin) {
+  let pending = loading.get(skin);
+  if (!pending) {
+    pending = loaders[skin]().then(look => { looks.set(skin, look); });
+    // A failed chunk (offline before the worker cached it) can be retried later.
+    pending.catch(() => loading.delete(skin));
+    loading.set(skin, pending);
+  }
+  return pending;
+}
+
+export const skinLook = (skin: Skin) => looks.get(skin);
 
 const key = 'vybertron.skin';
 const skins: readonly Skin[] = ['overdrive', 'fantastic', 'classic'];

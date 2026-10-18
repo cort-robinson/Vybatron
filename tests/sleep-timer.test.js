@@ -240,6 +240,11 @@ test('a sleep timer for an ended or replaced player does nothing', async () => {
   assert.equal(await sleepStop(destroyingClient, destroying, 'time'), false);
   assert.deepEqual([...player.calls, ...stopping.calls, ...destroying.calls], []);
   assert.deepEqual(destroyingClient.sessions, [], 'a disconnect keeps its checkpoint');
+  const draining = fakePlayer();
+  const drainingClient = fakeClient(draining);
+  drainingClient.runtimeState = { draining: true };
+  assert.equal(await sleepStop(drainingClient, draining, 'time'), false);
+  assert.deepEqual([draining.calls, drainingClient.sessions], [[], []], 'a restart keeps its checkpoint');
 });
 
 test('the player shows an active sleep timer', () => {

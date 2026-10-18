@@ -21,7 +21,7 @@ export const SLEEP_STOP_REASON = 'Sleep timer stopped playback.';
 // Ends the session exactly like Stop, then leaves a notification-free notice.
 export async function sleepStop(client, player, mode) {
   if (client.lavalink?.getPlayer(player.guildId) !== player || player.getData?.('vybertron.stopping')
-    || player.getData?.('internal_destroystatus')) return false;
+    || player.getData?.('internal_destroystatus') || client.runtimeState?.draining) return false;
   // The track played to its end; Stop's own cleanup would count it as ended early.
   if (mode === 'track') client.playTracker?.ended(player, 'finished');
   const channelId = player.textChannelId;

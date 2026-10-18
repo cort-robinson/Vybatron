@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { installRuntime, publicError } from '../src/runtime.js';
 import { acquirePlaybackRequest } from '../src/utils/maintenance.js';
+import { setSleepTimer, sleepTimer } from '../src/utils/sleep-timer.js';
 
 function fixture(options = {}) {
   const events = [];
@@ -42,6 +43,19 @@ test('shutdown gates playback immediately, flushes persistence before transport,
   assert.deepEqual(f.exits, [0]);
   assert.equal(f.processObject.listenerCount('SIGTERM'), 0);
   assert.equal(f.server.listenerCount('error'), 0);
+});
+
+test('shutdown cancels sleep timers before it drains, so a restart keeps the checkpoint', async () => {
+  const f = fixture();
+  const player = f.client.lavalink.players.get('guild');
+  let fired = 0;
+  setSleepTimer(player, { afterTrack: true, onFire: () => { fired++; } });
+  const release = acquirePlaybackRequest(f.client);
+  const shuttingDown = f.runtime.shutdown();
+  assert.equal(sleepTimer(player), null, 'cancelled while requests still drain');
+  release();
+  await shuttingDown;
+  assert.equal(fired, 0);
 });
 
 test('shutdown waits for in-flight requests before closing their persistence store', async () => {

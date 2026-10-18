@@ -88,8 +88,6 @@ async function relightTo(page: Page, fixture: Awaited<ReturnType<typeof mockPort
   await expect.poll(theme).not.toBe(before);
 }
 test('a song change dissolves fixed room palettes without repeatedly changing inherited page colors', async ({ page }) => {
-  // The CSS scenery's own animation clocks (the fallback when WebGL is unavailable).
-  await page.addInitScript(() => localStorage.setItem('vybertron.scene', 'css'));
   await page.clock.install();
   const fixture = await mockPortal(page); await page.goto('/');
   await page.getByRole('button', { name: 'Open player', exact: true }).click();

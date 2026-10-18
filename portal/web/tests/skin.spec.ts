@@ -103,7 +103,8 @@ test('a look whose script fails keeps the current one across the reload it asks 
 test('performance mode drops glass blur and stills the scene, and stays on after a reload', async ({ page }) => {
   await mockPortal(page); await page.goto('/');
   await expect(page.getByRole('button', { name: 'Pause playback' })).toBeEnabled();
-  const blur = () => page.locator('.sidebar').evaluate(element => getComputedStyle(element).backdropFilter);
+  // The sidebar's glass, drawn by the WebGL room (--glass) or by backdrop-filter without it.
+  const blur = () => page.locator('.sidebar').evaluate(element => getComputedStyle(element).getPropertyValue('--glass').trim());
   // The one-time power-on animates the chrome; read the settled style.
   await expect(page.locator('html')).not.toHaveAttribute('data-boot');
   expect(await blur()).not.toBe('none');

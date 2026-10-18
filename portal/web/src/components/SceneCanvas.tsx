@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { startScene } from '../sceneGl';
+import { startScene } from '../scene';
 
-// The Overdrive room as one WebGL canvas (sceneGl.ts). It sits first in the ambient scene, under
+// The room as one WebGL canvas (scene/index.ts). It sits first in the ambient scene, under
 // the DOM scenery that it reads and that styles.css hides. A device without WebGL2, or one that
 // loses the context, falls back to the CSS scenery.
 export function SceneCanvas({ onFail }: { onFail: () => void }) {

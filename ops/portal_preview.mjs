@@ -32,7 +32,8 @@ function proxy(req, res) {
     incoming.pipe(res);
   });
   outgoing.on('error', () => { if (!res.headersSent) res.writeHead(502, { 'Content-Type': 'text/plain' }); res.end('Live portal unavailable.'); });
-  req.on('close', () => { if (!res.writableFinished) outgoing.destroy(); });
+  // A browser that goes away (for example, closing the event stream) ends the upstream request too.
+  res.on('close', () => { if (!res.writableFinished) outgoing.destroy(); });
   req.pipe(outgoing);
 }
 

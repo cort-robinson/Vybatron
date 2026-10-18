@@ -1,6 +1,9 @@
 import { test, expect } from '@playwright/test';
 import { mockPortal } from './fixtures';
 
+// The fixture defaults to the CSS scenery; these specs run the canvas.
+test.beforeEach(async ({ page }) => { await page.addInitScript(() => { if (!sessionStorage.getItem('scene-seeded')) { localStorage.setItem('vybertron.scene', 'gl'); sessionStorage.setItem('scene-seeded', '1'); } }); });
+
 test('Overdrive draws its room in one canvas and keeps the DOM scenery as an unpainted layout source', async ({ page }) => {
   await mockPortal(page); await page.goto('/');
   await expect(page.getByRole('button', { name: 'Pause playback' })).toBeEnabled();
@@ -41,10 +44,27 @@ test('?scene=css chooses the CSS scenery and is remembered on this device', asyn
   await expect(page.locator('.scene-canvas')).toHaveCount(1);
 });
 
-test('other looks keep their own scenery', async ({ page }) => {
-  await page.addInitScript(() => localStorage.setItem('vybertron.skin', 'classic'));
+for (const skin of ['fantastic', 'classic']) {
+  test(`the ${skin} look draws its room in the canvas too`, async ({ page }) => {
+    const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
+    await page.addInitScript(value => localStorage.setItem('vybertron.skin', value), skin);
+    await mockPortal(page); await page.goto('/');
+    await expect(page.getByRole('button', { name: 'Pause playback' })).toBeEnabled();
+    await expect(page.locator('.ambient-scene.gl-scene .scene-canvas')).toHaveCount(1);
+    if (skin === 'fantastic') await expect(page.locator('.ff-burst').first()).toHaveCSS('animation-name', 'none');
+    expect(errors).toEqual([]);
+  });
+}
+
+test('panes over the room take their frosted glass from the canvas, and keep backdrop-filter without it', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
   await mockPortal(page); await page.goto('/');
-  await expect(page.getByRole('button', { name: 'Pause playback' })).toBeEnabled();
-  await expect(page.locator('.scene-canvas')).toHaveCount(0);
-  await expect(page.locator('.ambient-scene')).not.toHaveClass(/gl-scene/);
+  await page.getByRole('button', { name: 'Open player', exact: true }).click();
+  const queue = page.locator('.sleeve-queue');
+  await expect(queue).toHaveCSS('backdrop-filter', 'none');
+  expect(await queue.evaluate(element => getComputedStyle(element).getPropertyValue('--glass'))).toContain('blur(28px)');
+  // The compact deck has page content scrolling under it, so it keeps its own blur.
+  await page.goto('/?scene=css');
+  await page.getByRole('button', { name: 'Open player', exact: true }).click();
+  await expect(page.locator('.sleeve-queue')).toHaveCSS('backdrop-filter', /blur/);
 });

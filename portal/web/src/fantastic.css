@@ -285,7 +285,7 @@ REVERT: everything here is scoped to :root[data-skin='fantastic']; Settings → 
   /* The now-playing caption sits on an enamel plate, like a broadcast title card, so the planet,
      skyline, and bay never run through the title or the artist. */
   .sleeve-main > .player-identity, .sleeve-main > .player-context:has(> p) { width: fit-content; max-width: min(100%, 560px); padding: 12px 24px 14px; border-radius: 22px;
-    outline: 1px solid var(--trim); outline-offset: -5px; background: var(--piping), color-mix(in oklab, var(--ff-base) 80%, transparent); backdrop-filter: var(--chrome-blur); }
+    outline: 1px solid var(--trim); outline-offset: -5px; background: var(--piping), color-mix(in oklab, var(--ff-base) 80%, transparent); backdrop-filter: var(--chrome-blur); --glass: var(--chrome-blur); }
   .sleeve-main > .player-context:has(> p) { padding-block: 10px; }
   .sleeve-queue { border-radius: 26px; outline: 1px solid var(--trim); outline-offset: -6px; background: var(--piping), color-mix(in oklab, var(--ff-base) 64%, transparent); }
   .expanded .player-footer { border-top-color: transparent; }

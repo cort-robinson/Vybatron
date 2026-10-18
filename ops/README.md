@@ -141,8 +141,9 @@ records the SHA-256 of each pinned jar. The YouTube pin is a snapshot build with
 no matching release yet, and Maven snapshots can be purged. After each healthy
 check, recovery copies the jars Lavalink loaded into `lavalink/plugins/` (Git
 ignores them), first checking any recorded checksum; a mismatch alerts as
-`plugin_checksum` and nothing is copied. Lavalink's entrypoint copies those jars
-into its plugins folder, so recreating it for a deploy, repair or rollback no
+`plugin_checksum` and nothing is copied. Lavalink's entrypoint
+(`lavalink/plugins/start.sh`) copies the jars for versions `application.yml` still
+declares into its plugins folder, so recreating it for a deploy, repair or rollback no
 longer downloads a version it already ran. A new host, or a pin it hasn't run
 yet, still downloads from Maven. Lavalink also checks Maven for newer versions
 at every start and stops if it can't reach the host at all, so this covers a

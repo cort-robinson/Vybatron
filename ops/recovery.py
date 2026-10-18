@@ -319,7 +319,9 @@ console.log(JSON.stringify({api:!!stats,bot:health?.ready===true,cipher:cipherOk
                     stale.unlink()
             target = mirror / jar
             if target.exists():
-                continue
+                if jar not in recorded or hashlib.sha256(target.read_bytes()).hexdigest() == recorded[jar]:
+                    continue
+                target.unlink()
             temporary = mirror / f'{jar}.tmp'
             try:
                 command(['docker', 'cp', f'vybertron-lavalink:/opt/Lavalink/plugins/{jar}', str(temporary)])

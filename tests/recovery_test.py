@@ -1,5 +1,8 @@
 import importlib.util
+import os
 from pathlib import Path
+import shutil
+import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -533,6 +536,34 @@ class PluginMirrorTests(unittest.TestCase):
         with self.assertRaisesRegex(r.RecoveryError, 'plugin_checksum_mismatch'):
             self.backend.mirror_plugins()
         self.assertEqual(list(self.mirror.glob('youtube-plugin-*')), [])
+
+    def test_replaces_a_kept_jar_that_differs_from_its_recorded_checksum(self):
+        self.record(**{f'youtube-plugin-{OLD}.jar': r.hashlib.sha256(b'youtube').hexdigest()})
+        r.atomic_write(self.mirror / f'youtube-plugin-{OLD}.jar', 'corrupted')
+        self.backend.mirror_plugins()
+        self.assertEqual((self.mirror / f'youtube-plugin-{OLD}.jar').read_bytes(), b'youtube')
+        self.installed[f'youtube-plugin-{OLD}.jar'] = b'corrupted'
+        r.atomic_write(self.mirror / f'youtube-plugin-{OLD}.jar', 'corrupted')
+        with self.assertRaisesRegex(r.RecoveryError, 'plugin_checksum_mismatch'):
+            self.backend.mirror_plugins()
+        self.assertEqual(list(self.mirror.glob('youtube-plugin-*')), [])
+
+    @unittest.skipUnless(shutil.which('sh'), 'needs a POSIX shell')
+    def test_entrypoint_seeds_only_declared_plugin_jars(self):
+        root = Path(self.temp.name) / 'lavalink'
+        (root / 'bin').mkdir(parents=True)
+        java = root / 'bin/java'
+        java.write_text('#!/bin/sh\nls plugins\n', newline='\n')
+        java.chmod(0o755)
+        r.atomic_write(root / 'application.yml', CONFIG)
+        for name in [f'youtube-plugin-{OLD}.jar', f'youtube-plugin-{NEW}.jar', 'removed-plugin-1.0.0.jar',
+                     'unrelated-1.0.0.jar', 'vybatron-audio.jar']:
+            r.atomic_write(self.mirror / name, name)
+        script = Path(__file__).resolve().parents[1] / 'lavalink/plugins/start.sh'
+        environment = {**os.environ, 'PATH': f'{root / "bin"}{os.pathsep}{os.environ["PATH"]}'}
+        output = subprocess.run(['sh', script.as_posix(), self.mirror.as_posix()], cwd=root, env=environment,
+                                capture_output=True, text=True, check=True).stdout.split()
+        self.assertEqual(sorted(output), sorted([f'youtube-plugin-{OLD}.jar', 'unrelated-1.0.0.jar', 'vybatron-audio.jar']))
 
     def test_rejects_malformed_checksum_records(self):
         r.atomic_write(self.repo / r.CHECKSUMS, 'not a checksum\n')

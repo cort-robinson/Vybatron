@@ -10,10 +10,10 @@ function random(seed: number) {
   return () => { seed = (seed + 0x6d2b79f5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
 }
 
-const W = 1600; const H = 150;
+export const W = 1600; export const H = 150;
 
 // Towers rise toward both edges and dip in the middle so the sun stays visible above them.
-function skyline(seed: number, scale: number) {
+export function skyline(seed: number, scale: number) {
   const next = random(seed);
   const points: string[] = [`0,${H}`];
   const windows: { x: number; y: number; delay: number }[] = [];

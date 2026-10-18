@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page } from './test';
 import { mockPortal } from './fixtures';
 
 const shelf = (page: Page, name: string) => page.getByRole('region', { name, exact: true });

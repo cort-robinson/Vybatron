@@ -355,3 +355,13 @@ Before calling a release done, listen in a test server on desktop and phone:
    original voice channel. A paused checkpoint restores paused; Stop discards it.
 
 Record what was actually heard; connection flags or Opus counts alone do not pass.
+
+# Portal web previews
+
+`portal_preview.mjs` serves an unreleased `portal/web` build beside the live portal, so a
+branch can be tried on real devices before it merges (merges to `main` deploy). It serves the
+build's own files and passes `/api`, `/auth` and `/health` through to the live portal with the
+origin it expects; sign in on the live portal first. On the VPS it runs as the
+`vybertron-portal-preview` container (the portal image's Node, read-only, 64 MiB) on
+127.0.0.1:3002, published by `tailscale funnel --bg --https=8443 3002`. Remove it with
+`docker rm -f vybertron-portal-preview` and `tailscale funnel --https=8443 off`.

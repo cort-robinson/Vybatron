@@ -15,16 +15,16 @@ const percent = (value: number) => `${value.toFixed(3)}%`;
 // Several same-coloured dots as one path, so a scene copy (RoomLight) mounts few elements.
 const dots = (list: { x: number; y: number; r: number }[]) => list.map(({ x, y, r }) => `M${f(x - r)},${f(y)} a${f(r)},${f(r)} 0 1,0 ${f(r * 2)},0 a${f(r)},${f(r)} 0 1,0 ${f(-r * 2)},0 Z`).join(' ');
 
-const W = 1600; const H = 180;
+export const W = 1600; export const H = 180;
 // The Baxter Building sits right of centre, where both the phone crop and the desktop deck see it.
-const BAXTER = { x: 1018, width: 58, top: 22 };
-const RAIL = `M-40,${H - 62} C 380,${H - 92} 820,${H - 40} 1640,${H - 78}`;
+export const BAXTER = { x: 1018, width: 58, top: 22 };
+export const RAIL = `M-40,${H - 62} C 380,${H - 92} 820,${H - 40} 1640,${H - 78}`;
 
 type Window = { x: number; y: number; delay: number };
 
 // Bullet towers, saucer-topped needles, domes, and set-back slabs; taller toward both edges so
 // the planet stays clear above the middle of the city.
-function skyline(seed: number, scale: number, baxter: boolean) {
+export function skyline(seed: number, scale: number, baxter: boolean) {
   const next = random(seed);
   const parts: string[] = [];
   const windows: Window[] = [];
@@ -74,7 +74,7 @@ function skyline(seed: number, scale: number, baxter: boolean) {
 // Kirby krackle: clusters of black voids rimmed in cosmic energy along the storm's arc. Each
 // cluster's voids breathe together around its lead void, in a box (in the storm's 800x400 frame)
 // that becomes one small compositor layer.
-function krackle(seed: number) {
+export function krackle(seed: number) {
   const next = random(seed);
   const clusters: { voids: { x: number; y: number; r: number }[]; delay: number; box: { x: number; y: number; width: number; height: number } }[] = [];
   for (let cluster = 0; cluster < 26; cluster++) {
@@ -111,7 +111,7 @@ function glowField(clusters: ReturnType<typeof krackle>) {
 
 // Googie starbursts and plain stars across the upper sky. Bursts are drawn about their own centre,
 // each as its own small layer placed in the sky's 1600x600 frame (fantastic.css).
-function stars(seed: number) {
+export function stars(seed: number) {
   const next = random(seed);
   const bursts = Array.from({ length: 11 }, () => {
     const x = next() * 1600; const y = 30 + next() * 380; const R = 6 + next() * 10;

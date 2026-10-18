@@ -150,10 +150,23 @@ svg { flex-shrink: 0; }
 @keyframes drift-b { to { transform: translate(10vmax, -6vmax) scale(.92); } }
 @keyframes drift-c { to { transform: translate(-12vmax, -8vmax) scale(1.2); } }
 @keyframes artwork-drift { from { transform: scale(1.12) translate(-1%, -1%); } to { transform: scale(1.18) translate(1%, 1%); } }
+/* WebGL room (SceneCanvas, scene/): one canvas draws the light, the cover glow and the look's scenery.
+   The DOM scenery stays mounted but unpainted, so its boxes, fades and glides still come from these
+   rules; its endless animations are left to the canvas clock, and nothing blends behind it. */
+.ambient-scene.gl-scene { background: none; }
+.scene-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.gl-scene > .room-colors { visibility: hidden; }
+.gl-scene :is(.light, .artwork-field, .od-sky, .od-plane, .od-window, .ff-burst, .ff-window, .ff-void, .ff-herald, .ff-train), .gl-scene .ff-glint::before { animation: none !important; will-change: auto; }
+.gl-scene .od-sun { mix-blend-mode: normal !important; }
+/* Glass panes ([data-glass]) that only ever sit over the room carry their blur in --glass; with the
+   WebGL room the canvas draws that blur behind them instead of a backdrop-filter. */
+@property --glass { syntax: '*'; inherits: false; }
+:root[data-gl-room] [data-glass] { backdrop-filter: none !important; }
+.fps-meter { position: fixed; z-index: 200; left: 8px; top: calc(8px + env(safe-area-inset-top, 0px)); padding: 3px 8px; border-radius: 6px; background: rgb(0 0 0 / .72); color: #9effa8; font: 600 12px/1.4 ui-monospace, monospace; pointer-events: none; }
 .spectrum { display: block; pointer-events: none; }
 
 /* Sidebar: the receiver's faceplate. */
-.sidebar { width: var(--sidebar); position: fixed; inset: 0 auto var(--player) 0; display: flex; flex-direction: column; border-right: 1px solid var(--line); padding: 28px 18px 20px; background: var(--chrome); backdrop-filter: var(--chrome-blur); z-index: 12; overflow-y: auto; }
+.sidebar { width: var(--sidebar); position: fixed; inset: 0 auto var(--player) 0; display: flex; flex-direction: column; border-right: 1px solid var(--line); padding: 28px 18px 20px; background: var(--chrome); backdrop-filter: var(--chrome-blur); --glass: var(--chrome-blur); z-index: 12; overflow-y: auto; }
 .brand { display: flex; align-items: center; gap: 11px; color: var(--text); font-size: 19px; font-weight: 800; font-stretch: 125%; letter-spacing: .06em; text-transform: uppercase; white-space: nowrap; }
 .brand svg { color: var(--accent); }
 /* A look may sweep a glint across the wordmark (overdrive.css); the others never draw it. */
@@ -448,10 +461,10 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
 @keyframes cover-dissolve { to { opacity: 0; } }
 .sleeve-artwork > .artwork-empty { display: grid; place-items: center; }
 .sleeve-spectrum { width: var(--cover); height: var(--spectrum); flex-shrink: 0; }
-.sleeve-queue { align-self: start; max-height: 100%; min-width: 0; min-height: 0; overflow-y: auto; padding: 18px 16px 18px; background: color-mix(in oklab, var(--ground) 62%, transparent); backdrop-filter: var(--chrome-blur); border: 1px solid var(--line); border-radius: 20px; }
+.sleeve-queue { align-self: start; max-height: 100%; min-width: 0; min-height: 0; overflow-y: auto; padding: 18px 16px 18px; background: color-mix(in oklab, var(--ground) 62%, transparent); backdrop-filter: var(--chrome-blur); --glass: var(--chrome-blur); border: 1px solid var(--line); border-radius: 20px; }
 .sleeve-queue .section-heading { padding-inline: 8px; }
 /* The open sleeve keeps the same deck, so the transport never moves; the sleeve carries identity. */
-.expanded .player-footer { background: var(--chrome); backdrop-filter: var(--chrome-blur); border-top: 1px solid var(--line-strong); }
+.expanded .player-footer { background: var(--chrome); backdrop-filter: var(--chrome-blur); --glass: var(--chrome-blur); border-top: 1px solid var(--line-strong); }
 .mobile-collapse { display: none; }
 /* Phones only (max-width 1023px): the open player's Up next handle and its sheet. */
 .up-next-handle, .queue-sheet-now { display: none; }
@@ -627,7 +640,7 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
 @media (max-width: 1023px) {
   :root { --sidebar: 0px; --mobile-header: calc(72px + env(safe-area-inset-top, 0px)); --topbar: 0px; --player: 72px; --nav: calc(64px + env(safe-area-inset-bottom, 0px)); --connection-notice: 96px; --expanded-controls: 212px; }
   .app-shell { padding-bottom: calc(var(--player) + var(--nav)); }
-  .sidebar { position: relative; inset: auto; width: 100%; height: var(--mobile-header); padding: calc(8px + env(safe-area-inset-top, 0px)) max(12px, env(safe-area-inset-right, 0px)) 8px max(12px, env(safe-area-inset-left, 0px)); flex-direction: row; align-items: center; justify-content: space-between; gap: 8px; border-right: none; border-bottom: 1px solid var(--line); background: color-mix(in oklab, var(--ground) 94%, transparent); backdrop-filter: none; z-index: 35; }
+  .sidebar { position: relative; inset: auto; width: 100%; height: var(--mobile-header); padding: calc(8px + env(safe-area-inset-top, 0px)) max(12px, env(safe-area-inset-right, 0px)) 8px max(12px, env(safe-area-inset-left, 0px)); flex-direction: row; align-items: center; justify-content: space-between; gap: 8px; border-right: none; border-bottom: 1px solid var(--line); background: color-mix(in oklab, var(--ground) 94%, transparent); backdrop-filter: none; --glass: none; z-index: 35; }
   .sidebar > .brand, .sidebar > .guild-card, .sidebar > .navigation, .sidebar > .account { flex-shrink: 0; }
 .sidebar > .brand { margin: 0; font-size: 16px; gap: 8px; }
   .sidebar > .brand svg { width: 26px; }
@@ -919,7 +932,7 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
   .sleeve-main .player-identity, .sleeve-main .player-context { text-align: left; }
   .sleeve-main .player-title-row { justify-content: flex-start; }
   .sleeve-main .player-permission, .sleeve-main .sleep-state { justify-content: flex-start; }
-  .expanded .player-footer { grid-column: 2; grid-row: 1 / -1; padding: 8px 12px 12px; border-top: 0; border-left: 1px solid var(--line); justify-content: center; background: transparent; backdrop-filter: none; }
+  .expanded .player-footer { grid-column: 2; grid-row: 1 / -1; padding: 8px 12px 12px; border-top: 0; border-left: 1px solid var(--line); justify-content: center; background: transparent; backdrop-filter: none; --glass: none; }
   .expanded .transport { gap: 4px; }
   .queue-open .sleeve-queue { grid-column: 1; grid-row: 2; margin: 0 12px 12px 0; border-radius: 20px; border-bottom: 1px solid var(--line); }
   .player-more > .menu-panel { position: fixed; top: calc(8px + env(safe-area-inset-top, 0px)); bottom: calc(var(--nav) + 8px); right: max(16px, env(safe-area-inset-right, 0px)); width: 300px; max-height: none; }

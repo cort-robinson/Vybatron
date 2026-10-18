@@ -9,6 +9,7 @@ import path from 'node:path';
 import { createPortalServer } from '../server/src/app.js';
 import { loadConfig } from '../server/src/config.js';
 import { portalFixture } from '../../tests/portal-fixtures.js';
+import { cssScene } from './css-scene.mjs';
 
 const web = fileURLToPath(new URL('../web/', import.meta.url));
 const { chromium, expect } = createRequire(path.join(web, 'package.json'))('@playwright/test');
@@ -64,6 +65,7 @@ test('another compiled device receives Pause promptly without waiting for the pe
     browser.newContext({ viewport: { width: 1488, height: 1056 }, reducedMotion: 'reduce' }),
     browser.newContext({ viewport: { width: 393, height: 852 }, isMobile: true, hasTouch: true, reducedMotion: 'reduce' }),
   ]);
+  await Promise.all(contexts.map(context => context.addInitScript(cssScene)));
   const pages = await Promise.all(contexts.map(context => context.newPage()));
   let observerStreams = 0, actingStreams = 0, actingSnapshotReads = 0;
   pages[0].on('request', request => {

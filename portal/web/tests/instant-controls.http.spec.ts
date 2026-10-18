@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './test';
 import { gotoSession } from './fixtures';
 import type { GuildSnapshot } from '../src/types';
 import { startHttpFixture } from './http-fixture';

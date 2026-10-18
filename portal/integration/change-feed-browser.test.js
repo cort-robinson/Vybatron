@@ -12,6 +12,7 @@ import { performance } from 'node:perf_hooks';
 import { createPortalServer } from '../server/src/app.js';
 import { loadConfig } from '../server/src/config.js';
 import { portalFixture } from '../../tests/portal-fixtures.js';
+import { cssScene } from './css-scene.mjs';
 
 const web = fileURLToPath(new URL('../web/', import.meta.url));
 const { chromium, expect: browserExpect } = createRequire(path.join(web, 'package.json'))('@playwright/test');
@@ -60,7 +61,7 @@ test('Discord-side playback, queue and voice changes reach the browser through t
   await app.listen();
   await expect.poll(() => app.resourceCounts().feedLive).toBe(true);
   browser = await chromium.launch({ channel: process.env.CI ? undefined : 'chrome' });
-  const page = await (await browser.newContext({ viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce' })).newPage();
+  const page = await (await browser.newContext({ viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce' })).newPage(); await page.addInitScript(cssScene);
   const errors = []; page.on('pageerror', error => errors.push(error.message));
   await page.goto(origin);
   await page.getByRole('link', { name: /Continue with Discord/ }).click();

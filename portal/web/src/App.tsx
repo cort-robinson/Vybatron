@@ -7,6 +7,7 @@ import { publicUrl } from './api';
 import { useArtPalette } from './art';
 import { Spectrum } from './components/Spectrum';
 import { RoomLight } from './components/RoomLight';
+import { FpsMeter, SceneCanvas, fpsChosen, glSceneChosen } from './components/SceneCanvas';
 import { statusLabel } from './format';
 import { ActionPopover, Avatar, Empty, ErrorState, FallbackCover, IconButton, Loading } from './components/ui';
 import { Player } from './components/Player';
@@ -38,6 +39,8 @@ export function App() {
   const [ambient, changeAmbient] = useState<AmbientMode>(initialAmbient);
   const [skin, changeSkin] = useState<Skin>(initialSkin);
   const [performance, changePerformance] = useState(initialPerformance);
+  const [glScene, setGlScene] = useState(glSceneChosen);
+  const [fps] = useState(fpsChosen);
   const [hidden, setHidden] = useState(document.hidden);
   const [reduced, setReduced] = useState(() => matchMedia('(prefers-reduced-motion: reduce)').matches);
   const [installPrompt, setInstallPrompt] = useState<InstallPrompt | null>(null);
@@ -118,15 +121,18 @@ export function App() {
     document.querySelector('meta[name="theme-color"]')?.setAttribute('content', palette.ground);
   }, [palette]);
   const Look = skinLook(skin);
-  const scene = (moving: boolean) => <div className={`ambient-scene ${expanded ? 'immersive' : ''} ${moving ? 'moving' : 'settled'} ${ambient === 'subtle' ? 'subtle' : ''} ${ambient === 'off' ? 'disabled' : ''}`} aria-hidden="true">
+  // The room draws in one WebGL canvas; the DOM scenery below stays as its layout source.
+  const gl = glScene;
+  const scene = (moving: boolean) => <div className={`ambient-scene ${gl ? 'gl-scene' : ''} ${expanded ? 'immersive' : ''} ${moving ? 'moving' : 'settled'} ${ambient === 'subtle' ? 'subtle' : ''} ${ambient === 'off' ? 'disabled' : ''}`} aria-hidden="true">
+    {gl && <SceneCanvas onFail={() => setGlScene(false)} />}
     <RoomLight palette={palette} instant={hidden} quick={reduced}>{prepared => <>
     <ArtworkField url={artwork} />
     {Look && <Look.Scenery prepared={prepared} />}
     </>}</RoomLight>
   </div>;
-  const background = scene(motion);
+  const background = <>{scene(motion)}{fps && <FpsMeter />}</>;
   // Sign-in has no session to wait for; the horizon idles there whenever ambient motion is allowed.
-  const welcome = scene(!still);
+  const welcome = <>{scene(!still)}{fps && <FpsMeter />}</>;
   if (auth === 'loading') return <div className="auth-page">{welcome}<Brand /><Loading label="Finding your listening space…" /></div>;
   if (auth === 'signed-out' || auth === 'error') return <div className="auth-page">{welcome}<Brand /><main className="sign-in"><h1 className="sr-only">Sign in to Vybatron</h1><div className="signin-sleeve"><FallbackCover /></div><Spectrum className="signin-spectrum" seed="vybertron" color={palette.accent} mode="playing" animate={!still} bands={36} /><p>{shared?.link ? 'Sign in with Discord to add the link you shared.' : 'Sign in with Discord to pick songs and control the music in your server.'}</p>{auth === 'error' ? <ErrorState message={portal.authError} retry={() => void portal.loadBootstrap()} /> : <a className="button primary discord-signin" href="/auth/discord" onClick={() => holdForSignIn(shared)}><DiscordLogoIcon size={25} weight="fill" />Continue with Discord<ArrowRightIcon size={20} /></a>}<span className="signin-footnote">Plays in your Discord voice channel, or right here when you’re not in one.</span></main></div>;
   const viewer = bootstrap!.viewer;
@@ -137,7 +143,7 @@ export function App() {
   // Voice room and listeners live once, in the server header; tabs name each page's sections.
   const place = portal.target === 'local' ? 'On this device' : room ? room.name : snapshot?.savedSession.voiceChannel ? `Saved in ${snapshot.savedSession.voiceChannel.name}` : 'Join a voice channel';
   return <div className={`app-shell ${expanded ? 'player-open' : ''} ${motion ? 'motion-live' : ''} ${connection !== 'live' ? 'has-connection-notice' : ''}`}>{background}<a href="#main-content" className="skip-link" onClick={event => { event.preventDefault(); document.getElementById('main-content')?.focus(); }}>Skip to content</a>
-    <aside className="sidebar"><Brand /><div className="guild-card"><div className="guild-icon">{snapshot?.guild.iconUrl || bootstrap!.guilds.find(g => g.id === portal.guildId)?.iconUrl ? <img src={publicUrl(snapshot?.guild.iconUrl || bootstrap!.guilds.find(g => g.id === portal.guildId)?.iconUrl)} alt="" /> : <DiscordLogoIcon size={26} weight="fill" />}</div><div className="guild-info"><label className="sr-only" htmlFor="guild">Server</label><select id="guild" aria-label="Server" value={portal.guildId} disabled={noGuilds} onChange={event => { portal.selectGuild(event.target.value); setExpanded(false); }}><option value="" disabled>Select server</option>{bootstrap!.guilds.map(guild => <option key={guild.id} value={guild.id}>{guild.name}</option>)}</select><span className={`guild-status ${snapshot?.session.status || 'idle'}`}><span className="status-dot" /><span className="guild-status-text">{statusLabel(snapshot)} · {place}{listening > 0 && <span className="guild-listeners"> · {listening} listening</span>}</span></span></div><CaretDownIcon className="guild-caret" size={16} /></div>
+    <aside className="sidebar" data-glass><Brand /><div className="guild-card"><div className="guild-icon">{snapshot?.guild.iconUrl || bootstrap!.guilds.find(g => g.id === portal.guildId)?.iconUrl ? <img src={publicUrl(snapshot?.guild.iconUrl || bootstrap!.guilds.find(g => g.id === portal.guildId)?.iconUrl)} alt="" /> : <DiscordLogoIcon size={26} weight="fill" />}</div><div className="guild-info"><label className="sr-only" htmlFor="guild">Server</label><select id="guild" aria-label="Server" value={portal.guildId} disabled={noGuilds} onChange={event => { portal.selectGuild(event.target.value); setExpanded(false); }}><option value="" disabled>Select server</option>{bootstrap!.guilds.map(guild => <option key={guild.id} value={guild.id}>{guild.name}</option>)}</select><span className={`guild-status ${snapshot?.session.status || 'idle'}`}><span className="status-dot" /><span className="guild-status-text">{statusLabel(snapshot)} · {place}{listening > 0 && <span className="guild-listeners"> · {listening} listening</span>}</span></span></div><CaretDownIcon className="guild-caret" size={16} /></div>
       <nav className="navigation" aria-label="Main navigation">{surfaces.map(item => <button key={item.id} className={surface === item.id ? 'selected' : ''} aria-current={surface === item.id ? 'page' : undefined} onClick={() => navigate(item.id)}>{surface === item.id && <span className="nav-indicator" aria-hidden="true" />}<item.icon size={26} /><span>{item.label}</span></button>)}</nav>
       <div className="sidebar-session">{snapshot?.session.voiceChannel && snapshot.session.listeners.length > 0 && <div className="listeners"><div>{snapshot.session.listeners.slice(0, 5).map(listener => <Avatar key={listener.id} url={listener.avatarUrl} name={listener.displayName} />)}</div><span>{snapshot.session.listeners.length} listening</span></div>}</div>
       <IconButton className={`mobile-add ${addBlocked ? 'blocked' : ''}`} label="Add music" title={addBlocked ? portal.blockedReason : 'Add music'} disabled={noGuilds} onClick={openSearch}><PlusIcon size={24} weight="bold" /></IconButton>

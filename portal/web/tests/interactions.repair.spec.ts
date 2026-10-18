@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page } from './test';
 import { mockPortal, streamAction, gotoSession } from './fixtures';
 
 async function largeQueue(page: Page, count = 500) {

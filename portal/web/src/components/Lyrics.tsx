@@ -92,13 +92,13 @@ export const LyricsPanel = memo(function LyricsPanel({ id, state, active, onRetr
   }, [active, lyrics]);
   const touched = () => { touchedAt.current = Date.now(); };
   if (!lyrics) {
-    return <div id={id} className="lyrics-panel lyrics-empty" role="status">
+    return <div id={id} className="lyrics-panel lyrics-empty" role="status" data-glass>
       {state.status === 'loading' && <span className="spinner" aria-hidden="true" />}
       <p>{messages[state.status as Exclude<Status, 'found'>]}</p>
       {state.status === 'unavailable' && <button type="button" className="button secondary" onClick={onRetry}>Try again</button>}
     </div>;
   }
-  return <div ref={panelRef} id={id} className={`lyrics-panel ${lyrics.synced ? 'synced' : 'plain'}`} role="region" aria-label="Lyrics" tabIndex={0}
+  return <div ref={panelRef} id={id} className={`lyrics-panel ${lyrics.synced ? 'synced' : 'plain'}`} data-glass role="region" aria-label="Lyrics" tabIndex={0}
     onWheel={touched} onTouchMove={touched} onKeyDown={touched}>
     <ol className="lyrics-lines">
       {lyrics.lines.map((line, index) => line.text

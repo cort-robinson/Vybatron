@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './test';
 import { applyIntents, createIntent, stillTargets } from '../src/optimistic';
 import { fixtureState } from './fixtures';
 

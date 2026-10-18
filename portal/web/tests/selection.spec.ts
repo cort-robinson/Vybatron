@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page } from './test';
 import type { Command } from '../src/types';
 import { mockPortal, streamAction, gotoSession } from './fixtures';
 

@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './test';
 import { mockPortal, gotoSession } from './fixtures';
 
 async function openSleep(page: Page) {

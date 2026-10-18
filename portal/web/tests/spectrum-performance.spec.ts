@@ -1,4 +1,4 @@
-import { expect, test, type Locator, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from './test';
 import { mockPortal } from './fixtures';
 
 type SpectrumCounters = { spectrumDrawCounts: WeakMap<HTMLCanvasElement, number>; blurredDraws: number };

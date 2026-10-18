@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page } from './test';
 import { createHash } from 'node:crypto';
 import type { Track } from '../src/types';
 import { fixtureState, mockPortal, streamAction } from './fixtures';

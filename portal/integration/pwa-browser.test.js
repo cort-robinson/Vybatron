@@ -201,8 +201,22 @@ test('production PWA installs under real CSP, serves an offline shell, and never
       }
 
       if (name === 'desktop') {
+        // A link shared to the installed app opens the cached shell, so the shared text
+        // never reaches the server, and it survives the real Discord sign-in.
+        const sharedLink = 'https://music.youtube.com/watch?v=01234567890';
+        await page.goto(origin + '/share?title=Song&text=' + encodeURIComponent('Listen: ' + sharedLink));
+        await page.getByText('Sign in with Discord to add the link you shared.').waitFor();
+        assert.equal(page.url(), origin + '/');
+        assert.equal(requests.filter(req => req.path === '/share').length, 0, 'The share route must be served by the worker');
         const authStarts = count('GET', '/auth/discord');
         await page.getByRole('link', { name: /Continue with Discord/ }).click();
+        const share = page.getByRole('dialog', { name: 'Add shared link' });
+        await share.getByText(sharedLink, { exact: true }).waitFor();
+        assert.equal(await page.evaluate(() => JSON.stringify({ ...sessionStorage, ...localStorage }).includes('01234567890')), false, 'The shared link must not stay in storage');
+        const plays = count('POST', '/api/guilds/100/commands');
+        await share.getByRole('button', { name: 'Add to queue' }).click();
+        await share.waitFor({ state: 'detached' });
+        assert.equal(count('POST', '/api/guilds/100/commands'), plays + 1);
         await page.getByRole('button', { name: 'Pause playback' }).waitFor();
         // Home is the landing view; the queued songs' artwork renders in Session.
         await page.getByRole('button', { name: 'Session', exact: true }).click();

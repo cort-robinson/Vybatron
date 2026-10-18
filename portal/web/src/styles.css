@@ -150,6 +150,15 @@ svg { flex-shrink: 0; }
 @keyframes drift-b { to { transform: translate(10vmax, -6vmax) scale(.92); } }
 @keyframes drift-c { to { transform: translate(-12vmax, -8vmax) scale(1.2); } }
 @keyframes artwork-drift { from { transform: scale(1.12) translate(-1%, -1%); } to { transform: scale(1.18) translate(1%, 1%); } }
+/* WebGL room (SceneCanvas, sceneGl.ts): one canvas draws the light, the cover glow and the horizon.
+   The DOM scenery stays mounted but unpainted, so its boxes, fades and glides still come from these
+   rules; its endless animations are left to the canvas clock, and nothing blends behind it. */
+.ambient-scene.gl-scene { background: none; }
+.scene-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.gl-scene > .room-colors { visibility: hidden; }
+.gl-scene :is(.light, .artwork-field, .od-sky, .od-plane, .od-window) { animation: none !important; will-change: auto; }
+.gl-scene .od-sun { mix-blend-mode: normal !important; }
+.fps-meter { position: fixed; z-index: 200; left: 8px; top: calc(8px + env(safe-area-inset-top, 0px)); padding: 3px 8px; border-radius: 6px; background: rgb(0 0 0 / .72); color: #9effa8; font: 600 12px/1.4 ui-monospace, monospace; pointer-events: none; }
 .spectrum { display: block; pointer-events: none; }
 
 /* Sidebar: the receiver's faceplate. */

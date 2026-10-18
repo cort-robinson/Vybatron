@@ -7,6 +7,7 @@ import { publicUrl } from './api';
 import { useArtPalette } from './art';
 import { Spectrum } from './components/Spectrum';
 import { RoomLight } from './components/RoomLight';
+import { FpsMeter, SceneCanvas, fpsChosen, glSceneChosen } from './components/SceneCanvas';
 import { statusLabel } from './format';
 import { ActionPopover, Avatar, Empty, ErrorState, FallbackCover, IconButton, Loading } from './components/ui';
 import { Player } from './components/Player';
@@ -38,6 +39,8 @@ export function App() {
   const [ambient, changeAmbient] = useState<AmbientMode>(initialAmbient);
   const [skin, changeSkin] = useState<Skin>(initialSkin);
   const [performance, changePerformance] = useState(initialPerformance);
+  const [glScene, setGlScene] = useState(glSceneChosen);
+  const [fps] = useState(fpsChosen);
   const [hidden, setHidden] = useState(document.hidden);
   const [reduced, setReduced] = useState(() => matchMedia('(prefers-reduced-motion: reduce)').matches);
   const [installPrompt, setInstallPrompt] = useState<InstallPrompt | null>(null);
@@ -118,15 +121,18 @@ export function App() {
     document.querySelector('meta[name="theme-color"]')?.setAttribute('content', palette.ground);
   }, [palette]);
   const Look = skinLook(skin);
-  const scene = (moving: boolean) => <div className={`ambient-scene ${expanded ? 'immersive' : ''} ${moving ? 'moving' : 'settled'} ${ambient === 'subtle' ? 'subtle' : ''} ${ambient === 'off' ? 'disabled' : ''}`} aria-hidden="true">
+  // Overdrive draws its room in one WebGL canvas; the DOM scenery below stays as its layout source.
+  const gl = glScene && skin === 'overdrive';
+  const scene = (moving: boolean) => <div className={`ambient-scene ${gl ? 'gl-scene' : ''} ${expanded ? 'immersive' : ''} ${moving ? 'moving' : 'settled'} ${ambient === 'subtle' ? 'subtle' : ''} ${ambient === 'off' ? 'disabled' : ''}`} aria-hidden="true">
+    {gl && <SceneCanvas onFail={() => setGlScene(false)} />}
     <RoomLight palette={palette} instant={hidden} quick={reduced}>{prepared => <>
     <ArtworkField url={artwork} />
     {Look && <Look.Scenery prepared={prepared} />}
     </>}</RoomLight>
   </div>;
-  const background = scene(motion);
+  const background = <>{scene(motion)}{fps && <FpsMeter />}</>;
   // Sign-in has no session to wait for; the horizon idles there whenever ambient motion is allowed.
-  const welcome = scene(!still);
+  const welcome = <>{scene(!still)}{fps && <FpsMeter />}</>;
   if (auth === 'loading') return <div className="auth-page">{welcome}<Brand /><Loading label="Finding your listening space…" /></div>;
   if (auth === 'signed-out' || auth === 'error') return <div className="auth-page">{welcome}<Brand /><main className="sign-in"><h1 className="sr-only">Sign in to Vybatron</h1><div className="signin-sleeve"><FallbackCover /></div><Spectrum className="signin-spectrum" seed="vybertron" color={palette.accent} mode="playing" animate={!still} bands={36} /><p>{shared?.link ? 'Sign in with Discord to add the link you shared.' : 'Sign in with Discord to pick songs and control the music in your server.'}</p>{auth === 'error' ? <ErrorState message={portal.authError} retry={() => void portal.loadBootstrap()} /> : <a className="button primary discord-signin" href="/auth/discord" onClick={() => holdForSignIn(shared)}><DiscordLogoIcon size={25} weight="fill" />Continue with Discord<ArrowRightIcon size={20} /></a>}<span className="signin-footnote">Plays in your Discord voice channel, or right here when you’re not in one.</span></main></div>;
   const viewer = bootstrap!.viewer;

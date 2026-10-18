@@ -15,7 +15,10 @@ spec = importlib.util.spec_from_file_location('backup', OPS / 'backup.py')
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
 BotData, BackupError = module.BotData, module.BackupError
-LIBRARY = {'version': 2, 'guilds': {'1' * 18: {'settings': {}}}, 'favorites': {}, 'favoriteOverflow': {}}
+# A document the bot opens (src/utils/library.js validateDocument).
+LIBRARY = {'version': 2, 'favorites': {}, 'favoriteOverflow': {}, 'guilds': {'1' * 18: {
+    'settings': {'volume': 80, 'fairQueue': False, 'djRoleId': None, 'musicTextChannelId': None},
+    'mixes': {}, 'session': None, 'history': [], 'activity': []}}}
 
 
 class Docker:
@@ -106,6 +109,18 @@ class BackupTest(unittest.TestCase):
             self.store.create(self.data, keep=2)
         self.assertEqual(self.store.backups(), kept)
         self.assertEqual([p.name for p in self.backups.iterdir() if p.name.startswith('.partial')], [])
+
+    def test_library_the_bot_would_refuse_is_not_backed_up(self):
+        guild = LIBRARY['guilds']['1' * 18]
+        for document in ({'version': 2, 'guilds': {}},
+                         {**LIBRARY, 'guilds': {'1' * 18: {**guild, 'history': None}}},
+                         {'version': 1, 'guilds': {'1' * 18: {'settings': {}, 'mixes': {}}}}):
+            (self.data / 'library.json').write_text(json.dumps(document))
+            with self.assertRaisesRegex(BackupError, 'backup_library_invalid'):
+                self.store.create(self.data, keep=14)
+        (self.data / 'library.json').write_text(json.dumps(
+            {'version': 1, 'guilds': {'1' * 18: {'settings': {}, 'mixes': {}, 'favorites': {}}}}))
+        self.store.create(self.data, keep=14)
 
     def test_retention_keeps_only_the_newest_backups(self):
         names = [self.store.create(self.data, keep=2)['backup'] for _ in range(4)]

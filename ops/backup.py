@@ -61,10 +61,30 @@ def check_library(path):
         value = json.loads(path.read_text(encoding='utf-8'))
     except (OSError, ValueError):
         raise BackupError('backup_library_invalid') from None
-    # Mirrors the bot's own top-level check (src/utils/library.js validateDocument).
-    if (not isinstance(value, dict) or type(value.get('version')) is not int or
-            value['version'] not in (1, 2) or not isinstance(value.get('guilds'), dict)):
+    if not library_shape(value):
         raise BackupError('backup_library_invalid')
+
+
+def library_shape(value):
+    """The document and server structure the bot requires (src/utils/library.js
+    validateDocument). Field-level rules stay with the bot, which only ever writes
+    documents that pass them."""
+    if not isinstance(value, dict) or type(value.get('version')) is not int or value['version'] not in (1, 2):
+        return False
+    legacy, guilds = value['version'] == 1, value.get('guilds')
+    lists = lambda item: isinstance(item, dict) and all(isinstance(v, list) for v in item.values())  # noqa: E731
+    if not isinstance(guilds, dict) or (not legacy and not (lists(value.get('favorites')) and
+                                                            lists(value.get('favoriteOverflow')))):
+        return False
+    for guild in guilds.values():
+        if not isinstance(guild, dict) or not isinstance(guild.get('settings'), dict) or not isinstance(guild.get('mixes'), dict):
+            return False
+        if legacy and not lists(guild.get('favorites')):
+            return False
+        if not legacy and not (isinstance(guild.get('history'), list) and isinstance(guild.get('activity'), list)
+                               and 'favorites' not in guild):
+            return False
+    return True
 
 
 def check_stats(path):

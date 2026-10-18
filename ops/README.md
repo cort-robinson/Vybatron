@@ -143,7 +143,8 @@ settings, checkpoints and play statistics) while the bot keeps running:
   changes still in the WAL. Never copy a live `stats.sqlite` by hand. The copy is
   a single self-contained file and must pass `PRAGMA integrity_check`.
 - `library.json` is replaced atomically by the bot, so a plain copy is
-  consistent. The copy must parse as a version 1 or 2 library. Any
+  consistent. The copy must parse and have the document and server structure the
+  bot requires to start (version 1 or 2). Any
   `library.json.v1.*.bak` migration backups are kept too.
 - Each backup is a `bot-data-<UTC time>` directory (mode `700`, files `600`) under
   `/var/lib/vybertron-backups` with a manifest of sizes, SHA-256 hashes and the

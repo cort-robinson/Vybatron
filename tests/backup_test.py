@@ -8,6 +8,7 @@ import sqlite3
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 OPS = Path(__file__).resolve().parents[1] / 'ops'
 sys.path.insert(0, str(OPS))
@@ -101,6 +102,30 @@ class BackupTest(unittest.TestCase):
         retained = self.backups / result['pre_restore']
         self.assertEqual((retained / 'library.json').read_text(), '{"version": 9')
         self.assertEqual((retained / 'stats.sqlite-wal').read_bytes(), stale)
+
+    def test_failed_restore_leaves_the_volume_and_its_wal_untouched(self):
+        name = self.store.create(self.data, keep=14)['backup']
+        self.live.executemany('INSERT INTO plays (track) VALUES (?)', [('later',)] * 5)
+        (self.data / 'library.json').write_text(json.dumps({**LIBRARY, 'favorites': {'2' * 18: []}}))
+        # A bot that crashed before checkpointing: committed rows exist only in the WAL.
+        crashed = {p.name: p.read_bytes() for p in self.data.iterdir() if p.name != 'stats.sqlite-shm'}
+        self.live.close()
+        for path in self.data.glob('stats.sqlite*'):
+            path.unlink()
+        for entry, content in crashed.items():
+            (self.data / entry).write_bytes(content)
+        before = {p.name: p.read_bytes() for p in self.data.iterdir()}
+        real, calls = module.tempfile.mkstemp, []
+
+        def full_disk(*args, **kwargs):
+            calls.append(1)
+            if len(calls) == 2:
+                raise OSError(28, 'No space left on device')
+            return real(*args, **kwargs)
+        with mock.patch.object(module.tempfile, 'mkstemp', full_disk), self.assertRaises(OSError):
+            self.store.restore(name, self.data)
+        self.assertEqual({p.name: p.read_bytes() for p in self.data.iterdir()}, before)
+        self.assertEqual(len(rows(self.data / 'stats.sqlite')), 55)
 
     def test_invalid_library_fails_without_rotating_out_good_backups(self):
         kept = [self.store.create(self.data, keep=2)['backup'] for _ in range(2)]

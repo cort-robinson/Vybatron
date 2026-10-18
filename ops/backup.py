@@ -266,14 +266,13 @@ class BotData:
             shutil.copy2(path, retained / path.name)
             (retained / path.name).chmod(0o600)
         backup = self.backup_dir / name
-        if STATS in files:
-            # A stale WAL from the replaced database would corrupt the restored one.
-            for suffix in SIDECARS:
-                with contextlib.suppress(FileNotFoundError):
-                    (data / (STATS + suffix)).unlink()
-        for entry, meta in files.items():
-            fd, temporary = tempfile.mkstemp(dir=data)
-            try:
+        # Stage every replacement durably first: a failure here (e.g. a full disk)
+        # leaves the volume, including any WAL with committed rows, untouched.
+        staged = []
+        try:
+            for entry, meta in files.items():
+                fd, temporary = tempfile.mkstemp(dir=data)
+                staged.append((temporary, entry))
                 with os.fdopen(fd, 'wb') as output:
                     output.write((backup / entry).read_bytes())
                     output.flush()
@@ -281,10 +280,18 @@ class BotData:
                 os.chmod(temporary, meta['mode'])
                 if is_root():
                     os.chown(temporary, meta['uid'], meta['gid'])
-                os.replace(temporary, data / entry)
-            finally:
-                if os.path.exists(temporary):
+        except BaseException:
+            for temporary, _ in staged:
+                with contextlib.suppress(FileNotFoundError):
                     os.unlink(temporary)
+            raise
+        if STATS in files:
+            # A stale WAL from the replaced database would corrupt the restored one.
+            for suffix in SIDECARS:
+                with contextlib.suppress(FileNotFoundError):
+                    (data / (STATS + suffix)).unlink()
+        for temporary, entry in staged:
+            os.replace(temporary, data / entry)
         if any(digest(data / entry) != meta['hash'] for entry, meta in files.items()):
             raise BackupError('backup_restore_hash_mismatch')
         return {'restored': name, 'files': len(files), 'pre_restore': kept}

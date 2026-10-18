@@ -60,6 +60,21 @@ test('lyrics show plain text, a clear no-lyrics state and a retry when unavailab
   await expect(page.getByText('No lyrics found for this song.')).toBeVisible();
 });
 
+test('long lyrics open scrolled to the sung line', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const fixture = await mockPortal(page);
+  fixture.state.snapshot.session.status = 'paused';
+  fixture.state.lyrics.lyrics!.lines = Array.from({ length: 80 }, (_, index) => ({ startMs: index * 2000, text: `Line ${index + 1}` }));
+  await openLyrics(page);
+  const panel = page.getByRole('region', { name: 'Lyrics' });
+  const current = panel.locator('[aria-current="true"]');
+  await expect(current).toHaveText('Line 54');
+  // Settle any smooth scroll, then the sung line must sit inside the panel.
+  await page.waitForTimeout(800);
+  await expect(current).toBeInViewport();
+  expect(await panel.evaluate(element => element.scrollTop)).toBeGreaterThan(0);
+});
+
 for (const skin of ['overdrive', 'fantastic', 'classic'] as const) {
   for (const width of [390, 1280]) {
     test(`${skin} lyrics panel fits the open player at ${width}px`, async ({ page }) => {

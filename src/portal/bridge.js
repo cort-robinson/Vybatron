@@ -176,7 +176,9 @@ export function startPortalBridge(client, {
           if (!track) result = { trackId: null, status: 'idle', lyrics: null };
           else {
             const found = await trackLyrics(player.node, track);
-            result = { trackId: publicTrackId(track), status: found.status, lyrics: found.lyrics || null };
+            // Access may change during a slow lookup. Recheck before disclosure.
+            const fresh = await policy.guild(actorId, guildId, undefined, { channelScope: 'session' });
+            result = visibleSession(fresh, player) ? { trackId: publicTrackId(track), status: found.status, lyrics: found.lyrics || null } : { trackId: null, status: 'idle', lyrics: null };
           }
         }
         if (resource === 'search') {

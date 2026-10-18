@@ -172,3 +172,17 @@ test('the portal bridge serves lyrics for the visible current song only', async 
   assert.equal(missing.body.status, 'not_found');
   assert.equal(missing.body.lyrics, null);
 });
+
+test('access lost during a slow lookup withholds the lyrics', async t => {
+  clearLyricsCache();
+  const f = await portalFixture(t);
+  let release;
+  f.node.request = () => new Promise(resolve => { release = () => resolve(synced); });
+  const pending = f.request('/lyrics');
+  while (!release) await new Promise(resolve => setTimeout(resolve, 5));
+  f.channels.get('300').hidden.add('200');
+  release();
+  const response = await pending;
+  assert.equal(response.status, 200);
+  assert.deepEqual(response.body, { trackId: null, status: 'idle', lyrics: null });
+});

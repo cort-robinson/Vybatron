@@ -8,11 +8,17 @@ type Status = LyricsResponse['status'] | 'loading' | 'local';
 export type LyricsState = { status: Status; lyrics: Lyrics | null };
 
 // Answers for songs already looked up, so reopening the panel or returning to a song doesn't refetch.
-// Failures are never kept.
-const answers = new Map<string, LyricsResponse>();
+// They last as long as the bot's own cache (30 minutes); failures are never kept.
+const KEEP_MS = 30 * 60_000;
+const answers = new Map<string, { answer: LyricsResponse; at: number }>();
 function remember(key: string, answer: LyricsResponse) {
-  answers.delete(key); answers.set(key, answer);
+  answers.delete(key); answers.set(key, { answer, at: Date.now() });
   if (answers.size > 24) answers.delete(answers.keys().next().value!);
+}
+function recall(key: string) {
+  const entry = answers.get(key);
+  if (entry && Date.now() - entry.at > KEEP_MS) answers.delete(key);
+  return entry && Date.now() - entry.at <= KEEP_MS ? entry.answer : null;
 }
 
 // Lyrics follow the Discord session's current song; this device's own songs have none.
@@ -23,7 +29,7 @@ export function useLyrics(guildId: string | undefined, trackId: string | null, l
     if (local) { setState({ status: 'local', lyrics: null }); return; }
     if (!guildId || !trackId) { setState({ status: 'idle', lyrics: null }); return; }
     const key = `${guildId}:${trackId}`;
-    const known = answers.get(key);
+    const known = recall(key);
     if (known) { setState({ status: known.status, lyrics: known.lyrics }); return; }
     setState({ status: 'loading', lyrics: null });
     const controller = new AbortController();
@@ -62,16 +68,18 @@ const messages: Record<Exclude<Status, 'found'>, string> = {
 export const LyricsPanel = memo(function LyricsPanel({ id, state, active, onRetry }: { id: string; state: LyricsState; active: number; onRetry: () => void }) {
   const panelRef = useRef<HTMLDivElement>(null);
   const touchedAt = useRef(0);
+  const shown = useRef<Lyrics | null>(null);
   const lyrics = state.status === 'found' ? state.lyrics : null;
   // Keep the sung line in view, unless the listener scrolled to read ahead or back in the last few seconds.
+  // New lyrics start from the top, then center the sung line in the same pass.
   useLayoutEffect(() => {
     const panel = panelRef.current;
+    if (shown.current !== lyrics) { shown.current = lyrics; touchedAt.current = 0; panel?.scrollTo({ top: 0 }); }
     const line = active >= 0 ? panel?.querySelector<HTMLElement>(`[data-line="${active}"]`) : null;
     if (!panel || !line || Date.now() - touchedAt.current < 4000) return;
     const top = line.offsetTop - panel.clientHeight / 2 + line.offsetHeight / 2;
     panel.scrollTo({ top: Math.max(0, top), behavior: prefersReducedMotion() ? 'auto' : 'smooth' });
   }, [active, lyrics]);
-  useEffect(() => { panelRef.current?.scrollTo({ top: 0 }); touchedAt.current = 0; }, [lyrics]);
   const touched = () => { touchedAt.current = Date.now(); };
   if (!lyrics) {
     return <div id={id} className="lyrics-panel lyrics-empty" role="status">

@@ -333,7 +333,9 @@ test('space freed by expired history in a frozen mirror is usable for favorites 
 
   const library = await openLibrary(filePath);
   assert.equal(library.readGuild('105').history.length, 0, 'expired history is gone');
+  await library.recordHistory({ guildId: '500', voiceChannelId: '300' }, track('newserveraa'));
   await library.updateFavorites('300', list => { list.push(...filler.slice(0, 20)); });
+  assert.equal(library.capacity().bytes, (await fs.stat(filePath)).size, 'a refresh that adds a server is still counted exactly');
   const saved = JSON.parse(await fs.readFile(filePath, 'utf8'));
   assert.equal(saved.favorites['300'].length, 20);
   assert.equal(saved.guilds['105'].history.length, 0, 'the refreshed mirror was written');

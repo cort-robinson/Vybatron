@@ -298,7 +298,7 @@ export class MusicLibrary {
   async writeDocument(draft) {
     validateDocument(draft);
     let json = JSON.stringify(draft);
-    const baseBytes = Buffer.byteLength(JSON.stringify(withoutMirrors(draft)));
+    let baseBytes = Buffer.byteLength(JSON.stringify(withoutMirrors(draft)));
     if (this.projectedBytes(baseBytes, draft) > LIBRARY_LIMITS.bytes) throw new Error(FULL);
     let digests = null;
     if (Buffer.byteLength(json) > LIBRARY_LIMITS.bytes && this.state.db) {
@@ -306,6 +306,8 @@ export class MusicLibrary {
       digests = this.refreshMirrors(draft).digests;
       validateDocument(draft);
       json = JSON.stringify(draft);
+      // The refresh can add listening-only servers to the document itself.
+      baseBytes = Buffer.byteLength(JSON.stringify(withoutMirrors(draft)));
     }
     if (Buffer.byteLength(json) > LIBRARY_LIMITS.bytes) throw new Error(FULL);
     const temporary = `${this.filePath}.${randomUUID()}.tmp`;

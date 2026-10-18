@@ -7,6 +7,7 @@ import { errorPayload, SESSION_MIX_MODAL_ID } from '../utils/messages.js';
 import { MessageFlags } from 'discord.js';
 import { guardedMutation, commandMutationPolicy } from '../utils/requests.js';
 import { publicError } from '../runtime.js';
+import { handleAlertInteraction, isAlertInteraction } from '../operator-alerts.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -86,6 +87,11 @@ export async function loadCommands(client) {
   await loadCommandsData();
 
   client.on('interactionCreate', async (interaction) => {
+    // Alert DMs carry the only controls that work outside a server.
+    if (isAlertInteraction(interaction)) {
+      try { await handleAlertInteraction(interaction); } catch (error) { await reportInteractionError(interaction, error, 'audio alerts'); }
+      return;
+    }
     if (!interaction.guildId && !interaction.isAutocomplete()) {
       await interaction.reply({ content: 'Use Vybatron in a server with a voice channel.', flags: MessageFlags.Ephemeral }).catch(() => {});
       return;

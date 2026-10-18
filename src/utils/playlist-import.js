@@ -177,7 +177,9 @@ function respond(interaction, text) {
 export async function commitImport(interaction, token, expected = null) {
   const preview = take(token, interaction, expected);
   if (!preview) return respond(interaction, 'This import preview expired or changed. Preview the link again.');
-  const { target, references } = preview;
+  // Save at most what the preview showed; earlier skips still count in the report.
+  const { target } = preview;
+  const references = preview.plan.add;
   const library = interaction.client.library;
   let result;
   if (target.kind === 'favorites') {
@@ -200,6 +202,7 @@ export async function commitImport(interaction, token, expected = null) {
     });
   }
   if (result.error) return respond(interaction, result.error);
+  result.duplicates += preview.plan.duplicates; result.overLimit += preview.plan.overLimit;
   const lead = result.add.length ? `Added ${plural(result.add.length, 'track')} to ${destination(target)}.` : `Nothing new was added to ${destination(target)}.`;
   return respond(interaction, [lead, ...notes(preview, result, target)].join(' '));
 }

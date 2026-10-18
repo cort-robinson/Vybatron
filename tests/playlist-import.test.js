@@ -187,3 +187,15 @@ test('Manage Server lets a Discord member import into another listener’s mix',
   await mix(interaction([P.ManageGuild]));
   assert.ok(replies.at(-1).components[0], 'a server manager gets a confirmable preview');
 });
+
+test('a confirmation never saves more than its preview showed', async t => {
+  const f = await fixture(t);
+  await f.library.updateFavorites('200', list => { list.push(...songs(999, 1000).map(trackReference)); });
+  const { preview: counts } = (await f.command(preview('favorite'))).body;
+  assert.equal(counts.toAdd, 1); assert.equal(counts.overLimit, 2);
+  await f.library.updateFavorites('200', list => { list.splice(0, 2); });
+  const saved = await f.command({ ...preview('favorite'), expectedImportId: counts.id });
+  assert.match(saved.body.message, /Added 1 track to your favorites\. 2 tracks won’t fit/);
+  assert.equal(f.library.favorites('200').length, 998);
+  assert.deepEqual(f.library.favorites('200').filter(item => item.identifier.startsWith('song00000')).map(item => item.identifier), [id(0)]);
+});

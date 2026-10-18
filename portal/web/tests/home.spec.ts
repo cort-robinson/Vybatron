@@ -8,7 +8,7 @@ test('Home is the landing surface, with shelves in order and stats loaded after 
   await page.goto('/');
   await expect(page.getByRole('button', { name: 'Home', exact: true })).toHaveAttribute('aria-current', 'page');
   const headings = page.locator('.home-shelf h2');
-  await expect(headings).toHaveText(['Continue listening', 'On repeat in this server', 'Your mixes', 'Rediscover', 'Forgotten gems']);
+  await expect(headings).toHaveText(['Continue listening', 'On repeat in this server', 'Your mixes', 'Rediscover', 'Forgotten gems', 'Listening recap']);
   // The session snapshot is requested before stats, so Home never holds up the player.
   const order = fixture.requests.filter(path => /\/api\/guilds\/testing(\/stats)?$/.test(path));
   expect(order[0]).toBe('/api/guilds/testing');
@@ -125,6 +125,55 @@ test('clearing request stats confirms, explains what stays, and refreshes the pe
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await expect(shelf(page, 'Your mixes').getByRole('heading', { name: 'Solara mix' })).toHaveCount(0);
   await expect(shelf(page, 'On repeat in this server').getByRole('listitem')).toHaveCount(4);
+  const recap = shelf(page, 'Listening recap');
+  await expect(recap).toContainText('You haven’t requested songs here in the past month.');
+  await expect(recap.getByRole('group', { name: 'This server' })).toContainText('184');
+});
+
+test('the listening recap shows your totals and the server’s, and switches range', async ({ page }) => {
+  const fixture = await mockPortal(page);
+  await page.goto('/');
+  const recap = shelf(page, 'Listening recap');
+  await expect(recap).toContainText('not who was listening');
+  const mine = recap.getByRole('group', { name: 'Your requests' });
+  await expect(mine.locator('.recap-tiles > div')).toHaveText(['Requests23', 'Played time1 hr 13 min', 'Songs9']);
+  await expect(mine.getByRole('list', { name: 'Your top tracks' }).getByRole('listitem').first()).toContainText('Evening Light');
+  await expect(mine.getByRole('list', { name: 'Your top tracks' }).getByRole('listitem').first()).toContainText('7 plays');
+  await expect(mine.getByRole('list', { name: 'Your top artists' }).getByRole('listitem').first()).toContainText('Most requested: Evening Light');
+  const server = recap.getByRole('group', { name: 'This server' });
+  await expect(server.locator('.recap-tiles > div')).toHaveText(['Plays184', 'Played time9 hr 12 min', 'Songs61']);
+  await expect(server.getByRole('list', { name: 'Server top tracks' }).getByRole('listitem')).toHaveCount(4);
+  await expect(recap).not.toContainText('requested by', { ignoreCase: true });
+  expect(fixture.recapWindows).toEqual(['30d']);
+
+  await recap.getByLabel('Recap range').selectOption('365d');
+  await expect.poll(() => fixture.recapWindows).toEqual(['30d', '365d']);
+  await expect(recap.getByLabel('Recap range').locator('option')).toHaveText(['Past week', 'Past month', 'Past 3 months', 'Past year']);
+  // The range survives leaving Home and coming back.
+  await page.getByRole('button', { name: 'My Music', exact: true }).click();
+  await page.getByRole('button', { name: 'Home', exact: true }).click();
+  await expect.poll(() => fixture.recapWindows.at(-1)).toBe('365d');
+  await expect(shelf(page, 'Listening recap').getByLabel('Recap range')).toHaveValue('365d');
+});
+
+test('the listening recap explains empty and unavailable states without affecting the shelves', async ({ page }) => {
+  const fixture = await mockPortal(page);
+  const empty = { plays: 0, playedMs: 0, songs: 0 };
+  fixture.state.recap = { ...fixture.state.recap, personal: { ...empty, topTracks: [], topArtists: [] }, server: { ...empty, topTracks: [] } };
+  await page.goto('/');
+  const recap = shelf(page, 'Listening recap');
+  await expect(recap).toContainText('Nothing played in voice channels you can see in the past month. Try a longer range.');
+  await expect(recap.getByRole('group')).toHaveCount(0);
+
+  let failures = 0;
+  await page.route('**/api/guilds/*/recap*', route => { failures++; return route.fulfill({ status: 503, json: { error: { code: 'stats_unavailable', message: 'Listening stats are unavailable right now. Playback is unaffected.' } } }); });
+  await recap.getByLabel('Recap range').selectOption('7d');
+  const alert = recap.getByRole('alert');
+  await expect(alert).toContainText('Your listening recap can’t load right now');
+  await expect(alert).toContainText('Playback is unaffected');
+  await expect(shelf(page, 'On repeat in this server').getByRole('listitem')).toHaveCount(4);
+  await alert.getByRole('button', { name: 'Try again' }).click();
+  await expect.poll(() => failures).toBe(2);
 });
 
 test('Stop offers to save the session as a mix first', async ({ page }) => {

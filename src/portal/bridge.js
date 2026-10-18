@@ -8,7 +8,7 @@ import { withTimeout } from '../utils/enqueue.js';
 import { validId } from '../utils/library.js';
 import { clientInviteUrl } from '../utils/invite.js';
 import { actorVoiceId, createPortalPolicy } from './policy.js';
-import { FILTERS, actorProjection, guildProjection, trackProjection, snapshotProjection, libraryProjection, activityProjection, configurationProjection, createRevisions, statsProjection, STATS_WINDOW_IDS } from './projection.js';
+import { FILTERS, actorProjection, guildProjection, trackProjection, snapshotProjection, libraryProjection, activityProjection, configurationProjection, createRevisions, statsProjection, STATS_WINDOW_IDS, recapProjection, RECAP_WINDOW_IDS } from './projection.js';
 import { publicCommands, executePortalCommand } from './commands.js';
 import { fail, safeError } from './errors.js';
 import { createCommandTimings, commandTimingSpan } from './timing.js';
@@ -140,14 +140,14 @@ export function startPortalBridge(client, {
           if (!context.member) fail(403, 'membership_required', 'Join this server to listen to its music.');
           return sendAudio(request, response, await audio.get(audioMatch[2]));
         }
-        const match = url.pathname.match(/^\/v1\/guilds\/(\d{1,22})(?:\/(library|search|commands|diagnostics|activity|configuration|stats))?$/);
+        const match = url.pathname.match(/^\/v1\/guilds\/(\d{1,22})(?:\/(library|search|commands|diagnostics|activity|configuration|stats|recap))?$/);
         if (!match) fail(404, 'not_found', 'That bridge endpoint does not exist.');
         const [, guildId, resource] = match;
         if (resource === 'commands' && request.method === 'POST') return json(response, 200, await timings.run(body?.command,
           () => executePortalCommand(client, measuredPolicy, revisions, commandMap, guildId, body)), maxResponseBytes);
         if (request.method !== 'GET' || resource === 'commands') fail(400, 'invalid_method', 'That request method is unsupported.');
         const actorId = url.searchParams.get('actorId');
-        const channelScope = ['library', 'stats'].includes(resource) ? 'history' : resource === 'configuration' ? 'configuration' : ['activity', 'diagnostics'].includes(resource) ? 'none' : 'session';
+        const channelScope = ['library', 'stats', 'recap'].includes(resource) ? 'history' : resource === 'configuration' ? 'configuration' : ['activity', 'diagnostics'].includes(resource) ? 'none' : 'session';
         const context = await policy.guild(actorId, guildId, undefined, { channelScope });
         let result;
         if (!resource) result = snapshotProjection(client, context, revisions.revision(guildId), revisions.nextSnapshot());
@@ -156,6 +156,11 @@ export function startPortalBridge(client, {
           const window = url.searchParams.get('window') || '30d';
           if (!STATS_WINDOW_IDS.includes(window)) fail(400, 'invalid_window', 'Choose a supported stats window.');
           result = statsProjection(client, context, window);
+        }
+        if (resource === 'recap') {
+          const window = url.searchParams.get('window') || '30d';
+          if (!RECAP_WINDOW_IDS.includes(window)) fail(400, 'invalid_window', 'Choose a supported recap window.');
+          result = recapProjection(client, context, window);
         }
         if (resource === 'configuration') result = configurationProjection(context);
         if (resource === 'activity' || resource === 'diagnostics') {

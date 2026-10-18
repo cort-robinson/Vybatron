@@ -67,6 +67,7 @@ export function startPortalBridge(client, {
     // A disconnected portal socket must not reach the bot's fatal process
     // handler. Body readers still observe request failures through iteration.
     request.on('error', () => {}); response.on('error', () => {});
+    const expiry = new AbortController();
     const run = async () => {
       if (typeof request.headers.authorization !== 'string' || request.headers.authorization.length > 1024 || !timingSafeEqual(secret, hash(request.headers.authorization))) fail(401, 'unauthenticated', 'Bridge authentication is required.');
       if (request.headers.origin !== undefined || request.headers['access-control-request-method'] !== undefined) fail(403, 'browser_forbidden', 'Direct browser access is unavailable.');
@@ -144,7 +145,7 @@ export function startPortalBridge(client, {
         if (!match) fail(404, 'not_found', 'That bridge endpoint does not exist.');
         const [, guildId, resource] = match;
         if (resource === 'commands' && request.method === 'POST') return json(response, 200, await timings.run(body?.command,
-          () => executePortalCommand(client, measuredPolicy, revisions, commandMap, guildId, body)), maxResponseBytes);
+          () => executePortalCommand(client, measuredPolicy, revisions, commandMap, guildId, body, { signal: expiry.signal })), maxResponseBytes);
         if (request.method !== 'GET' || resource === 'commands') fail(400, 'invalid_method', 'That request method is unsupported.');
         const actorId = url.searchParams.get('actorId');
         const channelScope = ['library', 'stats', 'recap'].includes(resource) ? 'history' : resource === 'configuration' ? 'configuration' : ['activity', 'diagnostics'].includes(resource) ? 'none' : 'session';
@@ -189,7 +190,9 @@ export function startPortalBridge(client, {
     };
     // Timeouts only bound the transport. An accepted command is never replayed
     // or abandoned mid-write; hardened source deadlines/fences finish its work.
+    // A command that has not started writing is cancelled with the reply.
     const task = withTimeout(run(), 90_000).catch(error => {
+      expiry.abort();
       const safe = safeError(error); json(response, safe.status, { error: { code: safe.code, message: safe.message } }, maxResponseBytes);
     });
     work.add(task); void task.finally(() => work.delete(task)).catch(() => {});

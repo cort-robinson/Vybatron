@@ -16,6 +16,10 @@ lavalink:
     - dependency: "com.github.topi314.lavasrc:lavasrc-plugin:20d6b0b"
       repository: "https://maven.lavalink.dev/snapshots"
       snapshot: true
+    # Lyrics API for /lyrics and the portal player. LavaSrc supplies the sources
+    # (plugins.lavasrc.lyrics-sources below).
+    - dependency: "com.github.topi314.lavalyrics:lavalyrics-plugin:1.1.0"
+      repository: "https://maven.lavalink.dev/releases"
   server:
     password: "${LAVALINK_SERVER_PASSWORD}"
     sources:
@@ -76,6 +80,9 @@ plugins:
       qobuz: false
       ytdlp: false
       jiosaavn: false
+    lyrics-sources:
+      # LRCLIB (lrclib.net): synced lyrics by title and artist, no account.
+      lrcLib: true
     spotify:
       # Account token via sp_dc browser cookie (free account works). Anonymous
       # tokens are aggressively rate-limited by Spotify since 2025; API

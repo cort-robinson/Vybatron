@@ -167,6 +167,20 @@ class BackupTest(unittest.TestCase):
         self.assertEqual(self.store.backups(), [name])
         self.assertEqual([p.name for p in self.backups.iterdir() if p.name.startswith('.partial')], [])
 
+    def test_library_first_written_during_the_snapshot_is_included(self):
+        # A fresh bot has no library.json until its first shutdown mirror.
+        (self.data / 'library.json').unlink()
+        real, changes = module.copy_database, []
+
+        def first_shutdown(source, target):
+            if source.name == 'listening-state.sqlite' and not changes:
+                changes.append(1)
+                (self.data / 'library.json').write_text(json.dumps(LIBRARY))
+            return real(source, target)
+        with mock.patch.object(module, 'copy_database', first_shutdown):
+            name = self.store.create(self.data, keep=14)['backup']
+        self.assertEqual(json.loads((self.backups / name / 'library.json').read_text()), LIBRARY)
+
     def test_failed_restore_leaves_the_volume_and_its_wal_untouched(self):
         name = self.store.create(self.data, keep=14)['backup']
         self.live.executemany('INSERT INTO plays (track) VALUES (?)', [('later',)] * 5)

@@ -221,12 +221,13 @@ class BotData:
             sync(target)
             files[entry] = {'uid': stat.st_uid, 'gid': stat.st_gid, 'mode': stat.st_mode & 0o777,
                             'size': target.stat().st_size, 'hash': digest(target)}
-        if LIBRARY in files:
-            try:
-                if digest(data / LIBRARY) != files[LIBRARY]['hash']:
-                    return None
-            except FileNotFoundError:
-                return None
+        try:
+            now = digest(data / LIBRARY)
+        except FileNotFoundError:
+            now = None
+        # Changed, or appeared/disappeared (a fresh bot's first shutdown mirror).
+        if now != files.get(LIBRARY, {}).get('hash'):
+            return None
         return files
 
     def backups(self):

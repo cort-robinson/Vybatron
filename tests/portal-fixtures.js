@@ -3,15 +3,15 @@ import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { ChannelType, PermissionsBitField, PermissionFlagsBits as P } from 'discord.js';
-import { MusicLibrary } from '../src/utils/library.js';
 import { startPortalBridge } from '../src/portal/index.js';
 import { attachSessionSnapshots } from '../src/utils/sessions.js';
 import { track } from './fixtures.js';
+import { openLibrary, closeLibraries } from './library-fixture.js';
 
 export function deferred() { let resolve; const promise = new Promise(done => { resolve = done; }); return { promise, resolve }; }
 export async function portalFixture(t, options = {}) {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'vybertron-portal-'));
-  const library = await new MusicLibrary(path.join(dir, 'library.json')).open();
+  const library = await openLibrary(path.join(dir, 'library.json'));
   const client = new EventEmitter(); const manager = new EventEmitter();
   client.library = library; client.lavalink = manager; client.isReady = () => true;
   const users = new Map(['200', '201', '202', '900', '901'].map(id => [id, { id, username: `User ${id}`, bot: false, displayAvatarURL: () => `https://cdn.discordapp.com/avatars/${id}/abcd.png?size=128` }]));
@@ -101,6 +101,6 @@ export async function portalFixture(t, options = {}) {
     return { status: response.status, body: await response.json() };
   };
   const command = (body, options) => request('/v1/guilds/100/commands', { body, ...options });
-  t.after(async () => { await bridge.close(); await library.close(); await fs.rm(dir, { recursive: true, force: true }); });
+  t.after(async () => { await bridge.close(); await library.close(); await closeLibraries(); await fs.rm(dir, { recursive: true, force: true }); });
   return { client, manager, library, player, members, channels, channelCache, channelReads, roles, users, me, node, guild, calls, bridge, origin, request, command, token, dir, get memberFetches() { return memberFetches; } };
 }

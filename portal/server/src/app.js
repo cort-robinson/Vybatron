@@ -119,7 +119,7 @@ export async function createPortalServer(config, testOptions = {}) {
       if (!stat.isFile() || stat.size > limits.staticBytes) throw notFound();
       if (res.destroyed) return;
       const ext = path.extname(file).toLowerCase();
-      const isWorker = /(?:^|[\/\\])(?:sw|service-worker|workbox[^\/\\]*)\.js$/i.test(file);
+      const isWorker = /(?:^|[/\\])(?:sw|service-worker|workbox[^/\\]*)\.js$/i.test(file);
       // The PWA share target's query holds shared text: no browser cache may keep it.
       res.setHeader('Cache-Control', isWorker || pathname === '/share' ? 'no-store' : /[-.][a-zA-Z0-9_-]{8,}\.(?:js|css|woff2?)$/.test(file) ? 'public, max-age=31536000, immutable' : 'no-cache');
       if (isWorker) res.setHeader('Service-Worker-Allowed', '/');
@@ -475,6 +475,7 @@ export async function createPortalServer(config, testOptions = {}) {
       // Invalid/unauthenticated requests remain bounded by the anonymous peer
       // aggregate, while verified device/state routes never share that quota.
       if (!trusted && !anonymousCounted) {
+        // eslint-disable-next-line no-ex-assign -- the rate limit replaces the original error response.
         try { anonymousBudget(); } catch (limited) { error = limited; }
       }
       if (!req.complete) { res.setHeader('Connection', 'close'); req.resume(); }

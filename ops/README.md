@@ -134,6 +134,24 @@ repair playback manually, then resolve the `pending` journal before resuming.
 
 Tests: `python3 -m unittest discover -s tests -p '*_test.py'` and `npm test`.
 
+## Plugin pins
+
+`lavalink/application.yml` pins exact plugin versions and `lavalink/plugins.sha256`
+records the SHA-256 of each pinned jar. The YouTube pin is a snapshot build with
+no matching release yet, and Maven snapshots can be purged. After each healthy
+check, recovery copies the jars Lavalink loaded into `lavalink/plugins/` (Git
+ignores them), first checking any recorded checksum; a mismatch alerts as
+`plugin_checksum` and nothing is copied. Lavalink's entrypoint
+(`lavalink/plugins/start.sh`) copies the jars for versions `application.yml` still
+declares into its plugins folder, so recreating it for a deploy, repair or rollback no
+longer downloads a version it already ran. A new host, or a pin it hasn't run
+yet, still downloads from Maven. Lavalink also checks Maven for newer versions
+at every start and stops if it can't reach the host at all, so this covers a
+purged artifact, not a DNS or connection outage. A YouTube version recovery installs on its own
+has no record; its post-update check compares the loaded jar with the one recovery
+downloaded and tested. Changing a committed pin means recording the new jar's
+checksum (`sha256sum <jar>`) and an operator audio release with decoded canaries.
+
 ## Music data backups
 
 `ops/backup.py` backs up every durable file in the `vybertron_bot-data` volume

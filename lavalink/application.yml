@@ -5,17 +5,19 @@ server:
 lavalink:
   plugins:
     # Tested production snapshot, promoted from the automatic recovery override.
-    # Published jar SHA-256: b062effdda6abeaa46913dfd1b5d5600120b65f239ce88f30948c7213a3ca1c0
+    # No release contains it yet (5 commits after 1.18.2). Jar checksums are in
+    # plugins.sha256; recovery keeps loaded jars in plugins/ so recreating
+    # Lavalink doesn't depend on the snapshot staying published.
     # Two complete tracks decoded through FINISHED on Lavalink 4.2.2 (2026-10-04).
     - dependency: "dev.lavalink.youtube:youtube-plugin:2be8e542d3f6f178e048dca565892684c2e40177"
       repository: "https://maven.lavalink.dev/snapshots"
       snapshot: true
-    # Snapshot pin: 4.8.3 release has a broken Spotify anonymous-token scraper
-    # ("No secret array found in script"). Move back to a release pin once one
-    # ships with the fix. Jar existence verified per SPEC V11.
-    - dependency: "com.github.topi314.lavasrc:lavasrc-plugin:20d6b0b"
-      repository: "https://maven.lavalink.dev/snapshots"
-      snapshot: true
+    # Release build of the previously pinned snapshot 20d6b0b (the 4.8.3 tag
+    # commit): every class and resource is byte-identical apart from the version
+    # string in the plugin manifest.
+    - dependency: "com.github.topi314.lavasrc:lavasrc-plugin:4.8.3"
+      repository: "https://maven.lavalink.dev/releases"
+      snapshot: false
   server:
     password: "${LAVALINK_SERVER_PASSWORD}"
     sources:

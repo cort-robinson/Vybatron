@@ -76,9 +76,11 @@ services:
       - POT_TOKEN=${POT_TOKEN:-}
       - POT_VISITOR_DATA=${POT_VISITOR_DATA:-}
     # Adds the locally built vybatron-audio plugin (lavalink/plugins/build.sh),
-    # which streams audio-only songs to portal listeners on their own device.
-    # Without the jar Lavalink starts exactly as before and Discord is unaffected.
-    entrypoint: ["sh", "-c", "mkdir -p plugins && cp /opt/vybatron/vybatron-audio.jar plugins/ 2>/dev/null || true; exec java -jar Lavalink.jar"]
+    # which streams audio-only songs to portal listeners on their own device,
+    # and the declared plugin jars ops/recovery.py keeps from the last healthy
+    # run, so Lavalink doesn't download them again. Without jars Lavalink starts
+    # exactly as before and downloads its plugins from Maven.
+    entrypoint: ["sh", "/opt/vybatron/start.sh"]
     volumes:
       - ./lavalink/application.yml:/opt/Lavalink/application.yml:ro
       - ./lavalink/plugins:/opt/vybatron:ro

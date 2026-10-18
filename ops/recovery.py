@@ -34,6 +34,8 @@ MAVEN = 'https://maven.lavalink.dev'
 TRACKS = ['https://www.youtube.com/watch?v=jNQXAC9IVRw', 'https://www.youtube.com/watch?v=2SUwOgmvzK4']
 VERSION = re.compile(r'^[a-f0-9]{40}$|^\d+\.\d+\.\d+(?:[-.][A-Za-z0-9]+)*$')
 DEPENDENCY = re.compile(r'dev\.lavalink\.youtube:youtube-plugin:([A-Za-z0-9.-]+)')
+PLUGIN = re.compile(r'^\s*- dependency: "[A-Za-z0-9_.-]+:([A-Za-z0-9_.-]+):([A-Za-z0-9.-]+)"', re.M)
+CHECKSUMS = 'lavalink/plugins.sha256'
 UPDATE_INTERVAL = 6 * 3600
 RECOVERY_COOLDOWN = 30 * 60
 RECOVERY_WINDOW = 6 * 3600
@@ -151,6 +153,24 @@ def version_of(config):
     if len(matches) != 1 or not VERSION.fullmatch(matches[0]):
         raise RecoveryError('unsupported_youtube_configuration')
     return matches[0]
+
+
+def plugin_jars(config):
+    """Map each declared plugin to the jar name Lavalink stores it under."""
+    return {name: f'{name}-{version}.jar' for name, version in PLUGIN.findall(config)}
+
+
+def recorded_checksums(repo):
+    """Read the reviewed SHA-256 of pinned plugin jars (sha256sum format)."""
+    path = repo / CHECKSUMS
+    checksums = {}
+    for line in (path.read_text().splitlines() if path.exists() else []):
+        match = re.fullmatch(r'([a-f0-9]{64}) [ *]([A-Za-z0-9_.-]+\.jar)', line.strip())
+        if line.strip() and not match:
+            raise RecoveryError('invalid_plugin_checksums')
+        if match:
+            checksums[match[2]] = match[1]
+    return checksums
 
 
 def pin_config(config, version):
@@ -282,6 +302,35 @@ console.log(JSON.stringify({api:!!stats,bot:health?.ready===true,cipher:cipherOk
         command(['docker', 'cp', f'vybertron-lavalink:/opt/Lavalink/plugins/youtube-plugin-{version}.jar', str(path)])
         os.chmod(path, 0o644)
         return path
+
+    def mirror_plugins(self):
+        """Keep copies of the loaded plugin jars where Compose seeds Lavalink.
+
+        Lavalink skips its Maven download when the declared version is already in
+        its plugins folder, so recreating it survives a purged snapshot or a
+        Maven outage. Jars with a recorded checksum must match it.
+        """
+        mirror = self.repo / 'lavalink/plugins'
+        mirror.mkdir(parents=True, exist_ok=True)
+        recorded = recorded_checksums(self.repo)
+        for name, jar in plugin_jars(self.config_path.read_text()).items():
+            for stale in mirror.glob(f'{name}-*.jar'):
+                if stale.name != jar:
+                    stale.unlink()
+            target = mirror / jar
+            if target.exists():
+                if jar not in recorded or hashlib.sha256(target.read_bytes()).hexdigest() == recorded[jar]:
+                    continue
+                target.unlink()
+            temporary = mirror / f'{jar}.tmp'
+            try:
+                command(['docker', 'cp', f'vybertron-lavalink:/opt/Lavalink/plugins/{jar}', str(temporary)])
+                if jar in recorded and hashlib.sha256(temporary.read_bytes()).hexdigest() != recorded[jar]:
+                    raise RecoveryError('plugin_checksum_mismatch')
+                os.chmod(temporary, 0o644)
+                os.replace(temporary, target)
+            finally:
+                temporary.unlink(missing_ok=True)
 
     def prepare_probe(self):
         if not self.containers:
@@ -681,6 +730,14 @@ class Coordinator:
                 self.state['update_error'] = str(error)
         if self.state.get('pending'):
             return self.finish('rollback_failed', now, 'an automatic update could not be rolled back; manual attention is required')
+        if healthy and not observe_only:
+            try:
+                self.backend.mirror_plugins()
+                self.state.pop('mirror_error', None)
+            except RecoveryError as error:
+                if str(error) == 'plugin_checksum_mismatch':
+                    return self.finish('plugin_checksum', now, 'a loaded audio plugin does not match its recorded checksum')
+                self.state['mirror_error'] = str(error)
         if healthy:
             return self.finish('healthy', now)
         if 'credentials' in categories:

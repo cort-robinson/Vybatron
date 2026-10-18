@@ -176,7 +176,7 @@ function safeReply(payload) {
   return plainText(String(value || 'Request completed.').replace(/https?:\/\/\S+/gi, '[link]').replace(/<[@#][^>]+>/g, ''), { maxLength: 1000 });
 }
 
-export async function executePortalCommand(client, policy, revisions, commandMap, guildId, body) {
+export async function executePortalCommand(client, policy, revisions, commandMap, guildId, body, { signal } = {}) {
   const command = validateCommand(body, commandMap);
   const nativePreflight = DIRECT_CONTROLS.has(command.command)
     && (command.command !== 'filter' || command.values.preset !== undefined);
@@ -200,6 +200,9 @@ export async function executePortalCommand(client, policy, revisions, commandMap
   const source = client.lavalink?.getPlayer(guildId);
   const replySourceIds = source ? [source.voiceChannelId, source.textChannelId] : [];
   const assertRevision = () => {
+    // The bridge already answered an expired request. A late lookup or lane
+    // admission must not start a write the portal was told did not happen.
+    if (!mutationStarted && signal?.aborted) fail(503, 'unavailable', 'Vybatron could not complete that request. Refresh and try again.');
     if (!mutationStarted && baseline && baseline !== revisions.revision(guildId)) fail(409, 'stale_revision', 'The session changed. Refresh before trying again.');
   };
   const interaction = {
@@ -256,6 +259,7 @@ export async function executePortalCommand(client, policy, revisions, commandMap
   };
   if (context) applyContext();
   const preflight = async () => {
+    assertRevision();
     if (!nativePreflight) context = await freshContext();
     const current = revisions.revision(guildId);
     if (command.command !== 'stop' && body.expectedRevision && body.expectedRevision !== current) fail(409, 'stale_revision', 'The session changed. Refresh before trying again.');

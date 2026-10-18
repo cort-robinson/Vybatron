@@ -9,6 +9,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { execute as play, autocomplete } from '../src/commands/play.js';
 import { execute as playnext } from '../src/commands/playnext.js';
 import { execute as stop } from '../src/commands/stop.js';
+import { sleepStop } from '../src/commands/sleep.js';
 import { execute as skip } from '../src/commands/skip.js';
 import { execute as session } from '../src/commands/session.js';
 import { execute as mix } from '../src/commands/mix.js';
@@ -137,7 +138,7 @@ function dispatch(request, execute, options = {}) {
 }
 
 test('intentional stop and destroy clear a durable checkpoint even with a retained native current track', async t => {
-  for (const command of ['stop', 'destroy']) await t.test(command, async t => {
+  for (const command of ['stop', 'destroy', 'sleep']) await t.test(command, async t => {
     const { library, filePath } = await libraryFixture(t);
     await library.updateGuild('100', guild => { guild.session = savedCheckpoint(); });
     const { client, manager, player, calls } = environment(library, { current: track() });
@@ -145,6 +146,7 @@ test('intentional stop and destroy clear a durable checkpoint even with a retain
     // A scheduled checkpoint must also be cancelled rather than resurrecting it.
     manager.emit('trackStart', player);
     if (command === 'stop') await dispatch(interaction(client, 'stop'), stop, { urgent: true });
+    else if (command === 'sleep') assert.equal(await sleepStop(client, player, 'time'), true);
     else await player.destroy();
     await library.pending;
     await delay(550);
@@ -152,7 +154,7 @@ test('intentional stop and destroy clear a durable checkpoint even with a retain
     assert.ok(player.queue.current, 'native destroy does not clear the current track object');
     assert.equal(manager.getPlayer('100'), undefined);
     assert.equal((await new MusicLibrary(filePath).open()).readGuild('100').session, null);
-    if (command === 'stop') assert.deepEqual(calls.find(call => call[0] === 'stopPlaying'), ['stopPlaying', true, false]);
+    if (command !== 'destroy') assert.deepEqual(calls.find(call => call[0] === 'stopPlaying'), ['stopPlaying', true, false]);
   });
 });
 

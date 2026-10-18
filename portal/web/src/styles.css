@@ -364,6 +364,13 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
 .player-permission { display: flex; align-items: flex-start; gap: 8px; font-size: 14px; color: var(--text-soft); line-height: 1.5; }
 .player-permission svg { margin-top: 2px; color: var(--amber); }
 .player-state { color: var(--amber); font-size: 14px; line-height: 1.5; }
+.sleep-state { display: flex; align-items: center; justify-content: center; gap: 6px; color: var(--text-soft); }
+.sleep-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 18px; }
+.sleep-options .sleep-after { grid-column: 1 / -1; }
+.sleep-options .button[aria-pressed="true"] { border-color: var(--accent); color: var(--text); }
+.sleep-custom { display: flex; flex-direction: column; gap: 8px; margin-top: 18px; color: var(--text-soft); font-size: 14px; }
+.sleep-custom-row { display: flex; gap: 10px; }
+.sleep-custom-row input { flex: 1; min-width: 0; font-size: 16px; }
 .playback-cluster { grid-column: 2; grid-row: 1; align-self: stretch; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; padding-top: 18px; min-width: 0; width: clamp(340px, 38vw, 640px); }
 .transport { display: flex; align-items: center; justify-content: center; gap: 8px; }
 /* The seek bar keeps its full 44px target but tucks part of its empty upper half under the
@@ -911,7 +918,7 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
   .player-context { grid-column: 2; grid-row: 2; align-self: start; }
   .sleeve-main .player-identity, .sleeve-main .player-context { text-align: left; }
   .sleeve-main .player-title-row { justify-content: flex-start; }
-  .sleeve-main .player-permission { justify-content: flex-start; }
+  .sleeve-main .player-permission, .sleeve-main .sleep-state { justify-content: flex-start; }
   .expanded .player-footer { grid-column: 2; grid-row: 1 / -1; padding: 8px 12px 12px; border-top: 0; border-left: 1px solid var(--line); justify-content: center; background: transparent; backdrop-filter: none; }
   .expanded .transport { gap: 4px; }
   .queue-open .sleeve-queue { grid-column: 1; grid-row: 2; margin: 0 12px 12px 0; border-radius: 20px; border-bottom: 1px solid var(--line); }

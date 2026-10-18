@@ -7,6 +7,7 @@ import { autoplayActive, autoplayMode, isAutoplayTrack, radioState, suggestions 
 import { isPlaybackRecovering } from '../playback-recovery.js';
 import { getControllerRecord } from '../utils/player-controller.js';
 import { seekRevision } from '../utils/operations.js';
+import { sleepTimer } from '../utils/sleep-timer.js';
 import { actorVoiceId, djAccess, visible, visibleHistory, visibleSession, writable, TEXT_TYPES, VOICE_TYPES } from './policy.js';
 import { publicTrackId, mixVersion } from './selections.js';
 import { STATS_WINDOWS } from '../utils/play-stats.js';
@@ -78,7 +79,7 @@ export function createRevisions(client) {
     const signature = [epochs.get(guildId) || 0, objectId(player), objectId(current), current ? trackProjection(current).id : null,
       (player?.queue?.tracks || []).map(track => [objectId(track), trackProjection(track).id]), player?.voiceChannelId, player?.textChannelId,
       Boolean(player?.paused), Boolean(player?.playing), Boolean(isPlaybackRecovering(player)), player?.volume, player?.repeatMode, getAudioPreset(player).label,
-      seekRevision(player), Boolean(player?.queue?.previous?.length),
+      seekRevision(player), Boolean(player?.queue?.previous?.length), sleepTimer(player),
       Boolean(radioState(player).enabled), radioState(player).override, autoplayActive(client, player), suggestionProjection(player).map(track => track.id),
       Boolean(current && isAutoplayTrack(player, current)), guild.settings, guild.mixes, guild.history.map(item => item.id),
       checkpoint ? [checkpoint.voiceChannelId, checkpoint.textChannelId, checkpoint.tracks, checkpoint.paused, checkpoint.volume, checkpoint.repeatMode] : null];
@@ -123,6 +124,7 @@ export function snapshotProjection(client, context, revision, ordering) {
       durationMs: current ? boundedNumber(current.info?.duration) : 0, volume: allowed ? boundedNumber(player?.volume, settings.volume, 100) : 100,
       filter: allowed ? FILTERS.find(filter => filter.label === preset.label)?.id || 'custom' : 'off', repeat: allowed && ['off', 'track', 'queue'].includes(player?.repeatMode) ? player.repeatMode : 'off',
       radio: allowed && Boolean(player && autoplayActive(client, player)), autoplay: autoplayMode(client, id), fairQueue: allowed && settings.fairQueue, listeners,
+      sleep: allowed ? sleepTimer(player) : null,
       canAdd, canControl: Boolean(allowed && player && sameVoice && djAccess(context, client)), canVote: Boolean(allowed && current && sameVoice), reason,
       // The viewer's own voice channel here, so a client can offer to move its music in.
       viewerVoice: context.member && voice && VOICE_TYPES.has(voice.type) && visible(context, voice) ? channelProjection(voice) : null },

@@ -12,7 +12,7 @@ import { suggestions } from '../utils/radio.js';
 import { commandAuthorityPhase } from './timing.js';
 import * as transfer from './transfer.js';
 
-const ALLOWED = new Set(['play', 'playnext', 'pause', 'resume', 'seek', 'skip', 'skipto', 'back', 'stop', 'clear', 'remove', 'move', 'shuffle', 'loop', 'volume', 'filter', 'voteskip', 'radio', 'replay', 'session', 'favorite', 'mix', 'settings', 'queue', 'nowplaying', 'history', 'help', 'top', 'mymix', 'transfer']);
+const ALLOWED = new Set(['play', 'playnext', 'pause', 'resume', 'seek', 'skip', 'skipto', 'back', 'stop', 'clear', 'remove', 'move', 'shuffle', 'loop', 'volume', 'filter', 'voteskip', 'radio', 'replay', 'session', 'favorite', 'mix', 'settings', 'queue', 'nowplaying', 'history', 'help', 'top', 'mymix', 'transfer', 'sleep']);
 const CONFLICTING = new Set(['playnext', 'seek', 'skip', 'skipto', 'back', 'clear', 'remove', 'move', 'shuffle', 'replay']);
 // These handlers perform no admission work that needs guild authority. Their
 // first await is the native requireControl guard, which takes fresh authority
@@ -127,7 +127,7 @@ function commandAccess(client, context, command, { checkState = true } = {}) {
   }
   if (!context.member) fail(403, 'membership_required', 'Join this server to use its music library and playback controls.');
   if (command.policy.readOnly) {
-    if (['queue', 'nowplaying', 'history'].includes(name) && !visibleSession(context, client.lavalink?.getPlayer(context.guild.id))) fail(403, 'hidden_channel', 'The listening channel is not visible to you.');
+    if (['queue', 'nowplaying', 'history', 'sleep'].includes(name) && !visibleSession(context, client.lavalink?.getPlayer(context.guild.id))) fail(403, 'hidden_channel', 'The listening channel is not visible to you.');
     if (name === 'session') {
       const saved = savedSession(client.library, context.guild.id);
       if (saved && !visibleSession(context, saved)) fail(403, 'hidden_channel', 'The saved listening channel is not visible to you.');

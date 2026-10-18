@@ -66,7 +66,7 @@ export async function requireControl(interaction, { checkDJ = true } = {}) {
     return reject(interaction, 'Playback controls are reserved for this server’s DJ role. You can still add songs, save favorites, or use /voteskip.');
   }
   if (isPlaybackRecovering(player)) {
-    const safe = new Set(['skip', 'skipto', 'back', 'stop', 'clear', 'voteskip', 'favorite', 'mix', 'replay', 'remove', 'move', 'shuffle', 'loop', 'radio']);
+    const safe = new Set(['skip', 'skipto', 'back', 'stop', 'clear', 'voteskip', 'favorite', 'mix', 'replay', 'remove', 'move', 'shuffle', 'loop', 'radio', 'sleep']);
     const safeComponent = /^player:v1:(skip|back|stop|stop-confirm)$/.test(interaction.customId || '')
       || /^queue:v[12]:jump:/.test(interaction.customId || '') || /^history:v2:replay:/.test(interaction.customId || '');
     if (!safe.has(interaction.commandName) && !safeComponent) return reject(interaction, 'Audio is reconnecting. Your queue is safe; wait a moment, or use Skip or Stop.');

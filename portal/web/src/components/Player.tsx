@@ -1,5 +1,5 @@
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { CaretDownIcon, CheckIcon, DesktopIcon, DiscordLogoIcon, CaretUpIcon, DotsThreeIcon, HeartIcon, PauseIcon, PlayIcon, RepeatIcon, RepeatOnceIcon, ShuffleIcon, SkipBackIcon, SkipForwardIcon, SpeakerHighIcon, StopIcon, RadioIcon, HandPalmIcon, ArrowSquareOutIcon, TrashIcon, WarningCircleIcon, ThumbsDownIcon, VinylRecordIcon } from '@phosphor-icons/react';
+import { CaretDownIcon, CheckIcon, DesktopIcon, DiscordLogoIcon, CaretUpIcon, DotsThreeIcon, HeartIcon, PauseIcon, PlayIcon, RepeatIcon, RepeatOnceIcon, ShuffleIcon, SkipBackIcon, SkipForwardIcon, SpeakerHighIcon, StopIcon, RadioIcon, HandPalmIcon, ArrowSquareOutIcon, TrashIcon, WarningCircleIcon, ThumbsDownIcon, VinylRecordIcon, MoonIcon } from '@phosphor-icons/react';
 import type { Portal } from '../usePortal';
 import type { Command, GuildSnapshot, Track } from '../types';
 import { publicUrl } from '../api';
@@ -7,6 +7,7 @@ import { time, timestamp } from '../format';
 import { RESTART_AFTER_MS } from '../playback';
 import { ActionPopover, Artwork, Confirm, Dialog, IconButton } from './ui';
 import { SaveSessionDialog, StopDialog } from './SessionMix';
+import { SleepDialog, useSleepText } from './SleepTimer';
 import { Queue } from './Queue';
 import { Spectrum } from './Spectrum';
 import { prefersReducedMotion, pulse } from '../motion';
@@ -26,6 +27,7 @@ export function Player({ portal, expanded, setExpanded, onAdd, accent, animate, 
   const [confirmClear, setConfirmClear] = useState(false);
   const [saveSession, setSaveSession] = useState(false);
   const [confirmHere, setConfirmHere] = useState(false);
+  const [sleepOpen, setSleepOpen] = useState(false);
   const [queueOpen, setQueueOpen] = useState(false);
   const playerRef = useRef<HTMLElement>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
@@ -122,6 +124,8 @@ export function Player({ portal, expanded, setExpanded, onAdd, accent, animate, 
   const sourceUrl = publicUrl(track?.uri);
   // Where this session can go: the server's session, or the viewer's own voice channel.
   const discord = portal.discord;
+  // A sleep timer belongs to the Discord session, never this device's playback.
+  const sleep = useSleepText(local ? null : session?.sleep);
   const discordActive = !!(discord?.current || discord?.queue.length);
   const room = discord?.voiceChannel?.name || discord?.viewerVoice?.name;
   const discordLabel = !local ? `Discord${room ? ` · ${room}` : ''}`
@@ -160,7 +164,8 @@ export function Player({ portal, expanded, setExpanded, onAdd, accent, animate, 
     </select><CaretDownIcon size={16} /></label>}
     <ActionPopover label="More playback controls" trigger={<DotsThreeIcon size={27} weight="bold" />} className="player-more" triggerClassName="icon-button">
       {close => <>{!local && <><button disabled={!can('vote') || !!pending.length || !track} onClick={() => { close(); void run({ command: 'voteskip', expectedRevision: snapshot?.revision }, 'vote'); }}><HandPalmIcon />Vote to skip</button>
-        <button disabled={!controllable || !track} onClick={() => { close(); void control({ command: 'radio', subcommand: session?.radio ? 'off' : 'on' }); }}><RadioIcon />Turn autoplay {session?.radio ? 'off' : 'on'}</button></>}
+        <button disabled={!controllable || !track} onClick={() => { close(); void control({ command: 'radio', subcommand: session?.radio ? 'off' : 'on' }); }}><RadioIcon />Turn autoplay {session?.radio ? 'off' : 'on'}</button>
+        <button disabled={!controllable || !track && !sleep} onClick={() => { close(); setSleepOpen(true); }}><MoonIcon />{sleep ? `Sleep timer · ${sleep}` : 'Sleep timer'}</button></>}
         {!local && track?.suggested && <button disabled={!controllable} onClick={() => { close(); void run({ command: 'radio', subcommand: 'less', expectedTrackId: track.id }, 'control'); }}><ThumbsDownIcon />Less like this</button>}
         {sourceUrl && <a href={sourceUrl} target="_blank" rel="noreferrer" onClick={close}><ArrowSquareOutIcon />Open original track</a>}
         {!local && <button disabled={!can('library') || !!pending.length || !track} onClick={() => { close(); setSaveSession(true); }}><VinylRecordIcon />Save session as mix</button>}
@@ -176,7 +181,7 @@ export function Player({ portal, expanded, setExpanded, onAdd, accent, animate, 
   return <section ref={playerRef} className={`persistent-player ${expanded ? 'expanded' : 'collapsed'} ${queueOpen ? 'queue-open' : ''} ${session?.status || 'idle'}`} aria-label="Music player" data-testid="player">
     {!expanded && spectrum('player-spectrum', 56, 0)}
     {expanded && <div className="sleeve-content"><button className="mobile-collapse text-button" onClick={() => setExpanded(false)}><CaretDownIcon size={22} />Close player</button>
-      <div className="sleeve-main"><div className="sleeve-artwork" onPointerMove={look?.tilt} onPointerLeave={look?.untilt}><Artwork track={track} large />{spectrum('sleeve-spectrum', 40)}{look && <look.Sleeve track={track?.id || 'idle'} />}</div>{identity}<div className="player-context">{permissionReason && <p className="player-permission" id={reasonId}><WarningCircleIcon size={18} aria-hidden="true" /><span>{permissionReason}</span></p>}{connection === 'live' && session?.status === 'recovering' && <p className="player-state warm-text" role="status">Recovering your place. Playback controls will return when it’s ready.</p>}{session?.status === 'paused' && <p className="player-state warm-text">{connection === 'live' ? 'Paused · right here when you’re ready' : 'Last known: paused'}</p>}</div></div>
+      <div className="sleeve-main"><div className="sleeve-artwork" onPointerMove={look?.tilt} onPointerLeave={look?.untilt}><Artwork track={track} large />{spectrum('sleeve-spectrum', 40)}{look && <look.Sleeve track={track?.id || 'idle'} />}</div>{identity}<div className="player-context">{permissionReason && <p className="player-permission" id={reasonId}><WarningCircleIcon size={18} aria-hidden="true" /><span>{permissionReason}</span></p>}{connection === 'live' && session?.status === 'recovering' && <p className="player-state warm-text" role="status">Recovering your place. Playback controls will return when it’s ready.</p>}{sleep && <p className="player-state sleep-state"><MoonIcon size={16} aria-hidden="true" /><span>Sleep timer · {sleep}</span></p>}{session?.status === 'paused' && <p className="player-state warm-text">{connection === 'live' ? 'Paused · right here when you’re ready' : 'Last known: paused'}</p>}</div></div>
       <div ref={sheetRef} id={queueId} className="sleeve-queue">{queueOpen && <div className="queue-sheet-now"><span className="sheet-grabber" aria-hidden="true" /><Artwork track={track} /><span className="sheet-now-text"><strong>{track?.title || 'Nothing playing'}</strong><span>{track?.author}</span></span></div>}{queue}</div>
     </div>}
     <div className="player-footer">{!expanded && <CompactProgress clock={clock} track={track} duration={duration} />}{!expanded && <div className="compact-identity"><button ref={identityTriggerRef} type="button" className="player-expand-trigger" aria-label={track ? `Open player for ${track.title}` : 'Open player details'} aria-expanded={false} onClick={() => { openedFromIdentity.current = true; setExpanded(true); }}><Artwork track={track} /><span className="compact-title"><span className="compact-track-title" title={track?.title}>{track?.title || 'Nothing playing'}</span><span className="compact-track-meta" title={track ? `${track.author} · ${track.source}` : undefined}>{metadata}</span></span></button><span className="compact-favorite">{favorite}</span></div>}
@@ -188,6 +193,7 @@ export function Player({ portal, expanded, setExpanded, onAdd, accent, animate, 
     </div>
     {confirmStop && (local ? <Confirm title="Stop playing on this device?" detail="Stops the current song and clears this device’s queue. The Discord session, your favorites and shared mixes aren’t affected." action="Stop" onClose={() => setConfirmStop(false)} onConfirm={() => { setConfirmStop(false); void run({ command: 'stop' }, 'control'); }} />
       : <StopDialog portal={portal} onClose={() => setConfirmStop(false)} />)}
+    {sleepOpen && !local && <SleepDialog portal={portal} onClose={() => setSleepOpen(false)} />}
     {saveSession && <SaveSessionDialog portal={portal} onClose={() => setSaveSession(false)} />}
     {confirmHere && <Dialog title="Move playback to this device?" onClose={() => setConfirmHere(false)} className="confirm-dialog">
       <p>{others ? `${others} other ${others === 1 ? 'person is' : 'people are'} listening in ${discord?.voiceChannel?.name || 'Discord'}. ` : ''}Move here stops the music in Discord and picks it up on this device at the same spot. Listen here too keeps Discord playing.</p>

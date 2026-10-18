@@ -164,6 +164,23 @@ for the others. Artist mixes add visible server plays by that artist without req
 Stats are optional: an unavailable store returns 503 `stats_unavailable` and nothing else
 changes. Fetch on demand; stats are not part of snapshots or the change feed.
 
+`RecapTotals = { plays: number, playedMs: number, songs: number }`
+
+`Recap = { window: '7d'|'30d'|'90d'|'365d', since: number,
+  personal: RecapTotals & { topTracks: StatEntry[],
+    topArtists: { name: string, plays: number, lastPlayedAt: number, track: Track }[] },
+  server: RecapTotals & { topTracks: StatEntry[] } }`
+
+A listening recap for plays since `since` (now minus `window`, default `30d`), computed on
+read under the Stats rules: only plays in voice channels the actor can currently see, and a
+nonmember gets zeros. `personal` counts only the actor's own requests in this guild: `plays`
+is every request including early skips, `songs` the distinct songs, and topTracks (at most 10)
+and topArtists (at most 5) exclude early skips like the Stats lists. `server` counts every
+visible play, including autoplay, imported and cleared ones, without identifying requesters;
+its topTracks (at most 10) exclude early skips. `playedMs` sums recorded playback time, so
+imported history and plays still in progress add none. Nothing describes who was listening.
+Unavailable stats return 503 `stats_unavailable`.
+
 ## Public browser endpoints (portal API)
 
 - GET `/health`: credential-free portal responsiveness/readiness, never music data.
@@ -184,6 +201,8 @@ changes. Fetch on demand; stats are not part of snapshots or the change feed.
   accepted; omitted means `30d`.
 - GET `/api/guilds/:guildId/lyrics` -> LyricsResponse for the current song. No query.
   Session channel visibility, like the snapshot. Fetched on demand, never in snapshots.
+- GET `/api/guilds/:guildId/recap?window=7d|30d|90d|365d` -> Recap. Only `window` is
+  accepted; omitted means `30d`.
 - POST `/api/stats/requests/clear` -> `{ok:true,cleared:number}`. Same-origin + CSRF, no body.
   Anonymizes the signed-in listener's recorded requests in every server; server totals remain.
 - GET `/api/guilds/:guildId/audio/:videoId` (11-character YouTube id): this device's
@@ -306,6 +325,8 @@ browser access or CORS. Portal sets the trusted session's actorId itself.
   including the guild's most recent 50 voice channels with plays).
 - GET `/v1/guilds/:guildId/lyrics?actorId=...` -> LyricsResponse. The bot asks Lavalink's
   LavaLyrics `GET /v4/lyrics?track=<encoded>` for the visible current song (8 s bound).
+- GET `/v1/guilds/:guildId/recap?actorId=...&window=...` -> Recap (history channel scope,
+  like stats).
 - POST `/v1/stats/requests/clear?actorId=...` -> `{ok:true,cleared:number}`. Requires a fresh
   verified identity; no guild grant is involved.
 - GET `/v1/guilds/:guildId/audio/:videoId?actorId=...` -> audio bytes by range (see the

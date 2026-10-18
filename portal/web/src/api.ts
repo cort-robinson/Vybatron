@@ -1,4 +1,4 @@
-import type { Bootstrap, GuildSnapshot, Library, Track, Command, CommandResult, Configuration, Diagnostics, Activity, Stats, StatsWindow, LyricsResponse } from './types';
+import type { Bootstrap, GuildSnapshot, Library, Track, Command, CommandResult, Configuration, Diagnostics, Activity, Recap, RecapWindow, Stats, StatsWindow, LyricsResponse } from './types';
 
 export class ApiError extends Error {
   constructor(public status: number, public code: string, message: string, public retryAfterMs = 0) { super(message); this.name = 'ApiError'; }
@@ -58,6 +58,14 @@ export const api = {
     if (!['idle', 'found', 'not_found', 'unavailable'].includes(data.status) || (data.status === 'found' && (!Array.isArray(data.lyrics?.lines) || data.lyrics.lines.length > 1000))) {
       throw new ApiError(503, 'invalid_response', 'Lyrics are unavailable right now.');
     }
+    return data;
+  },
+  recap: async (id: string, window: RecapWindow = '30d', signal?: AbortSignal) => {
+    const data = await request<Recap>(`${guildPath(id)}/recap?window=${window}`, { signal });
+    const totals = [data.personal, data.server];
+    const lists: [unknown, number][] = [[data.personal?.topTracks, 10], [data.personal?.topArtists, 5], [data.server?.topTracks, 10]];
+    if (totals.some(part => !part || ![part.plays, part.playedMs, part.songs].every(Number.isSafeInteger))
+      || lists.some(([list, max]) => !Array.isArray(list) || list.length > max)) throw new ApiError(503, 'invalid_response', 'Your listening recap is unavailable. Try refreshing it.');
     return data;
   },
   clearRequestStats: (csrfToken: string) => request<{ ok: true; cleared: number }>('/api/stats/requests/clear', {

@@ -78,6 +78,15 @@ export interface Stats {
     playlists: AutoPlaylist[];
   };
 }
+// A listening recap over one window. Personal numbers come from the viewer's own
+// requests; server numbers never identify a requester. playedMs is recorded playback.
+export type RecapWindow = Exclude<StatsWindow, 'all'>;
+export interface RecapTotals { plays: number; playedMs: number; songs: number }
+export interface Recap {
+  window: RecapWindow; since: number;
+  personal: RecapTotals & { topTracks: StatEntry[]; topArtists: { name: string; plays: number; lastPlayedAt: number; track: Track }[] };
+  server: RecapTotals & { topTracks: StatEntry[] };
+}
 export type PlaylistKind = 'mix' | 'top' | 'rediscover' | 'artist';
 export interface AutoPlaylist {
   id: string; kind: PlaylistKind; title: string; artist: string | null; tracks: Track[];

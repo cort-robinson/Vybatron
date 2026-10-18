@@ -423,10 +423,10 @@ export async function createPortalServer(config, testOptions = {}) {
           if (range !== undefined && !/^bytes=\d{0,15}-\d{0,15}$/.test(range)) throw invalid();
           await transport.audio(`/v1/guilds/${audio[1]}/audio/${audio[2]}`, session.actorId, { range, signal: controller.signal, res }); return;
         }
-        const match = /^\/api\/guilds\/(\d{1,20})(?:\/(configuration|library|search|commands|diagnostics|activity|events|stats|lyrics))?$/.exec(pathname);
+        const match = /^\/api\/guilds\/(\d{1,20})(?:\/(configuration|library|search|commands|diagnostics|activity|events|stats|recap|lyrics))?$/.exec(pathname);
         if (!match) throw notFound();
         const [, guildId, resource] = match;
-        queryOnly(url, resource === 'search' ? ['query'] : resource === 'stats' ? ['window'] : []);
+        queryOnly(url, resource === 'search' ? ['query'] : ['stats', 'recap'].includes(resource) ? ['window'] : []);
         const endpoint = `/v1/guilds/${guildId}${resource ? `/${resource}` : ''}`;
         if (req.method !== 'GET' || resource === 'commands') throw notFound();
         if (resource === 'events') { await events(req, res, guildId, token, session, controller.signal); return; }
@@ -439,6 +439,11 @@ export async function createPortalServer(config, testOptions = {}) {
         if (resource === 'stats' && url.searchParams.has('window')) {
           const window = url.searchParams.get('window');
           if (!['7d', '30d', '90d', '365d', 'all'].includes(window)) throw invalid();
+          query.window = window;
+        }
+        if (resource === 'recap' && url.searchParams.has('window')) {
+          const window = url.searchParams.get('window');
+          if (!['7d', '30d', '90d', '365d'].includes(window)) throw invalid();
           query.window = window;
         }
         const data = await transport.bridge(endpoint, session.actorId, { query, signal: controller.signal });

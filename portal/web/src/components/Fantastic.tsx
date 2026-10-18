@@ -1,6 +1,5 @@
 import { useEffect, useId, useMemo, useState, type CSSProperties } from 'react';
 import type { Look } from '../skin';
-import '../fantastic.css';
 
 // Fantastic scenery: Earth-828 at dusk, as a 1964 broadcast would paint it. A ringed planet
 // rises over a Googie skyline (the Baxter Building flies the 4), a monorail glides past, Kirby

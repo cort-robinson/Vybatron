@@ -4,6 +4,7 @@
 // is a single attribute change. Overdrive stays the default; the others are opt-in.
 import type { ComponentType, PointerEvent } from 'react';
 import { look as overdrive } from './components/Overdrive';
+import fantasticStyles from './fantastic.css?url';
 
 export type Skin = 'overdrive' | 'fantastic' | 'classic';
 
@@ -18,9 +19,21 @@ export type Look = {
 };
 const loaders: Record<Skin, () => Promise<Look | undefined>> = {
   overdrive: async () => overdrive,
-  fantastic: () => import('./components/Fantastic').then(module => module.look),
+  fantastic: async () => (await Promise.all([import('./components/Fantastic'), stylesheet(fantasticStyles)]))[0].look,
   classic: async () => undefined,
 };
+// The look's stylesheet is linked here rather than through the chunk's CSS import: Vite's
+// preloader remembers a stylesheet that failed and never requests it again, which would apply
+// the look unstyled on retry. Appended last, it keeps the cascade order of the main bundle.
+function stylesheet(href: string) {
+  return new Promise<void>((resolve, reject) => {
+    const link = Object.assign(document.createElement('link'), { rel: 'stylesheet', href });
+    link.onload = () => resolve();
+    link.onerror = () => { link.remove(); reject(new Error(`Stylesheet failed: ${href}`)); };
+    document.head.append(link);
+  });
+}
+
 const looks = new Map<Skin, Look | undefined>();
 const loading = new Map<Skin, Promise<void>>();
 

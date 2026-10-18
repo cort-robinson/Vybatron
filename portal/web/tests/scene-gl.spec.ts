@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './test';
 import { mockPortal } from './fixtures';
 
 // The fixture defaults to the CSS scenery; these specs run the canvas.

@@ -1,4 +1,4 @@
-import { expect, test, type Locator, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from './test';
 import { landed, mockPortal, streamAction, gotoSession } from './fixtures';
 
 const longTitle = 'Evening Light — a very long live performance title with extended artist credits, a remastered collection name, and a full recording description';

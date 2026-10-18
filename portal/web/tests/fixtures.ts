@@ -94,9 +94,6 @@ export async function mockPortal(page: Page, options: { signedOut?: boolean; bas
   let signedOut = !!options.signedOut;
   let conflict = false; let snapshotDelay = 0; let libraryFailure = false; let snapshotFailure = 0;
   let uncertain = false; let commandDelay = 0; let commandGate: Promise<void> | undefined; let libraryDelay = 0;
-  // Behavior specs run on the CSS scenery. Under CI's software GPU the WebGL room competes with the
-  // page for CPU and stretches gestures and timers; scene-gl.spec opts in ('gl') to cover the canvas.
-  await page.addInitScript(() => { if (!localStorage.getItem('vybertron.scene')) localStorage.setItem('vybertron.scene', 'css'); });
   await page.addInitScript(() => {
     const streams: FakeEventSource[] = [];
     class FakeEventSource {

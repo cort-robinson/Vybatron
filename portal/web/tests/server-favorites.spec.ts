@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page } from './test';
 import { mockPortal } from './fixtures';
 
 async function openServerFavorites(page: Page) {

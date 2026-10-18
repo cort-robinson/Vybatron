@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, cssScene } from './test';
 import { gotoSession } from './fixtures';
 import { startHttpFixture } from './http-fixture';
 
@@ -51,7 +51,7 @@ test('real HTTP EventSource disconnect reacquires a snapshot and never replays a
 });
 
 test('production PWA caches only static files, leaves API/auth on the network, and signs out cleanly', async ({ browser }) => {
-  const server = await startHttpFixture(); const context = await browser.newContext({ serviceWorkers: 'allow' }); const page = await context.newPage();
+  const server = await startHttpFixture(); const context = await browser.newContext({ serviceWorkers: 'allow' }); await context.addInitScript(cssScene); const page = await context.newPage();
   try {
     await gotoSession(page, server.origin); await expect(page.getByRole('button', { name: 'Pause playback' })).toBeEnabled();
     await expect.poll(() => page.evaluate(() => !!navigator.serviceWorker.controller)).toBe(true);

@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page } from './test';
 import { gotoSession, mockPortal } from './fixtures';
 
 // A minute of silent 8 kHz mono WAV: real, decodable audio for the media element.

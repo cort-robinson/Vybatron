@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './test';
 import { mockPortal, gotoSession, INVITE_URL } from './fixtures';
 
 const external = { target: '_blank', rel: 'noopener noreferrer' };

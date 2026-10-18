@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page } from './test';
 import { mockPortal } from './fixtures';
 
 test('Classic look renders without Overdrive scenery and switches back live from Settings', async ({ page }) => {

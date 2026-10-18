@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './test';
 import { mockPortal, suggestedTracks } from './fixtures';
 
 for (const skin of ['classic', 'overdrive', 'fantastic']) {

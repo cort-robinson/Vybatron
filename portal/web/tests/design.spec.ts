@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, cssScene } from './test';
 import AxeBuilder from '@axe-core/playwright';
 import { mkdir } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
@@ -12,6 +12,7 @@ for (const { name, width, height, density } of viewports) {
     const directory = new URL('../.impeccable/review/', import.meta.url); await mkdir(directory, { recursive: true });
     const shot = (file: string) => page.screenshot({ path: fileURLToPath(new URL(file, directory)) });
     const context = await browser.newContext({ viewport: { width, height }, deviceScaleFactor: density, reducedMotion: 'reduce', serviceWorkers: 'block' });
+    await context.addInitScript(cssScene);
     const page = await context.newPage();
     const errors: string[] = []; page.on('pageerror', error => errors.push(error.message)); page.on('console', msg => { if (msg.type() === 'error') errors.push(msg.text()); });
     await mockPortal(page); await page.goto(String(test.info().project.use.baseURL));

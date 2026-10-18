@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './test';
 import { mockPortal, streamAction } from './fixtures';
 import { startHttpFixture } from './http-fixture';
 

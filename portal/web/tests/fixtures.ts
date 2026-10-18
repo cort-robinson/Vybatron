@@ -1,6 +1,6 @@
 // Explicit loopback browser-test fixtures. Not imported by src or emitted in production.
 import type { Locator, Page } from '@playwright/test';
-import type { Activity, Bootstrap, Command, Configuration, Diagnostics, GuildSnapshot, Library, Track, Stats } from '../src/types';
+import type { Activity, Bootstrap, Command, Configuration, Diagnostics, GuildSnapshot, Library, Track, Recap, Stats } from '../src/types';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 
@@ -51,7 +51,13 @@ export function fixtureState() {
       { id: 'rediscover', kind: 'rediscover', title: 'Rediscover', artist: null, refreshesAt: null, tracks: [tracks[0]] },
       { id: 'artist-1', kind: 'artist', title: 'Solara mix', artist: 'Solara', refreshesAt: null, tracks: [tracks[0], tracks[3]] },
     ] } };
-  return { snapshot, configuration, bootstrap, library, diagnostics, activity, stats };
+  const recap: Recap = { window: '30d', since: 1_788_555_600_000,
+    personal: { plays: 23, playedMs: 4_380_000, songs: 9,
+      topTracks: [{ track: current, plays: 7, lastPlayedAt: 1_791_147_600_000 }, { track: tracks[1], plays: 4, lastPlayedAt: 1_791_000_000_000 }],
+      topArtists: [{ name: 'Glass Avenue', plays: 9, lastPlayedAt: 1_791_147_600_000, track: current }, { name: tracks[2].author, plays: 4, lastPlayedAt: 1_791_000_000_000, track: tracks[2] }] },
+    server: { plays: 184, playedMs: 33_120_000, songs: 61,
+      topTracks: tracks.slice(0, 4).map((item, index) => ({ track: item, plays: 18 - index * 3, lastPlayedAt: 1_791_147_600_000 - index * 86_400_000 })) } };
+  return { snapshot, configuration, bootstrap, library, diagnostics, activity, stats, recap };
 }
 // Model the selected-item HTTP contract independently of the browser's capture logic.
 export function selectedCommandError(library: Library, command: Command) {
@@ -80,7 +86,7 @@ export async function mockPortal(page: Page, options: { signedOut?: boolean; bas
     Object.assign(state.snapshot.session, { status: 'idle', current: null, queue: [], listeners: [], voiceChannel: null, textChannel: null, canAdd: false, canControl: false, canVote: false, reason: 'Join this server to control playback.' });
   }
   if (options.saved) { state.snapshot.session.status = 'idle'; state.snapshot.session.current = null; state.snapshot.session.queue = []; state.snapshot.savedSession = { exists: true, savedAt: 1_791_147_600_000, positionMs: 107_000, paused: true, trackCount: 5, voiceChannel: { id: 'voice', name: 'General' }, canResume: true }; }
-  const commands: Command[] = []; const requests: string[] = []; const requestClears: string[] = [];
+  const commands: Command[] = []; const requests: string[] = []; const requestClears: string[] = []; const recapWindows: string[] = [];
   const logouts: { method: string; body: string | null; contentType: string | null; csrfToken: string | null }[] = [];
   let signedOut = !!options.signedOut;
   let conflict = false; let snapshotDelay = 0; let libraryFailure = false; let snapshotFailure = 0;
@@ -118,10 +124,16 @@ export async function mockPortal(page: Page, options: { signedOut?: boolean; bas
     else if (path.endsWith('/diagnostics')) await route.fulfill(reply(state.diagnostics));
     else if (path.endsWith('/activity')) await route.fulfill(reply(state.activity));
     else if (path.endsWith('/stats')) await route.fulfill(reply(state.stats));
+    else if (path.endsWith('/recap')) {
+      const window = new URL(route.request().url()).searchParams.get('window') || '30d';
+      recapWindows.push(window);
+      await route.fulfill(reply({ ...state.recap, window }));
+    }
     else if (path === '/api/stats/requests/clear') {
       if (route.request().method() !== 'POST' || route.request().headers()['x-csrf-token'] !== 'local-test-csrf') throw new Error('Clearing stats needs a CSRF-checked POST');
       requestClears.push(path);
       const cleared = state.stats.personal.topTracks.length + 4;
+      state.recap = { ...state.recap, personal: { plays: 0, playedMs: 0, songs: 0, topTracks: [], topArtists: [] } };
       state.stats.personal = { ...state.stats.personal, topTracks: [], topArtists: [], playlists: state.stats.personal.playlists.filter(list => list.kind !== 'artist').map(list => list.kind === 'rediscover' ? list : { ...list, tracks: [] }) };
       await route.fulfill(reply({ ok: true, cleared }));
     }
@@ -203,7 +215,7 @@ export async function mockPortal(page: Page, options: { signedOut?: boolean; bas
     if (logout.method !== 'POST' || logout.body !== null || logout.contentType !== null || logout.csrfToken !== 'local-test-csrf') { await route.fulfill({ status: 400, json: { error: { code: 'invalid_logout', message: 'Logout requires a bodyless CSRF-protected POST.' } } }); return; }
     signedOut = true; await route.fulfill({ json: { ok: true } });
   });
-  return { state, commands, requests, requestClears, logouts, conflictNext: () => { conflict = true; }, uncertainNext: () => { uncertain = true; }, delayCommand: (ms: number) => { commandDelay = ms; }, holdCommands: () => { let release!: () => void; commandGate = new Promise(resolve => { release = resolve; }); return () => { commandGate = undefined; release(); }; }, delaySnapshot: (ms: number) => { snapshotDelay = ms; }, delayLibrary: (ms: number) => { libraryDelay = ms; }, failLibrary: () => { libraryFailure = true; }, denySnapshot: (status: number) => { snapshotFailure = status; } };
+  return { state, commands, requests, requestClears, recapWindows, logouts, conflictNext: () => { conflict = true; }, uncertainNext: () => { uncertain = true; }, delayCommand: (ms: number) => { commandDelay = ms; }, holdCommands: () => { let release!: () => void; commandGate = new Promise(resolve => { release = resolve; }); return () => { commandGate = undefined; release(); }; }, delaySnapshot: (ms: number) => { snapshotDelay = ms; }, delayLibrary: (ms: number) => { libraryDelay = ms; }, failLibrary: () => { libraryFailure = true; }, denySnapshot: (status: number) => { snapshotFailure = status; } };
 }
 
 export async function streamAction(page: Page, action: 'disconnect' | 'reconnect', data?: GuildSnapshot) {

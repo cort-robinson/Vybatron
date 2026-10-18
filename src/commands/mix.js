@@ -3,6 +3,7 @@ import { requireLibrarySource, requireUserVoice } from '../utils/guards.js';
 import { LIBRARY_LIMITS, trackReference } from '../utils/library.js';
 import { loadCollection, mayEditMix, mixKey, sessionMixTracks } from '../utils/library-actions.js';
 import { COLORS, ephemeralText } from '../utils/messages.js';
+import { commitImport, importLink, previewImport } from '../utils/playlist-import.js';
 import { NO_MENTIONS, safeText } from '../utils/presentation.js';
 
 const nameOption = o => o.setName('name').setDescription('A memorable name, such as late night drive').setMaxLength(40).setRequired(true);
@@ -11,6 +12,8 @@ export const data = new SlashCommandBuilder().setName('mix').setDescription('Sav
     .addBooleanOption(o => o.setName('session').setDescription('Also include songs already played this session')))
   .addSubcommand(s => s.setName('list').setDescription('Browse this server’s saved mixes'))
   .addSubcommand(s => s.setName('load').setDescription('Queue a saved mix, resolving fresh playable tracks').addStringOption(nameOption))
+  .addSubcommand(s => s.setName('import').setDescription('Preview and add a public playlist to a new or existing mix').addStringOption(nameOption)
+    .addStringOption(o => o.setName('link').setDescription('Public YouTube, YouTube Music, Spotify or SoundCloud playlist link').setMaxLength(200).setRequired(true)))
   .addSubcommand(s => s.setName('delete').setDescription('Delete a mix you own, or manage as a server admin').addStringOption(nameOption));
 
 export async function execute(interaction) {
@@ -23,6 +26,10 @@ export async function execute(interaction) {
   }
   const key = mixKey(interaction.options.getString('name'));
   const existing = Object.hasOwn(mixes, key) ? mixes[key] : null;
+  if (action === 'import') {
+    if (interaction.portalImportId) return commitImport(interaction, interaction.portalImportId, { kind: 'mix', key, link: importLink(interaction.options.getString('link')) });
+    return previewImport(interaction, { kind: 'mix', key });
+  }
   if (action === 'save') return saveMix(interaction, key, { replace: interaction.options.getBoolean('replace'), session: interaction.options.getBoolean('session') });
   if (!existing) return interaction.reply(ephemeralText('That mix does not exist. Browse saved names with /mix list.'));
   if (action === 'delete') {

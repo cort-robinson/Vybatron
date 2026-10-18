@@ -34,6 +34,7 @@ import { inviteUrlFor } from './invite.js';
 import { buildHistoryPayload, historySessionKey, replayHistoryTrack } from './history.js';
 import { cancelGuildMutations } from './requests.js';
 import { retirePresentationPlayer } from './presentation-updates.js';
+import { cancelImport, commitImport } from './playlist-import.js';
 
 async function disableStaleComponents(interaction) {
   await interaction.message?.edit?.({ components: [] }).catch(() => {});
@@ -272,6 +273,9 @@ export async function handleMessageComponent(interaction) {
 
   const favoriteMatch = /^player:v2:favorite:([a-f0-9]{12})$/.exec(customId);
   if (favoriteMatch && interaction.isButton()) return handlePlayerComponent(interaction, 'favorite', favoriteMatch[1]);
+
+  const importMatch = /^import:v1:(confirm|cancel):([a-f0-9]{32})$/.exec(customId);
+  if (importMatch && interaction.isButton()) return importMatch[1] === 'confirm' ? commitImport(interaction, importMatch[2]) : cancelImport(interaction, importMatch[2]);
 
   const helpMatch = /^help:v2:topic:([^:]+)$/.exec(customId);
   if (helpMatch && interaction.isStringSelectMenu()) {

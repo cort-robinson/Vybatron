@@ -6,6 +6,7 @@ import { date, time, totalTime } from '../format';
 import { Artwork, Confirm, Empty, ErrorState, IconButton, Loading } from './ui';
 import { Pagination } from './Pagination';
 import { ServerFavorites } from './ServerFavorites';
+import { PlaylistImport } from './PlaylistImport';
 import { transition } from '../motion';
 import { radioLabel, startRadioCommand } from '../radio';
 import './library.css';
@@ -109,6 +110,7 @@ export function LibraryView({ portal, active = true }: { portal: Portal; active?
         <IconButton className="favorite active" label={`Remove favorite ${track.title}`} disabled={!editable} onClick={() => void run({ command: 'favorite', subcommand: 'remove', options: { index: index + 1 }, expectedTrackId: track.id }, 'library')}><HeartIcon size={23} weight="fill" /></IconButton>
       </li>)}</ul>}
       <Pagination label="favorites" page={currentPage} total={favorites.length} pageSize={pageSize} onPageChange={page => setPages(previous => ({ ...previous, favorites: page }))} />
+      <PlaylistImport portal={portal} target="favorites" />
       {library.favorites.length > 0 && <button type="button" className="text-button danger-text library-clear" disabled={!editable} onClick={() => setConfirm({ kind: 'favorites' })}>Clear favorites</button>}
       {library.favorites.length >= 1000 && <p className="library-note">Your shelf is full. Remove a favorite to make room for another song.</p>}
       {!addable && <p className="library-note">{portal.blockedReason}</p>}
@@ -121,6 +123,7 @@ export function LibraryView({ portal, active = true }: { portal: Portal; active?
       }}><label>Save this session as a mix<input value={mixName} dir="auto" onChange={event => setMixName(event.target.value)} maxLength={40} placeholder="Late night drive" /></label>
         <button className="button secondary" disabled={!canSave || !mixName.trim() || !!namedMix && !namedMix.canEdit}><PlusIcon size={20} />{namedMix ? 'Replace mix' : 'Save mix'}</button></form>
       <p className="library-note">{namedMix && !namedMix.canEdit ? 'That name belongs to another saved mix. Choose a new name to save yours.' : !snapshot?.session.current ? 'Start a listening session to save its current song and queue.' : 'Save the current song and queue. You can save outside voice; queuing a mix needs voice access.'}</p>
+      <PlaylistImport portal={portal} target="mix" />
       {!library.mixes.length ? <Empty title="Build a soundtrack together" description="Save a great listening session and bring it back whenever the mood fits." icon={<VinylRecordIcon size={30} />} /> : !mixes.length ? noMatches : <div className="mixes-grid">{mixes.slice(offset, offset + pageSize).map(mix => <article className={`mix-tile ${selected === mix.id ? 'selected' : ''}`} key={mix.id}>
         <button type="button" className="mix-open" aria-label={`View mix ${mix.name}`} aria-expanded={selected === mix.id} aria-controls={selected === mix.id ? 'library-mix-detail' : undefined} onClick={() => openMix(mix.id)}><div className="mix-art"><Artwork track={mix.tracks[0] || null} /></div><h3 dir="auto" title={mix.name}>{mix.name}</h3><p>{mix.tracks.length} songs · {totalTime(mix.tracks.reduce((sum, track) => sum + track.durationMs, 0))}</p></button>
         <div className="mix-actions"><button type="button" className="text-button" disabled={!addable} title={!addable ? portal.blockedReason : undefined} onClick={() => void run({ command: 'mix', subcommand: 'load', options: { name: mix.name } }, 'add')}><PlayIcon size={18} weight="fill" />Queue mix</button>

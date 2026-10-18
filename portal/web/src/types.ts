@@ -102,10 +102,18 @@ export type SleepTimer = { mode: 'time'; endsAt: number } | { mode: 'track' };
 export interface Command {
   command: string; subcommand?: string; options?: Record<string, string | number | boolean | null>; expectedRevision?: string;
   expectedTrackId?: string; expectedHistoryId?: string; expectedMixVersion?: string;
+  // favorite/import and mix/import: confirms the preview with this id.
+  expectedImportId?: string;
   // transfer only: public links for the current song, then the queue.
   tracks?: string[];
 }
-export interface CommandResult { ok: true; message: string; snapshot: GuildSnapshot }
+// What a playlist import would save. id is null when nothing can be added.
+export interface ImportPreview {
+  id: string | null; target: 'favorites' | 'mix'; name: string | null; title: string;
+  found: number; toAdd: number; duplicates: number; unmatched: number; overLimit: number; limit: number;
+  notes: string[]; tracks: { title: string; author: string }[];
+}
+export interface CommandResult { ok: true; message: string; snapshot: GuildSnapshot; preview?: ImportPreview }
 export type Connection = 'connecting' | 'refreshing' | 'live' | 'offline';
 export type Capability = 'add' | 'control' | 'vote' | 'library' | 'admin' | 'resume';
 export type Surface = 'home' | 'session' | 'music' | 'server';

@@ -42,8 +42,8 @@ export function buildHelpPayload(client, requestedTopic = 'start', ownerId = 'an
   } else if (topic.value === 'library') {
     embed.setDescription('Save what you love, bring a shared mix back, and choose when to discover something new.')
       .addFields(
-        { name: 'Personal favorites', value: '`/favorite add` saves the current track. Use `/favorite list`, `/favorite play`, `/favorite remove`, or `/favorite clear` to manage your library.' },
-        { name: 'Shared guild mixes', value: '`/mix save` captures the current track and queue. `/mix list` finds saved mixes; `/mix load` brings one back. `/mix delete` removes one.' },
+        { name: 'Personal favorites', value: '`/favorite add` saves the current track. `/favorite import` adds a public playlist after a preview. Use `/favorite list`, `/favorite play`, `/favorite remove`, or `/favorite clear` to manage your library.' },
+        { name: 'Shared guild mixes', value: '`/mix save` captures the current track and queue. `/mix list` finds saved mixes; `/mix load` brings one back. `/mix import` adds a public playlist to a mix. `/mix delete` removes one.' },
         { name: 'Server favorites', value: '`/top show` lists what this server has on repeat, or its forgotten gems. `/top play` queues either list, optionally shuffled.' },
         { name: 'Made for you', value: '`/mymix play` queues Your mix (new picks every Monday), your top tracks, Rediscover, or an artist mix. `/mix save session:true` keeps this session as a shared mix.' },
         { name: 'Keep the music going', value: '`/radio on` plays related songs after your queue runs out; add a song or link to start from it. Songs people queue always play first. `/radio promote`, `/radio remove`, and `/radio less` manage suggestions; `/radio off` stops for this session.' },

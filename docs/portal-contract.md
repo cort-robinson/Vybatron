@@ -296,6 +296,15 @@ refresh the library, allow a deliberate user retry and never replay the write.
 References and authority still come entirely from the bot. Native numbered/name
 slash commands keep their existing behavior.
 
+Playlist imports: `favorite/import {link}` and `mix/import {name,link}` without
+`expectedImportId` are a read-only preview. The response adds `preview`:
+`{id,target,name,title,found,toAdd,duplicates,unmatched,overLimit,limit,notes,tracks}`
+(`tracks` holds at most 100 `{title,author}`; `id` is null when nothing can be
+added). Sending the same command and link with `expectedImportId: id` (32
+lowercase hex) saves that preview once, rechecking membership, mix ownership or
+Manage Server, and the favorite, mix and mix-count limits at the write. A preview
+is bound to its listener, server, target and link, and expires after 10 minutes.
+
 Errors: `{error:{code:string,message:string}}` with safe useful text. HTTP401
 unauthenticated,403 forbidden/wrong voice/DJ/hidden channel,404 inaccessible
 guild or missing resource,409 stale/changed session,400 invalid input,429 busy,

@@ -13,11 +13,18 @@ const selectionFields = {
   expectedTrackId: value => typeof value === 'string' && /^[a-f0-9]{24}$/.test(value),
   expectedHistoryId: string(40),
   expectedMixVersion: value => typeof value === 'string' && /^[a-f0-9]{32}$/.test(value),
+  expectedImportId: value => typeof value === 'string' && /^[a-f0-9]{32}$/.test(value),
 };
 const selectionFor = {
   'favorite/play': 'expectedTrackId', 'favorite/remove': 'expectedTrackId',
   replay: 'expectedHistoryId', 'mix/delete': 'expectedMixVersion',
   'radio/promote': 'expectedTrackId', 'radio/remove': 'expectedTrackId', 'radio/less': 'expectedTrackId',
+};
+// Present only to confirm an import preview; without it the command is the preview.
+const optionalSelectionFor = { 'favorite/import': 'expectedImportId', 'mix/import': 'expectedImportId' };
+const publicLink = value => {
+  if (!string(200)(value) || /\s/.test(value)) return false;
+  try { return new URL(value).protocol === 'https:'; } catch { return false; }
 };
 // Match the bot's 4..12-character slash field and parseSeekTimestamp grammar.
 const timestamp = value => {
@@ -50,8 +57,8 @@ const schemas = {
   'sleep/in': { minutes: required(integer(1, 720)) }, 'sleep/after-track': {}, 'sleep/cancel': {}, 'sleep/show': {},
   'favorite/add': { position: opt(integer(1, 500)) }, 'favorite/list': { page: opt(integer(1, 1000)) },
   'favorite/play': { index: required(integer(1, Number.MAX_SAFE_INTEGER)) }, 'favorite/remove': { index: required(integer(1, Number.MAX_SAFE_INTEGER)) },
-  'favorite/clear': { confirm: required(boolean) },
-  'mix/save': { name, replace: opt(boolean), session: opt(boolean) }, 'mix/list': {}, 'mix/load': { name }, 'mix/delete': { name },
+  'favorite/clear': { confirm: required(boolean) }, 'favorite/import': { link: required(publicLink) },
+  'mix/save': { name, replace: opt(boolean), session: opt(boolean) }, 'mix/list': {}, 'mix/load': { name }, 'mix/delete': { name }, 'mix/import': { name, link: required(publicLink) },
   'settings/show': {}, 'settings/volume': { value: required(integer(0, 100)) },
   'settings/fairqueue': { enabled: required(boolean) }, 'settings/autoplay': { mode: required(choice(['off', 'on', 'listening'])) }, 'settings/djrole': { role: opt(value => value === null || snowflake(value)) },
   'settings/reset': {}, 'settings/musicchannel': { channel: required(snowflake) },
@@ -72,9 +79,10 @@ export function validateCommand(body) {
   const key = body.subcommand ? `${body.command}/${body.subcommand}` : body.command;
   if (!Object.hasOwn(schemas, key)) throw invalid();
   const selection = selectionFor[key];
+  const optional = optionalSelectionFor[key];
   if ((key === 'transfer') !== Object.hasOwn(body, 'tracks') || (key === 'transfer' && !transferTracks(body.tracks))) throw invalid();
   for (const [field, valid] of Object.entries(selectionFields)) {
-    if (Object.hasOwn(body, field) && (field !== selection || !valid(body[field]))) throw invalid();
+    if (Object.hasOwn(body, field) && (![selection, optional].includes(field) || !valid(body[field]))) throw invalid();
   }
   if (selection && !Object.hasOwn(body, selection)) throw invalid();
   const schema = schemas[key]; const options = body.options ?? {};
@@ -88,5 +96,5 @@ export function validateCommand(body) {
   if (conflicting && body.expectedRevision === undefined) throw invalid();
   return { command: body.command, ...(body.subcommand && { subcommand: body.subcommand }),
     options, ...(body.expectedRevision !== undefined && { expectedRevision: body.expectedRevision }),
-    ...(selection && { [selection]: body[selection] }), ...(key === 'transfer' && { tracks: body.tracks }) };
+    ...(selection && { [selection]: body[selection] }), ...(optional && Object.hasOwn(body, optional) && { [optional]: body[optional] }), ...(key === 'transfer' && { tracks: body.tracks }) };
 }

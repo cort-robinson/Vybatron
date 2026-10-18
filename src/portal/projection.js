@@ -18,8 +18,8 @@ export function safeImage(value) {
     const url = new URL(value);
     if (url.protocol !== 'https:' || url.username || url.password || url.port || url.href.length > 1024) return null;
     const paths = {
-      'cdn.discordapp.com': /^\/(?:avatars|icons|embed\/avatars)\/[\w/.\-]+$/,
-      'media.discordapp.net': /^\/(?:avatars|icons)\/[\w/.\-]+$/,
+      'cdn.discordapp.com': /^\/(?:avatars|icons|embed\/avatars)\/[\w/.-]+$/,
+      'media.discordapp.net': /^\/(?:avatars|icons)\/[\w/.-]+$/,
       'i.ytimg.com': /^\/vi(?:_webp)?\/[\w-]{11}\/[\w.-]+$/,
       'img.youtube.com': /^\/vi\/[\w-]{11}\/[\w.-]+$/,
       'i.scdn.co': /^\/image\/[a-z0-9]+$/,

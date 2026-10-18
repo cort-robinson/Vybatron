@@ -7,7 +7,7 @@ import { createPortalPolicy, requirePlayback } from '../src/portal/policy.js';
 import { trackReference } from '../src/utils/library.js';
 import { track } from './fixtures.js';
 
-const checkpoint = f => ({ voiceChannelId: '301', textChannelId: '401', savedAt: Date.now(), position: 12000,
+const checkpoint = () => ({ voiceChannelId: '301', textChannelId: '401', savedAt: Date.now(), position: 12000,
   paused: true, volume: 70, repeatMode: 'off', tracks: [trackReference(track())] });
 const replaceChannel = (f, id, changes) => f.channels.set(id, { ...f.channels.get(id), hidden: new Set(), ...changes });
 

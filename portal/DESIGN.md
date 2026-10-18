@@ -278,6 +278,8 @@ Opt-in (Settings → Portal look → Fantastic Four); never the default. A 1960s
 broadcast from Earth-828, after *The Fantastic Four: First Steps*. It lives in
 `src/fantastic.css`, scoped to `:root[data-skin='fantastic']`, plus aria-hidden scenery in
 `src/components/Fantastic.tsx`, with the same one-attribute switch and two-file removal.
+Both load as their own chunk only when the look is chosen (`loadLook` in `src/skin.ts`); the
+look applies once its stylesheet is in, so it never flashes and other looks never pay for it.
 
 - **Scenery:** dusk sky over a seeded Googie skyline (bullet towers, saucer needles, domes);
   the Baxter Building flies a 4 emblem. A ringed planet tinted by the accent replaces the sun

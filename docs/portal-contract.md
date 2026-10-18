@@ -69,6 +69,7 @@ runtime objects and credential-bearing data. Maintain existing command meanings.
     positionMs: number, durationMs: number,
     volume: number, filter: string, repeat: 'off'|'track'|'queue',
     radio: boolean, autoplay: 'off'|'on'|'listening', fairQueue: boolean,
+    sleep: {mode:'time', endsAt:number}|{mode:'track'}|null,
     listeners: {id,displayName,avatarUrl:string|null}[],
     canAdd: boolean, canControl: boolean, canVote: boolean, reason: string|null,
     viewerVoice: {id,name}|null
@@ -87,6 +88,9 @@ reason; do not reveal restricted channel ids/name/tracks/listeners/checkpoint.
 they are not queue positions and are empty when hidden or inactive. `radio` is
 whether autoplay is active for the session (server `autoplay` mode or a /radio
 override). Clients must treat missing `suggestions`/`autoplay` as empty/off.
+`sleep` is the session's sleep timer: `time` stops at `endsAt` (epoch ms), `track`
+stops when the current track finishes. It is null when unset or hidden; clients must
+treat a missing field as null.
 `hasPrevious` is whether this session has an earlier track for `back` to return
 to; clients must treat it as false when missing.
 `viewerVoice` is the actor's own visible voice channel in this guild, or null; clients
@@ -237,6 +241,8 @@ Core playback command names and options: play/playnext(query), pause/resume,
 seek(timestamp), skip/skipto(position), back, stop, clear, remove(position), move(from,to),
 shuffle, loop(mode:off|track|queue), volume(level), filter(preset), voteskip,
 radio on(track?)/off/promote(position)/remove(position)/less(position?), replay(index),
+sleep in(minutes: 1-720)/after-track/cancel/show (Stop's DJ and voice rules, no revision;
+show is a read like nowplaying),
 session resume/discard. radio promote/remove/less carry `expectedTrackId` (the
 selected suggestion, or the current autoplay pick for less without a position);
 promote is an ordinary addition (the pick stays bot-requested and `suggested`), the others need playback control.
@@ -302,6 +308,15 @@ at the durable transaction or enqueue boundary. Changed selections return 409;
 refresh the library, allow a deliberate user retry and never replay the write.
 References and authority still come entirely from the bot. Native numbered/name
 slash commands keep their existing behavior.
+
+Playlist imports: `favorite/import {link}` and `mix/import {name,link}` without
+`expectedImportId` are a read-only preview. The response adds `preview`:
+`{id,target,name,title,found,toAdd,duplicates,unmatched,overLimit,limit,notes,tracks}`
+(`tracks` holds at most 100 `{title,author}`; `id` is null when nothing can be
+added). Sending the same command and link with `expectedImportId: id` (32
+lowercase hex) saves that preview once, rechecking membership, mix ownership or
+Manage Server, and the favorite, mix and mix-count limits at the write. A preview
+is bound to its listener, server, target and link, and expires after 10 minutes.
 
 Errors: `{error:{code:string,message:string}}` with safe useful text. HTTP401
 unauthenticated,403 forbidden/wrong voice/DJ/hidden channel,404 inaccessible

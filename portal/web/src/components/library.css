@@ -89,3 +89,15 @@
   .list-pagination .button { padding-inline: 10px; }
   .pagination-page { font-size: 14px; }
 }
+
+/* Playlist import: a link form and a preview dialog with counts. */
+.library-view .playlist-import-form { margin-top: 24px; }
+.import-dialog { width: 560px; }
+.import-counts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 16px 0 0; }
+.import-counts > div { min-width: 0; padding: 10px 12px; border: 1px solid var(--field-line); border-radius: 12px; }
+.import-counts dt { color: var(--muted); font-size: 13px; }
+.import-counts dd { margin: 2px 0 0; font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.import-tracks { max-height: 240px; overflow-y: auto; margin: 16px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 8px; }
+.import-tracks li { display: flex; flex-direction: column; min-width: 0; }
+.import-tracks strong { font-size: 14px; overflow-wrap: anywhere; }
+.import-tracks span { color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }

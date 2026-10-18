@@ -79,6 +79,13 @@ creates source-left/browser-right comparisons.
   retains a read-only session projection while disabling commands.
 - The service worker caches a versioned static shell only. No API, auth, external
   artwork, Discord avatar, search, library, session, or activity responses are cached.
+- The installed app is a GET share target (`/share?title&text&url`). The worker
+  answers `/share` from the cached shell, so the shared text doesn't leave the
+  device once it is installed. The app keeps the first public HTTPS YouTube,
+  YouTube Music, Spotify or SoundCloud link, resets the address to `/`, and queues
+  it with `play` only after the listener picks a server and taps Add to queue. A
+  signed-out share is held in this tab's session storage for the Discord sign-in
+  round trip only (ten minutes at most) and removed when it's read back.
 - Filter IDs/labels and supplemental forms come from bootstrap. Settings use
   server-projected channel/role dropdowns when available; otherwise admins can
   enter known Discord IDs as digit-only strings of at most 20 characters. This

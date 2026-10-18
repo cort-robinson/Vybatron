@@ -156,6 +156,8 @@ History stores only public references and original voice channel IDs, keeps 100
 entries and filters 30-day expiry at reads/startup/writes. Successful queue and
 settings edits record bounded actor identity/action text for 24 hours (200 items),
 including Discord command/component mutations; private favorites are excluded.
+History, activity and checkpoints live in `listening-state.sqlite` (ADR-0009);
+`library.json` keeps a copy written at shutdown for older releases.
 An hourly cleanup removes expired durable records even while idle. Disk failures
 in history/activity recording do not interrupt Discord audio. No second player,
 audio decoder, source writer or music-library instance was introduced.

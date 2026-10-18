@@ -2,7 +2,7 @@ import { trackReference, validId, LIBRARY_LIMITS } from './library.js';
 
 export const SESSION_RETENTION_MS = 72 * 60 * 60_000;
 // Periodic checkpoints round progress down to 30 s: a playing track then
-// rewrites the library at most every 30 s instead of every 15 s tick, and a
+// rewrites its checkpoint at most every 30 s instead of every 15 s tick, and a
 // crash restore replays at most ~45 s (30 s step + 15 s tick) rather than
 // skipping ahead. Graceful shutdown still saves the exact position.
 export const SESSION_POSITION_STEP_MS = 30_000;
@@ -46,8 +46,7 @@ export function attachSessionSnapshots(client, { intervalMs = 15_000, logger = c
     // An outage clears library state before it emits destroy; retain the last
     // useful checkpoint until intentional stop or a genuine empty queue.
     if (!snapshot) return;
-    await client.library.updateGuild(player.guildId, guild => { guild.session = snapshot; },
-      { skip: guild => sameSession(guild?.session, snapshot) });
+    await client.library.saveSession(player.guildId, snapshot, { skip: saved => sameSession(saved, snapshot) });
   };
   const schedule = (player) => {
     if (stopped || !player?.guildId || timers.has(player.guildId)) return;
@@ -62,7 +61,7 @@ export function attachSessionSnapshots(client, { intervalMs = 15_000, logger = c
     if (timer) clearTimeout(timer);
     timers.delete(player.guildId);
     if (!validId(player.guildId) || client.runtimeState?.draining) return;
-    void client.library.updateGuild(player.guildId, guild => { guild.session = null; }, { skip: guild => !guild?.session })
+    void client.library.saveSession(player.guildId, null, { skip: saved => !saved })
       .catch(() => logger.error('[Library] Could not clear a session checkpoint.'));
   };
   const onDestroy = (player, reason) => {

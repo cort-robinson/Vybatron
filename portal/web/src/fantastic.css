@@ -362,3 +362,9 @@ REVERT: everything here is scoped to :root[data-skin='fantastic']; Settings → 
   }
   :root[data-skin='fantastic'][data-boot] :is(.ff-planet, .ff-bay, .ff-skyline, .ff-krackle) { animation: none; }
 }
+
+/* Lyrics panel (components/lyrics.css): the broadcast card's cream trim and piping, with the sung line in the suit's warm cream. */
+:root[data-skin='fantastic'] .lyrics-panel { border: 0; border-radius: 26px; outline: 1px solid var(--trim); outline-offset: -6px; background: var(--piping), color-mix(in oklab, var(--ff-base) 72%, transparent); }
+:root[data-skin='fantastic'] .lyrics-lines li { font-family: 'Archivo Variable', sans-serif; }
+:root[data-skin='fantastic'] .synced .lyrics-lines li.current { color: var(--ff-cream); text-shadow: 0 2px 0 color-mix(in oklab, var(--ff-flame) 45%, transparent); }
+:root[data-skin='fantastic'] .lyrics-credit { font-family: var(--display); font-size: 11px; letter-spacing: .06em; text-transform: uppercase; }

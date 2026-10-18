@@ -12,7 +12,7 @@ import { suggestions } from '../utils/radio.js';
 import { commandAuthorityPhase } from './timing.js';
 import * as transfer from './transfer.js';
 
-const ALLOWED = new Set(['play', 'playnext', 'pause', 'resume', 'seek', 'skip', 'skipto', 'back', 'stop', 'clear', 'remove', 'move', 'shuffle', 'loop', 'volume', 'filter', 'voteskip', 'radio', 'replay', 'session', 'favorite', 'mix', 'settings', 'queue', 'nowplaying', 'history', 'help', 'top', 'mymix', 'transfer']);
+const ALLOWED = new Set(['play', 'playnext', 'pause', 'resume', 'seek', 'skip', 'skipto', 'back', 'stop', 'clear', 'remove', 'move', 'shuffle', 'loop', 'volume', 'filter', 'voteskip', 'radio', 'replay', 'session', 'favorite', 'mix', 'settings', 'queue', 'nowplaying', 'history', 'help', 'top', 'mymix', 'transfer', 'sleep']);
 const CONFLICTING = new Set(['playnext', 'seek', 'skip', 'skipto', 'back', 'clear', 'remove', 'move', 'shuffle', 'replay']);
 // These handlers perform no admission work that needs guild authority. Their
 // first await is the native requireControl guard, which takes fresh authority
@@ -24,7 +24,7 @@ const DIRECT_CONTROLS = new Set(['pause', 'resume', 'seek', 'filter', 'volume', 
 // when the policy can vouch for it, so the playback write isn't held behind a
 // Discord REST round. Queue edits, Stop and the final disclosure stay fresh.
 const GATEWAY_CONTROLS = new Set(['pause', 'resume', 'seek', 'filter', 'volume', 'skip', 'skipto', 'back']);
-const ROOT_KEYS = new Set(['actorId', 'command', 'subcommand', 'options', 'expectedRevision', 'expectedTrackId', 'expectedHistoryId', 'expectedMixVersion', 'tracks']);
+const ROOT_KEYS = new Set(['actorId', 'command', 'subcommand', 'options', 'expectedRevision', 'expectedTrackId', 'expectedHistoryId', 'expectedMixVersion', 'expectedImportId', 'tracks']);
 // Portal-only handlers that are not slash commands, so never appear in publicCommands.
 const handler = (commandMap, name) => name === 'transfer' ? transfer : commandMap.get(name);
 // Ordinary additions follow canAdd rules: same voice, no DJ role, no revision.
@@ -59,6 +59,9 @@ export function validateCommand(body, commandMap) {
     ['expectedHistoryId', body.command === 'replay', /^[^\u0000-\u001f\u007f]{1,40}$/],
     ['expectedMixVersion', body.command === 'mix' && body.subcommand === 'delete', /^[a-f0-9]{32}$/],
   ];
+  // An import without a preview id is the preview itself; with one, it saves that preview.
+  const importing = ['favorite', 'mix'].includes(body.command) && body.subcommand === 'import';
+  if (Object.hasOwn(body, 'expectedImportId') && (!importing || typeof body.expectedImportId !== 'string' || !/^[a-f0-9]{32}$/.test(body.expectedImportId))) fail(400, 'invalid_selection', 'A selection token was supplied for an unsupported command.');
   for (const [key, required, shape] of selections) {
     if (Object.hasOwn(body, key) && !required) fail(400, 'invalid_selection', 'A selection token was supplied for an unsupported command.');
     if (required && (typeof body[key] !== 'string' || !shape.test(body[key]))) fail(400, 'invalid_selection', 'Include the selected library item token before trying again.');
@@ -92,7 +95,8 @@ export function validateCommand(body, commandMap) {
   }
   const needsRevision = CONFLICTING.has(body.command) || (body.command === 'mix' && body.subcommand === 'save') || (body.command === 'favorite' && body.subcommand === 'add') || (body.command === 'session' && ['resume', 'discard'].includes(body.subcommand));
   if (needsRevision && !body.expectedRevision) fail(400, 'revision_required', 'Refresh this session and include its revision before editing.');
-  return { ...body, values, policy: commandMutationPolicy(body.command, body.subcommand) };
+  const policy = importing && body.expectedImportId ? { readOnly: false, playback: false, urgent: false } : commandMutationPolicy(body.command, body.subcommand);
+  return { ...body, values, policy };
 }
 
 function assertMixAccess(context, mix, expectedVersion) {
@@ -127,7 +131,7 @@ function commandAccess(client, context, command, { checkState = true } = {}) {
   }
   if (!context.member) fail(403, 'membership_required', 'Join this server to use its music library and playback controls.');
   if (command.policy.readOnly) {
-    if (['queue', 'nowplaying', 'history'].includes(name) && !visibleSession(context, client.lavalink?.getPlayer(context.guild.id))) fail(403, 'hidden_channel', 'The listening channel is not visible to you.');
+    if (['queue', 'nowplaying', 'history', 'sleep'].includes(name) && !visibleSession(context, client.lavalink?.getPlayer(context.guild.id))) fail(403, 'hidden_channel', 'The listening channel is not visible to you.');
     if (name === 'session') {
       const saved = savedSession(client.library, context.guild.id);
       if (saved && !visibleSession(context, saved)) fail(403, 'hidden_channel', 'The saved listening channel is not visible to you.');
@@ -140,10 +144,10 @@ function commandAccess(client, context, command, { checkState = true } = {}) {
     const key = mixKey(values.name);
     const existing = client.library.readGuild(context.guild.id).mixes[key];
     if (action === 'load' && !existing) fail(404, 'mix_not_found', 'That mix no longer exists.');
-    if (['save', 'delete'].includes(action) && existing && existing.ownerId !== context.user.id && !context.guildAdmin) fail(403, 'mix_owner_required', 'Only the creator or a server manager can edit that mix.');
+    if (['save', 'delete', 'import'].includes(action) && existing && existing.ownerId !== context.user.id && !context.guildAdmin) fail(403, 'mix_owner_required', 'Only the creator or a server manager can edit that mix.');
     if (action === 'save' && existing && !values.replace) fail(409, 'mix_exists', 'That mix exists. Choose Replace to update it.');
   }
-  if ((name === 'favorite' && !['add', 'play'].includes(action)) || (name === 'mix' && action === 'delete')) return;
+  if ((name === 'favorite' && !['add', 'play'].includes(action)) || (name === 'mix' && ['delete', 'import'].includes(action))) return;
   if ((name === 'favorite' && action === 'add') || (name === 'mix' && action === 'save')) {
     requirePlayback(context, client, { sourceOnly: true, queueSource: name === 'favorite' && values.position !== undefined });
     if (checkState && name === 'favorite' && values.position !== undefined && values.position > client.lavalink.getPlayer(context.guild.id).queue.tracks.length) fail(400, 'invalid_position', 'Choose an existing upcoming queue position.');
@@ -194,6 +198,7 @@ export async function executePortalCommand(client, policy, revisions, commandMap
     commandAccess(client, context, command, { checkState: false });
   }
   let message = 'Request completed.';
+  let preview = null;
   let started = false;
   let mutationStarted = false;
   let baseline = null;
@@ -221,6 +226,8 @@ export async function executePortalCommand(client, policy, revisions, commandMap
     async editReply(payload) { this.replied = true; message = safeReply(payload); },
     async followUp(payload) { this.replied = true; message = safeReply(payload); },
     portalTracks: command.tracks || [],
+    portalImportId: command.expectedImportId || null,
+    portalImportPreview(value) { preview = value; },
     portalReject(text) { throw new PortalError(403, 'forbidden', plainText(text, { maxLength: 250 })); },
     portalUnavailable() { fail(503, 'maintenance', 'Playback is briefly updating. Try again shortly.'); },
     portalAssertRevision: assertRevision,
@@ -291,6 +298,8 @@ export async function executePortalCommand(client, policy, revisions, commandMap
   // completed save/load/delete. An idle nonmember maintainer still has config
   // access, but no guild-library access. Do not replay its handler for new text.
   const hiddenGuildLibrary = command.command === 'mix' && !context.member;
-  if (neutralRead || hiddenGuildLibrary || (command.command !== 'help' && hiddenReplySource) || (command.command === 'settings' && !context.admin)) message = 'Request completed.';
-  return { ok: true, message, snapshot: snapshotProjection(client, context, revisions.revision(guildId), revisions.nextSnapshot()) };
+  // An import reply describes only the actor's own library and the link they sent.
+  const sessionReply = command.command !== 'help' && command.subcommand !== 'import';
+  if (neutralRead || hiddenGuildLibrary || (sessionReply && hiddenReplySource) || (command.command === 'settings' && !context.admin)) { message = 'Request completed.'; preview = null; }
+  return { ok: true, message, snapshot: snapshotProjection(client, context, revisions.revision(guildId), revisions.nextSnapshot()), ...(preview && { preview }) };
 }

@@ -3,12 +3,13 @@ import assert from 'node:assert/strict';
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { MusicLibrary, trackReference, HISTORY_RETENTION_MS, ACTIVITY_RETENTION_MS } from '../src/utils/library.js';
+import { trackReference, HISTORY_RETENTION_MS, ACTIVITY_RETENTION_MS } from '../src/utils/library.js';
 import { track } from './fixtures.js';
+import { openLibrary, closeLibraries } from './library-fixture.js';
 
 async function fixture(t) {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'vybertron-migration-'));
-  t.after(() => fs.rm(dir, { recursive: true, force: true }));
+  t.after(async () => { await closeLibraries(); await fs.rm(dir, { recursive: true, force: true }); });
   return { dir, filePath: path.join(dir, 'library.json') };
 }
 const legacyGuild = favorites => ({ settings: { volume: 65, fairQueue: true, djRoleId: null }, favorites, mixes: {}, session: null });
@@ -20,18 +21,18 @@ test('v1 migration backs up exact bytes, merges exact public references globally
   legacy.guilds['111'] = legacyGuild({ '200': [trackReference(track('00000000000'))], '201': [trackReference(track('00000000000'))] });
   const original = `${JSON.stringify(legacy, null, 2)}\n`;
   await fs.writeFile(filePath, original);
-  const library = await new MusicLibrary(filePath).open();
+  const library = await openLibrary(filePath);
   assert.equal(library.document.version, 2); assert.equal(library.favorites('200').length, 1000); assert.equal(library.favoriteOverflowCount('200'), 50);
   assert.equal(library.favorites('201').length, 1);
   assert.equal(library.settings('100').volume, 65); assert.equal(library.settings('100').musicTextChannelId, null);
   assert.equal(library.readGuild('100').favorites, undefined);
-  const backups = (await fs.readdir(dir)).filter(name => name.endsWith('.bak')); assert.equal(backups.length, 1);
+  const backups = (await fs.readdir(dir)).filter(name => name.includes('.v1.')); assert.equal(backups.length, 1);
   assert.equal(await fs.readFile(path.join(dir, backups[0]), 'utf8'), original);
   await library.updateFavorites('200', list => { list.splice(0, 1); });
   assert.equal(library.favorites('200').length, 1000); assert.equal(library.favoriteOverflowCount('200'), 49);
   assert.equal(library.favorites('200').at(-1).identifier, '00000001000');
-  const reopened = await new MusicLibrary(filePath).open(); assert.deepEqual(reopened.document, library.document);
-  assert.equal((await fs.readdir(dir)).filter(name => name.endsWith('.bak')).length, 1, 'reopening v2 does not remigrate');
+  const reopened = await openLibrary(filePath); assert.deepEqual(reopened.document, library.document);
+  assert.equal((await fs.readdir(dir)).filter(name => name.includes('.v1.')).length, 1, 'reopening v2 does not remigrate');
   const all = [...reopened.favorites('200'), ...reopened.document.favoriteOverflow['200']];
   assert.equal(new Set(all.map(item => item.uri)).size, 1049);
   assert.doesNotMatch(await fs.readFile(filePath, 'utf8'), /encoded-|never-save|requester|pluginInfo/);
@@ -44,18 +45,18 @@ test('migration disk/backup failures preserve original v1 and an unsuccessful gl
     await fs.writeFile(filePath, original);
     const code = stage === 'rename missing' ? 'ENOENT' : 'ENOSPC';
     const io = { ...fs, open: async (file, ...args) => { if (stage === 'backup' && file.endsWith('.bak')) throw Object.assign(new Error('private disk error'), { code }); return fs.open(file, ...args); }, rename: async (...args) => { if (stage.startsWith('rename')) throw Object.assign(new Error('private disk error'), { code }); return fs.rename(...args); } };
-    await assert.rejects(new MusicLibrary(filePath, { io }).open(), { code });
+    await assert.rejects(openLibrary(filePath, { io }), { code });
     assert.equal(await fs.readFile(filePath, 'utf8'), original);
     assert.equal((await fs.readdir(dir)).filter(name => name.endsWith('.tmp')).length, 0);
-    const library = await new MusicLibrary(filePath).open(); assert.equal(library.favorites('200').length, 1);
+    const library = await openLibrary(filePath); assert.equal(library.favorites('200').length, 1);
     library.io = { ...fs, rename: async () => { throw Object.assign(new Error('failure'), { code: 'EROFS' }); } };
     await assert.rejects(library.updateFavorites('200', list => { list.length = 0; }), { code: 'EROFS' });
-    assert.equal(library.favorites('200').length, 1); assert.equal((await new MusicLibrary(filePath).open()).favorites('200').length, 1);
+    assert.equal(library.favorites('200').length, 1); assert.equal((await openLibrary(filePath)).favorites('200').length, 1);
   });
 });
 
 test('history and successful actor activity persist with bounded retention and private-reference-only storage', async t => {
-  const { filePath } = await fixture(t); const library = await new MusicLibrary(filePath).open();
+  const { filePath } = await fixture(t); const library = await openLibrary(filePath);
   const now = Date.now();
   await library.updateGuild('100', guild => {
     guild.history = Array.from({ length: 105 }, (_, index) => ({ id: String(index), playedAt: now - index, voiceChannelId: index % 2 ? '300' : '301', track: trackReference(track(String(index).padStart(11, '0'))) }));
@@ -66,7 +67,9 @@ test('history and successful actor activity persist with bounded retention and p
   assert.equal(library.readGuild('100').history.length, 99);
   await library.recordHistory({ guildId: '100', voiceChannelId: '300' }, track('abcdefghijk'));
   await library.recordActivity('100', { id: '200', username: 'Listener' }, 'settings');
-  const reopened = await new MusicLibrary(filePath).open();
+  await library.close();
+  assert.equal(JSON.parse(await fs.readFile(filePath, 'utf8')).guilds['100'].history.length, 100, 'shutdown mirrors history for older images');
+  const reopened = await openLibrary(filePath);
   assert.equal(reopened.readGuild('100').history.length, 100); assert.equal(reopened.readGuild('100').history[0].voiceChannelId, '300');
   assert.equal(reopened.readGuild('100').activity[0].action, 'settings');
   assert.doesNotMatch(await fs.readFile(filePath, 'utf8'), /encoded-|never-save|userData|pluginInfo/);

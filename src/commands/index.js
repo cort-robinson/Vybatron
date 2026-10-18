@@ -33,7 +33,7 @@ export function friendlyInteractionError(error, context) {
   if (/queued music request was cancelled by stop/.test(details)) return 'Stop cancelled that waiting music request. Use /play to start a new session.';
   if (/favorites changed|mix changed/.test(details)) return 'The collection changed while saving. Refresh before trying again.';
   if (error?.name === 'AbortError') return 'That playback request was cancelled. Use /play to start a new session.';
-  if (/queue holds at most|favorites hold at most|music library is full|name your mix|server can save/.test(error?.message || '')) return error.message;
+  if (/queue holds at most|favorites hold at most|music library is full|name your mix|server can save/i.test(error?.message || '')) return error.message;
   if (/enospc|erofs|eacces|eperm|library/.test(details)) return 'The music library could not be saved. Playback still works; the server administrator should check the data volume.';
   if (context.startsWith('/play') && /youtube|spotify|soundcloud|load|search|track/.test(details)) {
     return 'That track couldn’t be loaded. Try another result or paste a direct YouTube, Spotify, or SoundCloud link.';

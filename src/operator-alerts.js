@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } from 'discord.js';
 import { getHealth } from './health.js';
 import { logEvent } from './runtime.js';
+import { LIBRARY_WARNING_RATIO } from './utils/library.js';
 import { playbackHealth } from './utils/playback-health.js';
 import { NO_MENTIONS } from './utils/presentation.js';
 
@@ -51,6 +52,15 @@ export const ALERT_CONDITIONS = [
       : `${signals.recentStatsFailures} play statistics writes failed in the last 10 minutes. Playback is unaffected; check the data volume.`,
     resolved: 'Resolved: play statistics are saving again.',
   },
+  {
+    key: 'library-capacity',
+    raiseAfter: 1,
+    resolveAfter: 2,
+    // A little hysteresis keeps a library hovering at the threshold from flapping.
+    active: (signals, state) => signals.libraryPercent >= LIBRARY_WARNING_RATIO * 100 - (state.raised ? 5 : 0),
+    message: (signals) => `The music library is ${signals.libraryPercent}% full. Saves fail for every server once it is full.`,
+    resolved: 'Resolved: the music library has room again.',
+  },
 ];
 
 // A final guard in case a future condition interpolates something it shouldn't.
@@ -66,6 +76,7 @@ export function readSignals(client) {
   const health = getHealth(client);
   const recovery = client.lavalink?.playbackRecovery?.summary?.() || {};
   const stats = client.stats?.status?.() || null;
+  const library = client.library?.capacity?.() || null;
   return {
     discordReady: health.discordReady,
     audioReady: health.audioReady,
@@ -74,6 +85,7 @@ export function readSignals(client) {
     circuitTrips: Number(recovery.circuitTrips) || 0,
     statsUnavailable: stats ? stats.available === false : false,
     statsFailures: stats ? (Number(stats.writeFailures) || 0) + (Number(stats.droppedWrites) || 0) : 0,
+    libraryPercent: library?.limitBytes > 0 ? Math.floor(library.bytes / library.limitBytes * 100) : 0,
   };
 }
 

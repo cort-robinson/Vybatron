@@ -92,7 +92,7 @@ For native development, publish the audio port on the **warp** service in a loca
 
 ### Audio alerts
 
-The bot DMs its owner and `PORTAL_OPERATOR_IDS` when audio degrades and again when it recovers: the audio service offline for about two minutes, repeated song failures, a paused audio source, or play statistics failing to save. Alerts are checked every 30 seconds outside the playback path, need a condition to persist before alerting, repeat at most every 30 minutes per condition and six times an hour in total, and contain only counts, never server, user, song or link details. They're on by default; each alert has a **Mute audio alerts** button, saved per person in `operator-alerts.json` next to the library. Discord must allow DMs from the bot (a shared server with DMs enabled); failed DMs are logged as `operator_alert_failed` and never affect playback.
+The bot DMs its owner and `PORTAL_OPERATOR_IDS` when audio degrades and again when it recovers: the audio service offline for about two minutes, repeated song failures, a paused audio source, play statistics failing to save, or the music library reaching 80% of its size cap. Alerts are checked every 30 seconds outside the playback path, need a condition to persist before alerting, repeat at most every 30 minutes per condition and six times an hour in total, and contain only counts, never server, user, song or link details. They're on by default; each alert has a **Mute audio alerts** button, saved per person in `operator-alerts.json` next to the library. Discord must allow DMs from the bot (a shared server with DMs enabled); failed DMs are logged as `operator_alert_failed` and never affect playback.
 
 ## Saved music
 

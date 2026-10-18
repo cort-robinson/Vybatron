@@ -16,7 +16,7 @@ import {
 import { recordPlaybackFailure } from '../src/utils/playback-health.js';
 
 const healthy = { discordReady: true, audioReady: true, draining: false, recentFailures: 0,
-  circuitTrips: 0, statsUnavailable: false, statsFailures: 0 };
+  circuitTrips: 0, statsUnavailable: false, statsFailures: 0, libraryPercent: 0 };
 
 function clock() {
   let time = 1_000_000;
@@ -95,12 +95,23 @@ test('cumulative breaker and stats counters alert on recent increases only', () 
   assert.deepEqual(resolved.map((m) => m.kind), ['resolved', 'resolved']);
 });
 
+test('a nearly full library alerts at the warning threshold and resolves below it', () => {
+  const time = clock();
+  const monitor = createAlertMonitor({ now: time.now });
+  assert.deepEqual(run(monitor, time, [{ libraryPercent: 79 }]), []);
+  const [alert] = run(monitor, time, [{ libraryPercent: 82 }]);
+  assert.match(alert.text, /music library is 82% full/);
+  assert.deepEqual(run(monitor, time, [{ libraryPercent: 78 }, { libraryPercent: 79 }, { libraryPercent: 76 }]), []);
+  assert.deepEqual(run(monitor, time, [{ libraryPercent: 70 }, { libraryPercent: 70 }]).map((m) => m.kind), ['resolved']);
+});
+
 test('alert text carries no IDs, titles, URLs or provider errors', () => {
   const client = {
     isReady: () => true,
     lavalink: { nodeManager: { nodes: new Map([['main', { connected: true }]]) },
       playbackRecovery: { summary: () => ({ circuitTrips: 0, guildId: '123456789012345678' }) } },
     stats: { status: () => ({ available: true, writeFailures: 0, droppedWrites: 0, lastError: 'token=secret' }) },
+    library: { capacity: () => ({ bytes: 900, limitBytes: 1000 }) },
   };
   for (const identifier of ['dQw4w9WgXcQ', 'aaaaaaaaaaa', 'bbbbbbbbbbb', 'ccccccccccc', 'ddddddddddd']) {
     recordPlaybackFailure(client, { info: { sourceName: 'youtube', identifier, title: 'Secret Song Title' } });
@@ -111,6 +122,7 @@ test('alert text carries no IDs, titles, URLs or provider errors', () => {
   const monitor = createAlertMonitor({ now: time.now });
   const text = run(monitor, time, [signals, signals]).map((m) => m.text).join('\n');
   assert.match(text, /5 songs failed to play/);
+  assert.match(text, /music library is 90% full/);
   for (const leaked of ['dQw4w9WgXcQ', 'Secret Song', '123456789012345678', 'secret', 'http']) assert.ok(!text.includes(leaked), leaked);
   assert.equal(safeAlertText('user 123456789012345678 at https://example.com/x?sig=abc'), 'user [id] at [link]');
 });

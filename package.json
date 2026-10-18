@@ -12,7 +12,8 @@
     "portal:build": "npm --prefix portal/web run build",
     "portal:test": "npm --prefix portal/server test",
     "portal:integration": "node --test portal/integration/*.test.js",
-    "portal:dev": "npm --prefix portal/web run dev"
+    "portal:dev": "npm --prefix portal/web run dev",
+    "lint": "eslint src deploy-commands.js eslint.config.js tests portal/server"
   },
   "repository": {
     "type": "git",
@@ -32,5 +33,10 @@
   },
   "engines": {
     "node": ">=24.11.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "eslint": "10.13.0",
+    "globals": "17.13.0"
   }
 }

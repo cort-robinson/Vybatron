@@ -90,7 +90,8 @@ for (const skin of ['overdrive', 'fantastic', 'classic'] as const) {
       // The transport stays clear of the panel.
       const play = (await page.getByRole('button', { name: 'Pause playback' }).boundingBox())!;
       expect(box.y + box.height).toBeLessThanOrEqual(play.y + 1);
-      expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+      // The page behind the opening sleeve may overflow until it hides; the open player must not.
+      await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
       const toggle = (await page.getByRole('button', { name: 'Hide lyrics', exact: true }).boundingBox())!;
       expect(toggle.width).toBeGreaterThanOrEqual(44);
       expect(toggle.height).toBeGreaterThanOrEqual(44);

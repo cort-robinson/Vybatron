@@ -1,4 +1,4 @@
-import type { Bootstrap, GuildSnapshot, Library, Track, Command, CommandResult, Configuration, Diagnostics, Activity, Stats, StatsWindow } from './types';
+import type { Bootstrap, GuildSnapshot, Library, Track, Command, CommandResult, Configuration, Diagnostics, Activity, Stats, StatsWindow, LyricsResponse } from './types';
 
 export class ApiError extends Error {
   constructor(public status: number, public code: string, message: string, public retryAfterMs = 0) { super(message); this.name = 'ApiError'; }
@@ -51,6 +51,13 @@ export const api = {
     const playlists = data.personal?.playlists;
     if (!Array.isArray(playlists) || playlists.length > 6 || playlists.some(list => !Array.isArray(list?.tracks) || list.tracks.length > 25)) lists.push(undefined);
     if (lists.some(list => !Array.isArray(list) || list.length > 25)) throw new ApiError(503, 'invalid_response', 'Listening stats are unavailable. Try refreshing them.');
+    return data;
+  },
+  lyrics: async (id: string, signal?: AbortSignal) => {
+    const data = await request<LyricsResponse>(`${guildPath(id)}/lyrics`, { signal });
+    if (!['idle', 'found', 'not_found', 'unavailable'].includes(data.status) || (data.status === 'found' && (!Array.isArray(data.lyrics?.lines) || data.lyrics.lines.length > 1000))) {
+      throw new ApiError(503, 'invalid_response', 'Lyrics are unavailable right now.');
+    }
     return data;
   },
   clearRequestStats: (csrfToken: string) => request<{ ok: true; cleared: number }>('/api/stats/requests/clear', {

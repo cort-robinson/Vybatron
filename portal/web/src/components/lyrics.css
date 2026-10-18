@@ -1,0 +1,41 @@
+/* Lyrics take the cover's place in the open player, so they inherit its slot in every layout. */
+.sleeve-artwork.showing-lyrics { display: block; container-type: normal; }
+.lyrics-panel { position: relative; width: min(100%, 680px); height: 100%; margin-inline: auto; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin;
+  padding: 28px 28px 20px; background: color-mix(in oklab, var(--ground) 62%, transparent); backdrop-filter: var(--chrome-blur); border: 1px solid var(--line); border-radius: 20px; }
+.lyrics-panel:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.lyrics-lines { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.lyrics-lines li { font-size: clamp(19px, 1.7vw, 26px); line-height: 1.32; font-weight: 720; letter-spacing: -.01em; color: var(--text-soft); overflow-wrap: anywhere; text-wrap: pretty; }
+.lyrics-lines li.lyrics-break { height: 10px; }
+/* Synced lyrics: lines ahead wait in a muted tone, the sung line is full white, and sung lines stay
+   readable. Only color changes, so nothing reflows as the song moves. */
+.synced .lyrics-lines li { color: color-mix(in oklab, var(--muted) 72%, transparent); transition: color 260ms ease-out; }
+.synced .lyrics-lines li.past { color: color-mix(in oklab, var(--text-soft) 62%, transparent); }
+.synced .lyrics-lines li.current { color: var(--text); }
+.lyrics-credit { margin-top: 24px; font-size: 13px; line-height: 1.5; color: var(--muted); }
+.lyrics-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; text-align: center; color: var(--text-soft); font-size: 16px; line-height: 1.5; }
+.lyrics-empty .spinner { width: 18px; height: 18px; }
+.player-title-row .lyrics-toggle.active-control { color: var(--accent); }
+:root[data-performance] .lyrics-panel { backdrop-filter: none; background: color-mix(in oklab, var(--ground) 92%, transparent); }
+
+/* Phones: the panel keeps the cover's height and tighter type. */
+@media (max-width: 1023px) {
+  .lyrics-panel { padding: 20px 18px 16px; border-radius: 18px; }
+  .lyrics-lines { gap: 8px; }
+  .lyrics-lines li { font-size: clamp(18px, 4.8vw, 22px); }
+}
+
+/* Overdrive: the queue's plated HUD frame, and the sung line glows in the horizon's neon. */
+:root[data-skin='overdrive'] .lyrics-panel { border-radius: 6px 22px 6px 22px; background: var(--hud), var(--rail) top / 100% 1px no-repeat, color-mix(in oklab, var(--ground) 70%, transparent); }
+:root[data-skin='overdrive'] .synced .lyrics-lines li.current { text-shadow: 0 0 18px color-mix(in oklab, var(--neon) 55%, transparent), 0 2px 0 color-mix(in oklab, var(--neon) 35%, transparent); }
+@supports (corner-shape: bevel) { :root[data-skin='overdrive'] .lyrics-panel { corner-shape: bevel; } }
+:root[data-skin='overdrive'][data-performance] .synced .lyrics-lines li.current { text-shadow: none; }
+
+/* Fantastic: the broadcast card's cream trim and piping, with the sung line in the suit's warm cream. */
+:root[data-skin='fantastic'] .lyrics-panel { border: 0; border-radius: 26px; outline: 1px solid var(--trim); outline-offset: -6px; background: var(--piping), color-mix(in oklab, var(--ff-base) 72%, transparent); }
+:root[data-skin='fantastic'] .lyrics-lines li { font-family: 'Archivo Variable', sans-serif; }
+:root[data-skin='fantastic'] .synced .lyrics-lines li.current { color: var(--ff-cream); text-shadow: 0 2px 0 color-mix(in oklab, var(--ff-flame) 45%, transparent); }
+:root[data-skin='fantastic'] .lyrics-credit { font-family: var(--display); font-size: 11px; letter-spacing: .06em; text-transform: uppercase; }
+
+@media (prefers-reduced-motion: reduce) {
+  .synced .lyrics-lines li { transition: none; }
+}

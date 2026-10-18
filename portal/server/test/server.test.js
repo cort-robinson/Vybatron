@@ -104,6 +104,7 @@ async function fixture(t, { limits = {}, now, dataDir, production = false, botOr
     else if (url.pathname.endsWith('/activity')) reply(res, 200, { items: [] });
     else if (url.pathname.endsWith('/stats')) reply(res, 200, { serverFavorites: { onRepeat: [], forgottenGems: [] }, personal: { window: url.searchParams.get('window') || '30d', topTracks: [], topArtists: [], rediscover: [] } });
     else if (url.pathname === '/v1/stats/requests/clear') reply(res, 200, { ok: true, cleared: 2 });
+    else if (url.pathname.endsWith('/lyrics')) reply(res, 200, { trackId: 'a'.repeat(24), status: 'found', lyrics: { source: 'lrclib', provider: 'LRCLIB', synced: true, lines: [{ startMs: 0, text: 'First line' }] } });
     else reply(res, 200, state.snapshot);
   });
   const botUrl = await listen(bridge);
@@ -1258,6 +1259,21 @@ test('Security regression: saturated portal and real bot bridge still execute ur
   assert.equal(bot.manager.getPlayer('100'), undefined);
   await bot.library.pending; assert.equal(bot.library.readGuild('100').session, null);
   assert.equal(f.app.resourceCounts().upstream, 0);
+});
+
+test('lyrics reads forward only the signed-in actor and accept no query', async t => {
+  const f = await fixture(t); const device = await f.login();
+  const read = await f.request(`/api/guilds/${guildId}/lyrics`, { headers: { Cookie: device.cookie } });
+  assert.equal(read.status, 200);
+  assert.equal(read.json().lyrics.lines[0].text, 'First line');
+  const call = f.state.calls.findLast(item => item.path.endsWith('/lyrics'));
+  assert.equal(call.path, `/v1/guilds/${guildId}/lyrics`);
+  assert.deepEqual([...call.params.keys()], ['actorId']);
+  assert.equal(call.params.get('actorId'), actorId);
+  for (const query of ['track=1', 'actorId=1']) {
+    assert.equal((await f.request(`/api/guilds/${guildId}/lyrics?${query}`, { headers: { Cookie: device.cookie } })).status, 400, query);
+  }
+  assert.equal((await f.request(`/api/guilds/${guildId}/lyrics`)).status, 401);
 });
 
 test('stats reads forward only a supported window, and clearing request stats needs CSRF and same origin', async t => {

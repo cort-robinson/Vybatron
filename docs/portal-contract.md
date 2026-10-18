@@ -34,6 +34,17 @@ music storage is not shared with bot music JSON. Auth cookies/tokens remain serv
   source: string, durationMs: number, artworkUrl: string|null, isStream: boolean,
   requestedBy: {id, displayName, avatarUrl: string|null}|null, suggested?: boolean }`
 
+`LyricsResponse = { trackId: string|null, status: idle|found|not_found|unavailable,
+  lyrics: { source: string, provider: string|null, synced: boolean,
+  lines: {startMs: number|null, text: string}[] }|null }`
+
+Lyrics belong to the session's current song (`trackId` is its public Track id, null
+with `idle` when nothing visible is playing). Synced lyrics carry each line's start
+in track milliseconds; plain lyrics have `startMs: null`. Empty `text` is a verse
+break. At most 1000 lines of 300 characters. `unavailable` means the audio server
+or its lyrics source failed (or lacks the LavaLyrics plugin); it is retried on the
+next read, while found and not-found answers are cached per song for 30 minutes.
+
 `suggested` appears on session tracks only (current, queue, suggestions): true for
 smart-autoplay picks, whose `requestedBy` is the bot. Library tracks omit it.
 
@@ -171,6 +182,8 @@ changes. Fetch on demand; stats are not part of snapshots or the change feed.
 - GET `/api/guilds/:guildId/activity` -> Activity (admin only).
 - GET `/api/guilds/:guildId/stats?window=7d|30d|90d|365d|all` -> Stats. Only `window` is
   accepted; omitted means `30d`.
+- GET `/api/guilds/:guildId/lyrics` -> LyricsResponse for the current song. No query.
+  Session channel visibility, like the snapshot. Fetched on demand, never in snapshots.
 - POST `/api/stats/requests/clear` -> `{ok:true,cleared:number}`. Same-origin + CSRF, no body.
   Anonymizes the signed-in listener's recorded requests in every server; server totals remain.
 - GET `/api/guilds/:guildId/audio/:videoId` (11-character YouTube id): this device's
@@ -291,6 +304,8 @@ browser access or CORS. Portal sets the trusted session's actorId itself.
 - GET `/v1/guilds/:guildId/activity?actorId=...` -> Activity.
 - GET `/v1/guilds/:guildId/stats?actorId=...&window=...` -> Stats (history channel scope,
   including the guild's most recent 50 voice channels with plays).
+- GET `/v1/guilds/:guildId/lyrics?actorId=...` -> LyricsResponse. The bot asks Lavalink's
+  LavaLyrics `GET /v4/lyrics?track=<encoded>` for the visible current song (8 s bound).
 - POST `/v1/stats/requests/clear?actorId=...` -> `{ok:true,cleared:number}`. Requires a fresh
   verified identity; no guild grant is involved.
 - GET `/v1/guilds/:guildId/audio/:videoId?actorId=...` -> audio bytes by range (see the

@@ -7,13 +7,15 @@ import { validatePlaybackQuery } from '../utils/query.js';
 import { withTimeout } from '../utils/enqueue.js';
 import { validId } from '../utils/library.js';
 import { clientInviteUrl } from '../utils/invite.js';
-import { actorVoiceId, createPortalPolicy } from './policy.js';
+import { actorVoiceId, createPortalPolicy, visibleSession } from './policy.js';
 import { FILTERS, actorProjection, guildProjection, trackProjection, snapshotProjection, libraryProjection, activityProjection, configurationProjection, createRevisions, statsProjection, STATS_WINDOW_IDS } from './projection.js';
 import { publicCommands, executePortalCommand } from './commands.js';
 import { fail, safeError } from './errors.js';
 import { createCommandTimings, commandTimingSpan } from './timing.js';
 import { createChangeFeed } from './changes.js';
 import { createAudioCache, sendAudio } from './audio.js';
+import { trackLyrics } from '../utils/lyrics.js';
+import { publicTrackId } from './selections.js';
 
 const hash = value => createHash('sha256').update(value).digest();
 function json(response, status, body, maxBytes) {
@@ -140,7 +142,7 @@ export function startPortalBridge(client, {
           if (!context.member) fail(403, 'membership_required', 'Join this server to listen to its music.');
           return sendAudio(request, response, await audio.get(audioMatch[2]));
         }
-        const match = url.pathname.match(/^\/v1\/guilds\/(\d{1,22})(?:\/(library|search|commands|diagnostics|activity|configuration|stats))?$/);
+        const match = url.pathname.match(/^\/v1\/guilds\/(\d{1,22})(?:\/(library|search|commands|diagnostics|activity|configuration|stats|lyrics))?$/);
         if (!match) fail(404, 'not_found', 'That bridge endpoint does not exist.');
         const [, guildId, resource] = match;
         if (resource === 'commands' && request.method === 'POST') return json(response, 200, await timings.run(body?.command,
@@ -165,6 +167,16 @@ export function startPortalBridge(client, {
             const health = getHealth(client);
             const summary = client.lavalink?.playbackRecovery?.summary?.();
             result = { botReady: health.discordReady, audioReady: health.audioReady, uptimeSeconds: Math.floor(process.uptime()), recoveryState: summary?.recovering ? 'recovering' : health.audioReady ? 'ready' : 'unavailable', lastError: null };
+          }
+        }
+        if (resource === 'lyrics') {
+          // The current song of a visible session only; fetched on demand, never in snapshots.
+          const player = client.lavalink?.getPlayer(guildId);
+          const track = player && visibleSession(context, player) ? player.queue?.current : null;
+          if (!track) result = { trackId: null, status: 'idle', lyrics: null };
+          else {
+            const found = await trackLyrics(player.node, track);
+            result = { trackId: publicTrackId(track), status: found.status, lyrics: found.lyrics || null };
           }
         }
         if (resource === 'search') {

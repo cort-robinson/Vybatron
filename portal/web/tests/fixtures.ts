@@ -1,6 +1,6 @@
 // Explicit loopback browser-test fixtures. Not imported by src or emitted in production.
 import type { Locator, Page } from '@playwright/test';
-import type { Activity, Bootstrap, Command, Configuration, Diagnostics, GuildSnapshot, Library, Track, Stats } from '../src/types';
+import type { Activity, Bootstrap, Command, Configuration, Diagnostics, GuildSnapshot, Library, LyricsResponse, Track, Stats } from '../src/types';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 
@@ -51,7 +51,10 @@ export function fixtureState() {
       { id: 'rediscover', kind: 'rediscover', title: 'Rediscover', artist: null, refreshesAt: null, tracks: [tracks[0]] },
       { id: 'artist-1', kind: 'artist', title: 'Solara mix', artist: 'Solara', refreshesAt: null, tracks: [tracks[0], tracks[3]] },
     ] } };
-  return { snapshot, configuration, bootstrap, library, diagnostics, activity, stats };
+  // Synced to the fixture's 107-second position: line 3 is being sung.
+  const verses = ['Streetlights hum along the avenue', 'Every window holds a different view', 'We keep the evening light between us two', '', 'Hold on, the night is almost through', 'Hold on, the night is almost through'];
+  const lyrics: LyricsResponse = { trackId: current.id, status: 'found', lyrics: { source: 'lrclib', provider: 'LRCLIB', synced: true, lines: verses.map((text, index) => ({ startMs: 90_000 + index * 6_000, text })) } };
+  return { snapshot, configuration, bootstrap, library, diagnostics, activity, stats, lyrics };
 }
 // Model the selected-item HTTP contract independently of the browser's capture logic.
 export function selectedCommandError(library: Library, command: Command) {
@@ -118,6 +121,7 @@ export async function mockPortal(page: Page, options: { signedOut?: boolean; bas
     else if (path.endsWith('/diagnostics')) await route.fulfill(reply(state.diagnostics));
     else if (path.endsWith('/activity')) await route.fulfill(reply(state.activity));
     else if (path.endsWith('/stats')) await route.fulfill(reply(state.stats));
+    else if (path.endsWith('/lyrics')) await route.fulfill(reply(state.lyrics));
     else if (path === '/api/stats/requests/clear') {
       if (route.request().method() !== 'POST' || route.request().headers()['x-csrf-token'] !== 'local-test-csrf') throw new Error('Clearing stats needs a CSRF-checked POST');
       requestClears.push(path);

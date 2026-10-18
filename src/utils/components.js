@@ -1,5 +1,5 @@
 import { MessageFlags } from 'discord.js';
-import { requireControl } from './guards.js';
+import { requireControl, requireSessionVisibility } from './guards.js';
 import {
   buildEmptyQueuePayload,
   buildQueuePayload,
@@ -32,6 +32,7 @@ import { clearVoiceStatusBeforeLeaving, updateVoiceStatus } from './voice-status
 import { buildHelpPayload } from './help.js';
 import { inviteUrlFor } from './invite.js';
 import { buildHistoryPayload, historySessionKey, replayHistoryTrack } from './history.js';
+import { buildLyricsPayload, findSessionTrack, trackLyrics } from './lyrics.js';
 import { cancelGuildMutations } from './requests.js';
 import { retirePresentationPlayer } from './presentation-updates.js';
 
@@ -265,6 +266,21 @@ async function handleHistoryComponent(interaction, action, ownerId, session, pag
   ));
 }
 
+async function handleLyricsPage(interaction, ownerId, identity, page) {
+  if (ownerId !== 'any' && interaction.user?.id !== ownerId) {
+    return interaction.reply(ephemeralText('Only the person who opened these lyrics can turn the page.'));
+  }
+  const player = interaction.client.lavalink?.getPlayer(interaction.guildId);
+  if (!await requireSessionVisibility(interaction, player)) return null;
+  const track = findSessionTrack(player, identity);
+  if (!track) {
+    await interaction.update({ components: [] });
+    return interaction.followUp(ephemeralText('That song has left the session. Use /lyrics for the current song.'));
+  }
+  await interaction.deferUpdate();
+  return interaction.editReply(buildLyricsPayload(track, await trackLyrics(player.node, track), page, ownerId));
+}
+
 export async function handleMessageComponent(interaction) {
   const customId = interaction.customId || '';
   const playerMatch = /^player:v1:(toggle|skip|back|shuffle|loop|seek|queue|refresh|stop|stop-confirm|stop-cancel|stop-save)$/.exec(customId);
@@ -285,6 +301,9 @@ export async function handleMessageComponent(interaction) {
   if (historyMatch && (historyMatch[1] === 'replay' ? interaction.isStringSelectMenu() : interaction.isButton())) {
     return handleHistoryComponent(interaction, historyMatch[1], historyMatch[2], historyMatch[3], Number(historyMatch[4]));
   }
+
+  const lyricsMatch = /^lyrics:v1:page:([^:]+):([a-f0-9]{12}):(\d+):(?:previous|next)$/.exec(customId);
+  if (lyricsMatch && interaction.isButton()) return handleLyricsPage(interaction, lyricsMatch[1], lyricsMatch[2], Number(lyricsMatch[3]));
 
   const pageMatch = /^queue:v1:(?:page|refresh):(\d+)(?::(?:previous|next))?$/.exec(customId);
   if (pageMatch && interaction.isButton()) {

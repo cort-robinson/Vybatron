@@ -105,6 +105,7 @@ async function fixture(t, { limits = {}, now, dataDir, production = false, botOr
     else if (url.pathname.endsWith('/stats')) reply(res, 200, { serverFavorites: { onRepeat: [], forgottenGems: [] }, personal: { window: url.searchParams.get('window') || '30d', topTracks: [], topArtists: [], rediscover: [] } });
     else if (url.pathname.endsWith('/recap')) reply(res, 200, { window: url.searchParams.get('window') || '30d', since: 0, personal: { plays: 0, playedMs: 0, songs: 0, topTracks: [], topArtists: [] }, server: { plays: 0, playedMs: 0, songs: 0, topTracks: [] } });
     else if (url.pathname === '/v1/stats/requests/clear') reply(res, 200, { ok: true, cleared: 2 });
+    else if (/\/lyrics\/[\w-]{11}$/.test(url.pathname)) reply(res, 200, { trackId: 'b'.repeat(24), status: 'not_found', lyrics: null });
     else if (url.pathname.endsWith('/lyrics')) reply(res, 200, { trackId: 'a'.repeat(24), status: 'found', lyrics: { source: 'lrclib', provider: 'LRCLIB', synced: true, lines: [{ startMs: 0, text: 'First line' }] } });
     else reply(res, 200, state.snapshot);
   });
@@ -1279,6 +1280,18 @@ test('lyrics reads forward only the signed-in actor and accept no query', async 
     assert.equal((await f.request(`/api/guilds/${guildId}/lyrics?${query}`, { headers: { Cookie: device.cookie } })).status, 400, query);
   }
   assert.equal((await f.request(`/api/guilds/${guildId}/lyrics`)).status, 401);
+
+  // A song playing on this device, by its YouTube video.
+  const onDevice = await f.request(`/api/guilds/${guildId}/lyrics/dX3k_QDnzHE`, { headers: { Cookie: device.cookie } });
+  assert.equal(onDevice.status, 200);
+  assert.equal(onDevice.json().status, 'not_found');
+  const deviceCall = f.state.calls.findLast(item => item.path.endsWith('/lyrics/dX3k_QDnzHE'));
+  assert.equal(deviceCall.path, `/v1/guilds/${guildId}/lyrics/dX3k_QDnzHE`);
+  assert.deepEqual([...deviceCall.params.keys()], ['actorId']);
+  for (const path of ['lyrics/dX3k_QDnzHE?track=1', 'lyrics/short', 'lyrics/dX3k_QDnzHE/extra']) {
+    assert.notEqual((await f.request(`/api/guilds/${guildId}/${path}`, { headers: { Cookie: device.cookie } })).status, 200, path);
+  }
+  assert.equal((await f.request(`/api/guilds/${guildId}/lyrics/dX3k_QDnzHE`)).status, 401);
 });
 
 test('stats reads forward only a supported window, and clearing request stats needs CSRF and same origin', async t => {

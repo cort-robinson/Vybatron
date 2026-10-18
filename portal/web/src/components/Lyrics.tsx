@@ -1,10 +1,11 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { api } from '../api';
-import type { Lyrics, LyricsResponse } from '../types';
+import type { Lyrics, LyricsResponse, Track } from '../types';
+import { youtubeId } from '../youtube';
 import { prefersReducedMotion } from '../motion';
 import './lyrics.css';
 
-type Status = LyricsResponse['status'] | 'loading' | 'local';
+type Status = LyricsResponse['status'] | 'loading';
 export type LyricsState = { status: Status; lyrics: Lyrics | null };
 
 // Answers for songs already looked up, so reopening the panel or returning to a song doesn't refetch.
@@ -21,18 +22,28 @@ function recall(key: string) {
   return entry && Date.now() - entry.at <= KEEP_MS ? entry.answer : null;
 }
 
-// Lyrics follow the Discord session's current song; this device's own songs have none.
-export function useLyrics(guildId: string | undefined, trackId: string | null, local: boolean): [LyricsState, () => void] {
+// Lyrics follow the Discord session's current song. A song playing on this device is
+// looked up by its YouTube video instead.
+export function useLyrics(guildId: string | undefined, track: Track | null, local: boolean): [LyricsState, () => void] {
   const [state, setState] = useState<LyricsState>({ status: 'loading', lyrics: null });
   const [attempt, setAttempt] = useState(0);
+  const trackId = track?.id || null;
+  const video = local ? youtubeId(track?.uri) : null;
   useEffect(() => {
-    if (local) { setState({ status: 'local', lyrics: null }); return; }
     if (!guildId || !trackId) { setState({ status: 'idle', lyrics: null }); return; }
-    const key = `${guildId}:${trackId}`;
+    if (local && !video) { setState({ status: 'not_found', lyrics: null }); return; }
+    const key = local ? `${guildId}:video:${video}` : `${guildId}:${trackId}`;
     const known = recall(key);
     if (known) { setState({ status: known.status, lyrics: known.lyrics }); return; }
     setState({ status: 'loading', lyrics: null });
     const controller = new AbortController();
+    if (local) {
+      api.lyrics(guildId, controller.signal, video!).then(answer => {
+        if (answer.status !== 'unavailable') remember(key, answer);
+        setState({ status: answer.status === 'idle' ? 'not_found' : answer.status, lyrics: answer.lyrics });
+      }, () => { if (!controller.signal.aborted) setState({ status: 'unavailable', lyrics: null }); });
+      return () => controller.abort();
+    }
     api.lyrics(guildId, controller.signal).then(answer => {
       if (answer.trackId && answer.status !== 'unavailable') remember(`${guildId}:${answer.trackId}`, answer);
       // The bot already moved to another song; its snapshot will follow and reuse this answer.
@@ -40,7 +51,7 @@ export function useLyrics(guildId: string | undefined, trackId: string | null, l
       setState({ status: answer.trackId ? answer.status : 'idle', lyrics: answer.trackId ? answer.lyrics : null });
     }, () => { if (!controller.signal.aborted) setState({ status: 'unavailable', lyrics: null }); });
     return () => controller.abort();
-  }, [guildId, trackId, local, attempt]);
+  }, [guildId, trackId, local, video, attempt]);
   const retry = useCallback(() => setAttempt(value => value + 1), []);
   return [state, retry];
 }
@@ -62,7 +73,6 @@ const messages: Record<Exclude<Status, 'found'>, string> = {
   idle: 'Lyrics show here while a song is playing.',
   not_found: 'No lyrics found for this song.',
   unavailable: 'Lyrics are unavailable right now.',
-  local: 'Lyrics are available for songs playing in Discord.',
 };
 
 export const LyricsPanel = memo(function LyricsPanel({ id, state, active, onRetry }: { id: string; state: LyricsState; active: number; onRetry: () => void }) {

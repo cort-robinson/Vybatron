@@ -53,8 +53,9 @@ export const api = {
     if (lists.some(list => !Array.isArray(list) || list.length > 25)) throw new ApiError(503, 'invalid_response', 'Listening stats are unavailable. Try refreshing them.');
     return data;
   },
-  lyrics: async (id: string, signal?: AbortSignal) => {
-    const data = await request<LyricsResponse>(`${guildPath(id)}/lyrics`, { signal });
+  // The session's current song, or a song playing on this device by its YouTube video.
+  lyrics: async (id: string, signal?: AbortSignal, video?: string) => {
+    const data = await request<LyricsResponse>(`${guildPath(id)}/lyrics${video ? `/${encodeURIComponent(video)}` : ''}`, { signal });
     if (!['idle', 'found', 'not_found', 'unavailable'].includes(data.status) || (data.status === 'found' && (!Array.isArray(data.lyrics?.lines) || data.lyrics.lines.length > 1000))) {
       throw new ApiError(503, 'invalid_response', 'Lyrics are unavailable right now.');
     }

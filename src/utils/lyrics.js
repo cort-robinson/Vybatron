@@ -1,5 +1,6 @@
 import { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, escapeMarkdown } from 'discord.js';
 import { withTimeout } from './enqueue.js';
+import { lrclibLyrics, LrclibUnavailable } from './lrclib.js';
 import { NO_MENTIONS, plainText, safeText, trackIdentity } from './presentation.js';
 
 // Lyrics come from Lavalink's LavaLyrics plugin, with sources configured in
@@ -53,32 +54,97 @@ export function cachedLyrics(identity) {
 
 export function clearLyricsCache() { cache.clear(); pending.clear(); }
 
-// -> {status:'found', lyrics} | {status:'not_found'} | {status:'unavailable'}.
-// Found and not-found answers are cached per track; failures are not.
-export async function trackLyrics(node, track, { timeoutMs = 8000 } = {}) {
-  if (!track?.encoded) return { status: 'not_found' };
-  const key = trackIdentity(track);
+class LyricsUnavailable extends Error {}
+
+// One LavaLyrics lookup: normalized lyrics, null when nothing was found, or
+// LyricsUnavailable for a missing plugin (404), an error body, timeouts and node errors.
+async function lookup(node, track, timeoutMs) {
+  let raw;
+  try {
+    // The client's own lyrics.get leaves the base64 track unescaped in the query.
+    raw = await withTimeout(node.request(`/lyrics?track=${encodeURIComponent(track.encoded)}&skipTrackSource=false`), timeoutMs);
+  } catch { throw new LyricsUnavailable(); }
+  const lyrics = normalizeLyrics(raw);
+  // A 204 (nothing found) resolves undefined; an error body has no lines or text.
+  if (raw !== undefined && raw !== null && !lyrics && (raw.status || raw.error)) throw new LyricsUnavailable();
+  return lyrics;
+}
+
+const fold = value => String(value ?? '').normalize('NFKD').replace(/[̀-ͯ]/g, '').toLowerCase()
+  .replace(/&/g, ' and ').replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+
+// Uploads often name the song "Artist - Song (Official Video)" under a channel's
+// name, which a title-and-artist lyrics search can't match.
+export function songFromTitle(title) {
+  const cleaned = String(title ?? '')
+    .replace(/\s*[([][^)\]]*\b(?:official|video|audio|lyrics?|visuali[sz]er|hd|4k|hq|remaster(?:ed)?|explicit|clean|mv)\b[^)\]]*[)\]]/gi, '')
+    .replace(/\s*[([](?:feat|ft)\.?[^)\]]*[)\]]/gi, '')
+    .replace(/\s+\|.*$/, '').trim();
+  const match = /^(.{1,100}?)\s+[-–—]\s+(.{1,150})$/.exec(cleaned);
+  if (!match) return null;
+  const artist = match[1].trim();
+  const song = match[2].replace(/["“”]/g, '').trim();
+  return fold(artist) && fold(song) ? { artist, song } : null;
+}
+
+function cachedTask(key, work) {
   const known = cachedLyrics(key);
   if (known) return known;
   if (pending.has(key)) return pending.get(key);
-  if (!node?.connected || typeof node.request !== 'function') return { status: 'unavailable' };
   const task = (async () => {
     try {
-      // The client's own lyrics.get leaves the base64 track unescaped in the query.
-      const raw = await withTimeout(node.request(`/lyrics?track=${encodeURIComponent(track.encoded)}&skipTrackSource=false`), timeoutMs);
-      const lyrics = normalizeLyrics(raw);
-      // A 204 (nothing found) resolves undefined; an error body has no lines or text.
-      if (raw !== undefined && raw !== null && !lyrics && (raw.status || raw.error)) return { status: 'unavailable' };
-      const result = lyrics ? { status: 'found', lyrics } : { status: 'not_found' };
-      remember(key, result);
+      const result = await work();
+      if (result.status !== 'unavailable') remember(key, result);
       return result;
-    } catch {
-      // Missing plugin (404), timeouts and node errors.
-      return { status: 'unavailable' };
     } finally { pending.delete(key); }
   })();
   pending.set(key, task);
   return task;
+}
+
+// -> {status:'found', lyrics} | {status:'not_found'} | {status:'unavailable'}.
+// Lavalink's LavaLyrics first, then LRCLIB directly by the song's own title and artist
+// or its "Artist - Song" upload title. Found and not-found answers are cached per
+// track; failures are not.
+export async function trackLyrics(node, track, { timeoutMs = 8000, fetchImpl = (...args) => fetch(...args) } = {}) {
+  if (!track?.encoded) return { status: 'not_found' };
+  return cachedTask(trackIdentity(track), async () => {
+    if (node?.connected && typeof node.request === 'function') {
+      try {
+        const lyrics = await lookup(node, track, timeoutMs);
+        if (lyrics) return { status: 'found', lyrics };
+      } catch (error) {
+        if (!(error instanceof LyricsUnavailable)) throw error;
+      }
+    }
+    const info = track.info || {};
+    try {
+      const raw = await lrclibLyrics([{ artist: info.author, song: info.title }, songFromTitle(info.title)].filter(Boolean),
+        info.isStream ? 0 : info.duration, { fetchImpl, timeoutMs: Math.min(timeoutMs, 6000) });
+      const lyrics = normalizeLyrics(raw);
+      return lyrics ? { status: 'found', lyrics } : { status: 'not_found' };
+    } catch (error) {
+      if (error instanceof LrclibUnavailable) return { status: 'unavailable' };
+      throw error;
+    }
+  });
+}
+
+// Songs playing on a listener's own device: the portal names the YouTube video.
+// -> the same answers, plus the loaded track when there is one.
+export async function videoLyrics(node, videoId, { timeoutMs = 8000 } = {}) {
+  if (!/^[\w-]{11}$/.test(String(videoId))) return { status: 'not_found', track: null };
+  if (!node?.connected || typeof node.search !== 'function') return { status: 'unavailable', track: null };
+  let track = null;
+  const answer = await cachedTask(`video:${videoId}`, async () => {
+    try {
+      const loaded = await withTimeout(node.search({ query: `https://www.youtube.com/watch?v=${videoId}` }, null), timeoutMs);
+      track = loaded?.tracks?.[0] || null;
+    } catch { return { status: 'unavailable' }; }
+    if (!track) return { status: 'not_found' };
+    return { ...await trackLyrics(node, track, { timeoutMs }), track };
+  });
+  return { track: answer.track || track, ...answer };
 }
 
 export function lyricsPages(lyrics) {

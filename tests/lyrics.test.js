@@ -1,13 +1,25 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { MessageFlags } from 'discord.js';
-import { buildLyricsPayload, clearLyricsCache, LYRICS_LIMITS, lyricsPages, normalizeLyrics, trackLyrics } from '../src/utils/lyrics.js';
+import { buildLyricsPayload, clearLyricsCache, LYRICS_LIMITS, lyricsPages, normalizeLyrics, songFromTitle, trackLyrics, videoLyrics } from '../src/utils/lyrics.js';
 import { execute } from '../src/commands/lyrics.js';
 import { handleMessageComponent } from '../src/utils/components.js';
 import { commandMutationPolicy } from '../src/utils/requests.js';
 import { portalFixture } from './portal-fixtures.js';
 import { trackIdentity } from '../src/utils/presentation.js';
 import { track } from './fixtures.js';
+import { parseSynced } from '../src/utils/lrclib.js';
+
+// LRCLIB stand-in: each test chooses its answers (none by default); other requests are real.
+const realFetch = globalThis.fetch;
+let lrclib = () => [];
+globalThis.fetch = async (url, init) => {
+  if (!String(url).startsWith('https://lrclib.net/')) return realFetch(url, init);
+  const answer = await lrclib(new URL(url));
+  if (answer instanceof Error) throw answer;
+  return new Response(JSON.stringify(answer), { status: 200, headers: { 'Content-Type': 'application/json' } });
+};
+test.afterEach(() => { lrclib = () => []; });
 
 const synced = { sourceName: 'lrclib', provider: 'LRCLIB', text: null, lines: [
   { timestamp: 12_000, duration: 3000, line: 'Second line' }, { timestamp: 9000, duration: 3000, line: 'First line' }, { timestamp: 15_000, duration: 0, line: '' },
@@ -46,12 +58,16 @@ test('lyrics requests escape the encoded track, cache answers and never cache fa
 
   const missing = lyricsNode([undefined]);
   assert.deepEqual(await trackLyrics(missing, track('missing0001')), { status: 'not_found' });
+  // With LRCLIB also unreachable, a missing plugin or an error body is unavailable, not "no lyrics".
+  lrclib = () => new Error('offline');
   const broken = lyricsNode([new Error('Node Request resulted into an error'), { timestamp: 1, status: 500, error: 'Internal Server Error', path: '/v4/lyrics' }, synced]);
   const song2 = track('broken00001');
-  assert.deepEqual(await trackLyrics(broken, song2), { status: 'unavailable' }, 'a missing plugin is unavailable, not "no lyrics"');
-  assert.deepEqual(await trackLyrics(broken, song2), { status: 'unavailable' }, 'an error body is unavailable');
+  assert.deepEqual(await trackLyrics(broken, song2), { status: 'unavailable' });
+  assert.deepEqual(await trackLyrics(broken, song2), { status: 'unavailable' });
   assert.equal((await trackLyrics(broken, song2)).status, 'found', 'failures are retried');
   assert.deepEqual(await trackLyrics({ connected: false }, track('offline0001')), { status: 'unavailable' });
+  lrclib = () => [];
+  assert.deepEqual(await trackLyrics({ connected: false }, track('offline0002')), { status: 'not_found' }, 'LRCLIB still answers without the audio server');
   assert.deepEqual(await trackLyrics(node, { info: { title: 'Unresolved' } }), { status: 'not_found' });
 });
 
@@ -213,4 +229,95 @@ test('/lyrics and its pages withhold lyrics when access is lost during the looku
   await turning;
   assert.equal(page.calls.at(-1)[0], 'followUp');
   assert.doesNotMatch(JSON.stringify(page.calls), /First line/);
+});
+
+test('upload titles name the song and artist, without video decorations', () => {
+  assert.deepEqual(songFromTitle('Tame Impala - Loser'), { artist: 'Tame Impala', song: 'Loser' });
+  assert.deepEqual(songFromTitle('Rick Astley - Never Gonna Give You Up (Official Video) (4K Remaster)'), { artist: 'Rick Astley', song: 'Never Gonna Give You Up' });
+  assert.deepEqual(songFromTitle('Daft Punk – Get Lucky (feat. Pharrell Williams) [Official Audio]'), { artist: 'Daft Punk', song: 'Get Lucky' });
+  assert.deepEqual(songFromTitle('AC/DC - Thunderstruck (Official Video) | HD'), { artist: 'AC/DC', song: 'Thunderstruck' });
+  // A version is part of the song; it is kept so only that version matches.
+  assert.deepEqual(songFromTitle('Artist - Song (Live at Wembley)'), { artist: 'Artist', song: 'Song (Live at Wembley)' });
+  assert.equal(songFromTitle('Blinding Lights'), null);
+  assert.equal(songFromTitle(' - (Official Video)'), null);
+});
+
+function upload(id, title, author, duration) {
+  const value = track(id); value.info = { ...value.info, title, author, duration, uri: `https://www.youtube.com/watch?v=${id}` }; return value;
+}
+
+test('LRCLIB lines parse with or without a space after the timestamp', () => {
+  assert.deepEqual(parseSynced('[00:57.86]I had to tell ya\n[01:09.49] So much for closure\n[00:01.00][02:00.5]Twice\nno timestamp\n[1:02]Short'), [
+    { timestamp: 1000, line: 'Twice' }, { timestamp: 57_860, line: 'I had to tell ya' }, { timestamp: 62_000, line: 'Short' },
+    { timestamp: 69_490, line: 'So much for closure' }, { timestamp: 120_500, line: 'Twice' },
+  ]);
+});
+
+test('without LavaLyrics lyrics, LRCLIB is asked directly, by the song and then its upload title, for the same length only', async () => {
+  clearLyricsCache();
+  const song = upload('loserupload', 'Tame Impala - Loser (Lyrics)', 'LatinHype', 224_000);
+  const asked = [];
+  lrclib = url => {
+    asked.push([url.searchParams.get('artist_name'), url.searchParams.get('track_name')]);
+    if (url.searchParams.get('artist_name') !== 'Tame Impala') return [];
+    return [
+      { duration: 268, instrumental: false, syncedLyrics: '[00:57.86]Official video version', plainLyrics: 'Official video version' },
+      { duration: 224, instrumental: false, syncedLyrics: "[00:12.56]I had to tell ya, it's now or never\n[00:20.00]Second line", plainLyrics: 'x' },
+    ];
+  };
+  // LavaSrc 4.8.3 answers 500 for lines with no space after the timestamp.
+  const node = lyricsNode([{ timestamp: 1, status: 500, error: 'Internal Server Error' }]);
+  const result = await trackLyrics(node, song);
+  assert.equal(result.status, 'found');
+  assert.deepEqual(result.lyrics.lines[0], { startMs: 12_560, text: "I had to tell ya, it's now or never" });
+  assert.equal(result.lyrics.provider, 'LRCLIB');
+  assert.deepEqual(asked, [['LatinHype', 'Tame Impala - Loser (Lyrics)'], ['Tame Impala', 'Loser']]);
+
+  clearLyricsCache();
+  lrclib = () => [{ duration: 268, syncedLyrics: '[00:57.86]Another version' }, { duration: 224, instrumental: true, plainLyrics: '' }];
+  assert.deepEqual(await trackLyrics(lyricsNode([undefined]), song), { status: 'not_found' }, 'another length or an instrumental never matches');
+  clearLyricsCache();
+  lrclib = () => new Error('offline');
+  assert.deepEqual(await trackLyrics(lyricsNode([undefined]), song), { status: 'unavailable' }, 'an unreachable LRCLIB is retried later');
+  lrclib = () => [{ duration: 223, plainLyrics: 'Plain words\nOnly' }];
+  const plain = await trackLyrics(lyricsNode([undefined]), song);
+  assert.equal(plain.lyrics.synced, false);
+  assert.deepEqual(plain.lyrics.lines.map(line => line.text), ['Plain words', 'Only']);
+});
+
+test('songs on a device are looked up by their YouTube video and cached', async () => {
+  clearLyricsCache();
+  const song = upload('dX3k_QDnzHE', 'Midnight City', 'M83', 244_000);
+  const loads = [];
+  const node = lyricsNode(path => path.includes(encodeURIComponent(song.encoded)) ? synced : undefined);
+  node.search = async query => { loads.push(query); return { tracks: [song] }; };
+  const found = await videoLyrics(node, 'dX3k_QDnzHE');
+  assert.equal(found.status, 'found');
+  assert.equal(found.track, song);
+  assert.deepEqual(loads, [{ query: 'https://www.youtube.com/watch?v=dX3k_QDnzHE' }]);
+  assert.equal((await videoLyrics(node, 'dX3k_QDnzHE')).status, 'found');
+  assert.equal(loads.length, 1, 'served from the cache');
+  assert.deepEqual(await videoLyrics(node, 'not a video'), { status: 'not_found', track: null });
+  assert.deepEqual(await videoLyrics({ connected: false }, 'abcdefghijk'), { status: 'unavailable', track: null });
+  node.search = async () => ({ tracks: [] });
+  assert.equal((await videoLyrics(node, 'zzzzzzzzzzz')).status, 'not_found');
+});
+
+test('the portal bridge serves device lyrics to server members only', async t => {
+  clearLyricsCache();
+  const f = await portalFixture(t);
+  const song = upload('dX3k_QDnzHE', 'Midnight City', 'M83', 244_000);
+  f.node.search = async () => ({ tracks: [song] });
+  f.node.request = async path => path.includes(encodeURIComponent(song.encoded)) ? synced : undefined;
+  const found = await f.request('/lyrics/dX3k_QDnzHE');
+  assert.equal(found.status, 200);
+  assert.equal(found.body.status, 'found');
+  assert.match(found.body.trackId, /^[a-f0-9]{24}$/);
+  assert.doesNotMatch(JSON.stringify(found.body), /encoded|never-save/);
+  // Not tied to the Discord session: hidden session channels don't matter.
+  f.channels.get('300').hidden.add('200');
+  assert.equal((await f.request('/lyrics/dX3k_QDnzHE')).body.status, 'found');
+  const outsider = await f.request('/lyrics/dX3k_QDnzHE', { actor: '900' });
+  assert.notEqual(outsider.status, 200);
+  assert.equal(outsider.body.lyrics, undefined);
 });

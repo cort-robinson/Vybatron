@@ -44,6 +44,12 @@ in track milliseconds; plain lyrics have `startMs: null`. Empty `text` is a vers
 break. At most 1000 lines of 300 characters. `unavailable` means the audio server
 or its lyrics source failed (or lacks the LavaLyrics plugin); it is retried on the
 next read, while found and not-found answers are cached per song for 30 minutes.
+When LavaLyrics finds nothing or fails, the bot asks LRCLIB's search API directly
+(6 s bound, title and artist only), first by the song's own title and artist, then by
+an upload title read as "Artist - Song" (such as "Artist - Song (Official Video)"
+from another channel). A result counts only within 3 seconds of the song's length
+and when not instrumental; synced lines are preferred. This also covers LavaSrc
+4.8.3, which fails on LRCLIB lines with no space after the timestamp.
 
 `suggested` appears on session tracks only (current, queue, suggestions): true for
 smart-autoplay picks, whose `requestedBy` is the bot. Library tracks omit it.
@@ -205,6 +211,8 @@ Unavailable stats return 503 `stats_unavailable`.
   accepted; omitted means `30d`.
 - GET `/api/guilds/:guildId/lyrics` -> LyricsResponse for the current song. No query.
   Session channel visibility, like the snapshot. Fetched on demand, never in snapshots.
+- GET `/api/guilds/:guildId/lyrics/:videoId` (11-character YouTube id) -> LyricsResponse
+  for a song playing on this device. No query. Membership only, like its audio.
 - GET `/api/guilds/:guildId/recap?window=7d|30d|90d|365d` -> Recap. Only `window` is
   accepted; omitted means `30d`.
 - POST `/api/stats/requests/clear` -> `{ok:true,cleared:number}`. Same-origin + CSRF, no body.
@@ -340,6 +348,8 @@ browser access or CORS. Portal sets the trusted session's actorId itself.
   including the guild's most recent 50 voice channels with plays).
 - GET `/v1/guilds/:guildId/lyrics?actorId=...` -> LyricsResponse. The bot asks Lavalink's
   LavaLyrics `GET /v4/lyrics?track=<encoded>` for the visible current song (8 s bound).
+- GET `/v1/guilds/:guildId/lyrics/:videoId?actorId=...` -> LyricsResponse. Membership only;
+  the bot loads that YouTube video through Lavalink, then looks up its lyrics the same way.
 - GET `/v1/guilds/:guildId/recap?actorId=...&window=...` -> Recap (history channel scope,
   like stats).
 - POST `/v1/stats/requests/clear?actorId=...` -> `{ok:true,cleared:number}`. Requires a fresh

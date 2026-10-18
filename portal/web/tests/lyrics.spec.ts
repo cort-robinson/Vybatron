@@ -97,6 +97,10 @@ for (const skin of ['overdrive', 'fantastic', 'classic'] as const) {
       const toggle = (await page.getByRole('button', { name: 'Hide lyrics', exact: true }).boundingBox())!;
       expect(toggle.width).toBeGreaterThanOrEqual(44);
       expect(toggle.height).toBeGreaterThanOrEqual(44);
+      // The lyrics and favorite buttons flank the title, so it stays centered under the cover.
+      const heading = (await page.locator('.sleeve-main .player-title-row h2').boundingBox())!;
+      const identity = (await page.locator('.sleeve-main .player-identity').boundingBox())!;
+      expect(Math.abs(heading.x + heading.width / 2 - (identity.x + identity.width / 2))).toBeLessThanOrEqual(2);
     });
   }
 }

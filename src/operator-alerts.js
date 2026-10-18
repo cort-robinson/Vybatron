@@ -121,11 +121,12 @@ export function createAlertMonitor({
       try { active = Boolean(condition.active(signals, state)); } catch {}
       state.activeChecks = active ? state.activeChecks + 1 : 0;
       state.quietChecks = active ? 0 : state.quietChecks + 1;
-      if (!state.raised && state.activeChecks >= condition.raiseAfter) {
-        state.raised = true;
-        // A condition that flaps inside its cooldown stays quiet, and so does its resolve.
-        state.notified = now() - state.lastAlertAt >= cooldownMs && allow();
-        if (state.notified) {
+      if (!state.raised && state.activeChecks >= condition.raiseAfter) state.raised = true;
+      if (state.raised && active && !state.notified) {
+        // A condition that flaps inside its cooldown stays quiet, and so does its
+        // resolve. One that persists is reported as soon as the limits allow.
+        if (now() - state.lastAlertAt >= cooldownMs && allow()) {
+          state.notified = true;
           state.lastAlertAt = now();
           messages.push({ key: condition.key, kind: 'alert', text: safeAlertText(`Audio alert: ${condition.message(signals)}`) });
         }
@@ -158,9 +159,10 @@ export function createAlertPreferences(filePath, { io = fs, logger = console } =
     },
     muted: (userId) => muted.has(String(userId)),
     setMuted(userId, value) {
-      const next = new Set(muted);
-      if (value) next.add(String(userId)); else next.delete(String(userId));
       pending = pending.catch(() => {}).then(async () => {
+        // Build from the latest committed list so concurrent changes can't undo each other.
+        const next = new Set(muted);
+        if (value) next.add(String(userId)); else next.delete(String(userId));
         await io.mkdir(path.dirname(filePath), { recursive: true, mode: 0o700 });
         const temporary = `${filePath}.${randomUUID()}.tmp`;
         try {

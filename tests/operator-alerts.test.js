@@ -59,6 +59,16 @@ test('flapping inside the cooldown stays quiet, including its resolve', () => {
   assert.deepEqual(run(monitor, time, outage).map((m) => m.kind), ['alert']);
 });
 
+test('a condition that persists after a suppressed alert is reported once limits allow', () => {
+  const time = clock();
+  const monitor = createAlertMonitor({ now: time.now });
+  const outage = Array(4).fill({ audioReady: false });
+  run(monitor, time, [...outage, {}, {}]);
+  assert.deepEqual(run(monitor, time, outage), []);
+  const later = run(monitor, time, Array(60).fill({ audioReady: false }));
+  assert.deepEqual(later.map((m) => m.kind), ['alert']);
+});
+
 test('an hourly cap bounds alerts across conditions', () => {
   const time = clock();
   const monitor = createAlertMonitor({ now: time.now, hourlyLimit: 2 });
@@ -148,6 +158,11 @@ test('alerts DM the owner and operators, skip muted recipients, and survive fail
 
 test('mute preferences persist across restarts and ignore a damaged file', async () => {
   const file = await tempFile();
+  const concurrent = createAlertPreferences(file);
+  await Promise.all([concurrent.setMuted('11', true), concurrent.setMuted('22', true)]);
+  assert.ok(concurrent.muted('11') && concurrent.muted('22'));
+  assert.ok((await createAlertPreferences(file).load()).muted('22'));
+  await concurrent.setMuted('22', false);
   await createAlertPreferences(file).setMuted('11', true);
   assert.equal((await createAlertPreferences(file).load()).muted('11'), true);
   await fs.writeFile(file, '{not json');

@@ -16,6 +16,8 @@ import { LibraryView } from './components/Library';
 import { Home } from './components/Home';
 import { ServerView, type AmbientMode, type InstallPrompt } from './components/Server';
 import { Recovery } from './components/Recovery';
+import { ShareDialog } from './components/Share';
+import { holdForSignIn, initialShare } from './share';
 import { transition } from './motion';
 import { longPress } from './longPress';
 import { applyPerformance, applySkin, initialPerformance, initialSkin, type Skin } from './skin';
@@ -42,6 +44,7 @@ export function App() {
   const [reduced, setReduced] = useState(() => matchMedia('(prefers-reduced-motion: reduce)').matches);
   const [installPrompt, setInstallPrompt] = useState<InstallPrompt | null>(null);
   const [update, setUpdate] = useState<ServiceWorker | null>(null);
+  const [shared, setShared] = useState(initialShare);
   const navigationState = useRef({ surface, expanded });
   const { bootstrap, snapshot, connection, auth } = portal;
   useEffect(() => {
@@ -118,7 +121,7 @@ export function App() {
   // Sign-in has no session to wait for; the horizon idles there whenever ambient motion is allowed.
   const welcome = scene(!still);
   if (auth === 'loading') return <div className="auth-page">{welcome}<Brand /><Loading label="Finding your listening space…" /></div>;
-  if (auth === 'signed-out' || auth === 'error') return <div className="auth-page">{welcome}<Brand /><main className="sign-in"><h1 className="sr-only">Sign in to Vybatron</h1><div className="signin-sleeve"><FallbackCover /></div><Spectrum className="signin-spectrum" seed="vybertron" color={palette.accent} mode="playing" animate={!still} bands={36} /><p>Sign in with Discord to pick songs and control the music in your server.</p>{auth === 'error' ? <ErrorState message={portal.authError} retry={() => void portal.loadBootstrap()} /> : <a className="button primary discord-signin" href="/auth/discord"><DiscordLogoIcon size={25} weight="fill" />Continue with Discord<ArrowRightIcon size={20} /></a>}<span className="signin-footnote">Plays in your Discord voice channel, or right here when you’re not in one.</span></main></div>;
+  if (auth === 'signed-out' || auth === 'error') return <div className="auth-page">{welcome}<Brand /><main className="sign-in"><h1 className="sr-only">Sign in to Vybatron</h1><div className="signin-sleeve"><FallbackCover /></div><Spectrum className="signin-spectrum" seed="vybertron" color={palette.accent} mode="playing" animate={!still} bands={36} /><p>{shared?.link ? 'Sign in with Discord to add the link you shared.' : 'Sign in with Discord to pick songs and control the music in your server.'}</p>{auth === 'error' ? <ErrorState message={portal.authError} retry={() => void portal.loadBootstrap()} /> : <a className="button primary discord-signin" href="/auth/discord" onClick={() => holdForSignIn(shared)}><DiscordLogoIcon size={25} weight="fill" />Continue with Discord<ArrowRightIcon size={20} /></a>}<span className="signin-footnote">Plays in your Discord voice channel, or right here when you’re not in one.</span></main></div>;
   const viewer = bootstrap!.viewer;
   const noGuilds = !bootstrap!.guilds.length;
   const inviteUrl = bootstrap!.inviteUrl;
@@ -143,8 +146,9 @@ export function App() {
         <ServerView portal={portal} active={surface === 'server'} ambient={ambient} setAmbient={setAmbient} skin={skin} setSkin={setSkin} performance={performance} setPerformance={setPerformance} installPrompt={installPrompt} install={install} />
       </>}</div>{!noGuilds && <Player portal={portal} expanded={expanded} setExpanded={toggleExpanded} onAdd={openSearch} accent={palette.accent} animate={!still} skin={skin} />}</main>
     </div>
+    {shared && <ShareDialog portal={portal} link={shared.link} onClose={() => setShared(null)} />}
     <Search portal={portal} open={searchOpen} onClose={() => setSearchOpen(false)} query={query} setQuery={setQuery} />
-    {portal.notice && !searchOpen && <div className={`toast ${portal.notice.kind}`} role={portal.notice.kind === 'error' ? 'alert' : 'status'}><span>{portal.notice.message}</span><IconButton label="Dismiss notification" onClick={portal.dismissNotice}><XIcon size={19} /></IconButton></div>}
+    {portal.notice && !searchOpen && !shared && <div className={`toast ${portal.notice.kind}`} role={portal.notice.kind === 'error' ? 'alert' : 'status'}><span>{portal.notice.message}</span><IconButton label="Dismiss notification" onClick={portal.dismissNotice}><XIcon size={19} /></IconButton></div>}
     {update && <div className="update-notice"><span>A fresh version of Vybatron is ready.</span><button className="text-button" onClick={() => { navigator.serviceWorker.addEventListener('controllerchange', () => location.reload(), { once: true }); update.postMessage({ type: 'ACTIVATE' }); }}>Update app</button></div>}
   </div>;
 }

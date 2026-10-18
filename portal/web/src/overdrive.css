@@ -174,6 +174,8 @@ REVERT: everything here is scoped to :root[data-skin='overdrive']; Settings → 
   .suggestion-chip { border-radius: 4px 12px 4px 12px; }
   .continue-feature { border-radius: 6px 18px 6px 18px; background: var(--hud), linear-gradient(100deg, color-mix(in oklab, var(--accent) 14%, transparent), color-mix(in oklab, var(--neon) 7%, transparent) 60%, transparent), var(--surface); box-shadow: 0 18px 38px -26px color-mix(in oklab, var(--accent) 55%, black), 0 0 0 1px color-mix(in oklab, var(--accent) 14%, transparent); }
   .continue-art { border-radius: 4px 10px 4px 10px; }
+  .recap-tiles > div { border-radius: 4px 12px 4px 12px; background: var(--hud), var(--surface); box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--accent) 14%, transparent); }
+  .recap-list .recap-art { border-radius: 3px 8px 3px 8px; }
 
   /* Home shelves: each heading carries a short energon bar; cards lift into the neon on hover. */
   .home-shelf-header h2 { display: flex; align-items: center; gap: 14px; }

@@ -90,6 +90,10 @@ docker compose run --rm -e GUILD_ID=your-test-server-id bot npm run deploy:comma
 
 For native development, publish the audio port on the **warp** service in a local Compose override, keep its access private, then use `npm ci`, `npm start`, and the command-registration scripts. The normal stack keeps Lavalink inside the Compose network.
 
+### Audio alerts
+
+The bot DMs its owner and `PORTAL_OPERATOR_IDS` when audio degrades and again when it recovers: the audio service offline for about two minutes, repeated song failures, a paused audio source, play statistics failing to save, or the music library reaching 80% of its size cap. Alerts are checked every 30 seconds outside the playback path, need a condition to persist before alerting, repeat at most every 30 minutes per condition and six times an hour in total, and contain only counts, never server, user, song or link details. They're on by default; each alert has a **Mute audio alerts** button, saved per person in `operator-alerts.json` next to the library. Discord must allow DMs from the bot (a shared server with DMs enabled); failed DMs are logged as `operator_alert_failed` and never affect playback.
+
 ## Saved music
 
 Compose mounts `bot-data` at `/app/data`. The library contains public catalog references and server/user IDs needed for ownership; it never saves audio, encoded tracks, cookies, or bot/provider tokens. Sources are freshly resolved when loading saved music. Failed writes leave the previous library intact, and invalid persisted data stops startup instead of silently replacing it.
@@ -105,7 +109,7 @@ browse permitted sessions and use their allowed music controls. Server owners,
 Manage Server members and the verified bot maintainer can manage configuration;
 playback still follows voice and DJ rules. Sign-in lasts seven days per device.
 
-Home is the landing view: Continue listening (the live or saved session and recent songs), On repeat in this server, Your mixes, Rediscover and Forgotten gems, each with Play, Shuffle or Add, plus Clear my request stats. The queue view has one persistent player that expands into an artwork view.
+Home is the landing view: Continue listening (the live or saved session and recent songs), On repeat in this server, Your mixes, Rediscover and Forgotten gems, each with Play, Shuffle or Add, then a Listening recap (your requests and the server's plays over a chosen week, month, three months or year, with played time and top tracks and artists) and Clear my request stats. The queue view has one persistent player that expands into an artwork view.
 Artwork colors and subtle aurora motion set the atmosphere; motion can be reduced
 or disabled. The installable PWA supports desktop and phone, retains typed search
 input when disconnected, and waits for fresh state before enabling controls.

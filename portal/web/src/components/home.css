@@ -91,6 +91,27 @@
 .home-unavailable > div { flex: 1 1 280px; min-width: 0; }
 .home-unavailable p { margin-top: 4px; color: var(--muted); font-size: 14px; line-height: 1.6; }
 
+/* Listening recap: totals as plain numbers, then short ranked lists. */
+.recap-range select { min-height: 44px; font-size: 14px; }
+.recap-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px 32px; }
+.recap-part { min-width: 0; display: flex; flex-direction: column; gap: 16px; }
+.recap-part h3 { font-size: 18px; font-stretch: var(--wide); letter-spacing: -0.02em; }
+.recap-tiles { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr) minmax(0, 1fr); gap: 10px; }
+.recap-tiles > div { min-width: 0; padding: 12px 14px; border-radius: 12px; background: var(--surface); }
+.recap-tiles dt { color: var(--muted); font-size: 13px; }
+.recap-tiles dd { margin: 2px 0 0; font-size: 22px; font-weight: 700; font-stretch: var(--wide); font-variant-numeric: tabular-nums; letter-spacing: -0.02em; line-height: 1.25; }
+.recap-empty { color: var(--muted); font-size: 14px; line-height: 1.6; }
+.recap-list h4 { margin-bottom: 6px; color: var(--text-soft); font-size: 14px; font-weight: 600; }
+.recap-list ol { display: flex; flex-direction: column; }
+.recap-list li { display: grid; grid-template-columns: 22px 40px minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 7px 0; border-top: 1px solid var(--line); }
+.recap-rank { color: var(--muted); font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; text-align: center; }
+.recap-list .recap-art { display: block; width: 40px; height: 40px; border-radius: 6px; object-fit: cover; }
+.recap-text { min-width: 0; display: flex; flex-direction: column; }
+.recap-text strong, .recap-text span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.recap-text strong { font-size: 14px; }
+.recap-text span { color: var(--muted); font-size: 13px; }
+.recap-plays { color: var(--text-soft); font-size: 13px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
 .home-privacy { display: flex; align-items: flex-end; justify-content: space-between; gap: 18px 32px; flex-wrap: wrap; padding-top: 26px; border-top: 1px solid var(--line); }
 .home-privacy > div:first-child { flex: 1 1 360px; min-width: 0; }
 .home-privacy h2 { font-size: 18px; font-stretch: var(--wide); letter-spacing: -0.02em; }
@@ -123,6 +144,10 @@
   .continue-art { width: 64px; height: 64px; }
   .continue-text strong { font-size: 17px; white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow-wrap: anywhere; }
   .continue-feature .button { grid-column: 1 / -1; }
+  .recap-grid { grid-template-columns: minmax(0, 1fr); gap: 32px; }
+  .recap-range, .recap-range select { width: 100%; }
+  .recap-tiles > div { padding: 10px 12px; }
+  .recap-tiles dd { font-size: 18px; }
   .stop-dialog .form-actions .button { flex: 1 1 100%; }
 }
 @media (prefers-reduced-motion: reduce) {

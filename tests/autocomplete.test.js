@@ -5,6 +5,7 @@ import {
   resetAutocompleteCache,
   resolveAutocompleteTrack,
 } from '../src/utils/autocomplete.js';
+import { trackIdentity } from '../src/utils/presentation.js';
 
 function interaction(query, search, userId = 'u1') {
   return {
@@ -75,6 +76,24 @@ test('autocomplete fails closed when nodes or search are unavailable', async () 
     await getTrackChoices(interaction('timeout', () => new Promise(() => {})), { timeoutMs: 5 }),
     []
   );
+});
+
+test('a search that finishes after the autocomplete deadline caches nothing', async () => {
+  let finish;
+  let searches = 0;
+  const late = () => { searches += 1; return new Promise(resolve => { finish = resolve; }); };
+  assert.deepEqual(await getTrackChoices(interaction('slow query', late), { timeoutMs: 5 }), []);
+  const [lateTrack] = tracks(1);
+  finish({ tracks: [lateTrack] });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(resolveAutocompleteTrack(`autocomplete:u1:${trackIdentity(lateTrack)}`, 'u1').track, null);
+
+  const fresh = await getTrackChoices(interaction('slow query', async () => {
+    searches += 1;
+    return { tracks: [] };
+  }));
+  assert.deepEqual(fresh, []);
+  assert.equal(searches, 2);
 });
 
 test('autocomplete cache evicts its least-recently-used entry at 100 queries', async () => {

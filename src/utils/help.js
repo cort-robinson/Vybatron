@@ -36,13 +36,14 @@ export function buildHelpPayload(client, requestedTopic = 'start', ownerId = 'an
         { name: 'Playback', value: '`/pause` · `/resume` · `/back` · `/skip` · `/voteskip` · `/stop`\n`/back` returns to the previous track, or restarts this one after a few seconds.\n`/seek timestamp:1:30` jumps within a seekable track.' },
         { name: 'Build the queue', value: '`/queue` browses upcoming tracks. `/move`, `/remove`, and `/skipto` use queue positions. `/shuffle` rearranges upcoming tracks; `/loop` repeats a track or the queue.' },
         { name: 'Tune the sound', value: '`/volume` sets 0–100%. `/filter` shows the current preset. Choose Original, Bass, Warm, Clarity, Nightcore, Slow, or Mono; every preset replaces previous effects.' },
+        { name: 'Sleep timer', value: '`/sleep in minutes:30` stops playback after 1–720 minutes. `/sleep after-track` stops when the current track ends, before the next song or an autoplay pick. `/sleep show` and `/sleep cancel` check or clear it. It ends like Stop and is cleared if the session ends first.' },
         { name: 'Go back without losing your place', value: '`/history` browses recent session tracks. `/replay position:1` queues the most recent track next and lets the current song finish.' },
       );
   } else if (topic.value === 'library') {
     embed.setDescription('Save what you love, bring a shared mix back, and choose when to discover something new.')
       .addFields(
-        { name: 'Personal favorites', value: '`/favorite add` saves the current track. Use `/favorite list`, `/favorite play`, `/favorite remove`, or `/favorite clear` to manage your library.' },
-        { name: 'Shared guild mixes', value: '`/mix save` captures the current track and queue. `/mix list` finds saved mixes; `/mix load` brings one back. `/mix delete` removes one.' },
+        { name: 'Personal favorites', value: '`/favorite add` saves the current track. `/favorite import` adds a public playlist after a preview. Use `/favorite list`, `/favorite play`, `/favorite remove`, or `/favorite clear` to manage your library.' },
+        { name: 'Shared guild mixes', value: '`/mix save` captures the current track and queue. `/mix list` finds saved mixes; `/mix load` brings one back. `/mix import` adds a public playlist to a mix. `/mix delete` removes one.' },
         { name: 'Server favorites', value: '`/top show` lists what this server has on repeat, or its forgotten gems. `/top play` queues either list, optionally shuffled.' },
         { name: 'Made for you', value: '`/mymix play` queues Your mix (new picks every Monday), your top tracks, Rediscover, or an artist mix. `/mix save session:true` keeps this session as a shared mix.' },
         { name: 'Keep the music going', value: '`/radio on` plays related songs after your queue runs out; add a song or link to start from it. Songs people queue always play first. `/radio promote`, `/radio remove`, and `/radio less` manage suggestions; `/radio off` stops for this session.' },

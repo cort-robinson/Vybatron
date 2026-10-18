@@ -76,7 +76,7 @@ The additive [channel-read contract](../../docs/portal-channel-read-contract.md)
 separates complete discovery from authorization. `session` (the default) reads
 only current player voice/text, actor voice, saved voice/text and configured
 music text IDs. `history` adds up to 100 persisted history source IDs and the 50 most recent
-play-statistics voice channels for library, stats, history, replay and top. Each musicchannel settings stage also includes its validated
+play-statistics voice channels for library, stats, recap, history, replay and top. Each musicchannel settings stage also includes its validated
 new target ID. `none` is used only by the directory and read-only admin activity
 or diagnostics; it never projects music. Only explicit admin
 `GET /v1/guilds/:guildId/configuration?actorId=...` performs a fresh list read,
@@ -156,6 +156,8 @@ History stores only public references and original voice channel IDs, keeps 100
 entries and filters 30-day expiry at reads/startup/writes. Successful queue and
 settings edits record bounded actor identity/action text for 24 hours (200 items),
 including Discord command/component mutations; private favorites are excluded.
+History, activity and checkpoints live in `listening-state.sqlite` (ADR-0009);
+`library.json` keeps a copy written at shutdown for older releases.
 An hourly cleanup removes expired durable records even while idle. Disk failures
 in history/activity recording do not interrupt Discord audio. No second player,
 audio decoder, source writer or music-library instance was introduced.

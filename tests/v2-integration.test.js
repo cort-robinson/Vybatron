@@ -9,14 +9,16 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { execute as play, autocomplete } from '../src/commands/play.js';
 import { execute as playnext } from '../src/commands/playnext.js';
 import { execute as stop } from '../src/commands/stop.js';
+import { sleepStop } from '../src/commands/sleep.js';
 import { execute as skip } from '../src/commands/skip.js';
 import { execute as session } from '../src/commands/session.js';
 import { execute as mix } from '../src/commands/mix.js';
-import { MusicLibrary, trackReference } from '../src/utils/library.js';
+import { trackReference } from '../src/utils/library.js';
 import { attachSessionSnapshots, savedSession } from '../src/utils/sessions.js';
 import { guardedMutation } from '../src/utils/requests.js';
 import { maintenanceStatus } from '../src/utils/maintenance.js';
 import { track } from './fixtures.js';
+import { openLibrary, closeLibraries } from './library-fixture.js';
 
 function deferred() {
   let resolve;
@@ -38,9 +40,10 @@ async function libraryFixture(t) {
   const temporaryRoot = path.resolve(os.tmpdir());
   const directory = await fs.mkdtemp(path.join(temporaryRoot, 'vybertron-v2-integration-'));
   const filePath = path.join(directory, 'library.json');
-  const library = await new MusicLibrary(filePath).open();
+  const library = await openLibrary(filePath);
   t.after(async () => {
     await library.close();
+    await closeLibraries();
     assert.equal(path.dirname(path.resolve(directory)), temporaryRoot);
     assert.ok(path.basename(directory).startsWith('vybertron-v2-integration-'));
     await fs.rm(directory, { recursive: true, force: true });
@@ -137,7 +140,7 @@ function dispatch(request, execute, options = {}) {
 }
 
 test('intentional stop and destroy clear a durable checkpoint even with a retained native current track', async t => {
-  for (const command of ['stop', 'destroy']) await t.test(command, async t => {
+  for (const command of ['stop', 'destroy', 'sleep']) await t.test(command, async t => {
     const { library, filePath } = await libraryFixture(t);
     await library.updateGuild('100', guild => { guild.session = savedCheckpoint(); });
     const { client, manager, player, calls } = environment(library, { current: track() });
@@ -145,14 +148,15 @@ test('intentional stop and destroy clear a durable checkpoint even with a retain
     // A scheduled checkpoint must also be cancelled rather than resurrecting it.
     manager.emit('trackStart', player);
     if (command === 'stop') await dispatch(interaction(client, 'stop'), stop, { urgent: true });
+    else if (command === 'sleep') assert.equal(await sleepStop(client, player, 'time'), true);
     else await player.destroy();
     await library.pending;
     await delay(550);
     await library.pending;
     assert.ok(player.queue.current, 'native destroy does not clear the current track object');
     assert.equal(manager.getPlayer('100'), undefined);
-    assert.equal((await new MusicLibrary(filePath).open()).readGuild('100').session, null);
-    if (command === 'stop') assert.deepEqual(calls.find(call => call[0] === 'stopPlaying'), ['stopPlaying', true, false]);
+    assert.equal((await openLibrary(filePath)).readGuild('100').session, null);
+    if (command !== 'destroy') assert.deepEqual(calls.find(call => call[0] === 'stopPlaying'), ['stopPlaying', true, false]);
   });
 });
 
@@ -170,7 +174,7 @@ test('an unused player from an empty or failed lookup preserves the prior eligib
     if (failure === 'rejected') await assert.rejects(request, /source unavailable/);
     else await request;
     await library.pending;
-    const reopened = await new MusicLibrary(filePath).open();
+    const reopened = await openLibrary(filePath);
     assert.deepEqual(savedSession(reopened, '100'), checkpoint);
     assert.equal(manager.getPlayer('100'), undefined);
     assert.deepEqual(calls.find(call => call[0] === 'destroy'), ['destroy', 'unused-request-disconnect']);
@@ -278,6 +282,8 @@ test('invalid durable reference and session fields fail startup without overwrit
     guild.mixes['late night'] = { ownerId: '200', tracks: [trackReference(track())], savedAt: Date.now() };
     guild.session = savedCheckpoint();
   });
+  // Older images read the session mirrored into library.json, so it is still validated.
+  await library.mirror();
   const clean = library.document;
   const referenceChanges = [
     ['credential-bearing URL', ref => { ref.uri += '&token=private'; }],
@@ -297,7 +303,7 @@ test('invalid durable reference and session fields fail startup without overwrit
       mutate(ref);
       const serialized = JSON.stringify(invalid);
       await fs.writeFile(filePath, serialized);
-      await assert.rejects(new MusicLibrary(filePath).open(), /Invalid/);
+      await assert.rejects(openLibrary(filePath), /Invalid/);
       assert.equal(await fs.readFile(filePath, 'utf8'), serialized);
     });
   }
@@ -318,7 +324,7 @@ test('invalid durable reference and session fields fail startup without overwrit
     mutate(invalid.guilds['100'].session);
     const serialized = JSON.stringify(invalid);
     await fs.writeFile(filePath, serialized);
-    await assert.rejects(new MusicLibrary(filePath).open(), /Invalid saved listening session/);
+    await assert.rejects(openLibrary(filePath), /Invalid saved listening session/);
     assert.equal(await fs.readFile(filePath, 'utf8'), serialized);
   });
 });
@@ -345,7 +351,7 @@ test('urgent Stop completes during a pending lookup and that lookup cannot reviv
   await library.pending;
   assert.equal(calls.slice(afterStop).some(call => ['add', 'splice', 'connect', 'play'].includes(call[0])), false);
   assert.equal(player.queue.tracks.length, 0);
-  assert.equal((await new MusicLibrary(filePath).open()).readGuild('100').session, null);
+  assert.equal((await openLibrary(filePath)).readGuild('100').session, null);
   assert.equal(maintenanceStatus(client).inFlight, 0);
 });
 

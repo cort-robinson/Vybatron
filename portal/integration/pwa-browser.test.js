@@ -98,6 +98,10 @@ test('production PWA installs under real CSP, serves an offline shell, and never
     assert.equal(response.status, 200, `Unservable precache URL: ${resource}`);
     await response.arrayBuffer();
   }
+  // Before a worker controls the page, the share target still reaches the server: no cache may keep its query.
+  const uncontrolledShare = await fetch(origin + '/share?text=' + encodeURIComponent('https://youtu.be/abcdefghijk'), { signal: AbortSignal.timeout(5_000) });
+  assert.equal(uncontrolledShare.status, 200); assert.equal(uncontrolledShare.headers.get('cache-control'), 'no-store');
+  await uncontrolledShare.arrayBuffer();
   const fontPaths = files.filter(resource => resource.endsWith('.woff2'));
   assert.ok(fontPaths.some(resource => resource.includes('vietnamese')), 'Small font subsets must be self-hosted too');
   const css = (await Promise.all(files.filter(resource => resource.endsWith('.css')).map(resource => readFile(path.join(dist, resource), 'utf8')))).join('\n');
@@ -201,8 +205,23 @@ test('production PWA installs under real CSP, serves an offline shell, and never
       }
 
       if (name === 'desktop') {
+        // A link shared to the installed app opens the cached shell, so the shared text
+        // never reaches the server, and it survives the real Discord sign-in.
+        const sharedLink = 'https://music.youtube.com/watch?v=01234567890';
+        const shareRequests = requests.filter(req => req.path === '/share').length;
+        await page.goto(origin + '/share?title=Song&text=' + encodeURIComponent('Listen: ' + sharedLink));
+        await page.getByText('Sign in with Discord to add the link you shared.').waitFor();
+        assert.equal(page.url(), origin + '/');
+        assert.equal(requests.filter(req => req.path === '/share').length, shareRequests, 'The share route must be served by the worker');
         const authStarts = count('GET', '/auth/discord');
         await page.getByRole('link', { name: /Continue with Discord/ }).click();
+        const share = page.getByRole('dialog', { name: 'Add shared link' });
+        await share.getByText(sharedLink, { exact: true }).waitFor();
+        assert.equal(await page.evaluate(() => JSON.stringify({ ...sessionStorage, ...localStorage }).includes('01234567890')), false, 'The shared link must not stay in storage');
+        const plays = count('POST', '/api/guilds/100/commands');
+        await share.getByRole('button', { name: 'Add to queue' }).click();
+        await share.waitFor({ state: 'detached' });
+        assert.equal(count('POST', '/api/guilds/100/commands'), plays + 1);
         await page.getByRole('button', { name: 'Pause playback' }).waitFor();
         // Home is the landing view; the queued songs' artwork renders in Session.
         await page.getByRole('button', { name: 'Session', exact: true }).click();

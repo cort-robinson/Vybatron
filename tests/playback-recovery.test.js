@@ -10,6 +10,7 @@ import {
   invalidatePlaybackRecovery,
   sameRecording,
 } from '../src/playback-recovery.js';
+import { setSleepTimer, sleepTimer, cancelSleepTimer } from '../src/utils/sleep-timer.js';
 
 function deferred() {
   let resolve;
@@ -413,6 +414,68 @@ test('ordinary finish advances once, preserving the library queue and rejecting 
   assert.equal(f.player.queue.current.info.identifier, 'Zi_XLOBDo_Y');
   assert.equal(f.player.queue.tracks.length, 0);
   assert.equal(f.writes.filter((write) => write.track?.encoded).length, 2);
+});
+
+test('stop after this track ends the session instead of starting the next queued track', async () => {
+  const f = fixture();
+  await f.start();
+  const fired = [];
+  setSleepTimer(f.player, { afterTrack: true, onFire: (player, mode) => fired.push([player, mode]) });
+  const started = [];
+  f.manager.on('trackStart', (_player, track) => started.push(track));
+  const writes = f.writes.length;
+  await f.node.handleEvent({ type: 'TrackEndEvent', reason: 'finished', guildId: 'g1', track: f.wire() });
+  await settle();
+  assert.deepEqual(fired, [[f.player, 'track']]);
+  assert.equal(f.writes.slice(writes).filter((write) => write.track?.encoded).length, 0, 'no next track is sent to the audio server');
+  assert.equal(f.player.queue.current.info.identifier, 'dQw4w9WgXcQ', 'the library did not advance the queue');
+  assert.equal(f.player.queue.tracks.length, 1);
+  assert.deepEqual(started, []);
+  assert.equal(sleepTimer(f.player), null);
+});
+
+test('stop after this track never lets autoplay start a pick', async () => {
+  const f = fixture();
+  let autoplayCalls = 0;
+  f.manager.options.playerOptions.onEmptyQueue = { autoPlayFunction: async (player) => { autoplayCalls += 1; await player.queue.add(f.track('Zi_XLOBDo_Y')); } };
+  await f.start(f.track(), []);
+  const fired = [];
+  setSleepTimer(f.player, { afterTrack: true, onFire: (_player, mode) => fired.push(mode) });
+  const writes = f.writes.length;
+  await f.node.handleEvent({ type: 'TrackEndEvent', reason: 'finished', guildId: 'g1', track: f.wire() });
+  await settle();
+  assert.deepEqual(fired, ['track']);
+  assert.equal(autoplayCalls, 0);
+  assert.equal(f.writes.slice(writes).filter((write) => write.track?.encoded).length, 0);
+});
+
+test('stop after this track stays armed through a skip and applies to the track that plays next', async () => {
+  const f = fixture();
+  await f.start();
+  const fired = [];
+  setSleepTimer(f.player, { afterTrack: true, onFire: (_player, mode) => fired.push(mode) });
+  await f.node.handleEvent({ type: 'TrackEndEvent', reason: 'stopped', guildId: 'g1', track: f.wire() });
+  await settle();
+  assert.deepEqual(fired, []);
+  assert.deepEqual(sleepTimer(f.player), { mode: 'track' });
+  assert.equal(f.player.queue.current.info.identifier, 'Zi_XLOBDo_Y');
+  cancelSleepTimer(f.player);
+});
+
+test('destruction cancels a sleep timer before the audio server confirms the teardown', async () => {
+  const gate = deferred();
+  let held = 0;
+  const f = fixture({ request: async (body, endpoint) => { if (/\/players\/g1$/.test(endpoint) && !Object.keys(body).length) { held += 1; await gate.promise; } } });
+  await f.start();
+  const fired = [];
+  setSleepTimer(f.player, { minutes: 1, onFire: () => fired.push('time') });
+  const destroying = f.player.destroy('voice-empty-disconnect');
+  await settle();
+  assert.ok(held >= 1, 'the DELETE is still pending');
+  assert.equal(sleepTimer(f.player), null, 'cancelled while the teardown is still pending');
+  gate.resolve();
+  await destroying;
+  assert.deepEqual(fired, []);
 });
 
 test('a skip cancels a retry before its backoff completes', async () => {

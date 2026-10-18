@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api, ApiError, errorMessage } from './api';
-import type { Bootstrap, Capability, Command, Connection, GuildSnapshot, Library, SnapshotOrdering } from './types';
+import type { Bootstrap, Capability, Command, Connection, GuildSnapshot, ImportPreview, Library, SnapshotOrdering } from './types';
 import { orderingOf } from './ordering';
 import { applyIntents, createIntent, isOptimistic, needsRevision, sameTracks, slotOf, stillTargets, trackIdentities, type Intent } from './optimistic';
 
@@ -485,6 +485,23 @@ export function usePortal() {
     });
   }, [bootstrap, can, notify, blockedReason, receivedAt, discard, send, pump, syncQueue]);
 
+  // An import preview only reads, so it skips the ordered command queue. Its
+  // confirmation goes through run() with the preview's id.
+  const previewImport = useCallback(async (body: Command): Promise<ImportPreview | null> => {
+    if (!can('library') || !bootstrap || !current.current) { notify(blockedReason, 'error'); return null; }
+    const id = activeGuild.current;
+    try {
+      const result = await api.command(id, bootstrap.csrfToken, body);
+      if (activeGuild.current !== id) return null;
+      if (!result.preview) notify(result.message || 'Nothing to import.', 'info');
+      return result.preview || null;
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 401) expireAuth();
+      else if (activeGuild.current === id) notify(errorMessage(error), 'error');
+      return null;
+    }
+  }, [bootstrap, can, notify, blockedReason, expireAuth]);
+
   const logout = async () => {
     if (!bootstrap) return;
     try { await api.logout(bootstrap.csrfToken); expireAuth(); }
@@ -495,7 +512,7 @@ export function usePortal() {
   // verified is the last authorized bot state and the only permission source.
   return { bootstrap, auth, authError, loadBootstrap, guildId, selectGuild, snapshot: view.snapshot, receivedAt: view.receivedAt, verified: snapshot,
     library, libraryError, refreshLibrary: () => libraryRefreshRef.current(), connection, connectionError,
-    reconnect: () => reconnectRef.current(), pending, syncing, can, blockedReason, run, notice, notify,
+    reconnect: () => reconnectRef.current(), pending, syncing, can, blockedReason, run, previewImport, notice, notify,
     dismissNotice: () => setNotice(null), logout };
 }
 export type RemotePortal = ReturnType<typeof usePortal>;

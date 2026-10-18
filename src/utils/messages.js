@@ -23,6 +23,7 @@ import {
   trackIdentity,
 } from './presentation.js';
 import { getAudioPreset } from './filters.js';
+import { sleepTimer } from './sleep-timer.js';
 import { config } from '../config.js';
 
 export const COLORS = Object.freeze({
@@ -310,6 +311,8 @@ export function buildPlayerPayload(player, {
       ? progressBar(displayPosition(player, state), info.duration)
       : null;
     if (progress) lines.splice(2, 0, `\`${progress}\``);
+    const sleep = state === 'ended' ? null : sleepTimer(player);
+    if (sleep) lines.push('', sleep.mode === 'track' ? 'Sleep timer: stops after this track' : `Sleep timer: stops <t:${Math.ceil(sleep.endsAt / 1000)}:R>`);
     if (notice) lines.push('', `> ${safeText(notice, { maxLength: 500 })}`);
     if (reason) lines.push('', safeText(reason, { maxLength: 500 }));
     embed.setDescription(lines.join('\n'));

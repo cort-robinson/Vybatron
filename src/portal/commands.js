@@ -199,10 +199,11 @@ export async function executePortalCommand(client, policy, revisions, commandMap
   let baseline = null;
   const source = client.lavalink?.getPlayer(guildId);
   const replySourceIds = source ? [source.voiceChannelId, source.textChannelId] : [];
+  // The bridge already answered an expired request. A late lookup or lane
+  // admission must not start a write the portal was told did not happen.
+  const assertLive = () => { if (signal?.aborted) fail(503, 'unavailable', 'Vybatron could not complete that request. Refresh and try again.'); };
   const assertRevision = () => {
-    // The bridge already answered an expired request. A late lookup or lane
-    // admission must not start a write the portal was told did not happen.
-    if (!mutationStarted && signal?.aborted) fail(503, 'unavailable', 'Vybatron could not complete that request. Refresh and try again.');
+    if (!mutationStarted) assertLive();
     if (!mutationStarted && baseline && baseline !== revisions.revision(guildId)) fail(409, 'stale_revision', 'The session changed. Refresh before trying again.');
   };
   const interaction = {
@@ -223,6 +224,7 @@ export async function executePortalCommand(client, policy, revisions, commandMap
     portalReject(text) { throw new PortalError(403, 'forbidden', plainText(text, { maxLength: 250 })); },
     portalUnavailable() { fail(503, 'maintenance', 'Playback is briefly updating. Try again shortly.'); },
     portalAssertRevision: assertRevision,
+    portalAssertLive: assertLive,
     portalAssertFavorite(track) { assertFavoriteSelection(track, command.expectedTrackId); },
     portalAssertSuggestion(track) { assertSuggestionSelection(track, command.expectedTrackId); },
     portalAssertHistory(item) { assertHistorySelection(item, command.expectedHistoryId); },

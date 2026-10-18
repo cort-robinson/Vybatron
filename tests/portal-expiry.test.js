@@ -7,6 +7,7 @@ import { createRevisions } from '../src/portal/projection.js';
 import { executePortalCommand } from '../src/portal/commands.js';
 import { loadCommandsData } from '../src/commands/index.js';
 import { withGuildMutation } from '../src/utils/requests.js';
+import { radioState } from '../src/utils/radio.js';
 import { track } from './fixtures.js';
 
 async function harness(t, options) {
@@ -48,4 +49,17 @@ test('a portal request that expires during a slow search ignores the late result
   await denied;
   assert.equal(added(f), 0);
   assert.ok(!f.player.queue.tracks.some(item => item.info.identifier === 'lateresult1'));
+});
+
+test('radio on with a chosen song leaves autoplay off when the request expires during the seed search', async t => {
+  const searching = deferred(), result = deferred();
+  const f = await harness(t, { search: () => { searching.resolve(); return result.promise; } });
+  const expiry = new AbortController();
+  const pending = f.run({ command: 'radio', subcommand: 'on', options: { track: 'seed song' } }, expiry.signal);
+  const denied = assert.rejects(pending, { status: 503 });
+  await searching.promise;
+  expiry.abort();
+  result.resolve({ loadType: 'track', tracks: [track('lateresult1')] });
+  await denied;
+  assert.equal(radioState(f.player).enabled, false);
 });

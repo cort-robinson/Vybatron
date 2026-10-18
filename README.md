@@ -96,7 +96,7 @@ Compose mounts `bot-data` at `/app/data`. The library contains public catalog re
 
 Play statistics are kept separately in `stats.sqlite` next to the library: server, song, voice channel, time, who requested it (or that the bot queued it), and whether it finished or was skipped early. Who was merely listening is never recorded. The store is bounded to one year, 10,000 plays per server and 16 MiB, and imports existing history once. If it cannot be opened or written, playback continues and stats show as unavailable; the file is left in place for inspection. Listeners can clear their own request stats from the portal API, which anonymizes their requests everywhere.
 
-Back up `bot-data` before moving the VPS. Normal rebuilds preserve it; deleting the volume removes favorites, mixes, settings, checkpoints, and play statistics. Native mode uses `data/library.json`; set an absolute `VYBERTRON_DATA_DIR` to change it.
+`ops/backup.py` makes verified backups of `bot-data` while the bot runs. [Music data backups](ops/README.md#music-data-backups) covers the daily schedule, copies off the VPS and restore. Normal rebuilds preserve the volume; deleting the volume removes favorites, mixes, settings, checkpoints, and play statistics. Native mode uses `data/library.json`; set an absolute `VYBERTRON_DATA_DIR` to change it.
 
 ## Web portal
 

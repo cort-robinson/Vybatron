@@ -1,0 +1,321 @@
+#!/usr/bin/env python3
+"""Back up and restore the bot's music data (`bot-data`) while the bot runs.
+
+stats.sqlite is copied with SQLite's online backup API, never as raw files of a
+live WAL database. The bot replaces library.json atomically, so a plain copy is
+consistent. Each backup is verified before it is kept and before it is restored.
+Output is limited to status codes, backup names and counts; file contents,
+paths inside the volume and environment values are never logged.
+"""
+from __future__ import annotations
+
+import argparse
+import contextlib
+import datetime
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import shutil
+import sqlite3
+import tempfile
+import time
+
+from deploy import DeploymentError, LOCK, read, run, write
+
+LIBRARY, STATS, MANIFEST = 'library.json', 'stats.sqlite', '.backup-manifest.json'
+LEGACY = re.compile(r'^library\.json\.v1\.[0-9a-f-]{36}\.bak$')
+NAME = re.compile(r'^bot-data-\d{8}T\d{6}Z$')
+VOLUME = re.compile(r'^[a-z0-9][a-z0-9_.-]{0,127}$')
+SIDECARS = ('-wal', '-shm', '-journal')
+MAX_BYTES = 64 * 1024 * 1024
+LIBRARY_BYTES = 5 * 1024 * 1024
+
+
+class BackupError(Exception):
+    """Only public error codes are emitted."""
+
+
+def digest(path):
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def sync(path):
+    with open(path, 'r+b') as handle:  # Windows cannot fsync a read-only handle.
+        os.fsync(handle.fileno())
+
+
+def is_root():
+    return hasattr(os, 'geteuid') and os.geteuid() == 0
+
+
+def connect_ro(path, timeout=5):
+    return sqlite3.connect(path.resolve().as_uri() + '?mode=ro', uri=True, timeout=timeout)
+
+
+def check_library(path):
+    try:
+        if path.stat().st_size > LIBRARY_BYTES:
+            raise ValueError()
+        value = json.loads(path.read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        raise BackupError('backup_library_invalid') from None
+    # Mirrors the bot's own top-level check (src/utils/library.js validateDocument).
+    if (not isinstance(value, dict) or type(value.get('version')) is not int or
+            value['version'] not in (1, 2) or not isinstance(value.get('guilds'), dict)):
+        raise BackupError('backup_library_invalid')
+
+
+def check_stats(path):
+    try:
+        with contextlib.closing(connect_ro(path)) as db:
+            result = db.execute('PRAGMA integrity_check').fetchall()
+    except sqlite3.Error:
+        raise BackupError('backup_stats_invalid') from None
+    if result != [('ok',)]:
+        raise BackupError('backup_stats_invalid')
+
+
+def copy_stats(source, target):
+    """Consistent snapshot of a live WAL database, including uncheckpointed pages."""
+    try:
+        # As root, SQLite gives any sidecar it creates the database file's owner
+        # and mode, so the bot can still open the live database afterwards.
+        with contextlib.closing(connect_ro(source, timeout=30)) as live, \
+                contextlib.closing(sqlite3.connect(target)) as copy:
+            live.backup(copy)
+            # A self-contained single file: no -wal/-shm beside the backup.
+            copy.execute('PRAGMA journal_mode = DELETE')
+    except sqlite3.Error:
+        raise BackupError('backup_stats_copy_failed') from None
+
+
+class BotData:
+    def __init__(self, backup_dir, runner=run, clock=time.time):
+        self.backup_dir, self.runner, self.clock = backup_dir.resolve(), runner, clock
+
+    def command(self, args):
+        try:
+            return self.runner(args)
+        except DeploymentError:
+            raise BackupError('backup_docker_unavailable') from None
+
+    def volume_path(self, volume):
+        if not VOLUME.fullmatch(volume or ''):
+            raise BackupError('backup_invalid_volume')
+        try:
+            info = json.loads(self.command(['docker', 'volume', 'inspect', volume]))
+            path = Path(info[0]['Mountpoint'])
+        except (ValueError, LookupError, TypeError):
+            raise BackupError('backup_volume_unavailable') from None
+        if len(info) != 1:
+            raise BackupError('backup_volume_unavailable')
+        return path
+
+    def bot_running(self):
+        names = self.command(['docker', 'ps', '--filter', 'name=^/vybertron-bot$', '--format', '{{.Names}}'])
+        return bool(names.strip())
+
+    def stamp(self):
+        return datetime.datetime.fromtimestamp(self.clock(), datetime.timezone.utc).strftime('%Y%m%dT%H%M%SZ')
+
+    def prepare(self):
+        self.backup_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+        self.backup_dir.chmod(0o700)
+
+    @staticmethod
+    def sources(data):
+        if not data.is_dir() or data.is_symlink():
+            raise BackupError('backup_data_unavailable')
+        names = [p.name for p in data.iterdir() if p.name in (LIBRARY, STATS) or LEGACY.fullmatch(p.name)]
+        if any((data / name).is_symlink() or not (data / name).is_file() for name in names):
+            raise BackupError('backup_unsafe_data_volume')
+        if LIBRARY not in names and STATS not in names:
+            raise BackupError('backup_no_data')
+        return sorted(names)
+
+    def create(self, data, keep):
+        data = data.resolve()
+        self.prepare()
+        name = 'bot-data-' + self.stamp()
+        final, partial = self.backup_dir / name, self.backup_dir / ('.partial-' + name)
+        if final.exists():
+            raise BackupError('backup_already_exists')
+        # An interrupted earlier run never becomes a backup or counts toward retention.
+        for stale in self.backup_dir.glob('.partial-bot-data-*'):
+            if stale.is_dir() and not stale.is_symlink():
+                shutil.rmtree(stale)
+        names = self.sources(data)
+        partial.mkdir(mode=0o700)
+        try:
+            files = {}
+            for entry in names:
+                source, target = data / entry, partial / entry
+                stat = source.stat()
+                if entry == STATS:
+                    copy_stats(source, target)
+                    check_stats(target)
+                else:
+                    shutil.copyfile(source, target)
+                    if entry == LIBRARY:
+                        check_library(target)
+                target.chmod(0o600)
+                sync(target)
+                files[entry] = {'uid': stat.st_uid, 'gid': stat.st_gid, 'mode': stat.st_mode & 0o777,
+                                'size': target.stat().st_size, 'hash': digest(target)}
+            total = sum(item['size'] for item in files.values())
+            if total > MAX_BYTES:
+                raise BackupError('backup_too_large')
+            write(partial / MANIFEST, json.dumps({'version': 1, 'file_count': len(files),
+                                                  'total_bytes': total, 'files': files}))
+            os.rename(partial, final)
+        except BaseException:
+            shutil.rmtree(partial, ignore_errors=True)
+            raise
+        return {'backup': name, 'files': len(files), 'bytes': total, 'removed': self.prune(keep)}
+
+    def backups(self):
+        if not self.backup_dir.is_dir():
+            return []
+        return sorted(p.name for p in self.backup_dir.iterdir()
+                      if NAME.fullmatch(p.name) and p.is_dir() and not p.is_symlink())
+
+    def prune(self, keep):
+        # Only runs after a verified backup, so a failing source never rotates out good copies.
+        removed = self.backups()[:-keep]
+        for name in removed:
+            shutil.rmtree(self.backup_dir / name)
+        return len(removed)
+
+    def verify(self, name):
+        backup = self.backup_dir / (name or '')
+        if not NAME.fullmatch(name or '') or not backup.is_dir() or backup.is_symlink():
+            raise BackupError('backup_unavailable')
+        marker = backup / MANIFEST
+        if not marker.is_file() or marker.is_symlink():
+            raise BackupError('backup_manifest_unavailable')
+        try:
+            envelope = read(marker)
+        except DeploymentError:
+            raise BackupError('backup_manifest_invalid') from None
+        files = envelope.get('files')
+        if (set(envelope) != {'version', 'file_count', 'total_bytes', 'files'} or envelope['version'] != 1 or
+                not isinstance(files, dict) or envelope['file_count'] != len(files) or
+                any(n not in (LIBRARY, STATS) and not LEGACY.fullmatch(n) for n in files) or
+                type(envelope['total_bytes']) is not int or not 0 <= envelope['total_bytes'] <= MAX_BYTES):
+            raise BackupError('backup_manifest_invalid')
+        present = {p.name for p in backup.iterdir() if p.name != MANIFEST}
+        if present != set(files) or any((backup / n).is_symlink() or not (backup / n).is_file() for n in present):
+            raise BackupError('backup_incomplete')
+        for entry, meta in files.items():
+            if (not isinstance(meta, dict) or set(meta) != {'uid', 'gid', 'mode', 'size', 'hash'} or
+                    any(type(meta[k]) is not int or meta[k] < 0 for k in ('uid', 'gid', 'mode', 'size')) or
+                    meta['mode'] > 0o777 or not isinstance(meta['hash'], str) or
+                    not re.fullmatch(r'[a-f0-9]{64}', meta['hash'])):
+                raise BackupError('backup_manifest_invalid')
+            path = backup / entry
+            if path.stat().st_size != meta['size'] or digest(path) != meta['hash']:
+                raise BackupError('backup_hash_mismatch')
+        if sum(meta['size'] for meta in files.values()) != envelope['total_bytes']:
+            raise BackupError('backup_manifest_invalid')
+        if LIBRARY in files:
+            check_library(backup / LIBRARY)
+        if STATS in files:
+            check_stats(backup / STATS)
+        return files
+
+    def restore(self, name, data):
+        files = self.verify(name)
+        if self.bot_running():
+            raise BackupError('backup_restore_requires_stopped_bot')
+        data = data.resolve()
+        if not data.is_dir() or data.is_symlink():
+            raise BackupError('backup_data_unavailable')
+        current = [p for p in data.iterdir()]
+        if any(p.is_symlink() or not p.is_file() for p in current):
+            raise BackupError('backup_unsafe_data_volume')
+        # Keep everything currently in the volume, including WAL sidecars, before changing it.
+        self.prepare()
+        kept = 'pre-restore-' + self.stamp()
+        retained = self.backup_dir / kept
+        if retained.exists():
+            raise BackupError('backup_already_exists')
+        retained.mkdir(mode=0o700)
+        for path in current:
+            shutil.copy2(path, retained / path.name)
+            (retained / path.name).chmod(0o600)
+        backup = self.backup_dir / name
+        if STATS in files:
+            # A stale WAL from the replaced database would corrupt the restored one.
+            for suffix in SIDECARS:
+                with contextlib.suppress(FileNotFoundError):
+                    (data / (STATS + suffix)).unlink()
+        for entry, meta in files.items():
+            fd, temporary = tempfile.mkstemp(dir=data)
+            try:
+                with os.fdopen(fd, 'wb') as output:
+                    output.write((backup / entry).read_bytes())
+                    output.flush()
+                    os.fsync(output.fileno())
+                os.chmod(temporary, meta['mode'])
+                if is_root():
+                    os.chown(temporary, meta['uid'], meta['gid'])
+                os.replace(temporary, data / entry)
+            finally:
+                if os.path.exists(temporary):
+                    os.unlink(temporary)
+        if any(digest(data / entry) != meta['hash'] for entry, meta in files.items()):
+            raise BackupError('backup_restore_hash_mismatch')
+        return {'restored': name, 'files': len(files), 'pre_restore': kept}
+
+
+@contextlib.contextmanager
+def maintenance_lock(timeout):
+    import fcntl  # VPS only; unit tests import this module on Windows.
+    with open(LOCK, 'a') as lock:
+        deadline = time.monotonic() + timeout
+        while True:
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if time.monotonic() >= deadline:
+                    raise BackupError('backup_maintenance_lock_busy') from None
+                time.sleep(5)
+        yield
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('action', choices=['backup', 'list', 'verify', 'restore'])
+    parser.add_argument('--name', help='backup to verify or restore, e.g. bot-data-20261017T043000Z')
+    parser.add_argument('--backup-dir', type=Path, default=Path('/var/lib/vybertron-backups'))
+    parser.add_argument('--volume', default='vybertron_bot-data')
+    parser.add_argument('--data-dir', type=Path, help='use this directory instead of the Docker volume')
+    parser.add_argument('--keep', type=int, default=14, choices=range(1, 366), metavar='1-365')
+    parser.add_argument('--lock-timeout', type=int, default=1800)
+    args = parser.parse_args()
+    os.umask(0o077)
+    store = BotData(args.backup_dir)
+    try:
+        if args.action == 'list':
+            result = {'backups': store.backups()}
+        elif args.action == 'verify':
+            result = {'verified': args.name, 'files': len(store.verify(args.name))}
+        else:
+            with maintenance_lock(args.lock_timeout):
+                data = args.data_dir or store.volume_path(args.volume)
+                result = (store.create(data, args.keep) if args.action == 'backup'
+                          else store.restore(args.name, data))
+        print(json.dumps({'status': 'ok', **result}))
+    except BackupError as error:
+        print(json.dumps({'status': 'failed', 'error': str(error)}))
+        raise SystemExit(1) from None
+    except Exception:
+        print(json.dumps({'status': 'failed', 'error': 'backup_unexpected_failure'}))
+        raise SystemExit(1) from None
+
+
+if __name__ == '__main__':
+    main()

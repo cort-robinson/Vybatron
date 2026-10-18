@@ -20,9 +20,7 @@ import { ShareDialog } from './components/Share';
 import { holdForSignIn, initialShare } from './share';
 import { transition } from './motion';
 import { longPress } from './longPress';
-import { applyPerformance, applySkin, initialPerformance, initialSkin, type Skin } from './skin';
-import { Horizon } from './components/Overdrive';
-import { Earth828 } from './components/Fantastic';
+import { applyPerformance, applySkin, initialPerformance, initialSkin, loadLook, skinLook, type Skin } from './skin';
 
 function initialAmbient(): AmbientMode {
   try { const value = localStorage.getItem('vybertron.ambient'); return value === 'off' || value === 'subtle' || value === 'on' ? value : 'on'; } catch { return 'on'; }
@@ -83,7 +81,16 @@ export function App() {
   }, [portal.notice]);
   // Look and lighting changes crossfade the whole page instead of repainting it in one frame.
   const setAmbient = (value: AmbientMode) => transition('theme', () => { changeAmbient(value); try { localStorage.setItem('vybertron.ambient', value); } catch { /* Optional, non-sensitive preference. */ } });
-  const setSkin = (value: Skin) => transition('theme', () => { applySkin(value); changeSkin(value); });
+  // A look's chunk loads before it applies, so the switch stays one atomic crossfade. The
+  // latest choice wins if an earlier one is still loading. The browser won't refetch a script
+  // chunk that failed, so a failed look asks for a reload; the current look stays meanwhile.
+  const skinChoice = useRef(0);
+  const setSkin = (value: Skin) => {
+    const choice = ++skinChoice.current;
+    loadLook(value).then(() => {
+      if (choice === skinChoice.current) transition('theme', () => { applySkin(value); changeSkin(value); });
+    }, () => { if (choice === skinChoice.current) portal.notify('That look couldn’t load. Check your connection, then reload the page and try again.', 'error'); });
+  };
   const setPerformance = (value: boolean) => transition('theme', () => { applyPerformance(value); changePerformance(value); });
   const order = (value: Surface) => surfaces.findIndex(item => item.id === value);
   // Leaving the sleeve folds the cover back into the deck; otherwise the view slides along the nav.
@@ -110,11 +117,11 @@ export function App() {
     document.documentElement.style.setProperty('--ground', palette.ground);
     document.querySelector('meta[name="theme-color"]')?.setAttribute('content', palette.ground);
   }, [palette]);
+  const Look = skinLook(skin);
   const scene = (moving: boolean) => <div className={`ambient-scene ${expanded ? 'immersive' : ''} ${moving ? 'moving' : 'settled'} ${ambient === 'subtle' ? 'subtle' : ''} ${ambient === 'off' ? 'disabled' : ''}`} aria-hidden="true">
     <RoomLight palette={palette} instant={hidden} quick={reduced}>{prepared => <>
     <ArtworkField url={artwork} />
-    {skin === 'overdrive' && <Horizon prepared={prepared} />}
-    {skin === 'fantastic' && <Earth828 prepared={prepared} />}
+    {Look && <Look.Scenery prepared={prepared} />}
     </>}</RoomLight>
   </div>;
   const background = scene(motion);

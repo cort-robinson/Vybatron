@@ -46,6 +46,7 @@ test('readiness, liveness, diagnostics, and shutdown report distinct states with
     token: 'private-token',
     lavalink: { nodeManager: { nodes: new Map([['main', node]]) },
       players: new Map([['private-guild', { paused: true, queue: { tracks: [{ title: 'private-track' }] } }]]) },
+    library: { capacity: () => ({ bytes: 4096, limitBytes: 5 * 1024 * 1024 }), document: { guilds: { 'private-guild': {} } } },
   };
   const server = startHealthServer(client, { port: 0 });
   await once(server, 'listening');
@@ -57,6 +58,7 @@ test('readiness, liveness, diagnostics, and shutdown report distinct states with
     assert.equal(status.players, 1);
     assert.equal(status.paused, 1);
     assert.equal(status.queuedTracks, 1);
+    assert.deepEqual(status.library, { bytes: 4096, limitBytes: 5 * 1024 * 1024 });
     assert.doesNotMatch(JSON.stringify(status), /private/);
     assert.equal((await fetch(`${url}/health`, { method: 'HEAD' })).status, 503);
     assert.equal((await fetch(`${url}/health`, { method: 'POST' })).status, 405);

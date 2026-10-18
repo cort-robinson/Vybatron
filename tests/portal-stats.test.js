@@ -84,6 +84,42 @@ test('clearing request stats is identity-scoped and keeps server totals', async 
   assert.equal((await f.request('/v1/stats/requests/clear?actorId=200')).status, 404, 'GET is not a clear');
 });
 
+test('the recap reads one window under the stats privacy rules', async t => {
+  const f = await withStats(t);
+  f.record('mysongsong1', { requesterId: '200' });
+  f.record('mysongsong1', { requesterId: '200', playedAt: Date.now() - 20 * DAY });
+  f.record('mysongsong1', { requesterId: '200', skipped: true, completed: false, playedMs: 4_000 });
+  f.record('publicsong1', { requesterId: '201' });
+  f.record('secretsong1', { requesterId: '200', voiceChannelId: '301' });
+  f.record('secretsong1', { requesterId: '202', voiceChannelId: '301' });
+  f.channels.get('301').hidden.add('200');
+  const week = await f.request('/recap?window=7d');
+  assert.equal(week.status, 200, JSON.stringify(week.body));
+  assert.equal(week.body.window, '7d');
+  assert.ok(Math.abs(week.body.since - (Date.now() - 7 * DAY)) < 60_000);
+  assert.deepEqual([week.body.personal.plays, week.body.personal.playedMs, week.body.personal.songs], [2, 184_000, 1]);
+  assert.deepEqual(week.body.personal.topTracks.map(entry => [entry.track.title, entry.plays]), [['Song mysongsong1', 1]]);
+  assert.deepEqual(week.body.personal.topArtists.map(artist => [artist.name, artist.plays]), [['Artist', 1]]);
+  assert.deepEqual([week.body.server.plays, week.body.server.songs], [3, 2], 'the hidden room adds nothing, even the viewer’s own requests there');
+  assert.deepEqual(week.body.server.topTracks.map(entry => entry.track.title).sort(), ['Song mysongsong1', 'Song publicsong1']);
+  assert.ok(week.body.server.topTracks.every(entry => entry.track.requestedBy === null));
+  assert.doesNotMatch(JSON.stringify(week.body), /"20[12]"|requester|encoded/);
+  const month = await f.request('/recap');
+  assert.equal(month.body.window, '30d', 'the window defaults to 30 days');
+  assert.equal(month.body.personal.plays, 3);
+  // Another listener sees the room the first cannot, and only their own requests.
+  const other = (await f.request('/recap', { actor: '202' })).body;
+  assert.deepEqual([other.personal.plays, other.server.plays], [1, 6]);
+  for (const window of ['all', 'forever']) assert.equal((await f.request(`/recap?window=${window}`)).status, 400, window);
+
+  await f.request('/v1/stats/requests/clear?actorId=200', { method: 'POST' });
+  const cleared = (await f.request('/recap')).body;
+  assert.deepEqual([cleared.personal.plays, cleared.personal.topTracks.length, cleared.server.plays], [0, 0, 4]);
+  f.stats.disable();
+  const unavailable = await f.request('/recap');
+  assert.deepEqual([unavailable.status, unavailable.body.error.code], [503, 'stats_unavailable']);
+});
+
 test('/top play queues a visible server favorites list through the normal enqueue path', async t => {
   const f = await withStats(t);
   for (const requesterId of ['200', '201', '202']) f.record('loudsong001', { requesterId });

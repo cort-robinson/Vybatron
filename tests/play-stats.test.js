@@ -4,7 +4,7 @@ import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { initializeStats, PlayStats, STATS_LIMITS, STATS_SCHEMA_VERSION, StatsUnavailableError } from '../src/utils/play-stats.js';
+import { initializeStats, PlayStats, RECAP_QUERIES, STATS_LIMITS, STATS_SCHEMA_VERSION, StatsUnavailableError } from '../src/utils/play-stats.js';
 import { songKey } from '../src/utils/song-identity.js';
 
 const DAY = 24 * 60 * 60_000;
@@ -116,6 +116,55 @@ test('personal stats come from the listener’s own requests', async t => {
   const favorites = [b.info, c.info, a.info, song('ddddddddddd', 'Delta', 'Never Requested - Topic').info].map(info => ({ ...info }));
   const rediscover = stats.rediscover('200', favorites, { now: NOW });
   assert.deepEqual(rediscover.map(item => [item.track.title, item.index, item.requests, item.lastRequestedAt]), [['Gamma', 2, 1, NOW - 40 * DAY], ['Delta', 4, 0, null]]);
+});
+
+test('a recap totals the listener’s own requests and the server’s visible plays in one window', async t => {
+  const { stats } = await store(t);
+  const a = song('aaaaaaaaaaa', 'Alpha', 'First Artist - Topic'); const b = song('bbbbbbbbbbb', 'Beta', 'Second Artist - Topic');
+  play(stats, { track: a, playedMs: 200_000 });
+  play(stats, { track: a, playedMs: 100_000, playedAt: NOW - DAY });
+  play(stats, { track: b, skipped: true, completed: false, playedMs: 5_000 });
+  play(stats, { track: b, requesterId: '201', playedMs: 150_000 });
+  play(stats, { track: b, requesterKind: 'autoplay', playedMs: 150_000 });
+  play(stats, { track: b, voiceChannelId: '301', playedMs: 150_000 });
+  play(stats, { track: b, playedAt: NOW - 40 * DAY });
+  play(stats, { track: a, guildId: '101' });
+  // A play still in progress has no played time yet.
+  stats.begin({ guildId: '100', voiceChannelId: '300', track: b, requesterKind: 'user', requesterId: '201', playedAt: NOW });
+  const scope = { since: NOW - 30 * DAY, visibleChannelIds: ['300'] };
+  const recap = stats.recap('100', '200', scope);
+  assert.deepEqual([recap.personal.plays, recap.personal.playedMs, recap.personal.songs], [3, 305_000, 2], 'early skips count as requests');
+  assert.deepEqual(recap.personal.topTracks.map(entry => [entry.track.title, entry.plays]), [['Alpha', 2]], 'early skips never rank');
+  assert.deepEqual(recap.personal.topArtists.map(artist => [artist.artist, artist.plays]), [['First Artist', 2]]);
+  assert.deepEqual([recap.server.plays, recap.server.playedMs, recap.server.songs], [6, 605_000, 2]);
+  assert.deepEqual(recap.server.topTracks.map(entry => [entry.track.title, entry.plays]), [['Beta', 3], ['Alpha', 2]]);
+  assert.doesNotMatch(JSON.stringify(recap), /"20[01]"|requester/, 'server numbers never name a requester');
+
+  const nobody = stats.recap('100', '200', { ...scope, visibleChannelIds: [] });
+  assert.deepEqual([nobody.personal.plays, nobody.server.plays, nobody.server.topTracks.length], [0, 0, 0], 'hidden channels contribute nothing');
+  assert.deepEqual(stats.recap('100', 'not-a-user', scope).personal, { plays: 0, playedMs: 0, songs: 0, topTracks: [], topArtists: [] });
+
+  stats.clearRequests('200');
+  const cleared = stats.recap('100', '200', scope);
+  assert.deepEqual([cleared.personal.plays, cleared.personal.topTracks.length], [0, 0]);
+  assert.deepEqual([cleared.server.plays, cleared.server.playedMs], [6, 605_000], 'cleared requests stay in server totals, anonymously');
+  stats.disable();
+  assert.throws(() => stats.recap('100', '200', scope), StatsUnavailableError);
+});
+
+test('recap queries search the existing play indexes', async t => {
+  const { stats } = await store(t);
+  const plan = (sql, ...params) => stats.db.prepare(`EXPLAIN QUERY PLAN ${sql}`).all(...params).map(row => row.detail);
+  const scope = ['100', NOW - 30 * DAY, '["300"]'];
+  for (const [sql, params, index] of [
+    [RECAP_QUERIES.personalTotals, [...scope, '200'], 'plays_requester'],
+    [RECAP_QUERIES.serverTotals, scope, 'plays_guild_time'],
+    [RECAP_QUERIES.serverTopTracks, [...scope, 10], 'plays_guild_time'],
+  ]) {
+    const details = plan(sql, ...params);
+    assert.ok(details.some(detail => detail.startsWith(`SEARCH plays USING INDEX ${index} (`)), details.join('; '));
+    assert.ok(!details.some(detail => /^SCAN plays/.test(detail)), details.join('; '));
+  }
 });
 
 test('clearing request stats removes the requester everywhere but keeps anonymized server totals', async t => {

@@ -215,7 +215,12 @@ test('a sleep timer for an ended or replaced player does nothing', async () => {
   const stopping = fakePlayer();
   stopping.setData('vybertron.stopping', true);
   assert.equal(await sleepStop(fakeClient(stopping), stopping, 'time'), false);
-  assert.deepEqual([...player.calls, ...stopping.calls], []);
+  const destroying = fakePlayer();
+  destroying.setData('internal_destroystatus', true);
+  const destroyingClient = fakeClient(destroying);
+  assert.equal(await sleepStop(destroyingClient, destroying, 'time'), false);
+  assert.deepEqual([...player.calls, ...stopping.calls, ...destroying.calls], []);
+  assert.deepEqual(destroyingClient.sessions, [], 'a disconnect keeps its checkpoint');
 });
 
 test('the player shows an active sleep timer', () => {

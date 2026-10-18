@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { Player } from 'lavalink-client';
-import { claimFinishedTrack } from './utils/sleep-timer.js';
+import { cancelSleepTimer, claimFinishedTrack } from './utils/sleep-timer.js';
 
 export const ATTEMPT_KEY = 'vybertronPlaybackAttempt';
 export const RESUME_SECONDS = 120;
@@ -110,6 +110,9 @@ export class HardenedPlayer extends Player {
     if (destructionTasks.has(this)) return destructionTasks.get(this);
     if (this.LavalinkManager?.getPlayer(this.guildId) !== this) return Promise.resolve(this);
     destroyingPlayers.add(this);
+    // A sleep timer must not fire into a teardown that is still awaiting the
+    // audio server: it would stop playback and discard the kept checkpoint.
+    cancelSleepTimer(this);
     service(this)?.invalidate(this);
     const recovery = service(this);
     const result = recovery?.destroyPlayer ? recovery.destroyPlayer(this, ...args)

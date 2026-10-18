@@ -462,6 +462,22 @@ test('stop after this track stays armed through a skip and applies to the track 
   cancelSleepTimer(f.player);
 });
 
+test('destruction cancels a sleep timer before the audio server confirms the teardown', async () => {
+  const gate = deferred();
+  let held = 0;
+  const f = fixture({ request: async (body, endpoint) => { if (/\/players\/g1$/.test(endpoint) && !Object.keys(body).length) { held += 1; await gate.promise; } } });
+  await f.start();
+  const fired = [];
+  setSleepTimer(f.player, { minutes: 1, onFire: () => fired.push('time') });
+  const destroying = f.player.destroy('voice-empty-disconnect');
+  await settle();
+  assert.ok(held >= 1, 'the DELETE is still pending');
+  assert.equal(sleepTimer(f.player), null, 'cancelled while the teardown is still pending');
+  gate.resolve();
+  await destroying;
+  assert.deepEqual(fired, []);
+});
+
 test('a skip cancels a retry before its backoff completes', async () => {
   const gate = deferred();
   let searches = 0;

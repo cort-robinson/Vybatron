@@ -87,10 +87,18 @@ export function songFromTitle(title) {
   return fold(artist) && fold(song) ? { artist, song } : null;
 }
 
-function cachedTask(key, work) {
+// Each caller waits only until its own deadline, even when it joins a lookup another
+// caller started; the shared lookup keeps going and is cached for later readers.
+function within(task, deadline) {
+  let timer;
+  const expired = new Promise(resolve => { timer = setTimeout(() => resolve({ status: 'unavailable' }), Math.max(0, deadline - Date.now())); });
+  return Promise.race([task, expired]).finally(() => clearTimeout(timer));
+}
+
+function cachedTask(key, work, deadline) {
   const known = cachedLyrics(key);
   if (known) return known;
-  if (pending.has(key)) return pending.get(key);
+  if (pending.has(key)) return within(pending.get(key), deadline);
   const task = (async () => {
     try {
       const result = await work();
@@ -99,7 +107,7 @@ function cachedTask(key, work) {
     } finally { pending.delete(key); }
   })();
   pending.set(key, task);
-  return task;
+  return within(task, deadline);
 }
 
 // -> {status:'found', lyrics} | {status:'not_found'} | {status:'unavailable'}.
@@ -130,7 +138,7 @@ export async function trackLyrics(node, track, { deadline = Date.now() + LYRICS_
       if (error instanceof LrclibUnavailable) return { status: 'unavailable' };
       throw error;
     }
-  });
+  }, deadline);
 }
 
 // Songs playing on a listener's own device: the portal names the YouTube video.
@@ -149,7 +157,7 @@ export async function videoLyrics(node, videoId, { deadline = Date.now() + LYRIC
     } catch { return { status: 'unavailable' }; }
     if (!track) return { status: 'not_found' };
     return { ...await trackLyrics(node, track, { deadline, ...(fetchImpl ? { fetchImpl } : {}) }), track };
-  });
+  }, deadline);
   return { track: answer.track || track, ...answer };
 }
 

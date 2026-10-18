@@ -364,3 +364,17 @@ test('an oversized LRCLIB response is abandoned as soon as it passes the cap', a
   lrclib = () => new Response(wide, { status: 200 });
   assert.deepEqual(await trackLyrics(lyricsNode([undefined]), track('hugeanswer2')), { status: 'unavailable' });
 });
+
+test('joining a lookup already in flight still ends at the caller\'s own deadline', async () => {
+  clearLyricsCache();
+  let release;
+  const node = { connected: true, request: () => new Promise(resolve => { release = () => resolve(synced); }) };
+  const song = track('sharedlook1');
+  const first = trackLyrics(node, song, { deadline: Date.now() + 5000 });
+  const started = Date.now();
+  assert.deepEqual(await trackLyrics(node, song, { deadline: Date.now() + 150 }), { status: 'unavailable' });
+  assert.ok(Date.now() - started < 1000, 'the late caller stops waiting');
+  release();
+  assert.equal((await first).status, 'found', 'the shared lookup carries on');
+  assert.equal((await trackLyrics(node, song, { deadline: Date.now() + 50 })).status, 'found', 'and is cached for later readers');
+});

@@ -139,8 +139,9 @@ export function Player({ portal, expanded, setExpanded, onAdd, accent, animate, 
   const favorite = track && <IconButton className={`favorite ${index >= 0 ? 'active' : ''}`} label={index >= 0 ? 'Remove current song from favorites' : 'Save current song to favorites'} aria-pressed={index >= 0} disabled={!can('library') || !library || !!pending.length || local && index < 0} title={local && index < 0 ? 'Save favorites while a song plays in Discord.' : undefined} onClick={() => void toggleFavorite()}><HeartIcon size={expanded ? 28 : 25} weight={index >= 0 ? 'fill' : 'regular'} /></IconButton>;
   // An autoplay pick names its provenance in place of the source.
   const metadata = track ? <>{track.author}<span className="metadata-dot" aria-hidden="true">·</span><span className="track-source">{track.suggested ? 'Autoplay pick' : track.source}</span></> : 'Add a song to start the room.';
-  const lyricsToggle = <IconButton className={`lyrics-toggle ${lyricsOpen ? 'active-control' : ''}`} label={lyricsOpen ? 'Hide lyrics' : 'Show lyrics'} aria-pressed={lyricsOpen} aria-controls={lyricsOpen ? lyricsId : undefined} onClick={() => setLyricsOpen(!lyricsOpen)}><MicrophoneStageIcon size={26} weight={lyricsOpen ? 'fill' : 'regular'} /></IconButton>;
-  const identity = <div className="player-identity"><div className="player-title-row"><h2 ref={headingRef} tabIndex={-1} title={track?.title}>{track?.title || 'Nothing playing'}</h2>{favorite}{lyricsToggle}</div><p title={track ? `${track.author} · ${track.source}` : undefined}>{metadata}</p>
+  // The same size as the favorite button and on the title's other side, so the title stays centered.
+  const lyricsToggle = track && <IconButton className={`lyrics-toggle ${lyricsOpen ? 'active-control' : ''}`} label={lyricsOpen ? 'Hide lyrics' : 'Show lyrics'} aria-pressed={lyricsOpen} aria-controls={lyricsOpen ? lyricsId : undefined} onClick={() => setLyricsOpen(!lyricsOpen)}><MicrophoneStageIcon size={26} weight={lyricsOpen ? 'fill' : 'regular'} /></IconButton>;
+  const identity = <div className="player-identity"><div className="player-title-row">{lyricsToggle}<h2 ref={headingRef} tabIndex={-1} title={track?.title}>{track?.title || 'Nothing playing'}</h2>{favorite}</div><p title={track ? `${track.author} · ${track.source}` : undefined}>{metadata}</p>
   </div>;
   const spectrumMode = track && active && live ? 'playing' : 'standby';
   const look = skinLook(skin);
@@ -186,7 +187,7 @@ export function Player({ portal, expanded, setExpanded, onAdd, accent, animate, 
   return <section ref={playerRef} className={`persistent-player ${expanded ? 'expanded' : 'collapsed'} ${queueOpen ? 'queue-open' : ''} ${session?.status || 'idle'}`} aria-label="Music player" data-testid="player">
     {!expanded && spectrum('player-spectrum', 56, 0)}
     {expanded && <div className="sleeve-content"><button className="mobile-collapse text-button" onClick={() => setExpanded(false)}><CaretDownIcon size={22} />Close player</button>
-      <div className="sleeve-main">{lyricsOpen ? <div className="sleeve-artwork showing-lyrics"><LyricsView id={lyricsId} clock={clock} guildId={snapshot?.guild.id} trackId={track?.id || null} local={local} /></div>
+      <div className="sleeve-main">{lyricsOpen ? <div className="sleeve-artwork showing-lyrics"><LyricsView id={lyricsId} clock={clock} guildId={snapshot?.guild.id} track={track} local={local} /></div>
         : <div className="sleeve-artwork" onPointerMove={look?.tilt} onPointerLeave={look?.untilt}><Artwork track={track} large />{spectrum('sleeve-spectrum', 40)}{look && <look.Sleeve track={track?.id || 'idle'} />}</div>}{identity}<div className="player-context">{permissionReason && <p className="player-permission" id={reasonId}><WarningCircleIcon size={18} aria-hidden="true" /><span>{permissionReason}</span></p>}{connection === 'live' && session?.status === 'recovering' && <p className="player-state warm-text" role="status">Recovering your place. Playback controls will return when it’s ready.</p>}{sleep && <p className="player-state sleep-state"><MoonIcon size={16} aria-hidden="true" /><span>Sleep timer · {sleep}</span></p>}{session?.status === 'paused' && <p className="player-state warm-text">{connection === 'live' ? 'Paused · right here when you’re ready' : 'Last known: paused'}</p>}</div></div>
       <div ref={sheetRef} id={queueId} className="sleeve-queue">{queueOpen && <div className="queue-sheet-now"><span className="sheet-grabber" aria-hidden="true" /><Artwork track={track} /><span className="sheet-now-text"><strong>{track?.title || 'Nothing playing'}</strong><span>{track?.author}</span></span></div>}{queue}</div>
     </div>}
@@ -250,8 +251,8 @@ function Timeline({ clock, track, duration, seekable, reset, onSeek }: { clock: 
   </div>;
 }
 // Synced lyrics follow the shared clock; only a change of sung line re-renders the panel.
-function LyricsView({ id, clock, guildId, trackId, local }: { id: string; clock: Clock; guildId?: string; trackId: string | null; local: boolean }) {
-  const [state, retry] = useLyrics(guildId, trackId, local);
+function LyricsView({ id, clock, guildId, track, local }: { id: string; clock: Clock; guildId?: string; track: Track | null; local: boolean }) {
+  const [state, retry] = useLyrics(guildId, track, local);
   const position = usePosition(clock);
   const lyrics = state.status === 'found' ? state.lyrics : null;
   return <LyricsPanel id={id} state={state} active={activeLine(lyrics, position)} onRetry={retry} />;

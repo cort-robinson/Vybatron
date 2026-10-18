@@ -14,7 +14,7 @@ import { fail, safeError } from './errors.js';
 import { createCommandTimings, commandTimingSpan } from './timing.js';
 import { createChangeFeed } from './changes.js';
 import { createAudioCache, sendAudio } from './audio.js';
-import { trackLyrics } from '../utils/lyrics.js';
+import { trackLyrics, videoLyrics } from '../utils/lyrics.js';
 import { publicTrackId } from './selections.js';
 
 const hash = value => createHash('sha256').update(value).digest();
@@ -142,6 +142,16 @@ export function startPortalBridge(client, {
           const context = policy.gatewayGuild?.(actorId, audioMatch[1]) || await policy.guild(actorId, audioMatch[1], undefined, { channelScope: 'none' });
           if (!context.member) fail(403, 'membership_required', 'Join this server to listen to its music.');
           return sendAudio(request, response, await audio.get(audioMatch[2]));
+        }
+        const videoLyricsMatch = url.pathname.match(/^\/v1\/guilds\/(\d{1,22})\/lyrics\/([\w-]{11})$/);
+        if (videoLyricsMatch && request.method === 'GET') {
+          // A song playing on the listener's own device: membership only, like its audio.
+          const actorId = url.searchParams.get('actorId');
+          const context = await policy.guild(actorId, videoLyricsMatch[1], undefined, { channelScope: 'none' });
+          if (!context.member) fail(403, 'membership_required', 'Join this server to listen to its music.');
+          const node = client.lavalink?.nodeManager?.leastUsedNodes?.()[0];
+          const found = await videoLyrics(node, videoLyricsMatch[2]);
+          return json(response, 200, { trackId: found.track ? publicTrackId(found.track) : null, status: found.status, lyrics: found.lyrics || null }, maxResponseBytes);
         }
         const match = url.pathname.match(/^\/v1\/guilds\/(\d{1,22})(?:\/(library|search|commands|diagnostics|activity|configuration|stats|recap|lyrics))?$/);
         if (!match) fail(404, 'not_found', 'That bridge endpoint does not exist.');

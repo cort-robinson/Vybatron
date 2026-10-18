@@ -50,6 +50,20 @@ async function addSongs(page: Page) {
   await page.keyboard.press('Escape');
 }
 
+test('lyrics follow the song playing on this device, looked up by its YouTube video', async ({ page }) => {
+  const fixture = await portal(page, { inVoice: false });
+  const lyricsRequests: string[] = [];
+  page.on('request', request => { if (request.url().includes('/lyrics')) lyricsRequests.push(new URL(request.url()).pathname); });
+  await addSongs(page);
+  await expect(title(page)).toHaveText('Midnight City');
+  await page.getByRole('button', { name: 'Open player', exact: true }).click();
+  await page.getByRole('button', { name: 'Show lyrics', exact: true }).click();
+  const panel = page.getByRole('region', { name: 'Lyrics' });
+  await expect(panel.getByText('Streetlights hum along the avenue')).toBeVisible();
+  expect(lyricsRequests).toEqual(['/api/guilds/testing/lyrics/dX3k_QDnzHE']);
+  expect(fixture.commands).toEqual([]);
+});
+
 test('outside voice the portal plays audio on this device without sending Discord commands', async ({ page }) => {
   const fixture = await portal(page, { inVoice: false });
   await expect(title(page)).toHaveText('Nothing playing');

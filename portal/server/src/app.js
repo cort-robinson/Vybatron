@@ -439,6 +439,14 @@ export async function createPortalServer(config, testOptions = {}) {
           if (range !== undefined && !/^bytes=\d{0,15}-\d{0,15}$/.test(range)) throw invalid();
           await transport.audio(`/v1/guilds/${audio[1]}/audio/${audio[2]}`, session.actorId, { range, signal: controller.signal, res }); return;
         }
+        const videoLyrics = /^\/api\/guilds\/(\d{1,20})\/lyrics\/([\w-]{11})$/.exec(pathname);
+        if (videoLyrics && req.method === 'GET') {
+          // Lyrics for the song this device is playing.
+          queryOnly(url, []);
+          const data = await transport.bridge(`/v1/guilds/${videoLyrics[1]}/lyrics/${videoLyrics[2]}`, session.actorId, { signal: controller.signal });
+          if (!store.get(token)) throw unauthorized();
+          json(res, 200, data); return;
+        }
         const match = /^\/api\/guilds\/(\d{1,20})(?:\/(configuration|library|search|commands|diagnostics|activity|events|stats|recap|lyrics))?$/.exec(pathname);
         if (!match) throw notFound();
         const [, guildId, resource] = match;

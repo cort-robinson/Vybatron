@@ -24,6 +24,11 @@
   .lyrics-lines li { font-size: clamp(18px, 4.8vw, 22px); }
 }
 
+/* Landscape phones put the title beside the cover; both title buttons sit at its first line. */
+@media (max-width: 1023px) and (min-width: 600px) and (max-height: 500px) {
+  .sleeve-main .lyrics-toggle { align-self: flex-start; }
+}
+
 /* Overdrive: the queue's plated HUD frame, and the sung line glows in the horizon's neon. */
 :root[data-skin='overdrive'] .lyrics-panel { border-radius: 6px 22px 6px 22px; background: var(--hud), var(--rail) top / 100% 1px no-repeat, color-mix(in oklab, var(--ground) 70%, transparent); }
 :root[data-skin='overdrive'] .synced .lyrics-lines li.current { text-shadow: 0 0 18px color-mix(in oklab, var(--neon) 55%, transparent), 0 2px 0 color-mix(in oklab, var(--neon) 35%, transparent); }

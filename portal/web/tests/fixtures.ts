@@ -128,6 +128,7 @@ export async function mockPortal(page: Page, options: { signedOut?: boolean; bas
     else if (path.endsWith('/activity')) await route.fulfill(reply(state.activity));
     else if (path.endsWith('/stats')) await route.fulfill(reply(state.stats));
     else if (path.endsWith('/lyrics')) await route.fulfill(reply(state.lyrics));
+    else if (/\/lyrics\/[\w-]{11}$/.test(path)) await route.fulfill(reply({ ...state.lyrics, trackId: null }));
     else if (path.endsWith('/recap')) {
       const window = new URL(route.request().url()).searchParams.get('window') || '30d';
       recapWindows.push(window);

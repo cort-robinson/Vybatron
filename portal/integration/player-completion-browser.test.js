@@ -11,6 +11,7 @@ import path from 'node:path';
 import { createPortalServer } from '../server/src/app.js';
 import { loadConfig } from '../server/src/config.js';
 import { deferred, portalFixture } from '../../tests/portal-fixtures.js';
+import { cssScene } from './css-scene.mjs';
 
 const web = fileURLToPath(new URL('../web/', import.meta.url));
 const { chromium, expect } = createRequire(path.join(web, 'package.json'))('@playwright/test');
@@ -90,6 +91,7 @@ test('the acting device shows its change at once and queues further taps behind 
     browser.newContext({ viewport: { width: 1488, height: 1056 }, reducedMotion: 'reduce' }),
     browser.newContext({ viewport: { width: 393, height: 852 }, isMobile: true, hasTouch: true, reducedMotion: 'reduce' }),
   ]);
+  await Promise.all(contexts.map(context => context.addInitScript(cssScene)));
   const pages = await Promise.all(contexts.map(context => context.newPage()));
   for (const page of pages) {
     await page.goto(origin);

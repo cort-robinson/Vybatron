@@ -12,6 +12,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { createPortalServer } from '../server/src/app.js';
 import { loadConfig } from '../server/src/config.js';
 import { portalFixture } from '../../tests/portal-fixtures.js';
+import { cssScene } from './css-scene.mjs';
 
 const web = fileURLToPath(new URL('../web/', import.meta.url));
 const { chromium, expect: browserExpect } = createRequire(path.join(web, 'package.json'))('@playwright/test');
@@ -91,6 +92,7 @@ test('two real clients recover transient authorization reads and synchronize slo
   browser = await chromium.launch({ channel: process.env.CI ? undefined : 'chrome' });
   const desktop = await browser.newContext({ viewport: { width: 1488, height: 1056 }, reducedMotion: 'reduce' });
   const phone = await browser.newContext({ viewport: { width: 393, height: 852 }, isMobile: true, hasTouch: true, reducedMotion: 'reduce' });
+  await desktop.addInitScript(cssScene); await phone.addInitScript(cssScene);
   const pages = [await desktop.newPage(), await phone.newPage()];
   const errors = [];
   for (const page of pages) {

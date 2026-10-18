@@ -11,6 +11,7 @@ import path from 'node:path';
 import { createPortalServer } from '../server/src/app.js';
 import { loadConfig } from '../server/src/config.js';
 import { portalFixture } from '../../tests/portal-fixtures.js';
+import { cssScene } from './css-scene.mjs';
 
 const web = fileURLToPath(new URL('../web/', import.meta.url));
 const { chromium } = createRequire(path.join(web, 'package.json'))('@playwright/test');
@@ -46,7 +47,7 @@ test('browser OAuth secure cookies, exact origin, live controls and bodyless log
     await browser?.close(); vite.kill(); await app.close(); discord.closeAllConnections();
     await new Promise(r => discord.close(r));
   });
-  browser = await chromium.launch({ channel: process.env.CI ? undefined : 'chrome' }); const page = await browser.newPage();
+  browser = await chromium.launch({ channel: process.env.CI ? undefined : 'chrome' }); const page = await browser.newPage(); await page.addInitScript(cssScene);
   page.setDefaultTimeout(8_000);
   const responses = [];
   page.on('response', r => { const url = new URL(r.url()); if (url.origin === origin && /^(\/api|\/auth)/.test(url.pathname)) responses.push({ path: url.pathname, status: r.status() }); });

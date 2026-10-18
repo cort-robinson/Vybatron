@@ -13,6 +13,7 @@ import { createPortalServer } from '../server/src/app.js';
 import { loadConfig } from '../server/src/config.js';
 import { portalFixture } from '../../tests/portal-fixtures.js';
 import { PlayStats } from '../../src/utils/play-stats.js';
+import { cssScene } from './css-scene.mjs';
 
 const web = fileURLToPath(new URL('../web/', import.meta.url));
 const require = createRequire(path.join(web, 'package.json'));
@@ -114,7 +115,7 @@ test('production PWA installs under real CSP, serves an offline shell, and never
   for (const [name, width, height] of [['desktop', 1488, 1056], ['phone', 393, 852]]) {
     const context = await browser.newContext({ viewport: { width, height }, reducedMotion: 'reduce', serviceWorkers: 'allow' });
     try {
-      const page = await context.newPage();
+      await context.addInitScript(cssScene); const page = await context.newPage();
       const artworkRequests = new Set();
       // Playwright route() enables interception for all requests, which changes
       // OAuth redirect reporting on a worker-controlled page. Exact CDP patterns

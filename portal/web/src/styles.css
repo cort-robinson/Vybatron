@@ -392,7 +392,9 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
 .collapsed .playback-cluster > .transport, .expanded .playback-cluster > .transport { position: relative; z-index: 1; }
 .playback-cluster > .playback-timeline { margin-top: -8px; }
 .transport > .icon-button { color: var(--text-soft); }
-.transport .play-button { width: 48px; height: 48px; background: var(--accent); border-radius: 50%; color: var(--primary-ink); box-shadow: var(--shadow-control); transition: background-color 400ms, box-shadow 400ms, transform 200ms var(--ease-out); }
+/* Skins that draw a ring around the play control set --play-ring to its outset; the margin keeps
+   the ring clear of the neighbouring controls. */
+.transport .play-button { margin-inline: calc(var(--play-ring, 0px) + 4px); width: 48px; height: 48px; background: var(--accent); border-radius: 50%; color: var(--primary-ink); box-shadow: var(--shadow-control); transition: background-color 400ms, box-shadow 400ms, transform 200ms var(--ease-out); }
 .transport .play-button:hover:not(:disabled) { background: var(--primary-hover); color: var(--primary-ink); transform: scale(1.04); }
 .transport .play-button.settled { background: var(--amber); box-shadow: 0 10px 28px -10px color-mix(in oklab, var(--amber) 80%, transparent); }
 .transport .play-button.settled:hover:not(:disabled) { background: color-mix(in oklab, var(--amber), white 20%); }

@@ -86,14 +86,16 @@ gh run watch <deploy-run-id> --exit-status
 Use only runs whose `headSha` is the merge SHA. Never use "the latest" run. A
 run can take a minute to appear, so re-list it a few times. If none appears
 within 5 minutes, report that instead of choosing another run. Each watch is
-bounded by its workflow timeout (CI 20 min per job, Deploy 45 min). Deploy's
+bounded by its workflow timeout (CI 20 min per job, Deploy 330 min, most of it waiting for listeners to finish). Deploy's
 final step confirms that both containers carry the merge SHA and report healthy.
 That is the live evidence. Report Deploy's own conclusion:
 
 - `success` with "nothing to release": an equal or newer revision was already running.
 - `failure` at "Plan the release" on audio files: expected for audio changes. An
   operator release is needed (`promote`).
-- `failure` because a session was busy, or any other failure: don't re-run it,
+- In progress at "Release once nobody is listening": someone is listening. It
+  releases on its own when the bot goes idle; report that it is waiting.
+- `failure` because a session stayed busy for 5 hours, or any other failure: don't re-run it,
   roll back, or SSH. Report the run URL and the step that failed. The driver's
   journal handles rollback, and the user decides on a re-run.
 - `skipped`: main CI failed, so nothing was released. Treat the failure on `main` as urgent.

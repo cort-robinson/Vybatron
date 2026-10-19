@@ -69,7 +69,7 @@ custom daemon.
 | `release tags` ruleset | `v*` tags can't be moved or deleted |
 | CI `Check` job | one stable required check that fails if any verification job fails, is cancelled or is unexpectedly skipped |
 | `pr-gate.mjs` (agents) | the above on the exact head SHA, plus: base is `main`, not a draft, not a fork, no hold-path changes without explicit approval |
-| Deploy | only same-repo `main` pushes with green CI; refuses audio changes and non-ancestor rollbacks; idle-guarded with journal rollback |
+| Deploy | only same-repo `main` pushes with green CI; refuses audio changes and non-ancestor rollbacks; idle-guarded with journal rollback; waits up to 5 h for listeners to finish |
 
 **CI.** `lint` (actionlint, shellcheck, ruff, Lavalink YAML), `test` (JavaScript lint, bot
 and driver tests, container build and hardening, compose), `portal` (API, build, OAuth

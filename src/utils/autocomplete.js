@@ -1,3 +1,4 @@
+import { catalogUrl } from './library.js';
 import { isUrl, plainText, trackIdentity } from './presentation.js';
 import { validatePlaybackQuery } from './query.js';
 
@@ -9,6 +10,10 @@ const SELECTION_LIMIT = 500;
 const SELECTION_PREFIX = 'autocomplete:';
 const searchCache = new Map();
 const selectionCache = new Map();
+// Portal search results, keyed by the public link the portal shows for each.
+// Choosing a result sends that link back, and the bot adds the track it already
+// loaded instead of asking the audio service to load the link again.
+const resultCache = new Map();
 
 function getCached(key) {
   const entry = searchCache.get(key);
@@ -117,7 +122,29 @@ export async function autocompleteTracks(interaction) {
   return interaction.respond(await getTrackChoices(interaction));
 }
 
+export function rememberSearchResults(tracks, ownerId) {
+  for (const track of tracks) {
+    const uri = catalogUrl(track?.info?.uri);
+    if (!uri || !track.encoded) continue;
+    const key = `${ownerId}:${uri}`;
+    if (resultCache.has(key)) resultCache.delete(key);
+    while (resultCache.size >= SELECTION_LIMIT) resultCache.delete(resultCache.keys().next().value);
+    resultCache.set(key, { track, expiresAt: Date.now() + SELECTION_TTL_MS });
+  }
+}
+
+// A fresh copy per request: the queue tracks each added song by object identity.
+export function rememberedSearchTrack(query, ownerId, requester) {
+  const key = `${ownerId}:${String(query || '')}`;
+  const entry = resultCache.get(key);
+  if (!entry) return null;
+  if (entry.expiresAt <= Date.now()) { resultCache.delete(key); return null; }
+  const { track } = entry;
+  return { ...track, info: { ...track.info }, pluginInfo: { ...track.pluginInfo }, userData: { ...track.userData }, requester };
+}
+
 export function resetAutocompleteCache() {
   searchCache.clear();
   selectionCache.clear();
+  resultCache.clear();
 }

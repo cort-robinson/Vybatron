@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { setTimeout as delay } from 'node:timers/promises';
 import { GatewayIntentBits, IntentsBitField, PermissionsBitField, Status } from 'discord.js';
-import { portalFixture } from './portal-fixtures.js';
+import { deferred, portalFixture } from './portal-fixtures.js';
 import { createPortalPolicy } from '../src/portal/policy.js';
 import { createRevisions } from '../src/portal/projection.js';
 import { executePortalCommand } from '../src/portal/commands.js';
@@ -17,8 +17,8 @@ function gateway(f, { intent = true, status = Status.Ready } = {}) {
   f.guild.roles.cache.set('100', { id: '100', name: '@everyone', permissions: new PermissionsBitField(0n), rawPosition: 0 });
 }
 
-async function harness(t, options) {
-  const f = await portalFixture(t);
+async function harness(t, options, fixture) {
+  const f = await portalFixture(t, fixture);
   gateway(f, options);
   const policy = createPortalPolicy(f.client); t.after(() => policy.close());
   const revisions = createRevisions(f.client); t.after(() => revisions.close());
@@ -89,6 +89,58 @@ test('Gateway authority enforces DJ, same-voice and visibility rules before any 
     f.members.get('200').roles.cache.set('500', f.roles.get('500'));
     assert.equal((await f.run({ command: 'pause' })).ok, true);
     assert.equal(f.readsAtWrite, 0);
+  });
+});
+
+test('song additions reach the queue from Gateway authority and take one fresh round for the reply', async t => {
+  const baseline = await harness(t);
+  assert.equal((await baseline.run({ command: 'pause' })).ok, true);
+  const oneRound = baseline.reads;
+  for (const command of ['play', 'playnext']) await t.test(command, async t => {
+    const f = await harness(t);
+    for (const method of ['add', 'splice']) {
+      const original = f.player.queue[method].bind(f.player.queue);
+      f.player.queue[method] = async (...args) => { f.queueReads ??= f.reads; return original(...args); };
+    }
+    const before = f.player.queue.tracks.length;
+    const result = await f.run({ command, options: { query: 'https://www.youtube.com/watch?v=Zi_XLOBDo_Y' } });
+    assert.equal(result.ok, true);
+    assert.equal(f.player.queue.tracks.length, before + 1);
+    assert.equal(f.queueReads, 0, 'no REST read before the queue write');
+    assert.equal(f.reads, oneRound, 'only the final disclosure reads Discord REST');
+  });
+  await t.test('falls back to fresh REST without the members intent', async t => {
+    const f = await harness(t, { intent: false });
+    assert.equal((await f.run({ command: 'play', options: { query: 'https://www.youtube.com/watch?v=Zi_XLOBDo_Y' } })).ok, true);
+    assert.ok(f.reads > oneRound);
+  });
+  await t.test('Gateway authority still requires the DJ role to play next', async t => {
+    const f = await harness(t);
+    await f.library.updateGuild('100', guild => { guild.settings.djRoleId = '500'; });
+    const before = f.player.queue.tracks.length;
+    await assert.rejects(f.run({ command: 'playnext', options: { query: 'https://www.youtube.com/watch?v=Zi_XLOBDo_Y' } }), error => error.status === 403);
+    assert.equal(f.player.queue.tracks.length, before);
+  });
+});
+
+test('Gateway authority rechecks an addition after its slow lookup', async t => {
+  const cases = {
+    'left voice': f => { f.members.get('200').voice.channel = null; },
+    'moved voice': f => { f.members.get('200').voice.channel = f.channels.get('301'); },
+    'DJ role revoked': f => f.members.get('200').roles.cache.delete('500'),
+  };
+  for (const [name, change] of Object.entries(cases)) await t.test(name, async t => {
+    const lookup = deferred(); const started = deferred();
+    const f = await harness(t, {}, { search: () => { started.resolve(); return lookup.promise; } });
+    await f.library.updateGuild('100', guild => { guild.settings.djRoleId = '500'; });
+    f.members.get('200').roles.cache.set('500', f.roles.get('500'));
+    const before = f.player.queue.tracks.length;
+    const running = f.run({ command: name === 'DJ role revoked' ? 'playnext' : 'play', options: { query: 'slow song' } });
+    await started.promise;
+    change(f);
+    lookup.resolve({ loadType: 'track', tracks: [{ encoded: 'QAAA', info: { title: 'Slow', author: 'A', identifier: 'aaaaaaaaaaa', uri: 'https://www.youtube.com/watch?v=aaaaaaaaaaa', sourceName: 'youtube', duration: 1000 } }] });
+    await assert.rejects(running, error => [403, 409].includes(error.status));
+    assert.equal(f.player.queue.tracks.length, before, 'nothing was added');
   });
 });
 

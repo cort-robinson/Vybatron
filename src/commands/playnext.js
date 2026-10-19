@@ -2,7 +2,8 @@ import { MessageFlags, SlashCommandBuilder } from 'discord.js';
 import { requireUserVoice, recheckEnqueueRequest } from '../utils/guards.js';
 import { autocompleteTracks } from '../utils/autocomplete.js';
 import { textPayload } from '../utils/messages.js';
-import { refresh, withControllerLink } from '../utils/player-controller.js';
+import { withControllerLink } from '../utils/player-controller.js';
+import { directControlPresentation } from '../utils/presentation-updates.js';
 import { safeText } from '../utils/presentation.js';
 import { resolveTrackQuery, searchFailureMessage, validatePlaybackQuery } from '../utils/search.js';
 import { enqueueTracks, getOrCreatePlayer } from '../utils/enqueue.js';
@@ -55,7 +56,7 @@ export async function execute(interaction) {
     if (!await recheckEnqueueRequest(interaction, player, channel, { checkDJ: true })) return;
     if (!player.playing && !player.paused) await player.play();
     if (!await recheckEnqueueRequest(interaction, player, channel, { checkDJ: true })) return;
-    await refresh(interaction.client, player);
+    await directControlPresentation(interaction, player);
     const title = safeText(track.info.title, { maxLength: 140 });
     let acknowledgement = starting
       ? `Starting **${title}**.`

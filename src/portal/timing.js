@@ -3,7 +3,7 @@ import { withTimeout } from '../utils/enqueue.js';
 
 const active = new AsyncLocalStorage();
 const authorityPhase = new AsyncLocalStorage();
-const commands = new Set(['pause', 'resume', 'seek', 'filter', 'volume']);
+const commands = new Set(['pause', 'resume', 'seek', 'filter', 'volume', 'play', 'playnext']);
 const stages = new Set(['authorization', 'playback', 'presentation']);
 const phases = new Set(['native', 'finalDisclosure']);
 const inputs = new Set(['user', 'application', 'guild', 'actorMember', 'botMember', 'channels']);

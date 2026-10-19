@@ -33,11 +33,16 @@ async function listen(server) {
   return `http://127.0.0.1:${server.address().port}`;
 }
 
+// One socket per request left ~750 TIME_WAIT ports per run; parallel runs exhausted the
+// Windows ephemeral port range. Reuse connections instead.
+const keepAlive = new http.Agent({ keepAlive: true });
+test.after(() => keepAlive.destroy());
+
 async function request(base, pathname, { method = 'GET', headers = {}, body } = {}) {
   return await new Promise((resolve, reject) => {
     const url = new URL(base);
     const req = http.request({ hostname: url.hostname, port: url.port, path: pathname, method, headers,
-      agent: false, timeout: 2000 }, res => {
+      agent: keepAlive, timeout: 2000 }, res => {
       const chunks = []; res.on('data', chunk => chunks.push(chunk));
       res.on('end', () => {
         const text = Buffer.concat(chunks).toString();

@@ -322,7 +322,14 @@ class PortalDeployer(Deployer):
             return 'deployed'
         except Exception:
             if journal:
-                self.rollback(journal)
+                try:
+                    self.rollback(journal)
+                except DeploymentError as error:
+                    # Deploy retries 'deployment_waiting_for_idle' as "nothing changed yet"; a release
+                    # that changed services and now waits on a listener to roll back is a failure.
+                    if str(error) == 'deployment_waiting_for_idle':
+                        raise DeploymentError('portal_failed_rollback_waiting_for_idle') from None
+                    raise
                 raise DeploymentError('portal_failed_previous_release_restored') from None
             raise
         finally:

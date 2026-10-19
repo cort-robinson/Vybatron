@@ -20,10 +20,11 @@ const CONFLICTING = new Set(['playnext', 'seek', 'skip', 'skipto', 'back', 'clea
 // admission or preflight grant would only repeat the same round back to back.
 const DIRECT_CONTROLS = new Set(['pause', 'resume', 'seek', 'filter', 'volume', 'skip', 'skipto', 'back', 'loop', 'shuffle',
   'remove', 'move', 'clear', 'radio', 'voteskip', 'stop']);
-// Audible controls take their pre-mutation authority from the Gateway cache
-// when the policy can vouch for it, so the playback write isn't held behind a
-// Discord REST round. Queue edits, Stop and the final disclosure stay fresh.
-const GATEWAY_CONTROLS = new Set(['pause', 'resume', 'seek', 'filter', 'volume', 'skip', 'skipto', 'back']);
+// Audible controls and song additions take their pre-mutation authority from
+// the Gateway cache when the policy can vouch for it, so the write isn't held
+// behind Discord REST rounds (an addition rechecks after each slow step).
+// Queue edits, Stop and the final disclosure stay fresh.
+const GATEWAY_CONTROLS = new Set(['pause', 'resume', 'seek', 'filter', 'volume', 'skip', 'skipto', 'back', 'play', 'playnext']);
 const ROOT_KEYS = new Set(['actorId', 'command', 'subcommand', 'options', 'expectedRevision', 'expectedTrackId', 'expectedHistoryId', 'expectedMixVersion', 'expectedImportId', 'tracks']);
 // Portal-only handlers that are not slash commands, so never appear in publicCommands.
 const handler = (commandMap, name) => name === 'transfer' ? transfer : commandMap.get(name);

@@ -64,9 +64,12 @@ which accounted for the 2-5 s outliers.
   predictions stop applying as soon as newer verified state arrives.
 - A rejection rolls back that change and everything queued behind it. Uncertain
   outcomes still force a fresh read and are never retried automatically.
+- A song added from a search result appears at the end of the queue at once
+  (unless fair queue picks its place) and doesn't block further additions; the
+  bot's reply then confirms its position.
 - Permissions, revisions and freshness come only from verified snapshots.
-  Other actions (favorites, mixes, settings, play/add) keep the one-at-a-time
-  lock. When they were clicked over this device's own still-settling
+  Other actions (favorites, mixes, settings, typed queries) keep the
+  one-at-a-time lock. When they were clicked over this device's own still-settling
   predictions and the verified tracks match what was shown, they use the
   confirmed revision instead of failing with a self-inflicted 409.
 - Controls stay usable while changes settle. "Syncing with Discord…" appears
@@ -86,6 +89,18 @@ definitions, the actor's roles and timeout, channel overwrites and voice state.
 from that cache, and the same native guard and portal checks (membership,
 same voice channel, channel visibility, DJ role) run against it. It is
 event-sourced state, not a time-based cache, and grants no maintainer access.
+
+Adding a song (play, play next) uses the same authority. Before this, one web
+addition made eight fresh REST rounds (admission, lane preflight, the native
+voice guard, a recheck after the lookup and after each of enqueue, connect and
+start, then the final disclosure): 56 Discord reads and, at the 300-570 ms
+measured per round, several seconds. Every recheck still runs, against Gateway
+state, so leaving or moving voice or losing the DJ role during a slow lookup
+still stops the addition. Only the final disclosure reads REST
+(`tests/portal-gateway-authority.test.js`). Two smaller savings come with it: a
+song chosen from portal search is added from the track that search already
+loaded (kept per listener for five minutes) instead of loading its link again,
+and the Discord controller edit no longer holds the web reply.
 
 It returns nothing, and the command takes the fresh REST round as before, when
 the cache can't be trusted: no members intent, the guild's shard not Ready

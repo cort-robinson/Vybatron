@@ -1,5 +1,5 @@
 import { isUrl, safeText } from './presentation.js';
-import { resolveAutocompleteTrack } from './autocomplete.js';
+import { rememberedSearchTrack, resolveAutocompleteTrack } from './autocomplete.js';
 import { withTimeout } from './enqueue.js';
 import { parseSpotifyUrl, searchSpotifyEmbed } from './spotify.js';
 export { validatePlaybackQuery } from './query.js';
@@ -29,6 +29,8 @@ export async function resolveTrackQuery(player, query, user) {
       result: { loadType: 'track', tracks: [selection.track] },
     };
   }
+  const remembered = rememberedSearchTrack(query, String(user?.id || 'unknown'), user);
+  if (remembered) return { expired: false, result: { loadType: 'track', tracks: [remembered] } };
   return {
     expired: false,
     result: await searchMusic(player, query, user),

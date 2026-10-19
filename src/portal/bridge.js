@@ -3,6 +3,7 @@ import { createHash, timingSafeEqual } from 'node:crypto';
 import { loadCommandsData } from '../commands/index.js';
 import { getHealth } from '../health.js';
 import { searchMusic } from '../utils/search.js';
+import { rememberSearchResults } from '../utils/autocomplete.js';
 import { validatePlaybackQuery } from '../utils/query.js';
 import { withTimeout } from '../utils/enqueue.js';
 import { validId } from '../utils/library.js';
@@ -207,7 +208,9 @@ export function startPortalBridge(client, {
           // Membership may disappear during a slow import. Recheck before data.
           const fresh = await policy.guild(actorId, guildId);
           if (!fresh.member) fail(403, 'membership_required', 'Join this server to search its music catalog.');
-          result = { tracks: (found?.tracks || []).slice(0, 50).map(track => trackProjection(track)), notice: found?.spotifyImport ? 'Spotify catalog results are matched to playable recordings.' : found?.tracks?.length ? null : 'No playable matches were found.' };
+          const tracks = (found?.tracks || []).slice(0, 50);
+          rememberSearchResults(tracks, context.user.id);
+          result = { tracks: tracks.map(track => trackProjection(track)), notice: found?.spotifyImport ? 'Spotify catalog results are matched to playable recordings.' : found?.tracks?.length ? null : 'No playable matches were found.' };
         }
         return json(response, 200, result, maxResponseBytes);
       } finally { inFlight--; if (admitted === 'stop') stopInFlight--; if (admitted === 'ordinary') ordinaryInFlight--; }

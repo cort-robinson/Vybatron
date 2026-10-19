@@ -65,7 +65,7 @@ export function Home({ portal, active, onOpenPlayer }: { portal: Portal; active:
   }, [active, ready, guildId, statsWindow, refresh]);
 
   if (!active) return <div className="home-view" hidden />;
-  const add = (track: Track) => track.uri && run({ command: 'play', options: { query: track.uri } }, 'add');
+  const add = (track: Track) => track.uri && run({ command: 'play', options: { query: track.uri } }, 'add', [track]);
   const disabledTitle = addable ? undefined : blockedReason;
   const playlists = stats?.personal.playlists || [];
   const mixes = playlists.filter(list => list.kind !== 'rediscover' && (list.tracks.length || list.kind === 'top'));

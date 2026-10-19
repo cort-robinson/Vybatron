@@ -204,12 +204,12 @@ REVERT: everything here is scoped to :root[data-skin='overdrive']; Settings → 
   .expand-button:hover svg { filter: drop-shadow(0 0 6px var(--accent)); }
 
   /* Reactor: the play control sits inside a ring that turns while the room plays. */
-  .transport .play-button { position: relative; background-image: radial-gradient(circle at 50% 28%, rgb(255 255 255 / .38), transparent 62%); }
-  .transport .play-button::before { content: ''; position: absolute; inset: -7px; border-radius: 50%; pointer-events: none;
+  .transport .play-button { --play-ring: 7px; position: relative; background-image: radial-gradient(circle at 50% 28%, rgb(255 255 255 / .38), transparent 62%); }
+  .transport .play-button::before { content: ''; position: absolute; inset: calc(-1 * var(--play-ring)); border-radius: 50%; pointer-events: none;
     background: conic-gradient(from 0deg, transparent 0 8%, var(--accent) 20%, transparent 32% 50%, var(--neon) 70%, transparent 82%);
     -webkit-mask-image: radial-gradient(farthest-side, transparent calc(100% - 2.5px), #000 calc(100% - 2px)); mask-image: radial-gradient(farthest-side, transparent calc(100% - 2.5px), #000 calc(100% - 2px));
     animation: od-spin 3.6s linear infinite paused; transition: opacity 400ms; }
-  .transport .play-button::after { content: ''; position: absolute; inset: -7px; border-radius: 50%; pointer-events: none; box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--accent) 22%, transparent); }
+  .transport .play-button::after { content: ''; position: absolute; inset: calc(-1 * var(--play-ring)); border-radius: 50%; pointer-events: none; box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--accent) 22%, transparent); }
   .motion-live .persistent-player.playing .transport .play-button::before { animation-play-state: running; }
   .transport .play-button.settled::before { background: conic-gradient(from 0deg, transparent 0 20%, var(--amber) 35%, transparent 50% 70%, var(--amber) 85%, transparent); opacity: .7; }
   .transport .play-button:disabled::before { opacity: .25; }

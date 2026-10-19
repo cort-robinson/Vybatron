@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api, ApiError, errorMessage } from './api';
-import type { Bootstrap, Capability, Command, Connection, GuildSnapshot, ImportPreview, Library, SnapshotOrdering } from './types';
+import type { Bootstrap, Capability, Command, Connection, GuildSnapshot, ImportPreview, Library, SnapshotOrdering, Track } from './types';
 import { orderingOf } from './ordering';
-import { applyIntents, createIntent, isOptimistic, needsRevision, sameTracks, slotOf, stillTargets, trackIdentities, type Intent } from './optimistic';
+import { applyIntents, createIntent, isAddition, isOptimistic, needsRevision, sameTracks, slotOf, stillTargets, trackIdentities, type Intent } from './optimistic';
 
 export interface Notice { id: number; kind: 'success' | 'error' | 'info'; message: string }
 // Non-optimistic commands that still bind to the session the user saw.
@@ -398,8 +398,9 @@ export function usePortal() {
         notify('The action completed. Reconnect for fresh state before making another change.', 'info');
         return false; // Keep the form draft while the confirmed result cannot be reconciled.
       }
-      // A playback change is already on screen; only other actions confirm.
-      if (!intent) notify(result.message || 'Done.', 'success');
+      // A playback change is already on screen; other actions, and an addition's
+      // queue position, confirm.
+      if (!intent || intent.track) notify(result.message || 'Done.', 'success');
       if (['favorite', 'mix', 'replay', 'session', 'settings'].includes(body.command)) void libraryRefreshRef.current();
       return true;
     } catch (error) {
@@ -449,7 +450,7 @@ export function usePortal() {
     }
   }, [send, syncQueue]);
 
-  const run = useCallback(async (body: Command, capability: Capability): Promise<boolean> => {
+  const run = useCallback(async (body: Command, capability: Capability, tracks?: Track[]): Promise<boolean> => {
     // Check refs at click time, not a render-time closure, so offline clicks cannot escape.
     if (!can(capability) || !bootstrap || !current.current) { notify(blockedReason, 'error'); return false; }
     const id = activeGuild.current; const epoch = generation.current; const verified = current.current;
@@ -476,6 +477,11 @@ export function usePortal() {
       entry.intent = createIntent(++intentId.current, body, base.snapshot, verified, base.receivedAt, Date.now());
       if (!entry.intent) { syncQueue(); return true; } // Already the state the user asked for.
       if (queueRef.current.length >= maxQueued) { syncQueue(); notify('Give Discord a moment to catch up before making more changes.', 'info'); return false; }
+    } else if (isAddition(body, tracks)) {
+      if (queueRef.current.length >= maxQueued) { notify('Give Discord a moment to catch up before adding more songs.', 'info'); return false; }
+      const base = applyIntents(verified, receivedAt, predictions());
+      entry.intent = createIntent(++intentId.current, body, base.snapshot, verified, base.receivedAt, Date.now(), tracks![0]);
+      notify(`Adding “${tracks![0].title}”…`, 'info');
     }
     return await new Promise<boolean>(resolve => {
       entry.resolve = resolve;

@@ -1,4 +1,4 @@
-import type { Command, GuildSnapshot } from './types';
+import type { Command, GuildSnapshot, Track } from './types';
 
 // Playback controls that apply to the screen immediately. The bot remains the
 // authority: each intent is sent in order, checked against the latest verified
@@ -23,6 +23,8 @@ export interface Intent {
   anchor: { positionMs: number; at: number; trackId: string | null } | null;
   sent: boolean;
   createdAt: number;
+  // A song added from a result the user chose, shown in the queue until the bot confirms it.
+  track?: Track;
 }
 
 // Only the plain autoplay toggle is a set-state control. Seeding from a chosen
@@ -31,6 +33,10 @@ const radioToggle = (command: Command) => command.subcommand === 'off' || (comma
 export const isOptimistic = (command: Command) => OPTIMISTIC.has(command.command) && (command.command !== 'radio' || radioToggle(command));
 export const slotOf = (command: Command) => isOptimistic(command) ? SLOTS[command.command] || null : null;
 export const needsRevision = (command: Command) => STRUCTURAL.has(command.command);
+// Adding one chosen song doesn't depend on what the queue shows, so it doesn't
+// wait for earlier changes or lock the next addition.
+export const isAddition = (command: Command, tracks?: Track[]) => command.command === 'play' && !command.subcommand
+  && tracks?.length === 1 && !!tracks[0].uri && command.options?.query === tracks[0].uri;
 const identities = (snapshot: GuildSnapshot) => ({ current: snapshot.session.current?.id || null, queue: snapshot.session.queue.map(track => track.id) });
 const sameTracks = (a: { current: string | null; queue: string[] }, b: { current: string | null; queue: string[] }) =>
   a.current === b.current && a.queue.length === b.queue.length && a.queue.every((id, index) => id === b.queue[index]);
@@ -49,7 +55,7 @@ function seconds(timestamp: unknown) {
 
 // Build an intent from the state the user is looking at (including earlier
 // predictions). Returns null when the action is a no-op on that state.
-export function createIntent(id: number, body: Command, view: GuildSnapshot, verified: GuildSnapshot, receivedAt: number, now: number): Intent | null {
+export function createIntent(id: number, body: Command, view: GuildSnapshot, verified: GuildSnapshot, receivedAt: number, now: number, track?: Track): Intent | null {
   const { expectedRevision: _ignored, ...command } = body;
   const session = view.session; const options = command.options || {};
   const slot = slotOf(command);
@@ -65,7 +71,7 @@ export function createIntent(id: number, body: Command, view: GuildSnapshot, ver
     : command.command === 'seek' && target !== null ? { positionMs: target, at: now, trackId: session.current?.id || null }
     : command.command === 'skip' || command.command === 'skipto' ? { positionMs: 0, at: now, trackId: null } : null;
   return { id, command, slot, expects: STRUCTURAL.has(command.command) ? identities(view) : null,
-    baseRevision: verified.revision, anchor, sent: false, createdAt: now };
+    baseRevision: verified.revision, anchor, sent: false, createdAt: now, ...(track && { track }) };
 }
 
 function predict(intent: Intent, snapshot: GuildSnapshot): GuildSnapshot | null {
@@ -101,6 +107,9 @@ function predict(intent: Intent, snapshot: GuildSnapshot): GuildSnapshot | null 
       s.queue.splice(to, 0, s.queue.splice(from, 1)[0]); break;
     }
     case 'clear': s.queue = []; break;
+    // An addition joins the end of the queue. A fair queue or an idle player
+    // places it by server-side rules, so those wait for the bot.
+    case 'play': if (!intent.track || !s.current || s.fairQueue) return null; s.queue.push(intent.track); break;
     default: return null; // Shuffle order is chosen by the bot.
   }
   return next;

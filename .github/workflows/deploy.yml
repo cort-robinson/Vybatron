@@ -24,7 +24,8 @@ jobs:
       github.event.workflow_run.head_repository.full_name == github.repository &&
       vars.DEPLOY_ENABLED == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    # Most of this budget is waiting for listeners to finish; see "Release once nobody is listening".
+    timeout-minutes: 330
     permissions:
       contents: read
       actions: write
@@ -101,7 +102,7 @@ jobs:
           done
           git archive --format=tar.gz -o source.tar.gz "$TARGET_SHA"
 
-      - name: Stage and release through the portal driver
+      - name: Stage the release
         if: steps.plan.outputs.release == 'true'
         run: |
           for name in bot portal; do
@@ -133,8 +134,47 @@ jobs:
           done
           install -m 600 "$R/ops/portal_deploy.py" "$D/portal-driver.py"
           install -m 600 "$R/ops/deploy.py" "$D/deploy.py"
-          python3 "$D/portal-driver.py" deploy --sha "$S" --guild-id "$G" --repo "$R"
           REMOTE
+
+      # The driver refuses to restart the bot while anyone is listening. Wait on the bot's read-only
+      # /maintenance status (which never pauses /play), then release; if a session starts in between,
+      # the driver refuses before changing anything and the wait resumes.
+      - name: Release once nobody is listening
+        if: steps.plan.outputs.release == 'true'
+        run: |
+          deadline=$((SECONDS + 300 * 60)); unreadable=0
+          # Prints idle, busy or unreadable. Only a valid status counts as busy.
+          state() {
+            ssh vps "docker exec -i vybertron-bot node --input-type=module" <<'JS' 2>/dev/null | jq -r 'if (.busy | type) == "boolean" and (.inFlight | type) == "number" then (if .busy == false and .inFlight == 0 then "idle" else "busy" end) else "unreadable" end' 2>/dev/null || echo unreadable
+          const r = await fetch('http://127.0.0.1:' + (Number(process.env.VYBERTRON_HEALTH_PORT) || 3000) + '/maintenance', { signal: AbortSignal.timeout(5000) });
+          if (!r.ok) process.exit(1);
+          console.log(JSON.stringify(await r.json()));
+          JS
+          }
+          while true; do
+            STATE=$(state | tail -n 1); [ -n "$STATE" ] || STATE=unreadable
+            if [ "$STATE" = unreadable ]; then
+              unreadable=$((unreadable + 1))
+              # Ride out a dropped connection or a recovery restart, not a bot that stays down.
+              [ "$unreadable" -lt 5 ] || { echo "::error::Could not read the bot's status for 5 minutes; check the bot, then re-run Deploy."; exit 1; }
+            else
+              unreadable=0
+            fi
+            if [ "$STATE" = idle ]; then
+              # shellcheck disable=SC2029 # the SHA and guild are meant to expand locally
+              if RESULT=$(ssh vps "python3 /var/lib/vybertron-recovery/portal-driver.py deploy --sha $TARGET_SHA --guild-id $GUILD_ID --repo /var/lib/vybertron-portal/releases/$TARGET_SHA"); then
+                echo "$RESULT"; exit 0
+              fi
+              echo "$RESULT"
+              [ "$(jq -r '.error // empty' <<< "$RESULT" 2>/dev/null)" = deployment_waiting_for_idle ] || exit 1
+            fi
+            if [ "$SECONDS" -ge "$deadline" ]; then
+              echo "::error::Someone was still listening after 5 hours; re-run Deploy once the bot is idle."
+              exit 1
+            fi
+            echo "Waiting for the bot to go idle ($(date -u +%H:%M) UTC)."
+            sleep 60
+          done
 
       - name: Verify the running release
         if: steps.plan.outputs.release == 'true'

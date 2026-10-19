@@ -25,6 +25,7 @@ class Harness:
         self.ready_lease = True
         self.fail = None
         self.fail_removes_bot = False
+        self.busy_after_failure = False
         self.configured_volume = 'vybertron_bot-data'
         self.inspect_error = None
         self.label = SHA
@@ -77,6 +78,7 @@ class Harness:
                 name = cmd[-1]
                 if self.fail == name:
                     self.fail = None
+                    self.busy = self.busy or self.busy_after_failure
                     if name == 'bot' and self.fail_removes_bot:
                         self.containers.pop(name, None)
                     raise DeploymentError('deployment_command_failed')
@@ -215,6 +217,15 @@ class PortalReleasePolicyTests(unittest.TestCase):
         self.assertEqual(self.mutations(), [])
         self.assertEqual(self.harness.containers['bot']['Image'], BOT)
         self.assertEqual(module.read(self.state / 'portal-deployment.json')['phase'], 'complete')
+
+    def test_failed_release_that_cannot_roll_back_is_not_reported_as_waiting_for_idle(self):
+        # Deploy retries only the pre-change idle refusal; a listener who joins the new bot before a
+        # failed release rolls back must surface as a failure, not as "wait and try again".
+        self.harness.fail, self.harness.busy_after_failure = 'portal', True
+        with self.assertRaises(DeploymentError) as raised:
+            self.deploy()
+        self.assertEqual(str(raised.exception), 'portal_failed_rollback_waiting_for_idle')
+        self.assertEqual(module.read(self.state / 'portal-deployment.json')['phase'], 'releasing')
 
     def test_same_sha_can_be_retried_after_successful_rollback(self):
         self.harness.fail = 'portal'

@@ -389,8 +389,15 @@ and tested (never building on the 2 GiB VPS), checks both carry the target revis
 label, transfers them with a `git archive` of the exact commit, installs that commit's
 `ops/portal_deploy.py` and `ops/deploy.py` as the private drivers (keeping the
 previous pair as `*.previous`), and runs the same idle-guarded portal driver used for
-manual releases. A busy or paused session fails the job without changing services;
-re-run it once the session is idle. The CI image artifacts expire after a day, so
+manual releases. While a session is playing, paused or queued, the job waits: it polls
+the bot's read-only `/maintenance` status every minute (never pausing `/play`) and
+releases as soon as the bot is idle. If a session starts between the poll and the
+driver's own idle lease, the driver refuses before changing anything and the wait
+resumes. After 5 hours of continuous listening the job fails without changing
+services; re-run it once the session is idle. If the bot's status can't be read for 5 minutes in a
+row (bot down, health endpoint failing), the job fails instead of waiting. A release that fails after changing services and then
+finds a listener before it can roll back reports `portal_failed_rollback_waiting_for_idle`
+and is never retried; it needs an operator. The CI image artifacts expire after a day, so
 re-run a failed release within that window or re-run CI first. The job then checks
 both containers carry the target revision and report healthy, and deletes the image
 artifacts.

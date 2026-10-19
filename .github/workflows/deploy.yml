@@ -142,16 +142,25 @@ jobs:
       - name: Release once nobody is listening
         if: steps.plan.outputs.release == 'true'
         run: |
-          deadline=$((SECONDS + 300 * 60))
-          idle() {
-            ssh vps "docker exec -i vybertron-bot node --input-type=module" <<'JS' | jq -ec '.busy == false and .inFlight == 0' > /dev/null
+          deadline=$((SECONDS + 300 * 60)); unreadable=0
+          # Prints idle, busy or unreadable. Only a valid status counts as busy.
+          state() {
+            ssh vps "docker exec -i vybertron-bot node --input-type=module" <<'JS' 2>/dev/null | jq -r 'if (.busy | type) == "boolean" and (.inFlight | type) == "number" then (if .busy == false and .inFlight == 0 then "idle" else "busy" end) else "unreadable" end' 2>/dev/null || echo unreadable
           const r = await fetch('http://127.0.0.1:' + (Number(process.env.VYBERTRON_HEALTH_PORT) || 3000) + '/maintenance', { signal: AbortSignal.timeout(5000) });
           if (!r.ok) process.exit(1);
           console.log(JSON.stringify(await r.json()));
           JS
           }
           while true; do
-            if idle; then
+            STATE=$(state | tail -n 1); [ -n "$STATE" ] || STATE=unreadable
+            if [ "$STATE" = unreadable ]; then
+              unreadable=$((unreadable + 1))
+              # Ride out a dropped connection or a recovery restart, not a bot that stays down.
+              [ "$unreadable" -lt 5 ] || { echo "::error::Could not read the bot's status for 5 minutes; check the bot, then re-run Deploy."; exit 1; }
+            else
+              unreadable=0
+            fi
+            if [ "$STATE" = idle ]; then
               # shellcheck disable=SC2029 # the SHA and guild are meant to expand locally
               if RESULT=$(ssh vps "python3 /var/lib/vybertron-recovery/portal-driver.py deploy --sha $TARGET_SHA --guild-id $GUILD_ID --repo /var/lib/vybertron-portal/releases/$TARGET_SHA"); then
                 echo "$RESULT"; exit 0

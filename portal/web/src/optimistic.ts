@@ -120,7 +120,10 @@ function predict(intent: Intent, snapshot: GuildSnapshot): GuildSnapshot | null 
 export function applyIntents(verified: GuildSnapshot, receivedAt: number, intents: Intent[]) {
   let snapshot = verified; let anchor = receivedAt;
   for (const intent of intents) {
-    if (!intent.slot && intent.baseRevision !== verified.revision) continue;
+    // An unsent addition can't be in newer verified state yet, so it still joins
+    // the end. Once sent, a newer snapshot may already hold it.
+    const unsentAddition = !!intent.track && !intent.sent;
+    if (!intent.slot && !unsentAddition && intent.baseRevision !== verified.revision) continue;
     const next = predict(intent, snapshot);
     if (!next) continue;
     snapshot = next;

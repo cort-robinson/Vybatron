@@ -1,5 +1,5 @@
 import { test, expect, type Page } from './test';
-import { gotoSession, mockPortal } from './fixtures';
+import { gotoSession, mockPortal, streamAction } from './fixtures';
 
 const result = (id: string, title: string) => ({
   id, title, author: 'Harbor Lights', uri: `https://www.youtube.com/watch?v=${id}`, source: 'youtube', durationMs: 201_000, artworkUrl: null, isStream: false, requestedBy: null,
@@ -33,6 +33,22 @@ test('a chosen result joins the queue at once and further additions stay open wh
   await expect.poll(() => fixture.commands.map(command => command.options?.query)).toEqual([neon.uri, rain.uri]);
   expect(fixture.commands.every(command => command.command === 'play' && command.expectedRevision === undefined)).toBe(true);
   await expect(page.getByRole('status').filter({ hasText: 'Your listening space is updated.' })).toBeVisible();
+});
+
+test('a live update confirming the first addition keeps the next one shown', async ({ page }) => {
+  const fixture = await mockPortal(page);
+  await searchFor(page);
+  const release = fixture.holdCommands();
+  await page.getByRole('button', { name: 'Add Neon Tide to queue' }).click();
+  await page.getByRole('button', { name: 'Add Rain Check to queue' }).click();
+  await expect.poll(() => fixture.commands.length).toBe(1);
+  // The bot added the first song and Discord pushes that before its reply arrives.
+  const confirmed = structuredClone(fixture.state.snapshot);
+  confirmed.revision = 'revision-live'; confirmed.session.queue.push(neon); confirmed.session.queue[0].title = 'Night Drive (Live)';
+  await streamAction(page, 'reconnect', confirmed);
+  await expect.poll(() => queued(page)).toEqual(['Night Drive (Live)', 'Slow Motion', 'Golden Hour', 'Afterglow', 'Neon Tide', 'Rain Check']);
+  release();
+  await expect.poll(() => fixture.commands.length).toBe(2);
 });
 
 test('a rejected addition leaves the queue as the bot reports it', async ({ page }) => {

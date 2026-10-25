@@ -272,14 +272,30 @@ During the standby period, if the home server can't serve:
    both timers, then `flock /run/lock/vybertron-maintenance.lock docker stop
    vybertron-portal vybertron-bot`, stop the audio containers, and run `docker
    compose -f ops/portal-funnel/compose.yml down` (keeping its volume).
-2. To keep what changed since cutover, take a home `backup.py backup`, copy it to
-   the VPS's `/var/lib/vybertron-backups/`, and `restore` it there with the VPS
-   bot stopped. Move `portal-data` the same way.
+2. Take a home `backup.py backup`, copy it to the VPS's
+   `/var/lib/vybertron-backups/`, and `restore` it there with the VPS bot
+   stopped, so nothing listeners saved since cutover is lost. Move `portal-data`
+   the same way.
 3. In the admin console, rename the home portal node to `vybertron-home` and the
    VPS back to `vybertron`. Then, on the VPS, run `tailscale funnel --bg 3001`.
-4. On the VPS: `docker start vybertron-warp`, then `docker start
-   vybertron-yt-cipher vybertron-lavalink vybertron-bot vybertron-portal`, `rm
-   /var/lib/vybertron-recovery/paused`, and re-enable both timers.
+4. **Run the home server's revision on the VPS.** Discord's command catalog
+   belongs to the application, not the host, and a home release may have
+   migrated the data, so the VPS must not start older code. Read the home
+   revision (`REV`, from the bot's revision label as in Stage). If it isn't the
+   cutover `$SHA`, copy those exact images over and check out the same source:
+
+   ```bash
+   docker save "vybertron-bot:sha-$REV" "vybertron-portal:sha-$REV" | gzip -1 | ssh <vps> 'gunzip | docker load'
+   ssh <vps> "cd /root/Vybertron && git fetch origin && git checkout --detach $REV"
+   ```
+
+   Then, on the VPS, `docker start vybertron-warp vybertron-yt-cipher
+   vybertron-lavalink` and start the bot and portal from `/root/Vybertron` with
+   `VYBERTRON_RELEASE=sha-$REV` and the same `vc … up -d --no-build --wait` as on
+   the home server. Deploy refuses audio changes, so the audio containers still
+   match unless an operator audio release ran during standby; if one did, release
+   it on the VPS the same way first. Finally `rm
+   /var/lib/vybertron-recovery/paused` and re-enable both timers.
 5. Point the deploy secrets back at the VPS. Its old deploy private key lived
    only in the `VPS_SSH_KEY` secret, so add a new key to the VPS's
    `authorized_keys`, and delete the two `TS_*` variables (or grant `tag:ci` the

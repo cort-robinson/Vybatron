@@ -14,7 +14,9 @@ jobs:
     # Dormant until the repo variable DEPLOY_ENABLED is "true". Also requires
     # the variable PORTAL_GUILD_ID and secrets VPS_HOST, VPS_HOST_KEY (the
     # server's public host key lines, without host names), VPS_USER and
-    # VPS_SSH_KEY. Releases the exact bot and portal images that CI tested
+    # VPS_SSH_KEY. A host with no public SSH port also sets the variables
+    # TS_OAUTH_CLIENT_ID and TS_AUDIENCE (docs/host-migration.md); VPS_HOST is
+    # then its tailnet address. Releases the exact bot and portal images that CI tested
     # through the guarded portal driver (idle lease, journal, rollback). Audio services are never changed:
     # a commit that touches them stops before staging and needs an operator.
     if: >
@@ -29,6 +31,8 @@ jobs:
     permissions:
       contents: read
       actions: write
+      # Only for the tailnet join below: Tailscale trusts this job's OIDC token.
+      id-token: write
     concurrency:
       group: deploy
       cancel-in-progress: false
@@ -48,6 +52,18 @@ jobs:
           [[ "$TARGET_SHA" =~ ^[a-f0-9]{40}$ ]]
           [[ "$GUILD_ID" =~ ^[0-9]{17,20}$ ]] || { echo "::error::Set the PORTAL_GUILD_ID repository variable."; exit 1; }
           git merge-base --is-ancestor "$TARGET_SHA" origin/main
+
+      # A host without a public SSH port (a home server) is reached over the
+      # tailnet instead. Tailscale trusts this job's GitHub OIDC token, so no
+      # Tailscale secret is stored. The ephemeral tag:ci node leaves when the job ends.
+      - name: Join the tailnet
+        if: vars.TS_OAUTH_CLIENT_ID != ''
+        uses: tailscale/github-action@99a8333667fff04fdd6cffb46dfd409f8329a7bf # v4.3.0
+        with:
+          oauth-client-id: ${{ vars.TS_OAUTH_CLIENT_ID }}
+          audience: ${{ vars.TS_AUDIENCE }}
+          tags: tag:ci
+          ping: ${{ secrets.VPS_HOST }}
 
       - name: Configure SSH
         env:

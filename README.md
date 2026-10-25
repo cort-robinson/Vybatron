@@ -135,7 +135,7 @@ The development proxy origin must match `PORTAL_ORIGIN`. Verify with
 
 ## Recovery and releases
 
-See the [operations runbook](ops/README.md) for canaries, maintenance, bounded service repair, and rollback. Readiness checks Discord plus the audio connection; decoded canaries check source audio; a human listening test checks Discord delivery. These are separate checks.
+See the [operations runbook](ops/README.md) for canaries, maintenance, bounded service repair, and rollback. [Moving production to the home server](docs/host-migration.md) covers the staged host move. Readiness checks Discord plus the audio connection; decoded canaries check source audio; a human listening test checks Discord delivery. These are separate checks.
 
 WARP and the audio services share a network namespace. If the WARP container needs replacement, recreate its audio dependents together under the maintenance lock; restarting WARP alone can strand them in its old namespace. Keep `warp-data` to retain registration.
 

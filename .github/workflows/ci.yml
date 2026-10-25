@@ -162,6 +162,10 @@ jobs:
           DISCORD_CLIENT_SECRET: ci-placeholder
           PORTAL_BRIDGE_TOKEN: ci-placeholder
           PORTAL_SESSION_SECRET: ci-placeholder
+      - name: Validate portal Funnel sidecar
+        run: |
+          docker compose -f ops/portal-funnel/compose.yml config --quiet
+          jq -e '.AllowFunnel | length == 1' ops/portal-funnel/serve.json
       - name: Save portal image for release
         if: github.event_name == 'push'
         run: docker save "$PORTAL_IMAGE" | gzip -1 > vybertron-portal.tar.gz

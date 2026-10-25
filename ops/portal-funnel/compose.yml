@@ -1,0 +1,48 @@
+# Publishes the portal (127.0.0.1:3001) with Tailscale Funnel from its own
+# tailnet node, for a host whose own Tailscale node is a personal workstation.
+# The node keeps the portal's existing name (PORTAL_ORIGIN, the OAuth redirect
+# and installed web apps keep working), and the workstation's node never
+# serves anything public. Separate project: deploys, recovery and rollback
+# never touch it. See docs/host-migration.md.
+name: vybertron-funnel
+
+services:
+  funnel:
+    image: tailscale/tailscale:v1.104.2@sha256:b11583ad2e93e4671128538c88cf11f460444a5d7e449311dd1933a400ab849d
+    container_name: vybertron-funnel
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "2"
+    # Host networking reaches the loopback-only portal port. Userspace
+    # networking adds no interface or routes, so the host's own tailscaled is
+    # unaffected; --port=0 avoids its WireGuard port.
+    network_mode: host
+    # The VPS daemon needed 160 MiB under cold browser downloads.
+    mem_limit: 192m
+    memswap_limit: 256m
+    cpus: "0.50"
+    pids_limit: 64
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    environment:
+      TS_HOSTNAME: vybertron
+      TS_USERSPACE: "true"
+      TS_ACCEPT_DNS: "false"
+      TS_STATE_DIR: /var/lib/tailscale
+      TS_SERVE_CONFIG: /config/serve.json
+      TS_TAILSCALED_EXTRA_ARGS: --port=0
+      # Needed for the first login only; the node then persists in its state.
+      TS_AUTH_ONCE: "true"
+      TS_AUTHKEY: ${TS_AUTHKEY:-}
+    volumes:
+      - funnel-state:/var/lib/tailscale
+      - ./serve.json:/config/serve.json:ro
+
+volumes:
+  funnel-state:

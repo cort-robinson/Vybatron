@@ -104,7 +104,8 @@ The VPS has 2 GiB of RAM, so the Compose memory ceilings are what keep one servi
 from exhausting the host (an uncapped yt-cipher grew to ~600 MiB and triggered a
 global OOM on 2026-10-14). SSH is key-only (`/etc/ssh/sshd_config.d/00-hardening.conf`)
 with fail2ban's `sshd` jail; ModemManager, udisks2, fwupd and multipathd are
-masked. Reapply these when replacing the VPS.
+masked. Reapply these when replacing the VPS. Moving production to the home
+server (ADR-0010) follows [docs/host-migration.md](../docs/host-migration.md).
 
 ## Operations
 

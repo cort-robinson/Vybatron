@@ -54,9 +54,12 @@ Owner checks that only hardware can answer:
    "grants": [
      // Your own devices keep reaching each other.
      { "src": ["autogroup:member"], "dst": ["autogroup:self"], "ip": ["*"] },
+     // Your devices reach the portal over the tailnet: with MagicDNS they use
+     // its tailnet address, not Funnel.
+     { "src": ["autogroup:member"], "dst": ["tag:vybertron-portal"], "ip": ["tcp:443"] },
      // Deploy runners reach the home server's SSH and nothing else.
      { "src": ["tag:ci"], "dst": ["vybertron-home"], "ip": ["tcp:22"] },
-     // tag:vybertron-portal gets no grants: it only receives Funnel traffic.
+     // Nothing grants tag:vybertron-portal outbound access.
    ],
    "nodeAttrs": [
      { "target": ["tag:vybertron-portal"], "attr": ["funnel"] },
@@ -75,6 +78,11 @@ Owner checks that only hardware can answer:
 
 ## Stage (no downtime)
 
+Merge this preparation to `main` first. Deploy needs its *Join the tailnet* step,
+and the release staged below must contain `ops/portal-funnel/`. Without
+`TS_OAUTH_CLIENT_ID` that step is skipped, so the merge deploys to the VPS as
+usual. Stage after that deploy finishes.
+
 The checkout is already at `/root/Vybertron`. Refresh it and create the private
 directories:
 
@@ -92,7 +100,8 @@ ssh <vps> cat /root/Vybertron/.env > /root/Vybertron/.env
 ssh <vps> cat /var/lib/vybertron-portal/portal.env > /var/lib/vybertron-portal/portal.env
 ssh <vps> cat /var/lib/vybertron-recovery/settings.json > /var/lib/vybertron-recovery/settings.json
 ssh <vps> python3 /root/Vybertron/ops/recovery.py status   # note any "override"
-SHA=$(ssh <vps> docker inspect -f '{{index .Config.Labels "org.opencontainers.image.revision"}}' vybertron-bot)
+SHA=$(ssh <vps> "docker inspect --format '{{index .Config.Labels \"org.opencontainers.image.revision\"}}' vybertron-bot")
+[[ "$SHA" =~ ^[a-f0-9]{40}$ ]] && test -f /root/Vybertron/ops/portal-funnel/compose.yml || echo 'stop: bad revision or old checkout'
 ```
 
 Keeping `PORTAL_SESSION_SECRET` keeps existing portal sign-ins valid after the
@@ -135,15 +144,18 @@ use Discord.
 Choose a quiet time. Each step below that touches the VPS, GitHub or Deploy
 needs approval.
 
-1. **This change is on `main`.** Deploy needs the *Join the tailnet* step.
-   Without `TS_OAUTH_CLIENT_ID` it's skipped, so merging it deploys to the VPS as
-   usual.
-2. **Pause deploys**, and make sure none is running:
+1. **Pause deploys**, and make sure none is running:
 
    ```bash
    gh variable set DEPLOY_ENABLED --body false
    gh run list --workflow Deploy --limit 3
    ```
+
+2. **Recheck what was staged.** Read the VPS revision again (as in Stage), and
+   rerun `recovery.py status` there. If the revision isn't the staged `$SHA`, or
+   the `override` changed, a release landed after staging. Restage with the new
+   revision (checkout, both builds, `vc create --no-build bot`, and the canary
+   gate) before stopping anything, so older images never start on newer data.
 
 3. **Stop the VPS** once `/maintenance` reports `busy: false` and `inFlight: 0`
    (same check as Deploy). Take the final backup after the bot stops, so nothing

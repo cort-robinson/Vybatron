@@ -1,22 +1,10 @@
 import assert from 'node:assert/strict';
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { countUnresolvedThreads, evaluate, heldFiles, latestRuns, mergeIfReady } from '../.agents/skills/babysit-pr/scripts/pr-gate.mjs';
+import { countUnresolvedThreads, evaluate, heldFiles, latestRuns, mergeIfReady } from '../scripts/pr-gate.mjs';
 
 const root = new URL('../', import.meta.url);
 const read = (path) => readFileSync(new URL(path, root), 'utf8');
-const SKILLS = ['babysit-pr', 'full-send', 'full-stop', 'promote', 'sol-loop'];
-const EXPLICIT_ONLY = ['full-send', 'promote'];
-
-function frontmatter(text) {
-  const match = /^---\n([\s\S]*?)\n---\n/.exec(text.replace(/\r\n/g, '\n'));
-  assert.ok(match, 'SKILL.md starts with a frontmatter block');
-  const fields = Object.fromEntries(match[1].split('\n').map((line) => {
-    const at = line.indexOf(':');
-    return [line.slice(0, at).trim(), line.slice(at + 1).trim()];
-  }));
-  return { raw: match[0], fields, body: text.slice(match[0].length) };
-}
 
 function state({ pr = {}, checkRuns, workflowRuns = [], statuses = [], behindBy = 0, unresolvedThreads = 0 } = {}) {
   return {
@@ -35,31 +23,9 @@ function state({ pr = {}, checkRuns, workflowRuns = [], statuses = [], behindBy 
   };
 }
 
-test('every skill has valid shared metadata and a Claude Code entry point', () => {
-  assert.deepEqual(readdirSync(new URL('.agents/skills/', root)).sort(), SKILLS);
-  for (const name of SKILLS) {
-    const canonical = frontmatter(read(`.agents/skills/${name}/SKILL.md`));
-    assert.equal(canonical.fields.name, name);
-    assert.match(name, /^[a-z0-9-]{1,64}$/);
-    assert.ok(canonical.fields.description.length > 40 && canonical.fields.description.length <= 1024, `${name} description length`);
-    assert.ok(canonical.body.trim().length > 200, `${name} has instructions`);
-
-    const entry = frontmatter(read(`.claude/skills/${name}/SKILL.md`));
-    assert.equal(entry.raw, canonical.raw, `${name}: Claude entry point metadata matches the canonical skill`);
-    assert.ok(entry.body.includes(`.agents/skills/${name}/SKILL.md`), `${name}: entry point defers to the canonical file`);
-  }
-});
-
-test('merging and releasing skills only start on an explicit request', () => {
-  for (const name of SKILLS) {
-    const { fields } = frontmatter(read(`.agents/skills/${name}/SKILL.md`));
-    const codexPolicy = existsSync(new URL(`.agents/skills/${name}/agents/openai.yaml`, root))
-      ? read(`.agents/skills/${name}/agents/openai.yaml`) : '';
-    const explicit = EXPLICIT_ONLY.includes(name);
-    assert.equal(fields['disable-model-invocation'] === 'true', explicit, `${name}: Claude implicit invocation`);
-    assert.equal(/allow_implicit_invocation:\s*false/.test(codexPolicy), explicit, `${name}: Codex implicit invocation`);
-  }
-  assert.doesNotMatch(read('.agents/skills/full-stop/SKILL.md'), /gh pr merge/);
+test('agents use the user-wide skills; the repo keeps only its policy', () => {
+  for (const dir of ['.agents/skills', '.claude/skills']) assert.ok(!existsSync(new URL(dir, root)), `${dir} must not shadow the user-wide skills`);
+  for (const doc of ['AGENTS.md', 'docs/agent-workflow.md']) assert.match(read(doc), /node scripts\/pr-gate\.mjs/);
 });
 
 test('documented verification commands exist', () => {
@@ -127,6 +93,8 @@ test('hold paths match whole files and directory prefixes only', () => {
     ['ops/deploy.py', 'docker-compose.yml']);
   assert.deepEqual(heldFiles(['docker-compose.override.yml', '.env.production.example', 'portal/docker-compose.yml', '.env', 'CLAUDE.md']),
     ['docker-compose.override.yml', '.env.production.example', 'CLAUDE.md']);
+  assert.deepEqual(heldFiles(['scripts/pr-gate.mjs', 'docs/agent-workflow.md', 'scripts/other.mjs', 'docs/GLOSSARY.md']),
+    ['scripts/pr-gate.mjs', 'docs/agent-workflow.md']);
   assert.equal(evaluate(state({ pr: { files: ['ops/deploy.py'] } }), { allowHoldPaths: true }).verdict, 'ready');
 });
 

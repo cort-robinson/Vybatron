@@ -1,6 +1,0 @@
-interface:
-  display_name: Promote
-  short_description: Prepare a versioned or operator release and stop for approval
-policy:
-  # Releases need an explicit request; never select this from task wording alone.
-  allow_implicit_invocation: false

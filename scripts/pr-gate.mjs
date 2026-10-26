@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Reports whether a pull request may be merged by an agent, from live GitHub state.
 //
-//   node .agents/skills/babysit-pr/scripts/pr-gate.mjs <pr> [--allow-hold-paths] [--json] [--merge]
+//   node scripts/pr-gate.mjs <pr> [--allow-hold-paths] [--json] [--merge]
 //
 // --merge (full-send only) squash-merges in the same process, and only on READY,
 // pinned to the head SHA this run approved.
@@ -29,6 +29,8 @@ export const POLICY = {
     /^\.github\/workflows\//,
     /^\.agents\//,
     /^\.claude\//,
+    /^scripts\/pr-gate\.mjs$/,
+    /^docs\/agent-workflow\.md$/,
     /^(AGENTS|CLAUDE)\.md$/,
   ],
 };

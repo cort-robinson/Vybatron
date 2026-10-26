@@ -245,3 +245,23 @@ for (const [name, viewport] of [['desktop', { width: 1440, height: 900 }], ['pho
     await page.screenshot({ path: `test-results/home-${name.replace(' ', '-')}.png`, fullPage: true });
   });
 }
+
+test('on a phone the playing card opens from a caret and a saved session keeps a full-width Resume', async ({ page }) => {
+  await page.setViewportSize({ width: 393, height: 852 });
+  const fixture = await mockPortal(page);
+  await page.goto('/');
+  const open = shelf(page, 'Continue listening').getByRole('button', { name: 'View now playing' });
+  await expect(open).toBeVisible();
+  expect((await open.boundingBox())!.width).toBeLessThanOrEqual(48);
+
+  const { snapshot } = fixture.state;
+  snapshot.session.current = null; snapshot.session.queue = []; snapshot.session.status = 'idle';
+  Object.assign(snapshot.savedSession, { exists: true, savedAt: 1_791_147_600_000, trackCount: 12, voiceChannel: { id: 'voice', name: 'General' }, canResume: true });
+  await page.reload();
+  const card = shelf(page, 'Continue listening').locator('.continue-feature');
+  const resume = card.getByRole('button', { name: 'Resume session' });
+  await expect(resume).toBeVisible();
+  const [cardBox, resumeBox] = [(await card.boundingBox())!, (await resume.boundingBox())!];
+  expect(resumeBox.width).toBeGreaterThan(cardBox.width * .75);
+  expect(resumeBox.x + resumeBox.width).toBeLessThanOrEqual(cardBox.x + cardBox.width + 1);
+});

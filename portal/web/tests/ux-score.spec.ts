@@ -59,12 +59,14 @@ function inspect([minTarget, final]: [number, boolean]) {
       covered.push(r);
     }
   }
-  const seen = new Set<Element>();
-  for (const el of Array.from(document.querySelectorAll('button, a[href], input, select, textarea, [role="tab"], [role="slider"], [role="button"]'))) {
-    const r = el.getBoundingClientRect(); if (!onScreen(r) || !visible(el) || !topmost(el, r) || seen.has(el)) continue; seen.add(el);
+  // Every eligible control first, so the spacing exception doesn't depend on DOM order.
+  const controls = Array.from(new Set(document.querySelectorAll('button, a[href], input, select, textarea, [role="tab"], [role="slider"], [role="button"]'))).filter(el => { const r = el.getBoundingClientRect(); return onScreen(r) && visible(el) && topmost(el, r); });
+  for (const el of controls) {
+    const r = el.getBoundingClientRect();
     covered.push(r);
-    // A small control passes if an ancestor label/row is the real hit area, as WCAG 2.5.8 allows by spacing.
-    const spacing = (() => { const cx = r.left + r.width / 2, cy = r.top + r.height / 2; return Array.from(seen).every(other => { if (other === el) return true; const o = other.getBoundingClientRect(); return Math.hypot(o.left + o.width / 2 - cx, o.top + o.height / 2 - cy) >= minTarget; }); })();
+    // WCAG 2.5.8: an undersized target passes if a 24px circle on its centre clears every other target.
+    const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+    const spacing = controls.every(other => { if (other === el || other.contains(el) || el.contains(other)) return true; const o = other.getBoundingClientRect(); const dx = Math.max(o.left - cx, 0, cx - o.right), dy = Math.max(o.top - cy, 0, cy - o.bottom); return Math.hypot(dx, dy) >= minTarget / 2; });
     if ((r.width < minTarget - .5 || r.height < minTarget - .5) && !(minTarget === 24 && spacing) && el.tagName !== 'A') out.findings.push({ kind: 'target', box: box(r), note: `${Math.round(r.width)}×${Math.round(r.height)} ${name(el)}` });
     const faded = (() => { for (let node = el.parentElement; node; node = node.parentElement) { const s = getComputedStyle(node); if ((s.overflowX === 'auto' || s.overflowX === 'scroll') && s.maskImage !== 'none') return true; } return false; })();
     if ((r.left < -1 || r.right > vw + 1) && !faded) out.findings.push({ kind: 'clipped', box: box(r), note: `off screen: ${name(el)}` });

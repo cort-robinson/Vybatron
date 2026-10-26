@@ -321,7 +321,7 @@ def main():
     args = parser.parse_args()
     args.state_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
     os.chmod(args.state_dir, 0o700)
-    import fcntl  # VPS only. The policy is importable for tests on other hosts.
+    import fcntl  # Linux host only. The policy is importable for tests on other hosts.
     with open(LOCK, 'a') as lock:
         deadline = time.monotonic() + 600
         while True:

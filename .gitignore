@@ -8,6 +8,6 @@ dist/
 .env.*
 !.env.portal.example
 !.env.example
-# Built on the VPS by lavalink/plugins/build.sh.
+# Built on the host by lavalink/plugins/build.sh.
 lavalink/plugins/*.jar
 lavalink/plugins/*.jar.tmp

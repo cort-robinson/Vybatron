@@ -18,7 +18,7 @@ export const POLICY = {
   integrationBranches: ['main'],
   requiredCheck: 'Check',
   // Changes here need the user's explicit approval of these paths before an agent
-  // merges: audio services and new environment values need an operator on the VPS,
+  // merges: audio services and new environment values need an operator on the host,
   // and the pipeline, release drivers and agent policy govern their own enforcement.
   holdPaths: [
     /^docker-compose[^/]*\.ya?ml$/,

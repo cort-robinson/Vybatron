@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""VPS-only playback checks, bounded recovery, and verified YouTube updates.
+"""Host-only playback checks, bounded recovery, and verified YouTube updates.
 
 Only official releases/main commits with published Maven jars are candidates.
 Probes use isolated containers without Discord credentials or voice connections.
@@ -819,7 +819,7 @@ def main():
     if (directory / 'paused').exists():
         print('Automatic recovery is paused.')
         return
-    import fcntl  # VPS only; unit tests can import policy code on Windows.
+    import fcntl  # Linux host only; unit tests can import policy code on Windows.
     with open(LOCK, 'a') as lock:
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)

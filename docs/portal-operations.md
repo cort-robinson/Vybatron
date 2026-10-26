@@ -26,9 +26,14 @@ capped at 8 MiB) works the same way: the bot copies its contents into
 `library.json` at shutdown, so an older release keeps them after a rollback, and
 the next release adopts anything the older one changed (ADR-0009).
 Build images on the workstation or CI, then transfer the tested images. Avoid
-frontend builds on the 2 GiB VPS while music and recovery probes are running.
+frontend builds on the production host while music and recovery probes are running.
 
 ## Secure provisioning
+
+Steps 1 and 2 describe the original VPS, whose own node served Funnel. On the
+home server (ADR-0010), the portal has its own tagged node from
+`ops/portal-funnel/` instead, and the host's node serves nothing public; see
+docs/host-migration.md.
 
 1. Install Tailscale using its official package repository. Join the existing
    personal tailnet with the hostname `vybertron`; retain normal host routing
@@ -41,7 +46,7 @@ frontend builds on the 2 GiB VPS while music and recovery probes are running.
    Discord player.
 3. In the existing Vybatron Discord application, register exactly
    `${PORTAL_ORIGIN}/auth/discord/callback` as an OAuth redirect. Copy its OAuth
-   client secret into the VPS private environment file, never into chat, Git,
+   client secret into the host's private environment file, never into chat, Git,
    a browser bundle, screenshots, CI logs or command arguments.
 4. Create `/var/lib/vybertron-portal` with mode 700. Use
    `.env.portal.example` as a template for
@@ -151,6 +156,8 @@ The VPS has joined the existing personal tailnet as
 `vybertron.tailbeae5.ts.net`. Background Funnel forwards public HTTPS port 443
 only to `http://127.0.0.1:3001`. The OAuth secret is privately provisioned and the
 owner registered `https://vybertron.tailbeae5.ts.net/auth/discord/callback`.
+(Since 2026-10-26 the portal is `https://vybatron.tailbeae5.ts.net`, served by
+the home server's Funnel sidecar; docs/host-migration.md.)
 Local verification has passed 385 core tests, 34 API tests, five joined
 OAuth/API/bot tests, 34 functional/protocol browser tests, 62 recovery tests and separate
 non-root, read-only, 192 MiB container checks that reopen encrypted logins across
@@ -195,7 +202,8 @@ Audio configuration, container identities, images and resource ceilings were ret
 On 2026-10-05, both required CI jobs passed for
 `cbc2547a707662dbb8e25e7187dc30d45b62a4c6`. The release driver deployed that clean
 source's prebuilt bot and portal images while idle. The public pilot is available
-at [Vybatron](https://vybertron.tailbeae5.ts.net).
+at [Vybatron](https://vybatron.tailbeae5.ts.net) (then under the older
+`vybertron` name).
 
 The bot runs image
 `sha256:4d58234d2d1848754020fd9bf37ec27d0b2e74d765fd9d90acdbfde1a48638dc`;
@@ -385,7 +393,7 @@ ancestor, or when `docker-compose.yml`, `lavalink/`, `warp/` or the playback pro
 changed: the portal driver never recreates audio, so those releases need an operator.
 
 Otherwise it downloads the bot and portal images that the main-push CI run built
-and tested (never building on the 2 GiB VPS), checks both carry the target revision
+and tested (never building on the production host), checks both carry the target revision
 label, transfers them with a `git archive` of the exact commit, installs that commit's
 `ops/portal_deploy.py` and `ops/deploy.py` as the private drivers (keeping the
 previous pair as `*.previous`), and runs the same idle-guarded portal driver used for
@@ -404,7 +412,7 @@ artifacts.
 
 SSH trusts only the host key in the `VPS_HOST_KEY` secret (the server's public key
 lines without host names, for example `ssh-ed25519 AAAA…`). After rebuilding the
-VPS or rotating its host keys, update that secret from a verified connection.
+host or rotating its host keys, update that secret from a verified connection.
 
 The portal driver registers commands globally and clears the test guild's
 guild-scoped copy, so nothing appears twice. Each transaction backs up both catalogs

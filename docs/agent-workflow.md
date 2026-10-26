@@ -17,7 +17,7 @@ releases: promote ─► release summary ─► approval ─► tag / GitHub Rel
 production line: a successful `main` CI run releases the bot and portal
 automatically (`.github/workflows/deploy.yml`). Audio-service changes are the
 exception. Deploy stops on them and an operator releases them. One person runs
-one VPS, so a staging branch would add ceremony without adding a real
+one production host, so a staging branch would add ceremony without adding a real
 environment. Use short-lived branches only.
 
 ## Skills
@@ -43,7 +43,7 @@ or just by saying it ("…Full Stop.").
 merge-ready PR. Full Send also merges it, but only when you said so for that
 task, and only if `node scripts/pr-gate.mjs <pr>` prints `READY`. Because a
 `main` merge deploys, Full Send then watches CI and Deploy and reports the live
-result. It never re-runs Deploy, tags, or touches the VPS.
+result. It never re-runs Deploy, tags, or touches the production host.
 
 **Sol Loop.** The implementer commits locally, then T3 `delegate_task` sends the
 diff to Sol on Codex. A Claude model reviews when Sol wrote the change. The
@@ -160,7 +160,7 @@ healthy. Report Deploy's conclusion:
 - **Audio services** (`docker-compose.yml`, `lavalink/`, `warp/`,
   `ops/PlaybackProbe.java`): Deploy stops on these. They need an operator
   release (`ops/README.md` → *V2 runtime and releases*; `docs/portal-operations.md`).
-  `/root/Vybertron` on the VPS is updated manually after such merges.
+  `/root/Vybertron` on the production host is updated manually after such merges.
 - **Versions:** root `package.json` version → `chore(release): X.Y.Z` PR →
   annotated `vX.Y.Z` tag on its merge commit → GitHub Release. The
   `release tags` ruleset blocks moving or deleting `v*` tags.
@@ -190,7 +190,7 @@ listening check in `ops/README.md` is needed; and the CI and Deploy runs for
 the exact target SHA. The latest successful Deploy may describe an older
 revision.
 
-Prepare without extra approval, and change nothing on the VPS:
+Prepare without extra approval, and change nothing on the production host:
 
 - Versioned release: a `chore/release-X.Y.Z` branch with
   `npm version X.Y.Z --no-git-tag-version`, opened through Full Stop with the
@@ -215,7 +215,7 @@ Each of these needs its own explicit approval: merging the release PR (it's also
 a Deploy, so use the Full Send gate), the tag and Release
 (`git tag -a vX.Y.Z <merge-sha> -m "Vybatron X.Y.Z"`, `git push origin vX.Y.Z`,
 `gh release create vX.Y.Z --verify-tag`; tag the verified merge commit and never
-rebuild), and any VPS action or operator release. An approved operator release
+rebuild), and any production-host action or operator release. An approved operator release
 follows the runbook exactly and reports live evidence (revision labels,
 `/health`, canary decode results) and any gaps, such as a listening check not
 yet done.

@@ -1,6 +1,10 @@
 # Moving production to the home server
 
-The runbook for ADR-0010. **Stage** runs while the VPS keeps serving and has no
+The runbook for ADR-0010. **Production moved to the home server on
+2026-10-26.** The steps below are kept as the record and for a repeat move;
+*Roll back* and *Decommission* still apply during the standby period.
+
+**Stage** runs while the VPS keeps serving and has no
 downtime. **Cutover** is about 15–30 minutes without music and needs the owner's
 explicit approval for each production step (VPS commands, secrets, variables,
 Deploy re-runs). **Roll back** returns to the VPS during the standby period.
@@ -28,7 +32,7 @@ Checked on the home server on 2026-10-24:
 | sshd | key-only. Tailnet traffic is accepted before ufw |
 | WARP, cipher and Lavalink | healthy from the home network (WARP on) |
 | Bot image build | ok |
-| Decoded canaries | not run yet: they need the production YouTube credentials |
+| Decoded canaries | passed at Stage and after cutover |
 
 Owner checks that only hardware can answer:
 
@@ -70,9 +74,16 @@ Owner checks that only hardware can answer:
    admin console. Otherwise Deploy loses SSH when it expires. Tagged nodes have
    no expiry.
 3. **OIDC trust credential** (Settings → Trust credentials → OpenID Connect,
-   issuer GitHub). Subject `repo:<owner>/<repo>:ref:refs/heads/main`, scope
-   `auth_keys` (write), tag `tag:ci`. Keep its client ID and audience for
-   cutover; they become repository variables, not secrets.
+   issuer GitHub), scope `auth_keys` (write), tag `tag:ci`. The subject must
+   match GitHub's token exactly. This repository uses immutable subjects, which
+   carry the owner and repository IDs:
+   `repo:<owner>@<owner-id>/<repo>@<repo-id>:ref:refs/heads/main`. Read the
+   prefix with `gh api repos/{owner}/{repo}/actions/oidc/customization/sub`
+   (`sub_claim_prefix`); the plain `repo:<owner>/<repo>:…` form is refused with
+   403. Add the custom claim `job_workflow_ref` =
+   `<owner>/<repo>/.github/workflows/deploy.yml@refs/heads/main` so only Deploy
+   can use it. Keep its client ID and audience for cutover; they become
+   repository variables, not secrets.
 4. **Portal node auth key** (Settings → Keys). One-off, not ephemeral,
    pre-approved, tag `tag:vybertron-portal`. It's used once, at cutover.
 
@@ -193,7 +204,9 @@ needs approval.
    ```
 
 5. **Move the portal address.** In the admin console, rename the VPS machine
-   from `vybertron` to `vybertron-vps`, so the name is free. Then start the
+   from `vybertron` to `vybertron-vps`, so the name is free. (The 2026-10-26
+   cutover kept `vybertron` here and then renamed the portal to `vybatron`; see
+   *Renaming the portal address*.) Then start the
    sidecar with the auth key typed in, never pasted into a command line:
 
    ```bash
@@ -208,6 +221,23 @@ needs approval.
 
    Public DNS for `vybertron.<tailnet>.ts.net` can take a few minutes to follow
    the new node. Check it from a phone on mobile data.
+
+   **Renaming the portal address.** Renaming a Funnel node in the admin console
+   doesn't publish its new public DNS name. To move the portal to a new name:
+   add `https://<new>.<tailnet>.ts.net/auth/discord/callback` to the Discord
+   application's OAuth2 redirects, rename the node, then switch Funnel off and
+   back on so the name is published:
+
+   ```bash
+   docker exec vybertron-funnel tailscale --socket /tmp/tailscaled.sock funnel --https=443 off
+   docker restart vybertron-funnel        # reapplies serve.json and a certificate for the new name
+   ```
+
+   Once the new name resolves publicly, change `PORTAL_ORIGIN` in
+   `/var/lib/vybertron-portal/portal.env` and recreate the bot and portal while
+   idle, from the release directory and Compose files their
+   `com.docker.compose.project.*` labels name. Everyone signs in again, and
+   installed web apps must be reinstalled from the new address.
 
 6. **Recovery and backups** on the home server:
 
@@ -237,8 +267,8 @@ needs approval.
    ```
 
    Re-run the latest Deploy run (approval required). It joins the tailnet, pins
-   the host key, reads the running revision over SSH, and reports nothing to
-   release. That proves the path before the next merge needs it.
+   the host key, reads the running revision over SSH, and releases anything newer
+   than the staged revision. That proves the path before the next merge needs it.
 
 8. **Verify:** every container is healthy, `python3 ops/recovery.py status`
    reports healthy after its first timed run, the manual listening check
@@ -260,7 +290,7 @@ needs approval.
   never run `docker compose down -v`, and never run `docker system prune
   --volumes` or `docker volume prune`. Develop the audio stack on another machine
   or in rootless Docker.
-- Schedule an off-box backup copy (ops/README.md, *Copy backups off the VPS*) to
+- Schedule an off-box backup copy (ops/README.md, *Copy backups off the host*) to
   another machine or an encrypted external drive. The daily backups otherwise sit
   on the same disk as the data.
 
@@ -276,8 +306,12 @@ During the standby period, if the home server can't serve:
    `/var/lib/vybertron-backups/`, and `restore` it there with the VPS bot
    stopped, so nothing listeners saved since cutover is lost. Move `portal-data`
    the same way.
-3. In the admin console, rename the home portal node to `vybertron-home` and the
-   VPS back to `vybertron`. Then, on the VPS, run `tailscale funnel --bg 3001`.
+3. In the admin console, rename the home portal node to `vybatron-home` and the
+   VPS to `vybatron`. On the VPS, set `PORTAL_ORIGIN` in
+   `/var/lib/vybertron-portal/portal.env` to `https://vybatron.<tailnet>.ts.net`
+   (it still names the pre-cutover address), then run `tailscale funnel --bg
+   3001` and confirm the name resolves publicly (see *Renaming the portal
+   address*).
 4. **Run the home server's revision on the VPS.** Discord's command catalog
    belongs to the application, not the host, and a home release may have
    migrated the data, so the VPS must not start older code. Read the home
@@ -303,7 +337,6 @@ During the standby period, if the home server can't serve:
 
 ## Decommission
 
-After about two weeks without a rollback: cancel the VPS, remove its node from
-the tailnet, and update the docs that still describe the VPS (ops/README.md,
-docs/portal-operations.md, AGENTS.md, README.md), including the 2 GiB sizing
-notes.
+After about two weeks without a rollback: cancel the VPS, and remove its node
+(`vybertron-vps`) and any personal SSH keys added to it for the move. The
+deploy secrets keep their `VPS_*` names; they now describe the home server.

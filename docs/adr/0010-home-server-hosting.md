@@ -1,6 +1,6 @@
 # ADR-0010: Host production on a home server instead of the VPS
 
-- Status: Proposed (staged; cutover pending owner approval)
+- Status: Accepted (cut over 2026-10-26)
 - Date: 2026-10-24
 
 ## Context
@@ -26,16 +26,20 @@ backups) to the home server and change as little as possible:
   ephemeral `tag:ci` node using GitHub OIDC (no stored Tailscale secret) and uses
   the same pinned-host-key SSH as before. The tailnet policy lets `tag:ci` reach
   only that host's port 22, and the deploy key only works from tailnet addresses.
-- **Same portal address.** A Tailscale sidecar (`ops/portal-funnel/`) gives the
-  portal its own tagged tailnet node named `vybertron` and publishes
-  `127.0.0.1:3001` with Funnel. `PORTAL_ORIGIN`, the Discord OAuth redirect,
-  installed web apps and existing sign-ins keep working, and the owner's own
-  node serves nothing public.
+- **Portal on its own node.** A Tailscale sidecar (`ops/portal-funnel/`) gives
+  the portal its own tagged tailnet node and publishes `127.0.0.1:3001` with
+  Funnel, so the owner's own node serves nothing public. The cutover kept the
+  old name `vybertron`, so sign-ins carried over; the portal then moved to
+  `vybatron` to match the project's name, which meant one new sign-in and
+  reinstalling the web app.
 - **Same audio path.** WARP stays. A residential address might not need it, but
   dropping it is an audio change that needs its own decoded canaries and
   listening check.
 - **Reversible.** The VPS keeps its stopped stack and data for a standby period
   (docs/host-migration.md) before it is cancelled.
+- **Names kept.** The deploy secrets keep their `VPS_*` names, and the Compose
+  project, containers and volumes keep `vybertron`. Renaming them would touch
+  production state for no behavioural gain.
 
 ## Consequences
 
@@ -56,4 +60,5 @@ backups) to the home server and change as little as possible:
   CI only).
 - Daily backups sit on the same disk as the data until an off-box copy is
   scheduled.
-- Docs that say "VPS" stay accurate until cutover and are updated afterwards.
+- Measurements and history that mention the 2 GiB VPS (memory ceilings, ADR-0005)
+  stay as written: they record where the numbers came from.

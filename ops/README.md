@@ -1,4 +1,4 @@
-# Automatic recovery on the VPS
+# Automatic recovery on the production host
 
 The systemd timer checks the running stack about five minutes after each completed
 run. It checks WARP health and shared network namespaces, Discord/Lavalink
@@ -57,7 +57,7 @@ are limited to two per day; failed candidates wait at least an hour before retry
 
 Alerts go to the configured Discord channel: one startup message, persistent
 outages, recovery, installations, and rollbacks. Successful routine checks stay
-quiet. Failed alert delivery remains in a private outbox for retry. A total VPS
+quiet. Failed alert delivery remains in a private outbox for retry. A total host
 or Discord outage cannot deliver an alert until connectivity returns. External
 YouTube changes without a working upstream fix and expired OAuth credentials can
 still require manual intervention. Canary checks do not prove Discord voice
@@ -100,12 +100,16 @@ systemctl enable --now vybertron-recovery.timer
 
 ## Host baseline
 
-The VPS has 2 GiB of RAM, so the Compose memory ceilings are what keep one service
-from exhausting the host (an uncapped yt-cipher grew to ~600 MiB and triggered a
-global OOM on 2026-10-14). SSH is key-only (`/etc/ssh/sshd_config.d/00-hardening.conf`)
-with fail2ban's `sshd` jail; ModemManager, udisks2, fwupd and multipathd are
-masked. Reapply these when replacing the VPS. Moving production to the home
-server (ADR-0010) follows [docs/host-migration.md](../docs/host-migration.md).
+Production runs on the home server (ADR-0010); its readiness, day-to-day rules
+and rollback are in [docs/host-migration.md](../docs/host-migration.md). It
+shares a Docker daemon with development, so never run the production Compose
+stack from a development checkout there and never prune Docker volumes. SSH is
+key-only and reached over the tailnet.
+
+The Compose memory ceilings come from the previous 2 GiB VPS, where they kept one
+service from exhausting the host (an uncapped yt-cipher grew to ~600 MiB and
+triggered a global OOM on 2026-10-14). They stay until real usage on the home
+server justifies changing them.
 
 ## Operations
 
@@ -185,7 +189,7 @@ Backups contain Discord server and user IDs. Treat them as private data.
 
 ### Install the schedule
 
-Nothing is installed automatically. On the VPS, after updating `/root/Vybertron`:
+Nothing is installed automatically. On the host, after updating `/root/Vybertron`:
 
 ```bash
 cd /root/Vybertron
@@ -200,13 +204,13 @@ journalctl -u vybertron-backup.service --since today
 The timer runs daily around 04:30 server time and catches up after downtime. With
 cron instead: `30 4 * * * cd /root/Vybertron && python3 ops/backup.py backup`.
 
-### Copy backups off the VPS
+### Copy backups off the host
 
-A backup on the same disk doesn't survive losing the VPS. Pull copies from a
+A backup on the same disk doesn't survive losing the host. Pull copies from a
 trusted machine, for example weekly:
 
 ```bash
-rsync -a --chmod=D700,F600 root@YOUR_VPS:/var/lib/vybertron-backups/ ./vybatron-backups/
+rsync -a --chmod=D700,F600 root@YOUR_HOST:/var/lib/vybertron-backups/ ./vybatron-backups/
 python3 ops/backup.py verify --backup-dir ./vybatron-backups --name bot-data-YYYYMMDDTHHMMSSZ
 ```
 
@@ -249,7 +253,7 @@ confirm off-box copies are usable.
 audio as Ogg Opus at `/vybatron/audio/{videoId}` for portal listeners playing on
 their own device. It decodes through the same pipeline as Discord playback, on a
 private player that belongs to no session (two exports at a time, 60-minute cap).
-The jar is not in Git; build it on the VPS from the compose checkout, offline,
+The jar is not in Git; build it on the host from the compose checkout, offline,
 against the running Lavalink's own libraries and the probe's pinned JDK:
 
 ```sh
@@ -280,10 +284,10 @@ uses WAL while running and checkpoints to a single file on graceful shutdown, so
 copy the volume with the bot stopped. A damaged or newer `stats.sqlite` disables
 stats only (`stats_unavailable` in the log, `stats.available: false` in `/status`);
 move it aside while the bot is stopped to start fresh. Playback is unaffected.
-Back up that volume before migrating or replacing the VPS. Removing the volume
+Back up that volume before migrating or replacing the host. Removing the volume
 removes saved data; a normal container rebuild preserves it.
 
-Measured on the existing 2 GiB VPS, the cipher service used about 311 MiB.
+Measured on the previous 2 GiB VPS, the cipher service used about 311 MiB.
 Ceilings allow 512 MiB for cipher, 768 MiB for Lavalink including its 512 MiB Java
 heap, 384 MiB for WARP, and 256 MiB for the bot including a 160 MiB V8 heap.
 These are ceilings, rather than reservations; probes add a temporary 256 MiB
@@ -297,9 +301,10 @@ configuration before login. SIGTERM/SIGINT stop recovery retries, gate new music
 drain requests, flush the library, close connections, and exit within ten seconds.
 A fatal exception or unhandled rejection exits with failure so Docker can recover.
 
-The optional deployment workflow remains gated by `DEPLOY_ENABLED=true` and VPS
-SSH secrets. It accepts successful **main-branch push CI** only and deploys that
-run's exact SHA. An older CI result cannot roll the VPS back over a newer commit.
+The optional deployment workflow remains gated by `DEPLOY_ENABLED=true` and the
+`VPS_*` SSH secrets (the names predate the home server). It accepts successful
+**main-branch push CI** only and deploys that run's exact SHA. An older CI result
+cannot roll production back over a newer commit.
 It waits for an idle queue, records the current commit, tested runtime YouTube
 pin, and actual image IDs in a private durable journal, then builds the exact
 release bot image. Audio images remain the recorded images; a release never
@@ -362,7 +367,9 @@ Record what was actually heard; connection flags or Opus counts alone do not pas
 `portal_preview.mjs` serves an unreleased `portal/web` build beside the live portal, so a
 branch can be tried on real devices before it merges (merges to `main` deploy). It serves the
 build's own files and passes `/api`, `/auth` and `/health` through to the live portal with the
-origin it expects; sign in on the live portal first. On the VPS it runs as the
+origin it expects; sign in on the live portal first. On the host it runs as the
 `vybertron-portal-preview` container (the portal image's Node, read-only, 64 MiB) on
-127.0.0.1:3002, published by `tailscale funnel --bg --https=8443 3002`. Remove it with
-`docker rm -f vybertron-portal-preview` and `tailscale funnel --https=8443 off`.
+127.0.0.1:3002, published from the portal's own node, never the workstation's:
+`docker exec vybertron-funnel tailscale --socket /tmp/tailscaled.sock funnel --bg --https=8443 http://127.0.0.1:3002`.
+Remove it with `docker rm -f vybertron-portal-preview` and the same `docker exec …
+funnel --https=8443 off` (restarting the sidecar also drops it).

@@ -91,7 +91,11 @@
 }
 
 /* Playlist import: a link form and a preview dialog with counts. */
-.library-view .playlist-import-form { margin-top: 24px; }
+.library-view .playlist-import-form { margin-top: 36px; padding: 0; border-bottom: 0; }
+/* Importing is its own task under the list: a titled field with its help right beneath it. */
+.library-view .playlist-import-form > label { color: var(--text); font-size: 15px; font-weight: 650; }
+.library-view .playlist-import-form input { font-weight: 400; }
+.library-view .playlist-import-form + .library-note { margin-top: 10px; }
 .import-dialog { width: 560px; }
 .import-counts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 16px 0 0; }
 .import-counts > div { min-width: 0; padding: 10px 12px; border: 1px solid var(--field-line); border-radius: 12px; }

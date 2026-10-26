@@ -22,7 +22,7 @@ FORM: album-reactive receiver; spectrum and lighting are decorative and generate
   color-scheme: dark;
   --text: #f5f4f8;
   --text-soft: #e2e0e8;
-  --muted: #aaa8b5;
+  --muted: #b4b2bf;
   --line: rgb(255 255 255 / .09);
   --line-soft: rgb(255 255 255 / .06);
   --line-strong: rgb(255 255 255 / .15);
@@ -68,6 +68,8 @@ FORM: album-reactive receiver; spectrum and lighting are decorative and generate
   --sidebar: clamp(226px, 17.45vw, 260px);
   --topbar: 114px;
   --player: 104px;
+  /* The skyline stands on the player; a page's last row scrolls fully clear of it. */
+  --scenery-clearance: max(70px, calc(clamp(56px, 11vh, 124px) + 28px));
   --nav: 0px;
 }
 * { box-sizing: border-box; }
@@ -249,7 +251,7 @@ svg { flex-shrink: 0; }
 .warm-text { color: var(--amber); }
 .healthy-text { color: var(--accent); }
 .main-surface { background: var(--reading-surface); }
-.page-content { padding: 32px 24px 70px 37px; min-height: calc(100dvh - var(--player) - var(--topbar)); }
+.page-content { padding: 32px 24px var(--scenery-clearance) 37px; min-height: calc(100dvh - var(--player) - var(--topbar)); }
 
 /* Shared queue and lists */
 .section-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
@@ -421,7 +423,7 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
 .filter-control { display: flex; align-items: center; position: relative; border: 1px solid var(--line-strong); background: rgb(255 255 255 / .04); border-radius: 999px; min-height: 44px; width: 126px; flex-shrink: 0; transition: border-color 160ms; }
 .filter-control:hover { border-color: rgb(255 255 255 / .26); }
 /* The select spans the whole pill so its hit area and focus ring match the visible control. */
-.filter-control select { appearance: none; position: absolute; inset: 0; background: transparent; padding: 0 30px 0 29px; border: none; border-radius: inherit; min-height: 0; height: 100%; font-size: 16px; width: 100%; min-width: 0; }
+.filter-control select { appearance: none; position: absolute; inset: -1px; background: transparent; padding: 0 30px 0 29px; border: none; border-radius: inherit; min-height: 0; height: calc(100% + 2px); font-size: 16px; width: calc(100% + 2px); min-width: 0; }
 .filter-control:has(select:focus-visible) { outline: 2px solid var(--accent); outline-offset: 3px; }
 .filter-control select:focus-visible { outline: none; }
 .filter-control > svg { position: absolute; right: 10px; pointer-events: none; }
@@ -436,6 +438,8 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
 .expand-button svg { width: 24px; height: 24px; }
 .expand-button span { display: none; }
 .sleeve-topbar .page-title { visibility: hidden; }
+/* Over the open player's lit cover the search field needs a firmer ground to stay legible. */
+.sleeve-topbar { --field: color-mix(in oklab, var(--ground) 72%, transparent); }
 .sleeve-topbar { border-bottom-color: transparent; }
 .expanded-main { padding: 0; min-height: 0; background: transparent; }
 /* Let identity and context claim their height before artwork and its spectrum receive the remainder. */
@@ -676,7 +680,7 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
   .topbar-actions { gap: 0; flex-shrink: 0; }
   .topbar .button { min-height: 44px; font-size: 16px; padding: 10px 12px; gap: 6px; }
   .topbar .button svg { width: 20px; }
-  .page-content { padding: 16px 16px 32px; min-height: calc(100dvh - var(--mobile-header) - var(--topbar) - var(--player) - var(--nav)); }
+  .page-content { padding: 16px 16px var(--scenery-clearance); min-height: calc(100dvh - var(--mobile-header) - var(--topbar) - var(--player) - var(--nav)); }
   h2 { font-size: 22px; }
   .section-heading { gap: 12px; margin-bottom: 12px; align-items: flex-start; }
   .heading-line { gap: 12px; flex-wrap: wrap; }
@@ -797,6 +801,8 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
   .tabs button { font-size: 16px; gap: 6px; white-space: nowrap; }
   .tabs button > span { font-size: 14px; }
   .library-track-list > li, .history-list > li { gap: 12px; min-height: 88px; }
+  /* On a phone the artist keeps the line; the catalog is in the row's menu and the player. */
+  .library-track-list .track-source { display: none; }
   .library-track-list .artwork, .history-list .artwork { width: 48px; height: 52px; }
   .library-track-list .track-duration { display: none; }
   .history-list > li { flex-wrap: wrap; }

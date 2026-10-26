@@ -38,17 +38,31 @@ Required check: **`Check`**, the CI aggregate (after the setup PR merges, the
   independently reviewed, merge-ready PR. It never merges. Skip the PR only when
   the user asks for investigation or local-only work.
 - **`full-send`** only when the user explicitly says "Full Send" (or "merge it")
-  for that task. If they do, read `.agents/skills/full-send/SKILL.md` and follow it.
-  A merge to `main` deploys the bot and portal to production automatically.
+  for that task. A merge to `main` deploys the bot and portal to production
+  automatically, so "Full Send" here authorizes that merge and its Deploy, and
+  nothing more.
 - **`promote`** for releases (version tags, GitHub Releases, operator audio
-  releases). It prepares the release and stops for approval. Read
-  `.agents/skills/promote/SKILL.md` when asked.
+  releases). It prepares the release and stops for approval.
 - **`sol-loop`** for independent review, and **`babysit-pr`** to own a PR through CI
   and review (T3 `watch_pull_request`). A self-review is never labeled independent.
 
-Skills live in `.agents/skills/` (Codex reads them directly). `.claude/skills/`
-holds thin Claude Code entry points that point back to them. The full process is
-in `docs/agent-workflow.md`.
+The skills are installed user-wide (tstack, plus `promote` and `setup-repo`).
+This repository keeps no copies. It adds the rules below, which take precedence
+over a skill's defaults. The full procedures are in `docs/agent-workflow.md`:
+read its *Full Send*, *Releases* or *Pull requests* section before doing that
+step.
+
+- **Merge gate:** `node scripts/pr-gate.mjs <n>` must print `READY` before a
+  merge, and an agent merges only with `node scripts/pr-gate.mjs <n> --merge`
+  (squash, pinned to the approved head). Never `gh pr merge` directly or
+  `--auto`. Full Stop reports the gate verdict and doesn't merge.
+- **After a Full Send merge:** watch CI and Deploy for the merge SHA and report
+  Deploy's conclusion. Never re-run Deploy, roll back or SSH.
+- **Pull requests:** open as a draft against `main` while CI and review are
+  pending, with the body template from `docs/agent-workflow.md`, then mark ready.
+  Update a branch by merging `origin/main`. Rebase only a branch only you pushed.
+- **CI failures:** at most 3 fix attempts per distinct failure, and one re-run
+  for a proven flake. Then report as blocked with logs.
 
 ## Hard limits
 
@@ -57,8 +71,8 @@ in `docs/agent-workflow.md`.
   ruleset or repository-setting edits.
 - Approval is required to merge changes to the hold paths: audio services
   (`docker-compose*.yml`, `lavalink/`, `warp/`), `ops/`, `.env*.example`,
-  `.github/workflows/`, `.agents/`, `.claude/`, `AGENTS.md` and `CLAUDE.md`.
-  `pr-gate.mjs` enforces this.
+  `.github/workflows/`, `.agents/`, `.claude/`, `AGENTS.md`, `CLAUDE.md`,
+  `docs/agent-workflow.md` and `scripts/pr-gate.mjs`. `pr-gate.mjs` enforces this.
 - Never bypass rulesets (`--admin`, bypass actors, disabling rules). Stop and report
   instead.
 - Search and metadata success doesn't prove playback. Audio claims need decoded

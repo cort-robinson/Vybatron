@@ -185,19 +185,40 @@ Assess the range: included PRs; persisted data formats (`src/utils/library.js`
 the previous release can read data this one writes; new keys in
 `.env.example`, `.env.portal.example` and compose files, which must be
 provisioned first; audio or infra paths that need an operator release; Discord
-command catalog changes (`src/commands`, `deploy-commands.js`); and whether the
-listening check in `ops/README.md` is needed.
+command catalog changes (`src/commands`, `deploy-commands.js`); whether the
+listening check in `ops/README.md` is needed; and the CI and Deploy runs for
+the exact target SHA. The latest successful Deploy may describe an older
+revision.
 
-Prepare without extra approval: a `chore/release-X.Y.Z` branch with
-`npm version X.Y.Z --no-git-tag-version`, opened through Full Stop with the
-release summary (semver: breaking → major, features → minor, fixes → patch), or
-a written operator release plan. Change nothing on the VPS.
+Prepare without extra approval, and change nothing on the VPS:
+
+- Versioned release: a `chore/release-X.Y.Z` branch with
+  `npm version X.Y.Z --no-git-tag-version`, opened through Full Stop with the
+  release summary (semver: breaking → major, features → minor, fixes → patch).
+- Operator release: a written plan with the target SHA, images and commands
+  from the runbook, idle and maintenance lock requirements, the canaries to
+  decode, the rollback command, and the listening check.
+
+Output this checklist:
+
+```markdown
+## Promotion: <from> → <to SHA> (<version>)
+- Included: <PRs>
+- Data/rollback: <…>
+- Config to provision: <none | keys>
+- Audio/operator release needed: <no | yes: paths>
+- CI on target SHA: <url, conclusion>; Deploy: <url, conclusion>
+- Approval needed for: <merge release PR | tag + GitHub Release | operator release>
+```
 
 Each of these needs its own explicit approval: merging the release PR (it's also
 a Deploy, so use the Full Send gate), the tag and Release
 (`git tag -a vX.Y.Z <merge-sha> -m "Vybatron X.Y.Z"`, `git push origin vX.Y.Z`,
 `gh release create vX.Y.Z --verify-tag`; tag the verified merge commit and never
-rebuild), and any VPS action or operator release.
+rebuild), and any VPS action or operator release. An approved operator release
+follows the runbook exactly and reports live evidence (revision labels,
+`/health`, canary decode results) and any gaps, such as a listening check not
+yet done.
 
 ## Gates
 

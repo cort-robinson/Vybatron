@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type ButtonHTMLAttributes, type ReactNode, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowClockwiseIcon, MusicNotesIcon, UserIcon, XIcon, WarningCircleIcon } from '@phosphor-icons/react';
+import { ArrowClockwiseIcon, MusicNotesIcon, UserIcon, XIcon, WarningCircleIcon } from '../icons';
 import { publicUrl } from '../api';
 import { swipe } from '../swipe';
 import { adoptFlight } from '../motion';
 import type { Track } from '../types';
+import cover320 from '../assets/fallback-cover-320.webp';
+import cover640 from '../assets/fallback-cover-640.webp';
+import cover1024 from '../assets/fallback-cover-1024.webp';
 
 // A caller's title (usually why the control is unavailable) replaces the label tooltip; an
 // undefined one falls back to the label instead of erasing it.
@@ -14,8 +17,8 @@ export function IconButton({ label, children, className = '', title, ...props }:
 export function FallbackCover({ className = '', alt = '', large = false }: { className?: string; alt?: string; large?: boolean }) {
   const sizes = large ? '(max-width: 960px) calc(100vw - 40px), (max-width: 1100px) 45vw, 560px' : '180px';
   return <picture ref={adoptFlight} className={className}>
-    <source type="image/webp" srcSet="/assets/fallback-cover-320.webp 320w, /assets/fallback-cover-640.webp 640w, /assets/fallback-cover-1024.webp 1024w" sizes={sizes} />
-    <img src="/assets/fallback-cover-320.webp" alt={alt} width={320} height={320} loading={large ? 'eager' : 'lazy'} decoding="async"
+    <source type="image/webp" srcSet={`${cover320} 320w, ${cover640} 640w, ${cover1024} 1024w`} sizes={sizes} />
+    <img src={cover320} alt={alt} width={320} height={320} loading={large ? 'eager' : 'lazy'} decoding="async"
       style={{ display: 'block', width: '100%', height: '100%', objectFit: 'cover', borderRadius: 'inherit' }} />
   </picture>;
 }

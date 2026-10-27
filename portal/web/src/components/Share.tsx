@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ArrowClockwiseIcon, LinkIcon, PlusIcon } from '@phosphor-icons/react';
+import { ArrowClockwiseIcon, LinkIcon, PlusIcon } from '../icons';
 import type { Portal } from '../usePortal';
 import { Dialog } from './ui';
 

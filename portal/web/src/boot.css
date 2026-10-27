@@ -1,0 +1,4 @@
+/* The loading line in index.html, painted with the first stylesheet while the script downloads.
+   It shows only on the bare ground: the moment main.tsx applies a look, it's gone. */
+.boot-shell { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; gap: 14px; color: var(--muted); font-size: 14px; }
+:root[data-skin] .boot-shell { display: none; }

@@ -1,5 +1,5 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowClockwiseIcon, HeartIcon, PlayIcon, PlusIcon, RadioIcon, TrashIcon, VinylRecordIcon } from '@phosphor-icons/react';
+import { ArrowClockwiseIcon, HeartIcon, PlayIcon, PlusIcon, RadioIcon, TrashIcon, VinylRecordIcon } from '../icons';
 import type { Portal } from '../usePortal';
 import type { Capability, Command, Library, Track } from '../types';
 import { date, time, totalTime } from '../format';

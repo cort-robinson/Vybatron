@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { ArrowBendUpRightIcon, LinkIcon, MagnifyingGlassIcon, PlusIcon, RadioIcon, SparkleIcon } from '@phosphor-icons/react';
+import { ArrowBendUpRightIcon, LinkIcon, MagnifyingGlassIcon, PlusIcon, RadioIcon, SparkleIcon } from '../icons';
 import { api, errorMessage } from '../api';
 import type { Track } from '../types';
 import type { Portal } from '../usePortal';

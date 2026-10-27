@@ -5,6 +5,8 @@ import { LIMITS, isLoopback } from './config.js';
 import { SessionStore, randomToken, tokenHash } from './store.js';
 import { Transport, isRetryableReadError } from './transport.js';
 import { validateCommand } from './commands.js';
+import { COMPRESSIBLE, EntityTags, acceptedCodings, immutable, notModified, openVariant } from './static.js';
+import { timeRequests } from './timing.js';
 import { HttpError, RateLimiter, busy, invalid, unauthorized, unavailable, cookie, setCookie,
   equal, sameOrigin, securityHeaders, readBody, json, sendError } from './security.js';
 
@@ -84,6 +86,7 @@ export async function createPortalServer(config, testOptions = {}) {
   const limiter = new RateLimiter(limits.rateKeys, now);
   const anonymousLimiter = new RateLimiter(limits.rateKeys, now);
   const pendingOAuth = new Map(); const streams = new Set(); const commandReaders = new Set();
+  const entityTags = new EntityTags();
   let processing = 0; let stops = 0; let closing = false;
   // Production follows the bot's change feed; test servers opt in explicitly.
   const followChanges = Object.keys(testOptions).length ? testOptions.changeFeed === true : true;
@@ -112,7 +115,7 @@ export async function createPortalServer(config, testOptions = {}) {
       file = path.join(root, 'index.html');
     }
     if (!file.startsWith(`${root}${path.sep}`) || !types[path.extname(file).toLowerCase()]) throw notFound();
-    let handle;
+    let handle; let variant;
     try { handle = await fs.open(file, fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW || 0)); } catch { throw notFound(); }
     try {
       const stat = await handle.stat();
@@ -121,19 +124,40 @@ export async function createPortalServer(config, testOptions = {}) {
       const ext = path.extname(file).toLowerCase();
       const isWorker = /(?:^|[/\\])(?:sw|service-worker|workbox[^/\\]*)\.js$/i.test(file);
       // The PWA share target's query holds shared text: no browser cache may keep it.
-      res.setHeader('Cache-Control', isWorker || pathname === '/share' ? 'no-store' : /[-.][a-zA-Z0-9_-]{8,}\.(?:js|css|woff2?)$/.test(file) ? 'public, max-age=31536000, immutable' : 'no-cache');
+      const noStore = isWorker || pathname === '/share';
+      res.setHeader('Cache-Control', noStore ? 'no-store' : immutable(root, file) ? 'public, max-age=31536000, immutable' : 'no-cache');
+      // Chromium revalidates anything sent with Pragma: no-cache, even an immutable file.
+      if (!noStore) res.removeHeader('Pragma');
       if (isWorker) res.setHeader('Service-Worker-Allowed', '/');
-      res.writeHead(200, { 'Content-Type': types[ext], 'Content-Length': stat.size });
+      let suffix = '';
+      if (COMPRESSIBLE.has(ext)) {
+        // Identity is a choice made from Accept-Encoding too, so every text response varies on it.
+        res.setHeader('Vary', 'Accept-Encoding');
+        for (const [coding, extension] of acceptedCodings(req.headers['accept-encoding'])) {
+          variant = await openVariant(file + extension, stat, limits.staticBytes);
+          if (variant) { variant.coding = coding; variant.file = file + extension; suffix = `-${extension.slice(1)}`; break; }
+        }
+      }
+      if (!noStore) {
+        // Each encoding is its own representation: its validator hashes the bytes actually sent.
+        const tag = variant ? await entityTags.get(variant.file, variant.handle, variant.stat) : await entityTags.get(file, handle, stat);
+        const etag = `"${tag}${suffix}"`;
+        res.setHeader('ETag', etag);
+        if (notModified(req.headers['if-none-match'], etag)) { res.writeHead(304); res.end(); return; }
+      }
+      if (res.destroyed) return;
+      res.writeHead(200, { 'Content-Type': types[ext], 'Content-Length': variant ? variant.size : stat.size,
+        ...(variant && { 'Content-Encoding': variant.coding }) });
       if (req.method === 'HEAD') { res.end(); return; }
       // The stream must own the FileHandle, not its numeric descriptor. Destroy
       // closes even an autoClose:false stream; closing that descriptor again can
       // close a different file/socket that has already reused it on Unix.
-      const stream = handle.createReadStream();
-      handle = null;
+      const stream = (variant ? variant.handle : handle).createReadStream();
+      if (variant) variant = null; else handle = null;
       res.once('close', () => stream.destroy());
       stream.once('error', () => res.destroy());
       stream.pipe(res);
-    } finally { await handle?.close(); }
+    } finally { await handle?.close(); await variant?.handle.close(); }
   }
 
   async function events(req, res, guildId, token, session, signal) {
@@ -283,7 +307,7 @@ export async function createPortalServer(config, testOptions = {}) {
     }
   }
 
-  const server = http.createServer({ maxHeaderSize: limits.headerBytes }, async (req, res) => {
+  const server = http.createServer({ maxHeaderSize: limits.headerBytes }, timeRequests(async (req, res) => {
     securityHeaders(res, config.production);
     const controller = new AbortController();
     res.once('close', () => controller.abort());
@@ -494,7 +518,7 @@ export async function createPortalServer(config, testOptions = {}) {
       else if (admission === 'stop') stops--;
       if (req.method === 'POST' && res.writableEnded && !req.socket.destroyed) req.setTimeout(30_000);
     }
-  });
+  }));
   server.maxConnections = limits.connections;
   server.headersTimeout = 5000; server.requestTimeout = limits.requestMs;
   server.keepAliveTimeout = 5000; server.setTimeout(30_000, socket => socket.destroy());

@@ -1,4 +1,4 @@
-import { CaretLeftIcon, CaretRightIcon } from '@phosphor-icons/react';
+import { CaretLeftIcon, CaretRightIcon } from '../icons';
 import './library.css';
 
 export function Pagination({ page, total, pageSize, onPageChange, label }: {

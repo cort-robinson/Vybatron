@@ -6,9 +6,11 @@ import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { once } from 'node:events';
+import { brotliCompressSync, brotliDecompressSync, gunzipSync, gzipSync } from 'node:zlib';
 import { createPortalServer, SESSION_COOKIE, OAUTH_COOKIE } from '../src/app.js';
 import { loadConfig, LIMITS } from '../src/config.js';
 import { Transport } from '../src/transport.js';
+import { parseUpstreamTiming } from '../src/timing.js';
 
 const actorId = '123456789012345678'; const guildId = '234567890123456789';
 const secret = 'test-only-32-character-secret-abcdef0123456789';
@@ -45,8 +47,8 @@ async function request(base, pathname, { method = 'GET', headers = {}, body } = 
       agent: keepAlive, timeout: 2000 }, res => {
       const chunks = []; res.on('data', chunk => chunks.push(chunk));
       res.on('end', () => {
-        const text = Buffer.concat(chunks).toString();
-        resolve({ status: res.statusCode, headers: res.headers, text, json: () => JSON.parse(text) });
+        const body = Buffer.concat(chunks); const text = body.toString();
+        resolve({ status: res.statusCode, headers: res.headers, body, text, json: () => JSON.parse(text) });
       });
       res.on('error', reject);
     });
@@ -91,6 +93,7 @@ async function fixture(t, { limits = {}, now, dataDir, production = false, botOr
     // The change feed is a held long poll; tests answer it explicitly.
     if (url.pathname === '/v1/changes') { state.feedCalls = (state.feedCalls || 0) + 1; if (state.changes) state.changes(res, call); else reply(res, 404, { error: { code: 'not_found' } }); return; }
     if (state.beforeReply) await state.beforeReply(call);
+    if (state.serverTiming !== undefined) res.setHeader('Server-Timing', state.serverTiming);
     if (state.delayMs) await delay(state.delayMs);
     if (res.destroyed) return;
     if (state.bridgeResponse) { state.bridgeResponse(res, call); return; }
@@ -487,6 +490,52 @@ test('Actual HTTP routes forward exact contract shapes, bounded search and fresh
   assert.equal(f.state.calls.length, before + 5);
 });
 
+test('API responses carry Server-Timing with only fixed metric names and durations', { timeout: 5000 }, async t => {
+  const f = await fixture(t); const device = await f.login(); const headers = { Cookie: device.cookie };
+  f.state.serverTiming = 'bot;dur=12.5, discord;dur=4';
+  const metric = name => `${name};dur=\\d{1,7}\\.\\d`;
+  const full = new RegExp(`^${['portal', 'bridge', 'bot', 'discord'].map(metric).join(', ')}$`);
+  const responses = [];
+  for (const resource of ['/api/bootstrap', `/api/guilds/${guildId}`, `/api/guilds/${guildId}/library`,
+    `/api/guilds/${guildId}/stats?window=7d`, `/api/guilds/${guildId}/recap`]) responses.push([resource, await f.request(resource, { headers })]);
+  responses.push(['commands', await sendCommand(f, device)]);
+  for (const [resource, response] of responses) {
+    assert.equal(response.status, 200, resource);
+    const timing = response.headers['server-timing'];
+    assert.match(timing, full, resource);
+    assert.match(timing, /bot;dur=12\.5, discord;dur=4\.0$/);
+    // Nothing identifying: no snowflakes, names or response content.
+    for (const secretValue of [actorId, guildId, 'listener', 'Private guild', 'revision-1']) assert.equal(timing.includes(secretValue), false);
+    assert.equal(response.headers['timing-allow-origin'], undefined);
+    assert.match(response.headers['content-security-policy'], /default-src 'self'/);
+    assert.equal(response.headers['cache-control'], 'no-store');
+  }
+  // Missing or malformed bot timing is dropped, never forwarded or fatal.
+  for (const upstream of ['bot;dur=abc, evil;dur=5', `discord;dur=1;desc="${actorId}"`, 'x'.repeat(300)]) {
+    f.state.serverTiming = upstream;
+    const response = await f.request(`/api/guilds/${guildId}/library`, { headers });
+    assert.equal(response.status, 200);
+    assert.match(response.headers['server-timing'], new RegExp(`^${metric('portal')}, ${metric('bridge')}$`));
+  }
+  // A live stream may join a read already in flight, so its bot numbers are not merged.
+  f.state.serverTiming = 'bot;dur=12.5, discord;dur=4';
+  const live = await stream(f.base, device.cookie); t.after(live.close);
+  assert.equal(live.res.statusCode, 200);
+  assert.match(live.res.headers['server-timing'], new RegExp(`^${metric('portal')}, ${metric('bridge')}$`));
+  delete f.state.serverTiming;
+  const failed = await f.request(`/api/guilds/${guildId}/nope`, { headers });
+  assert.equal(failed.status, 404); assert.match(failed.headers['server-timing'], new RegExp(`^${metric('portal')}$`));
+  // Static files and sign-in routes are not API responses.
+  assert.equal((await f.request('/')).headers['server-timing'], undefined);
+  assert.equal((await f.request('/health')).headers['server-timing'], undefined);
+});
+
+test('Upstream timing parser keeps only known bot metrics', () => {
+  assert.deepEqual(parseUpstreamTiming('bot;dur=10.25, discord;dur=3, bot;dur=1'), { bot: 11.25, discord: 3 });
+  assert.deepEqual(parseUpstreamTiming('bot;dur=-1, discord;dur=1e9, lane;dur=2, bot ; dur=1'), {});
+  for (const value of [undefined, null, 42, ['bot;dur=1'], '', 'bot;dur=1,'.repeat(40)]) assert.deepEqual(parseUpstreamTiming(value), {});
+});
+
 test('Configuration discovery derives identity from the device session and never accepts client authority', { timeout: 5000 }, async t => {
   const f = await fixture(t); const route = `/api/guilds/${guildId}/configuration`;
   const anonymousCalls = f.state.calls.length;
@@ -677,6 +726,104 @@ test('Completed static GET and HEAD responses preserve subsequent HTTP connectio
     assert.equal(head.headers['content-type'], script.headers['content-type']);
     assert.equal((await f.request('/guilds/123')).text, shell.text);
     assert.equal((await f.request('/api/bootstrap')).status, 401);
+  }
+});
+
+test('Static files are sent precompressed, revalidate with ETags, and only hashed build assets are immutable', { timeout: 5000 }, async t => {
+  const f = await fixture(t);
+  const dist = f.config.webDist;
+  const write = async (name, data) => { await fs.mkdir(path.dirname(path.join(dist, name)), { recursive: true }); await fs.writeFile(path.join(dist, name), data); };
+  const script = Buffer.from(`window.portal = "${'compressible '.repeat(200)}";`);
+  await write('assets/index-Ab_9-xYz.js', script);
+  await write('assets/index-Ab_9-xYz.js.br', brotliCompressSync(script));
+  await write('assets/index-Ab_9-xYz.js.gz', gzipSync(script));
+  await write('index.html.br', brotliCompressSync(await fs.readFile(path.join(dist, 'index.html'))));
+  await write('assets/fallback-cover-320-Dw5JH-Cp.webp', 'RIFF-cover');
+  await write('icons/apple-touch-icon.png', 'png');
+  await write('manifest.webmanifest', '{"name":"Vybatron"}');
+  const get = (pathname, headers = {}, method = 'GET') => f.request(pathname, { method, headers });
+  const scriptPath = '/assets/index-Ab_9-xYz.js';
+
+  // The browser's usual header gets brotli; the body and length are the encoded file's.
+  const brotli = await get(scriptPath, { 'Accept-Encoding': 'gzip, deflate, br, zstd' });
+  assert.equal(brotli.status, 200); assert.equal(brotli.headers['content-encoding'], 'br');
+  assert.equal(brotli.headers.vary, 'Accept-Encoding');
+  assert.equal(Number(brotli.headers['content-length']), brotli.body.length);
+  assert.ok(brotli.body.length < script.length);
+  assert.deepEqual(brotliDecompressSync(brotli.body), script);
+  assert.equal(brotli.headers['cache-control'], 'public, max-age=31536000, immutable');
+  // Chromium treats Pragma: no-cache as "always revalidate", which would defeat immutable.
+  assert.equal(brotli.headers.pragma, undefined);
+  assert.match(brotli.headers.etag, /^"[\w-]{32}-br"$/);
+  // gzip when brotli is refused or unknown; identity when nothing is accepted.
+  for (const accept of ['gzip', 'br;q=0, gzip;q=0.5', 'gzip;q=1, br;q=0.4, *;q=0']) {
+    const gzip = await get(scriptPath, { 'Accept-Encoding': accept });
+    assert.equal(gzip.headers['content-encoding'], 'gzip', accept); assert.deepEqual(gunzipSync(gzip.body), script);
+    assert.match(gzip.headers.etag, /-gz"$/);
+  }
+  for (const accept of [undefined, 'identity', 'br;q=0, gzip;q=0', 'zstd']) {
+    const plain = await get(scriptPath, accept ? { 'Accept-Encoding': accept } : {});
+    assert.equal(plain.headers['content-encoding'], undefined, accept); assert.deepEqual(plain.body, script);
+    assert.equal(Number(plain.headers['content-length']), script.length); assert.equal(plain.headers.vary, 'Accept-Encoding');
+  }
+  const head = await get(scriptPath, { 'Accept-Encoding': 'br' }, 'HEAD');
+  assert.equal(head.status, 200); assert.equal(head.body.length, 0);
+  assert.equal(head.headers['content-encoding'], 'br'); assert.equal(head.headers['content-length'], brotli.headers['content-length']);
+  assert.equal(head.headers.etag, brotli.headers.etag);
+  // Static files ignore byte ranges: the whole representation, never a partial one.
+  const ranged = await get(scriptPath, { Range: 'bytes=0-9' });
+  assert.equal(ranged.status, 200); assert.deepEqual(ranged.body, script);
+
+  // Revalidation: a matching tag (weak or strong, alone or in a list) is a bodyless 304.
+  for (const tag of [brotli.headers.etag, `W/${brotli.headers.etag}`, `"other", ${brotli.headers.etag}`, '*']) {
+    const cached = await get(scriptPath, { 'Accept-Encoding': 'br', 'If-None-Match': tag });
+    assert.equal(cached.status, 304, tag); assert.equal(cached.body.length, 0);
+    assert.equal(cached.headers.etag, brotli.headers.etag); assert.equal(cached.headers.vary, 'Accept-Encoding');
+    assert.equal(cached.headers['cache-control'], 'public, max-age=31536000, immutable');
+  }
+  // Each encoding is its own representation.
+  const otherCoding = await get(scriptPath, { 'Accept-Encoding': 'gzip', 'If-None-Match': brotli.headers.etag });
+  assert.equal(otherCoding.status, 200); assert.equal(otherCoding.headers['content-encoding'], 'gzip');
+  // Recompressing the same source differently is a different representation with a new validator.
+  await write('assets/index-Ab_9-xYz.js.gz', gzipSync(script, { level: 1 }));
+  const recompressed = await get(scriptPath, { 'Accept-Encoding': 'gzip', 'If-None-Match': otherCoding.headers.etag });
+  assert.equal(recompressed.status, 200); assert.notEqual(recompressed.headers.etag, otherCoding.headers.etag);
+  assert.deepEqual(gunzipSync(recompressed.body), script);
+
+  // The shell revalidates on every load and costs one 304 when unchanged, including SPA routes.
+  const shell = await get('/', { 'Accept-Encoding': 'br' });
+  assert.equal(shell.headers['cache-control'], 'no-cache'); assert.equal(shell.headers['content-encoding'], 'br'); assert.equal(shell.headers.pragma, undefined);
+  assert.match(brotliDecompressSync(shell.body).toString(), /Portal shell/);
+  for (const pathname of ['/', '/guilds/123', '/index.html']) {
+    const revalidated = await get(pathname, { 'Accept-Encoding': 'br', 'If-None-Match': shell.headers.etag });
+    assert.equal(revalidated.status, 304, pathname); assert.equal(revalidated.headers['cache-control'], 'no-cache');
+  }
+  const manifest = await get('/manifest.webmanifest');
+  assert.equal(manifest.headers['cache-control'], 'no-cache'); assert.match(manifest.headers.etag, /^"[\w-]{32}"$/);
+  assert.equal((await get('/manifest.webmanifest', { 'If-None-Match': manifest.headers.etag })).status, 304);
+  // A changed file gets a new validator, so a stale copy is never confirmed.
+  await write('manifest.webmanifest', '{"name":"Vybatron 2"}');
+  const changed = await get('/manifest.webmanifest', { 'If-None-Match': manifest.headers.etag });
+  assert.equal(changed.status, 200); assert.notEqual(changed.headers.etag, manifest.headers.etag); assert.equal(changed.text, '{"name":"Vybatron 2"}');
+
+  // Immutable caching needs a Vite-hashed name inside /assets/; public files keep their names.
+  assert.equal((await get('/assets/fallback-cover-320-Dw5JH-Cp.webp')).headers['cache-control'], 'public, max-age=31536000, immutable');
+  assert.equal((await get('/assets/fallback-cover-320-Dw5JH-Cp.webp')).headers.vary, undefined);
+  for (const pathname of ['/icons/apple-touch-icon.png', '/app-abcdefgh.js']) assert.equal((await get(pathname)).headers['cache-control'], 'no-cache', pathname);
+  // Encoded copies are not URLs of their own.
+  for (const pathname of [`${scriptPath}.br`, `${scriptPath}.gz`, '/index.html.br']) assert.equal((await get(pathname)).status, 404, pathname);
+
+  // A copy older than its original belongs to a previous build and is never served.
+  const old = new Date(Date.now() - 60_000);
+  await fs.utimes(path.join(dist, 'index.html.br'), old, old);
+  const stale = await get('/', { 'Accept-Encoding': 'br' });
+  assert.equal(stale.headers['content-encoding'], undefined); assert.match(stale.text, /Portal shell/);
+
+  // The worker script and the share target are never stored, so they carry no validator.
+  for (const pathname of ['/sw.js', '/share?text=x']) {
+    const fresh = await get(pathname, { 'If-None-Match': '*' });
+    assert.equal(fresh.status, 200, pathname); assert.equal(fresh.headers['cache-control'], 'no-store'); assert.equal(fresh.headers.etag, undefined);
+    assert.equal(fresh.headers.pragma, 'no-cache', pathname);
   }
 });
 
@@ -1483,4 +1630,27 @@ test('playlist imports accept a public link, an optional preview id, and pass th
   }
   f.state.commandExtra = { preview: { ...preview, tracks: Array.from({ length: 101 }, () => preview.tracks[0]), toAdd: 101 } };
   assert.equal((await sendCommand(f, device, { command: 'favorite', subcommand: 'import', options: { link } })).status, 503, 'an oversized preview is refused');
+});
+
+test('Server-Timing merges the real bot bridge timing into portal API responses', { timeout: 20_000 }, async t => {
+  const { portalFixture } = await import('../../../tests/portal-fixtures.js');
+  const bot = await portalFixture(t);
+  const f = await fixture(t, { botOrigin: bot.origin, botToken: bot.token });
+  f.state.identity = '200'; const device = await f.login();
+  const full = /^portal;dur=\d+\.\d, bridge;dur=\d+\.\d, bot;dur=\d+\.\d, discord;dur=\d+\.\d$/;
+  for (const [label, response] of [
+    ['bootstrap', await f.request('/api/bootstrap', { headers: { Cookie: device.cookie } })],
+    ['snapshot', await f.request('/api/guilds/100', { headers: { Cookie: device.cookie } })],
+    ['library', await f.request('/api/guilds/100/library', { headers: { Cookie: device.cookie } })],
+    ['pause', await f.request('/api/guilds/100/commands', { method: 'POST', body: '{"command":"pause"}',
+      headers: { Cookie: device.cookie, Origin: origin, 'X-CSRF-Token': device.csrf, 'Content-Type': 'application/json' } })],
+  ]) {
+    assert.equal(response.status, 200, `${label}: ${response.text}`);
+    const timing = response.headers['server-timing'];
+    assert.match(timing, full, label);
+    const metrics = Object.fromEntries(timing.split(', ').map(part => [part.split(';')[0], Number(part.split('=')[1])]));
+    // Each layer contains the one inside it.
+    assert.ok(metrics.portal >= metrics.bridge && metrics.bridge >= metrics.bot && metrics.bot >= metrics.discord, `${label}: ${timing}`);
+    t.diagnostic(`${label}: Server-Timing: ${timing}`);
+  }
 });

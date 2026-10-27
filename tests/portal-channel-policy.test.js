@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { setTimeout as delay } from 'node:timers/promises';
 import { Client, TextChannel, VoiceChannel, ChannelType, PermissionFlagsBits as P } from 'discord.js';
 import { portalFixture, deferred } from './portal-fixtures.js';
-import { createPortalPolicy, requirePlayback } from '../src/portal/policy.js';
+import { createPortalPolicy, IDENTITY_CACHE, requirePlayback } from '../src/portal/policy.js';
 import { trackReference } from '../src/utils/library.js';
 import { track } from './fixtures.js';
 
@@ -47,7 +47,9 @@ test('directory and admin infrastructure/activity read no channels; configuratio
   assert.equal(f.guild.roles.cache.has('500'), true, 'verification does not mutate the late Gateway cache');
   const policy = createPortalPolicy(f.client); t.after(() => policy.close());
   assert.equal((await policy.guild('900', '100', undefined, { channelScope: 'none', fresh: true })).roleIds.has('500'), false);
+  t.mock.timers.enable({ apis: ['Date'], now: Date.now() });
   f.client.application.fetch = async () => ({ owner: f.users.get('901') });
+  t.mock.timers.tick(IDENTITY_CACHE.applicationMs + 1);
   assert.equal((await f.request('/diagnostics', { actor: '900' })).status, 404);
 });
 

@@ -5,10 +5,10 @@ import { fail } from './errors.js';
 // Preserve discord.js prototypes/getters, but never inherit from a live cached
 // instance (Base._clone does). Capture these inputs INSIDE each REST read,
 // before another pending input or channel can let a Gateway patch intervene.
-function copy(value, overrides = {}) {
+function copy(value, overrides = {}, prototype = Object.getPrototypeOf(value)) {
   const descriptors = Object.getOwnPropertyDescriptors(value);
   for (const [key, item] of Object.entries(overrides)) descriptors[key] = { value: item, writable: true, configurable: true, enumerable: true };
-  return Object.create(Object.getPrototypeOf(value), descriptors);
+  return Object.create(prototype, descriptors);
 }
 const permissions = value => new PermissionsBitField(value).freeze();
 export const detachGuild = guild => copy(guild);
@@ -54,13 +54,13 @@ export function detachMember(member) {
   // fails the same-voice guard against this stage's verified channel map.
   const voice = { get channelId() { return member.voice?.channelId || member.voice?.channel?.id || null; } };
   const overrides = { user: detachUser(member.user), voice };
-  if (member instanceof GuildMember) overrides._roles = member._roles.slice();
-  else {
-    // Faithful plain-fixture seam: explicit guild permissions and role IDs are
-    // detached too; the bound view replaces role objects with fresh definitions.
-    overrides.roles = { cache: new Collection(member.roles?.cache || []) };
-    if (member.permissions !== undefined) overrides.permissions = permissions(member.permissions);
-  }
+  // A cache:false fetch returns a clone whose prototype is the live cached
+  // member (Base._clone); detach onto the class prototype instead.
+  if (member instanceof GuildMember) return copy(member, { ...overrides, _roles: member._roles.slice() }, GuildMember.prototype);
+  // Faithful plain-fixture seam: explicit guild permissions and role IDs are
+  // detached too; the bound view replaces role objects with fresh definitions.
+  overrides.roles = { cache: new Collection(member.roles?.cache || []) };
+  if (member.permissions !== undefined) overrides.permissions = permissions(member.permissions);
   return copy(member, overrides);
 }
 function managerView(manager, guild, cache, overrides = {}) {

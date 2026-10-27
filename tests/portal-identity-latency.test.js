@@ -113,7 +113,7 @@ test('user response detaches inside its read before the application-owner wait f
   assert.deepEqual(result.user, { id: '200', bot: false, username: 'Fresh user' }); assert.equal(result.maintainer, true);
 });
 
-test('owner scalar detaches before user wait; ownership transfers are fresh and team members get no grant', async t => {
+test('owner scalar detaches before user wait; fresh reads see ownership transfers and team members get no grant', async t => {
   for (const team of [false, true]) await t.test(team ? 'team owner' : 'user owner', async t => {
     const f = identityFixture(t), user = deferred(); t.after(() => user.resolve(f.user));
     if (team) { f.owner.ownerId = '900'; f.owner.id = '700'; f.owner.members = new Map([['200', f.user]]); }
@@ -121,9 +121,9 @@ test('owner scalar detaches before user wait; ownership transfers are fresh and 
     const reading = f.policy.identity('200'); await tick();
     if (team) f.owner.ownerId = '200'; else f.owner.id = '200';
     user.resolve(f.user); assert.equal((await reading).maintainer, false);
-    assert.equal((await f.policy.identity('200')).maintainer, true);
+    assert.equal((await f.policy.identity('200', { fresh: true })).maintainer, true);
     if (team) f.owner.ownerId = '901'; else f.owner.id = '901';
-    assert.equal((await f.policy.identity('200')).maintainer, false);
+    assert.equal((await f.policy.identity('200', { fresh: true })).maintainer, false);
     assert.equal(f.counts.application, 3);
   });
 });
@@ -132,11 +132,11 @@ test('explicit trusted operators skip application reads but still require a vali
   const f = identityFixture(t, { operatorIds: ['200'] });
   f.client.application.fetch = () => assert.fail('operators must not read application ownership');
   assert.equal((await f.policy.identity('200', { fresh: true })).maintainer, true);
-  f.user.bot = true; await assert.rejects(f.policy.identity('200'), { status: 403 });
+  f.user.bot = true; await assert.rejects(f.policy.identity('200', { fresh: true }), { status: 403 });
   assert.deepEqual(f.counts, { user: 2, application: 0 });
 });
 
-test('overlapping ordinary identities share pending inputs; fresh identities and settled reads never share', async t => {
+test('overlapping ordinary identities share pending inputs; fresh identities never share or reuse a settled answer', async t => {
   const f = identityFixture(t), release = deferred(); t.after(() => release.resolve());
   const user = f.client.users.fetch.bind(f.client.users), owner = f.client.application.fetch.bind(f.client.application);
   f.client.users.fetch = async (...args) => { const result = await user(...args); await release.promise; return result; };
@@ -146,7 +146,10 @@ test('overlapping ordinary identities share pending inputs; fresh identities and
   const fresh = [f.policy.identity('200', { fresh: true }), f.policy.identity('200', { fresh: true })];
   await tick(); assert.deepEqual(f.counts, { user: 3, application: 3 });
   release.resolve(); await Promise.all([...ordinary, ...fresh]);
-  f.owner.id = '200'; assert.equal((await f.policy.identity('200')).maintainer, true);
+  // An ordinary identity reuses the validated answer (ADR-0011); a fresh one reads again.
+  f.owner.id = '200'; assert.equal((await f.policy.identity('200')).maintainer, false);
+  assert.deepEqual(f.counts, { user: 3, application: 3 });
+  assert.equal((await f.policy.identity('200', { fresh: true })).maintainer, true);
   assert.deepEqual(f.counts, { user: 4, application: 4 });
 });
 

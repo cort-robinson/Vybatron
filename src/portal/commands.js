@@ -23,7 +23,9 @@ const DIRECT_CONTROLS = new Set(['pause', 'resume', 'seek', 'filter', 'volume', 
 // Audible controls and song additions take their pre-mutation authority from
 // the Gateway cache when the policy can vouch for it, so the write isn't held
 // behind Discord REST rounds (an addition rechecks after each slow step).
-// Queue edits, Stop and the final disclosure stay fresh.
+// Queue edits and Stop stay fresh. The final disclosure, which runs after the
+// write and only decides what the reply may show, also uses Gateway state when
+// the policy can vouch for it, else a fresh REST round (ADR-0011).
 const GATEWAY_CONTROLS = new Set(['pause', 'resume', 'seek', 'filter', 'volume', 'skip', 'skipto', 'back', 'play', 'playnext']);
 const ROOT_KEYS = new Set(['actorId', 'command', 'subcommand', 'options', 'expectedRevision', 'expectedTrackId', 'expectedHistoryId', 'expectedMixVersion', 'expectedImportId', 'tracks']);
 // Portal-only handlers that are not slash commands, so never appear in publicCommands.
@@ -186,7 +188,7 @@ export async function executePortalCommand(client, policy, revisions, commandMap
   const nativePreflight = DIRECT_CONTROLS.has(command.command)
     && (command.command !== 'filter' || command.values.preset !== undefined);
   const freshContext = (phase = 'native') => commandAuthorityPhase(phase, () => (phase === 'native' && GATEWAY_CONTROLS.has(command.command)
-    && policy.gatewayGuild?.(body.actorId, guildId)) || policy.guild(body.actorId, guildId, undefined, { fresh: true, urgent: command.command === 'stop',
+    && policy.gatewayGuild?.(body.actorId, guildId)) || policy.guild(body.actorId, guildId, undefined, { fresh: true, gateway: phase === 'finalDisclosure', urgent: command.command === 'stop',
     channelScope: ['history', 'replay', 'top', 'mymix'].includes(command.command) ? 'history' : 'session',
     channelIds: command.command === 'settings' && command.subcommand === 'musicchannel' && command.values.channel ? [command.values.channel] : [] }));
   let context = null;

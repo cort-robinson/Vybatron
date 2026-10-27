@@ -52,7 +52,7 @@ which accounted for the 2-5 s outliers.
 
 | Per open stream | Before | After |
 | --- | --- | --- |
-| Bridge reads (each a fresh Discord authorization round) after one portal command | 1-2 (command wake, then the feed wake) | 1 |
+| Bridge reads (each a full authorization check; a Discord REST round before ADR-0011) after one portal command | 1-2 (command wake, then the feed wake) | 1 |
 | Idle traffic, 500-track queue, 10 s polls | a 170 KB snapshot per poll, about 61 MB an hour | a 160-byte `unchanged` event per poll, about 58 KB an hour |
 | A 170 KB snapshot over the wire when the browser accepts gzip | 170 KB | about 13 KB |
 | Bot revision scan, 500-track queue and a full library, every 250 ms | about 29 ms of CPU per guild | about 0.4 ms |
@@ -141,8 +141,9 @@ voice guard, a recheck after the lookup and after each of enqueue, connect and
 start, then the final disclosure): 56 Discord reads and, at the 300-570 ms
 measured per round, several seconds. Every recheck still runs, against Gateway
 state, so leaving or moving voice or losing the DJ role during a slow lookup
-still stops the addition. Only the final disclosure reads REST
-(`tests/portal-gateway-authority.test.js`). Two smaller savings come with it: a
+still stops the addition. Only the final disclosure read REST
+(`tests/portal-gateway-authority.test.js`); since ADR-0011 it reads none once the
+actor's identity is remembered (`tests/portal-authorization-cache.test.js`). Two smaller savings come with it: a
 song chosen from portal search is added from the track that search already
 loaded (kept per listener for five minutes) instead of loading its link again,
 and the Discord controller edit no longer holds the web reply.
@@ -150,8 +151,9 @@ and the Discord controller edit no longer holds the web reply.
 It returns nothing, and the command takes the fresh REST round as before, when
 the cache can't be trusted: no members intent, the guild's shard not Ready
 (missed events replay on resume), or a missing actor, bot member or @everyone
-role. Stop, queue edits, settings, library actions and every final disclosure
-keep fresh REST authority.
+role. Stop, queue edits, settings and library actions keep fresh REST authority
+before their write. Since ADR-0011 the final disclosure, and every protected
+read, also use Gateway state when it can vouch, else a REST round.
 
 The trade-off: a permission change takes effect when its Gateway event
 arrives (normally well under a second) rather than at the next REST read.

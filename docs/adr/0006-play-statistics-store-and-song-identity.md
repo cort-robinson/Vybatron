@@ -1,6 +1,6 @@
 # ADR-0006: Play statistics store and same-song identity
 
-- Status: Accepted
+- Status: Accepted; presence is read for room autoplay since [ADR-0012](0012-room-taste-autoplay.md)
 - Date: 2026-10-08
 
 ## Context
@@ -43,7 +43,7 @@ native dependency is added, so the alpine image needs no build toolchain. `engin
 `autoplay`), played milliseconds, completion (natural end or at least 90%) and early skip (moved
 on before 30 seconds or 40%). Stops, disconnects and source failures are never early skips;
 failures under 30 seconds are discarded. Recovery replays continue the same play. Listeners
-merely present in voice are never read or stored. "Clear my request stats" replaces the user's
+merely present in voice are never stored (ADR-0012 reads presence to choose room autoplay seeds). "Clear my request stats" replaces the user's
 ID with an anonymous `cleared` marker everywhere, so server totals survive without the person.
 
 **Same-song identity.** `src/utils/song-identity.js` derives `artist|title` from catalog metadata

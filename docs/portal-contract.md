@@ -26,7 +26,8 @@ music storage is not shared with bot music JSON. Auth cookies/tokens remain serv
 
 ## JSON types
 
-`Viewer = { id, username, displayName, avatarUrl: string|null, maintainer: boolean }`
+`Viewer = { id, username, displayName, avatarUrl: string|null, maintainer: boolean, autoplayTaste?: boolean }`
+(`autoplayTaste`: whether room autoplay uses this listener's taste, ADR-0012; older bots omit it)
 
 `Guild = { id, name, iconUrl: string|null, admin: boolean }`
 
@@ -217,6 +218,8 @@ Unavailable stats return 503 `stats_unavailable`.
   accepted; omitted means `30d`.
 - POST `/api/stats/requests/clear` -> `{ok:true,cleared:number}`. Same-origin + CSRF, no body.
   Anonymizes the signed-in listener's recorded requests in every server; server totals remain.
+- POST `/api/preferences/autoplay-taste/on|off` -> `{ok:true,enabled:boolean}`. Same-origin +
+  CSRF, no body. Whether room autoplay uses the signed-in listener's taste, in every server.
 - GET `/api/guilds/:guildId/audio/:videoId` (11-character YouTube id): this device's
   player. Audio only (`audio/ogg` Opus from the vybatron-audio Lavalink plugin; the
   YouTube stream route's `audio/mp4` or `audio/webm` as a fallback), served with
@@ -361,6 +364,8 @@ browser access or CORS. Portal sets the trusted session's actorId itself.
   like stats).
 - POST `/v1/stats/requests/clear?actorId=...` -> `{ok:true,cleared:number}`. Requires a fresh
   verified identity; no guild grant is involved.
+- POST `/v1/preferences/autoplay-taste/on|off?actorId=...` -> `{ok:true,enabled:boolean}`. Fresh
+  verified identity, no guild grant. `/radio mytaste` is not accepted on the commands route.
 - GET `/v1/guilds/:guildId/audio/:videoId?actorId=...` -> audio bytes by range (see the
   public route). The bot fetches each song once from Lavalink's `/vybatron/audio/{id}`
   (falling back to `/youtube/stream/{id}` itag 140, then 251), holds it in a 64 MiB

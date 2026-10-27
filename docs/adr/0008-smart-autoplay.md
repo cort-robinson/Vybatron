@@ -1,6 +1,6 @@
 # ADR-0008: Smart autoplay from YouTube mixes
 
-- Status: Accepted
+- Status: Accepted; seeds amended by [ADR-0012](0012-room-taste-autoplay.md) (turns between present listeners)
 - Date: 2026-10-08
 - Supersedes: the "No autoplay" clause of [ADR-0004](0004-sources-and-playback-behavior.md)
 

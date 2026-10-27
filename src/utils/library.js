@@ -7,7 +7,7 @@ import { attachSessionSnapshots } from './sessions.js';
 import { ListeningState, mirrorDigest } from './listening-state.js';
 import { logEvent } from '../runtime.js';
 
-export const LIBRARY_LIMITS = Object.freeze({ favorites: 1000, mixes: 25, mixTracks: 100, queue: 500, history: 100, activity: 200, bytes: 5 * 1024 * 1024, guilds: 1000 });
+export const LIBRARY_LIMITS = Object.freeze({ favorites: 1000, mixes: 25, mixTracks: 100, queue: 500, history: 100, activity: 200, bytes: 5 * 1024 * 1024, guilds: 1000, tasteOptOuts: 10_000 });
 export const HISTORY_RETENTION_MS = 30 * 24 * 60 * 60_000;
 export const ACTIVITY_RETENTION_MS = 24 * 60 * 60_000;
 // One size cap is shared by every server, so warn operators well before it fills.
@@ -84,6 +84,13 @@ function validateDocument(value) {
         if (!Array.isArray(tracks) || tracks.length > limit || tracks.some(t => !validReference(t))) throw new Error('Invalid favorites collection.');
       }
     }
+  }
+  // Listeners who keep their taste out of room autoplay (ADR-0012). Optional:
+  // documents written before it existed omit it, and older bots ignore it.
+  if (value.tasteOptOut !== undefined) {
+    if (legacy || !value.tasteOptOut || typeof value.tasteOptOut !== 'object' || Array.isArray(value.tasteOptOut)
+      || Object.keys(value.tasteOptOut).length > LIBRARY_LIMITS.tasteOptOuts) throw new Error('Invalid autoplay taste preferences.');
+    for (const [userId, optedOut] of Object.entries(value.tasteOptOut)) { assertId(userId); if (optedOut !== true) throw new Error('Invalid autoplay taste preferences.'); }
   }
   if (Object.keys(value.guilds).length > LIBRARY_LIMITS.guilds) throw new Error('Music library server limit reached.');
   for (const [guildId, guild] of Object.entries(value.guilds)) {
@@ -311,6 +318,16 @@ export class MusicLibrary {
   settings(guildId) { assertId(guildId); return { ...DEFAULT_SETTINGS, ...this.document.guilds[guildId]?.settings }; }
   favorites(userId) { assertId(userId); return structuredClone(this.document.favorites[userId] || []); }
   favoriteOverflowCount(userId) { assertId(userId); return this.document.favoriteOverflow[userId]?.length || 0; }
+  // Room autoplay uses a present listener's taste unless they opted out (ADR-0012).
+  tasteInAutoplay(userId) { assertId(userId); return this.document.tasteOptOut?.[userId] !== true; }
+  async setTasteInAutoplay(userId, enabled) {
+    assertId(userId);
+    if (this.tasteInAutoplay(userId) === Boolean(enabled)) return;
+    return this.updateDocument(draft => {
+      if (enabled) { delete draft.tasteOptOut?.[userId]; if (draft.tasteOptOut && !Object.keys(draft.tasteOptOut).length) delete draft.tasteOptOut; }
+      else (draft.tasteOptOut ||= {})[userId] = true;
+    });
+  }
   async writeDocument(draft) {
     validateDocument(draft);
     let json = JSON.stringify(draft);

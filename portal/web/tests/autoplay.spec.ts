@@ -1,6 +1,6 @@
 import { test, expect } from './test';
 import AxeBuilder from '@axe-core/playwright';
-import { gotoSession, mockPortal, suggestedTracks } from './fixtures';
+import { gotoSession, mockPortal, openSettings, suggestedTracks } from './fixtures';
 
 test('autoplay suggestions sit after the queue as their own group and can be promoted, disliked, or removed', async ({ page }) => {
   const fixture = await mockPortal(page, { suggested: true });
@@ -111,4 +111,27 @@ test('phone suggestions keep one action column and put Add to queue in the row m
   // Phone menus open as a bottom sheet outside the row.
   await page.getByRole('group', { name: 'Suggestion options for City Lights' }).getByRole('button', { name: 'Add to queue' }).click();
   await expect.poll(() => fixture.commands.at(-1)?.subcommand).toBe('promote');
+});
+
+test('a listener turns their taste in room autoplay off and back on from Settings', async ({ page }) => {
+  const fixture = await mockPortal(page); await page.goto('/');
+  await openSettings(page);
+  const toggle = page.getByRole('switch', { name: 'Autoplay uses my taste' });
+  await expect(toggle).toHaveAttribute('aria-checked', 'true');
+  await expect(page.getByText(/takes turns between everyone listening/)).toBeVisible();
+  await toggle.click();
+  await expect(toggle).toHaveAttribute('aria-checked', 'false');
+  await expect(page.getByText(/won’t draw on your requests or favorites/)).toBeVisible();
+  await toggle.click();
+  await expect(toggle).toHaveAttribute('aria-checked', 'true');
+  expect(fixture.tastePreferences).toEqual(['/api/preferences/autoplay-taste/off', '/api/preferences/autoplay-taste/on']);
+});
+
+test('Settings hides the taste switch when an older bot does not report it', async ({ page }) => {
+  const fixture = await mockPortal(page);
+  delete fixture.state.bootstrap.viewer.autoplayTaste;
+  await page.goto('/');
+  await openSettings(page);
+  await expect(page.getByRole('switch', { name: 'Performance mode' })).toBeVisible();
+  await expect(page.getByRole('switch', { name: 'Autoplay uses my taste' })).toHaveCount(0);
 });

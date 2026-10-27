@@ -321,6 +321,16 @@ export class PlayStats {
       .map(row => ({ songKey: row.song_key, plays: row.plays, lastPlayedAt: row.last })));
   }
 
+  /** Songs a listener asked for and then skipped early, most recent first. */
+  earlySkips(guildId, userId, { since = 0, visibleChannelIds = [], limit = 50 } = {}) {
+    this.assertAvailable();
+    if (!validId(userId)) return [];
+    this.flush();
+    return this.db.prepare(`SELECT song_key FROM plays
+      WHERE requester_id = ? AND guild_id = ? AND played_at >= ? AND skipped = 1 AND voice_channel_id IN (SELECT value FROM json_each(?))
+      GROUP BY song_key ORDER BY MAX(played_at) DESC LIMIT ?`).all(userId, guildId, since, ids(visibleChannelIds), limit).map(row => row.song_key);
+  }
+
   /** A listener's most requested artists in visible channels, with their top song. */
   topArtists(guildId, userId, { since = 0, visibleChannelIds = [], limit = 10 } = {}) {
     this.assertAvailable();

@@ -27,4 +27,5 @@ Domain terms for Vybatron. One meaning per term; commands, code, and docs use th
 - **Activity** — who changed a server's queue or settings in the last 24 hours (up to 200 entries). Favorites are never recorded.
 - **Session checkpoint** — the saved queue, position, volume, pause and repeat state of a server's player, restorable for 72 hours after an outage or restart. Stop discards it.
 - **Session mix** — a shared mix saved from the live session: songs already played, then the current song and queue (`/mix save session:true`, Save as mix on Stop).
+- **Room taste** — autoplay taking turns between the listeners in the bot's voice channel who can hear it and haven't opted out (`/radio mytaste`), seeding each pick from one listener's requests and favorites (ADR-0012). Read at each pick; presence is never stored.
 - **Request stats** — a listener's own requests: top tracks, top artists, and favorites not requested recently. "Clear my request stats" anonymizes them everywhere.

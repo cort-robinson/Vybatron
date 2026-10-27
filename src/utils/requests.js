@@ -95,6 +95,13 @@ export function commandMutationPolicy(name, action) {
     ...(addition && { ordered: true }), ...(name === 'play' && { lookupOutsideLane: true }) };
 }
 
+// A history Replay button queues a song like /replay, so it keeps its place
+// among additions too.
+export function componentMutationPolicy(customId) {
+  return { playback: !customId.includes('favorite') && !customId.startsWith('import:'), urgent: customId === 'player:v1:stop-confirm',
+    ...(/^history:.*:replay:/.test(customId) && { ordered: true }) };
+}
+
 function activityState(interaction) {
   if (!interaction.client.library?.recordActivity || interaction.commandName === 'favorite' || interaction.customId?.includes('favorite')) return null;
   const name = interaction.commandName;

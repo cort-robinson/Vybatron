@@ -4,6 +4,7 @@ import { setImmediate as tick } from 'node:timers/promises';
 import { ChannelType, Client, GatewayIntentBits, IntentsBitField, OverwriteType, PermissionFlagsBits as P, Status, TextChannel, VoiceChannel } from 'discord.js';
 import { deferred, portalFixture } from './portal-fixtures.js';
 import { createPortalPolicy, visible } from '../src/portal/policy.js';
+import { execute as settings } from '../src/commands/settings.js';
 
 // ADR-0011 trusts the discord.js cache that Gateway events keep current. A
 // forced REST read started before a Gateway update can answer after it; these
@@ -76,14 +77,20 @@ test('a REST member read that answers after a role removal does not restore the 
 
 test('a REST channel read that answers after an overwrite update makes that channel untrusted until a clean read', async t => {
   const { f, guild, policy, answers, hold, channelData } = await realGuild(t);
-  assert.equal(visible(policy.gatewayGuild('200', '100'), guild.channels.cache.get('400')) || true, true);
+  const before = policy.gatewayGuild('200', '100');
+  assert.equal(visible(before, before.channels.get('400')), true);
   const hidden = [{ id: '200', type: OverwriteType.Member, allow: '0', deny: String(P.ViewChannel) }];
   const gate = hold('/channels/400');
   const reading = policy.guild('200', '100', undefined, { fresh: true }); await tick();
   // CHANNEL_UPDATE hiding the controller channel from the actor.
   const channel = guild.channels.cache.get('400'); const old = channel._clone(); channel._patch(channelData('400', ChannelType.GuildText, hidden));
   f.client.emit('channelUpdate', old, channel);
-  gate.resolve(); await reading;
+  assert.equal(policy.gatewayGuild('200', '100'), null, 'untrusted as soon as the update crosses the pending read');
+  // The instant discord.js writes the late answer, before the read's caller resumes.
+  const patch = channel._patch.bind(channel); let duringWrite;
+  channel._patch = data => { patch(data); duringWrite = policy.gatewayGuild('200', '100'); };
+  gate.resolve(); await reading; channel._patch = patch;
+  assert.equal(duringWrite, null, 'no Gateway grant in the gap between the cache write and the policy continuation');
   // discord.js really did patch the older overwrites back into the cache.
   assert.equal(guild.channels.cache.get('400').permissionOverwrites.cache.has('200'), false);
   assert.equal(policy.gatewayGuild('200', '100'), null, 'the Gateway no longer vouches for that channel');
@@ -93,4 +100,19 @@ test('a REST channel read that answers after an overwrite update makes that chan
   // That clean read rewrote the cache with current data, so the Gateway vouches again.
   const restored = policy.gatewayGuild('200', '100');
   assert.ok(restored); assert.equal(visible(restored, restored.channels.get('400')), false);
+});
+
+test('native /settings musicchannel reads its channel through the same tracking', async t => {
+  const { f, guild, policy, hold, channelData } = await realGuild(t);
+  const hidden = [{ id: '200', type: OverwriteType.Member, allow: '0', deny: String(P.ViewChannel) }];
+  const gate = hold('/channels/400'); const replies = [];
+  const interaction = { client: f.client, guildId: '100', guild, user: { id: '202' }, member: null, memberPermissions: null,
+    options: { getSubcommand: () => 'musicchannel', getChannel: () => guild.channels.cache.get('400') }, reply: async payload => { replies.push(payload); } };
+  const running = settings(interaction); await tick();
+  const channel = guild.channels.cache.get('400'); const old = channel._clone(); channel._patch(channelData('400', ChannelType.GuildText, hidden));
+  f.client.emit('channelUpdate', old, channel);
+  gate.resolve(); await running;
+  assert.equal(guild.channels.cache.get('400').permissionOverwrites.cache.has('200'), false, 'the late answer rewrote the cache');
+  assert.equal(policy.gatewayGuild('200', '100'), null, 'so Gateway authority refuses that channel');
+  assert.equal(replies.length, 1);
 });

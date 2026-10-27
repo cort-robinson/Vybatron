@@ -4,6 +4,7 @@ import { fail } from './errors.js';
 import { commandAuthorityInput } from './timing.js';
 import { savedSession } from '../utils/sessions.js';
 import { bindAuthority, detachChannel, detachGuildResponse, detachMember, detachUser } from './authority.js';
+import { channelTrusted, trackChannelReads, trackedChannelRead } from '../utils/channel-reads.js';
 
 export const TEXT_TYPES = new Set([ChannelType.GuildText, ChannelType.GuildAnnouncement]);
 export const VOICE_TYPES = new Set([ChannelType.GuildVoice, ChannelType.GuildStageVoice]);
@@ -58,20 +59,11 @@ export function createPortalPolicy(client, { operatorIds = [], now = () => Date.
   const remembered = { users: new Map(), owner: null, epoch: 0 };
   const forgetUser = user => { if (user?.id) remembered.users.delete(user.id); remembered.epoch++; };
   const onUserUpdate = (_old, user) => forgetUser(user);
-  // A forced channel read writes its response into the discord.js cache that
-  // gatewayView trusts. A response that crossed a Gateway update for the same
-  // channel may carry the older overwrites, so that channel is untrusted for
-  // Gateway authority until a later read completes with no update in between.
-  // (Member reads use cache:false and never write the cache.)
-  const channelChanges = new Map(); const untrusted = new Set();
-  const channelKey = (guildId, id) => `${guildId}:${id}`;
-  const onChannel = channel => {
-    if (!validId(channel?.guildId) || !validId(channel?.id)) return;
-    const key = channelKey(channel.guildId, channel.id); channelChanges.set(key, (channelChanges.get(key) || 0) + 1);
-  };
-  const onChannelUpdate = (_old, channel) => onChannel(channel);
-  const listeners = [['userUpdate', onUserUpdate], ['channelCreate', onChannel], ['channelUpdate', onChannelUpdate], ['channelDelete', onChannel]];
-  for (const [event, listener] of listeners) client.on?.(event, listener);
+  client.on?.('userUpdate', onUserUpdate);
+  // Forced channel reads write the cache gatewayView trusts; they go through
+  // trackedChannelRead so a crossed Gateway update makes that channel
+  // untrusted at once. Member reads use cache:false and never write it.
+  trackChannelReads(client);
   const ordinaryChannels = channelPool(4);
   const urgentChannels = channelPool(2);
   const read = async (input, key, fetch, fresh, urgent) => {
@@ -171,9 +163,7 @@ export function createPortalPolicy(client, { operatorIds = [], now = () => Date.
         // cache:false can return an existing channel WITHOUT applying REST data.
         // Detach immediately inside the shared read, then bind each caller's
         // channel to its own captured guild/member/role authority below.
-        const key = channelKey(guildId, id); const seen = channelChanges.get(key) || 0;
-        const channel = await server.channels.fetch(id, { force: true });
-        if ((channelChanges.get(key) || 0) !== seen) untrusted.add(key); else untrusted.delete(key);
+        const channel = await trackedChannelRead(client, guildId, [id], () => server.channels.fetch(id, { force: true }));
         return channel?.id === id && channel.guildId === guildId && (TEXT_TYPES.has(channel.type) || VOICE_TYPES.has(channel.type)) ? detachChannel(channel) : null;
       } catch (error) {
         if ([10003, 50001, 50013].includes(Number(error?.code)) || error?.code === 'GuildChannelUnowned') return null;
@@ -234,13 +224,7 @@ export function createPortalPolicy(client, { operatorIds = [], now = () => Date.
       if (channelScope === 'none') return new Map();
       if (channelScope === 'configuration') {
         const inventory = await read('channels', `channels:${guildId}`, async () => {
-          const prefix = `${guildId}:`;
-          const seen = new Map([...channelChanges].filter(([key]) => key.startsWith(prefix)));
-          const fetched = await server.channels.fetch();
-          for (const id of fetched.keys()) {
-            const key = channelKey(guildId, id);
-            if ((channelChanges.get(key) || 0) !== (seen.get(key) || 0)) untrusted.add(key); else untrusted.delete(key);
-          }
+          const fetched = await trackedChannelRead(client, guildId, null, () => server.channels.fetch());
           return new Map([...fetched].map(([id, channel]) => [id, detachChannel(channel)]));
         }, fresh, urgent);
         return new Map([...inventory].filter(([id, channel]) => channel?.id === id && channel.guildId === guildId).map(([id, channel]) => [id, stage.bindChannel(channel)]));
@@ -295,7 +279,7 @@ export function createPortalPolicy(client, { operatorIds = [], now = () => Date.
     };
     if (channelScope !== 'none') {
       for (const id of sessionIds(guildId, actorVoiceId(stage.member), channelIds, channelScope === 'history')) {
-        if (untrusted.has(channelKey(guildId, id))) return null;
+        if (!channelTrusted(client, guildId, id)) return null;
         const channel = cached(id); if (channel) stage.channels.set(id, channel);
       }
     }
@@ -311,7 +295,7 @@ export function createPortalPolicy(client, { operatorIds = [], now = () => Date.
   const gatewayGuild = (actorId, guildId) => gatewayView(actorId, guildId, null);
   return { ready, identity, guild, gatewayGuild, close() {
     pendingReads.clear(); remembered.users.clear(); remembered.owner = null; remembered.epoch++;
-    for (const [event, listener] of listeners) client.off?.(event, listener);
+    client.off?.('userUpdate', onUserUpdate);
   } };
 }
 

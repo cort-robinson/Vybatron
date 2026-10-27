@@ -52,12 +52,14 @@ update can answer after it, and discord.js writes forced fetches into the same c
 REST round reads members (actor and bot) with `cache: false`, which patches a detached clone and
 leaves the cache to Gateway events: a late answer can't restore a kicked member or a removed
 role. discord.js can't fetch a channel fresh without writing it (`cache: false` returns the
-unpatched cached object), so a channel read that overlapped a `channelCreate`/`channelUpdate`/
-`channelDelete` for that channel marks it untrusted, and Gateway authority refuses any read that
-needs it until a later read of that channel completes with no update in between (a deleted
-channel never does, so it stays on REST). Native `/settings musicchannel` reads its bot member
-with `cache: false` too; its forced target-channel read is the one remaining cache write outside
-this tracking, a race needing an overwrite change on that channel within that read's round trip.
+unpatched cached object), so every forced channel read (the policy's, its configuration list,
+and native `/settings musicchannel`) runs through `src/utils/channel-reads.js`. A
+`channelCreate`/`channelUpdate`/`channelDelete` that arrives while a read of that channel is in
+flight makes the channel untrusted at once, before the late answer can be written, and it stays
+untrusted after that read lands until a later read of it completes with no update in between (a
+deleted channel never does, so it stays on REST). Gateway authority refuses any read or reply
+that needs an untrusted channel. Native `/settings musicchannel` also reads its bot member with
+`cache: false`. Other channel fetches in the bot are unforced and only fill a missing entry.
 
 The final disclosure of every command (`commands.js`, `finalDisclosure`) uses Gateway state when
 it can vouch, otherwise a **fresh** REST round as before. It decides only what the reply may show;

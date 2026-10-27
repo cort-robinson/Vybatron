@@ -158,3 +158,11 @@ test('every addition keeps its place among additions; only /play may look up out
     assert.equal(commandMutationPolicy(name, action).ordered, undefined, `${name} doesn't wait behind additions`);
   }
 });
+
+test('a Discord history Replay button keeps its place among additions; other buttons do not wait', async () => {
+  const { componentMutationPolicy } = await import('../src/utils/requests.js');
+  assert.equal(componentMutationPolicy('history:v2:replay:abc').ordered, true);
+  for (const id of ['player:v1:skip', 'player:v1:toggle', 'queue:v2:jump:1', 'player:v1:stop-confirm']) assert.equal(componentMutationPolicy(id).ordered, undefined, id);
+  assert.deepEqual(componentMutationPolicy('player:v1:stop-confirm'), { playback: true, urgent: true });
+  assert.deepEqual(componentMutationPolicy('player:v2:favorite:x'), { playback: false, urgent: false });
+});

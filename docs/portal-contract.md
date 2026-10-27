@@ -225,10 +225,16 @@ Unavailable stats return 503 `stats_unavailable`.
   `Range: bytes=a-b` is honored (206) or rejected (416). Membership only, like search.
   Only audio bodies up to 40 MiB pass through; errors keep the sanitized JSON shape. A
   separate four-stream pool keeps slow phones off command slots.
-- GET `/api/guilds/:guildId/events`: credentialed same-origin SSE. `event:snapshot`
+- GET `/api/guilds/:guildId/events[?protocol=2]`: credentialed same-origin SSE. `event:snapshot`
   carries GuildSnapshot. Heartbeat comments. Permission/session loss closes
   stream; state-unavailable must not replay writes. Bound connections, polling,
   buffers, requests and payloads; fresh policy before protected data/mutations.
+  With `protocol=2` a fresh read that would show this viewer nothing new sends
+  `event:unchanged` with `{revision, ordering}` instead of the snapshot; it
+  renews freshness only when the page shows exactly the stream's last snapshot.
+  Every stream ends its lifetime with `event:rotate` (`{}`) before closing;
+  pages open the next stream at once. Streams and JSON replies other than
+  bootstrap are gzip/brotli compressed when the browser accepts it.
 
 Mutations require `X-CSRF-Token` from bootstrap and exact same-origin checks.
 Use HttpOnly/Secure/SameSite cookies and no-store API/auth responses. Do not
@@ -361,11 +367,15 @@ browser access or CORS. Portal sets the trusted session's actorId itself.
   while it arrives, and serves ranges from it once complete. Authority comes from the
   Gateway cache when it can vouch, else a fresh REST round.
 - GET `/health` (still authenticated) -> `{ready:boolean}`.
-- GET `/v1/changes?instance=...&after=...` -> `{instanceId:string,sequence:number,reset:boolean,guildIds:string[]}`.
+- GET `/v1/changes?instance=...&after=...` -> `{instanceId:string,sequence:number,reset:boolean,guildIds:string[],sequences:number[]}`.
   Private wake-up long poll (held up to 20 s). Carries guild IDs only, never
   actor, track or permission data; consumers must perform their own fresh
   authorized read for each woken stream. An unknown instance or expired cursor
-  returns `reset:true`. See [instant controls](portal-instant-controls.md).
+  returns `reset:true`. `sequences[i]` is the newest entry for `guildIds[i]`.
+  While the feed has a consumer, snapshot reads and successful commands answer
+  with `X-Change-Cursor: <instanceId>:<sequence>`: a snapshot read reflects every
+  entry up to that sequence (taken before its authorization), and a command's
+  value is the entry it published. See [instant controls](portal-instant-controls.md).
 - GET `/v1/latency?actorId=...` -> private maintainer-only direct-control timings:
   `{retentionSeconds:900,capacity:32,records:[{at:number,command:pause|resume|seek|filter|volume,success:boolean,totalMs:number,readyForMutationMs:number|null,authorization:{count:number,ms:number},playback:{count:number,ms:number},presentation:{count:number,ms:number}}]}`.
   Requires fresh verified maintainer identity in addition to bridge authentication.

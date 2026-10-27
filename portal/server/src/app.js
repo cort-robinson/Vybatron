@@ -1,9 +1,11 @@
 import http from 'node:http';
 import path from 'node:path';
+import { createHash } from 'node:crypto';
 import { promises as fs, constants as fsConstants } from 'node:fs';
 import { LIMITS, isLoopback } from './config.js';
 import { SessionStore, randomToken, tokenHash } from './store.js';
-import { Transport, isRetryableReadError } from './transport.js';
+import { Transport, changeCursor, isRetryableReadError } from './transport.js';
+import { eventStream, sendJson } from './compression.js';
 import { validateCommand } from './commands.js';
 import { HttpError, RateLimiter, busy, invalid, unauthorized, unavailable, cookie, setCookie,
   equal, sameOrigin, securityHeaders, readBody, json, sendError } from './security.js';
@@ -35,11 +37,28 @@ function parseUrl(raw, config, limits) {
   return { url, pathname };
 }
 
-function snapshotFrame(snapshot, guildId, limits) {
+function validSnapshot(snapshot, guildId) {
   if (snapshot?.guild?.id !== guildId || typeof snapshot.revision !== 'string' || !snapshot.session) throw unavailable();
+}
+// One serialization measures and carries a snapshot.
+function serializedSnapshot(snapshot, guildId, limits) {
+  validSnapshot(snapshot, guildId);
   const data = JSON.stringify(snapshot);
   if (Buffer.byteLength(data) > limits.snapshotBytes) throw unavailable();
-  return `event:snapshot\ndata:${data}\n\n`;
+  return data;
+}
+const snapshotFrame = (snapshot, guildId, limits) => `event:snapshot\ndata:${serializedSnapshot(snapshot, guildId, limits)}\n\n`;
+// What a viewer sees apart from projection order and the playback position,
+// which moves on its own and is checked separately against the elapsed time.
+// While a session plays or is paused, pages hide the saved checkpoint's time
+// and position, which the bot rewrites every 30 s of playback; they ride
+// along with the next snapshot, and leaving that state always sends one.
+function viewFingerprint(snapshot) {
+  const { ordering: _ordering, session, savedSession, ...rest } = snapshot;
+  const { positionMs: _position, ...view } = session;
+  const saved = ['playing', 'paused'].includes(session.status) && savedSession && typeof savedSession === 'object'
+    ? { ...savedSession, savedAt: undefined, positionMs: undefined } : savedSession;
+  return createHash('sha256').update(JSON.stringify([rest, view, saved])).digest('base64');
 }
 
 function configurationData(data, guildId) {
@@ -136,18 +155,24 @@ export async function createPortalServer(config, testOptions = {}) {
     } finally { await handle?.close(); }
   }
 
-  async function events(req, res, guildId, token, session, signal) {
+  // `quiet` streams (`?protocol=2`, sent by current pages) skip a snapshot that
+  // would show this viewer nothing new: a short `unchanged` event carrying the
+  // fresh read's revision and ordering renews the page's freshness instead.
+  async function events(req, res, guildId, token, session, signal, quiet) {
     if (streams.size >= limits.streams || [...streams].filter(stream => stream.sessionKey === session.key).length >= limits.streamsPerSession) throw busy();
     const record = { sessionKey: session.key, guildId, close: null, wake: null, reschedule: null }; streams.add(record);
-    let pollTimer; let heartbeatTimer; let drainTimer; let drainWait; let ended = false; let writing = false; let unblock;
-    const began = now(); let failures = 0; let reading = true; let pendingWake = false;
+    let pollTimer; let heartbeatTimer; let drainTimer; let rotateTimer; let drainWait; let ended = false; let writing = false; let unblock; let out;
+    const began = now(); let failures = 0; let reading = true; let pendingWake = false; let pendingCursor = null; let rotating = false;
+    // The bot change-feed cursor of the last successful read, and the last
+    // snapshot this browser received on a quiet stream.
+    let seen = null; let baseline = null;
     const pollController = new AbortController();
     const pollSignal = AbortSignal.any([signal, pollController.signal]);
     const close = () => {
       if (ended) return;
-      ended = true; clearTimeout(pollTimer); clearTimeout(heartbeatTimer); clearTimeout(drainTimer); streams.delete(record);
+      ended = true; clearTimeout(pollTimer); clearTimeout(heartbeatTimer); clearTimeout(drainTimer); clearTimeout(rotateTimer); streams.delete(record);
       pollController.abort();
-      unblock?.(); if (!res.writableEnded) res.end();
+      unblock?.(); if (!res.writableEnded) { if (out) out.end(); else res.end(); }
     };
     record.close = close;
     res.once('close', close);
@@ -157,14 +182,14 @@ export async function createPortalServer(config, testOptions = {}) {
       if (protectedState && !active()) return false;
       writing = true;
       try {
-        if (res.write(frame)) return true;
+        if (out.write(frame)) return true;
         drainWait = new Promise(resolve => {
           let settled = false;
           const finish = success => {
-            if (settled) return; settled = true; clearTimeout(drainTimer); res.off('drain', onDrain); unblock = null; resolve(success);
+            if (settled) return; settled = true; clearTimeout(drainTimer); out.target.off('drain', onDrain); unblock = null; resolve(success);
           };
           const onDrain = () => finish(true); unblock = () => finish(false);
-          res.once('drain', onDrain);
+          out.target.once('drain', onDrain);
           drainTimer = setTimeout(() => { res.destroy(); close(); finish(false); }, limits.drainMs); drainTimer.unref();
         });
         return await drainWait;
@@ -175,16 +200,25 @@ export async function createPortalServer(config, testOptions = {}) {
       return `event:error\ndata:${JSON.stringify({ error: { status: safe.status, code: safe.code, message: safe.message } })}\n\n`;
     };
     const fail = async error => {
-      try { if (!writing) await write(errorFrame(error)); } finally { close(); }
+      try { if (!writing && out) await write(errorFrame(error)); } finally { close(); }
+    };
+    // At the end of its lifetime the stream asks the page to open a new one
+    // at once instead of dropping it. Pages without a handler see the close
+    // as before and reconnect through a fresh read.
+    const rotate = async () => {
+      if (rotating || ended) return;
+      rotating = true; clearTimeout(pollTimer); clearTimeout(heartbeatTimer);
+      try { if (out) await write('event:rotate\ndata:{}\n\n'); } finally { close(); }
     };
     const active = () => {
       if (ended || signal.aborted) return false;
       if (!store.get(token)) throw unauthorized();
-      if (closing || now() - began >= limits.streamLifetimeMs) { close(); return false; }
+      if (closing) { close(); return false; }
+      if (now() - began >= limits.streamLifetimeMs) { void rotate(); return false; }
       return true;
     };
     const schedule = () => {
-      if (ended) return;
+      if (ended || rotating) return;
       const wait = Math.min(limits.pollRetryMaxMs, limits.pollMs * 2 ** Math.min(failures, 10));
       // The feed wakes this stream on change; polling then only bounds how long
       // Discord-side revocation can stay unobserved.
@@ -192,24 +226,50 @@ export async function createPortalServer(config, testOptions = {}) {
       clearTimeout(pollTimer);
       pollTimer = setTimeout(tick, pendingWake && !failures ? 0 : Math.max(base, wait)); pollTimer.unref();
     };
+    // A wake names the change-feed position of its change when the bot reports
+    // one. A read whose authorization began after that position already covers it.
+    const covered = cursor => Boolean(cursor && seen && cursor.instance === seen.instance && cursor.sequence <= seen.sequence);
     record.reschedule = () => { if (!ended && !reading && !failures) schedule(); };
-    record.wake = () => {
-      if (ended || pendingWake) return;
-      // One bounded notification per stream. A read consumes it only when it
-      // starts, so commands completed during that read require another read.
-      pendingWake = true;
+    record.wake = (cursor = null) => {
+      if (ended || covered(cursor)) return;
+      // One bounded notification per stream. Wakes during a read keep the
+      // newest position, so the read that settles them decides once whether
+      // a follow-up is needed; a wake without a position always needs one.
+      if (!pendingWake) { pendingWake = true; pendingCursor = cursor; }
+      else if (!pendingCursor || !cursor || pendingCursor.instance !== cursor.instance) pendingCursor = null;
+      else if (cursor.sequence > pendingCursor.sequence) pendingCursor = cursor;
       if (!reading && !failures) schedule();
       // A retry timer is never reset/shortened by commands during backoff.
+    };
+    const settle = snapshot => {
+      seen = changeCursor(snapshot) || null;
+      if (pendingWake && covered(pendingCursor)) { pendingWake = false; pendingCursor = null; }
     };
     const readFailure = async error => {
       if (!active()) return;
       // A read error invalidates the client's freshness, but transient bridge
       // failures must not create reconnect/probe storms. No snapshot is retained
       // or resent: every recovery attempt performs fresh trusted policy checks.
+      baseline = null;
       if (isRetryableReadError(error)) {
         failures++;
         await write(errorFrame(error));
       } else await fail(error);
+    };
+    // A snapshot, or on a quiet stream `unchanged` when this viewer would see
+    // the same thing and the position is where the page expects it.
+    const deliver = async snapshot => {
+      validSnapshot(snapshot, guildId);
+      if (!quiet || !snapshot.ordering || typeof snapshot.ordering !== 'object') return await write(snapshotFrame(snapshot, guildId, limits), true);
+      const fingerprint = viewFingerprint(snapshot);
+      const { positionMs, status } = snapshot.session;
+      const expected = baseline && baseline.positionMs + (baseline.playing ? now() - baseline.at : 0);
+      if (baseline?.fingerprint === fingerprint && Math.abs(positionMs - expected) <= limits.positionDriftMs) {
+        return await write(`event:unchanged\ndata:${JSON.stringify({ revision: snapshot.revision, ordering: snapshot.ordering })}\n\n`, true);
+      }
+      if (!(await write(snapshotFrame(snapshot, guildId, limits), true))) return false;
+      baseline = { fingerprint, positionMs, playing: status === 'playing', at: now() };
+      return true;
     };
     const heartbeat = async () => {
       try {
@@ -222,7 +282,7 @@ export async function createPortalServer(config, testOptions = {}) {
     };
     const tick = async () => {
       if (reading || ended) return;
-      reading = true; pendingWake = false;
+      reading = true; pendingWake = false; pendingCursor = null;
       try {
         if (!active()) return;
         // The bridge performs fresh Discord policy evaluation on every poll,
@@ -231,7 +291,8 @@ export async function createPortalServer(config, testOptions = {}) {
         try { snapshot = await transport.bridge(`/v1/guilds/${guildId}`, session.actorId, { signal: pollSignal, shareRead: true }); }
         catch (error) { await readFailure(error); return; }
         if (!active()) return;
-        if (!(await write(snapshotFrame(snapshot, guildId, limits), true))) return;
+        settle(snapshot);
+        if (!(await deliver(snapshot))) return;
         failures = 0;
       } catch (error) { await fail(error); }
       finally { reading = false; schedule(); }
@@ -245,14 +306,21 @@ export async function createPortalServer(config, testOptions = {}) {
       }
       if (!active()) return;
       const frame = initialError ? errorFrame(initialError) : snapshotFrame(initial, guildId, limits);
-      res.writeHead(200, { 'Content-Type': 'text/event-stream; charset=utf-8', 'X-Accel-Buffering': 'no', Connection: 'keep-alive' });
+      if (!initialError) settle(initial);
+      out = eventStream(req, res);
+      res.writeHead(200, { 'Content-Type': 'text/event-stream; charset=utf-8', 'X-Accel-Buffering': 'no', Connection: 'keep-alive',
+        Vary: 'Accept-Encoding', ...(out.encoding && { 'Content-Encoding': out.encoding }) });
       req.socket.setTimeout(0);
       if (await write(`retry: 5000\n\n: connected\n\n${frame}`, !initialError)) {
         failures = initialError ? 1 : 0;
+        if (!initialError && quiet) {
+          baseline = { fingerprint: viewFingerprint(initial), positionMs: initial.session.positionMs, playing: initial.session.status === 'playing', at: now() };
+        }
         heartbeatTimer = setTimeout(heartbeat, limits.heartbeatMs); heartbeatTimer.unref();
+        rotateTimer = setTimeout(rotate, Math.max(0, limits.streamLifetimeMs - (now() - began))); rotateTimer.unref();
       }
     } catch (error) {
-      clearTimeout(pollTimer); clearTimeout(heartbeatTimer); clearTimeout(drainTimer); streams.delete(record); ended = true;
+      clearTimeout(pollTimer); clearTimeout(heartbeatTimer); clearTimeout(drainTimer); clearTimeout(rotateTimer); streams.delete(record); ended = true;
       pollController.abort();
       res.off('close', close); throw error;
     } finally { reading = false; schedule(); }
@@ -267,9 +335,13 @@ export async function createPortalServer(config, testOptions = {}) {
         if (closing) return;
         // A reset, new bot instance or recovered feed may have missed changes.
         const all = data.reset || data.instanceId !== instance || !feedLive;
-        const changed = new Set(data.guildIds);
+        // Each guild's newest entry lets a stream skip a change its last read covered.
+        const changed = new Map(data.guildIds.map((guildId, index) => [guildId, data.sequences?.[index] ?? data.sequence]));
         feedLive = true; failures = 0; instance = data.instanceId; after = data.sequence;
-        for (const stream of streams) if (all || changed.has(stream.guildId)) stream.wake();
+        for (const stream of streams) {
+          if (all) stream.wake();
+          else if (changed.has(stream.guildId)) stream.wake({ instance: data.instanceId, sequence: changed.get(stream.guildId) });
+        }
       } catch {
         if (closing || signal.aborted) return;
         if (feedLive) { feedLive = false; for (const stream of streams) stream.reschedule(); }
@@ -338,13 +410,15 @@ export async function createPortalServer(config, testOptions = {}) {
         const result = await transport.bridge(`/v1/guilds/${guildId}/commands`, session.actorId, { command, signal: controller.signal });
         if (!store.get(token)) throw unauthorized();
         if (result.ok !== true || typeof result.message !== 'string' || result.message.length > 2000) throw unavailable();
-        snapshotFrame(result.snapshot, guildId, limits);
+        const snapshotJson = serializedSnapshot(result.snapshot, guildId, limits);
         transport.fenceSharedReads(`/v1/guilds/${guildId}`);
         // Wake only existing same-guild streams; each uses its own trusted actor
         // and fresh bridge read. Never distribute the command actor's snapshot.
-        for (const stream of streams) if (stream.guildId === guildId) stream.wake();
+        // The bot's feed reports the same change; the cursor lets each stream read once.
+        const cursor = changeCursor(result);
+        for (const stream of streams) if (stream.guildId === guildId) stream.wake(cursor);
         const preview = result.preview === undefined ? undefined : importPreview(result.preview);
-        json(res, 200, { ok: true, message: result.message, snapshot: result.snapshot, ...(preview && { preview }) }); return;
+        await sendJson(req, res, 200, `{"ok":true,"message":${JSON.stringify(result.message)},"snapshot":${snapshotJson}${preview ? `,"preview":${JSON.stringify(preview)}` : ''}}`); return;
       }
       admitOrdinary();
       if (pathname === '/health' && req.method === 'GET') {
@@ -445,15 +519,19 @@ export async function createPortalServer(config, testOptions = {}) {
           queryOnly(url, []);
           const data = await transport.bridge(`/v1/guilds/${videoLyrics[1]}/lyrics/${videoLyrics[2]}`, session.actorId, { signal: controller.signal });
           if (!store.get(token)) throw unauthorized();
-          json(res, 200, data); return;
+          await sendJson(req, res, 200, JSON.stringify(data)); return;
         }
         const match = /^\/api\/guilds\/(\d{1,20})(?:\/(configuration|library|search|commands|diagnostics|activity|events|stats|recap|lyrics))?$/.exec(pathname);
         if (!match) throw notFound();
         const [, guildId, resource] = match;
-        queryOnly(url, resource === 'search' ? ['query'] : ['stats', 'recap'].includes(resource) ? ['window'] : []);
+        queryOnly(url, resource === 'search' ? ['query'] : ['stats', 'recap'].includes(resource) ? ['window'] : resource === 'events' ? ['protocol'] : []);
         const endpoint = `/v1/guilds/${guildId}${resource ? `/${resource}` : ''}`;
         if (req.method !== 'GET' || resource === 'commands') throw notFound();
-        if (resource === 'events') { await events(req, res, guildId, token, session, controller.signal); return; }
+        if (resource === 'events') {
+          const protocol = url.searchParams.get('protocol');
+          if (protocol !== null && protocol !== '2') throw invalid();
+          await events(req, res, guildId, token, session, controller.signal, protocol === '2'); return;
+        }
         const query = {};
         if (resource === 'search') {
           const value = url.searchParams.get('query');
@@ -472,9 +550,8 @@ export async function createPortalServer(config, testOptions = {}) {
         }
         const data = await transport.bridge(endpoint, session.actorId, { query, signal: controller.signal });
         if (!store.get(token)) throw unauthorized();
-        if (!resource) snapshotFrame(data, guildId, limits);
         if (resource === 'configuration') configurationData(data, guildId);
-        json(res, 200, data); return;
+        await sendJson(req, res, 200, resource ? JSON.stringify(data) : serializedSnapshot(data, guildId, limits)); return;
       }
       if (!['GET', 'HEAD'].includes(req.method)) throw notFound();
       anonymousBudget();

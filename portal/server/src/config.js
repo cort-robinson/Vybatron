@@ -18,6 +18,9 @@ export const LIMITS = Object.freeze({
   pollMs: 3000, pollFeedMs: 10_000, changesMs: 25_000, changesRetryMaxMs: 30_000,
   pollRetryMaxMs: 30_000, heartbeatMs: 10_000, drainMs: 5000,
   streams: 32, streamsPerSession: 2, streamLifetimeMs: 30 * 60_000,
+  // A quiet stream resends the snapshot once the playback position strays this
+  // far from where the page's clock puts it (a stall or a Lavalink correction).
+  positionDriftMs: 2000,
   sessionMs: 7 * 24 * 60 * 60_000, oauthMs: 10 * 60_000,
 });
 

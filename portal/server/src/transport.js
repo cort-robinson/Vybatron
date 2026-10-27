@@ -25,6 +25,18 @@ class InvalidUpstreamResponse extends HttpError {
 export const isRetryableReadError = error => error instanceof HttpError &&
   !(error instanceof InvalidUpstreamResponse) && [429, 503].includes(error.status);
 
+// The bot's change-feed position for a snapshot read or command, kept beside
+// the parsed body so the body itself (forwarded to browsers) never carries it.
+const cursors = new WeakMap();
+export const changeCursor = data => (data && typeof data === 'object' && cursors.get(data)) || null;
+function parseCursor(value) {
+  const match = typeof value === 'string' && /^([0-9a-f-]{36}):(\d{1,15})$/.exec(value);
+  return match ? { instance: match[1], sequence: Number(match[2]) } : null;
+}
+// The bot keeps idle bridge sockets for five seconds. Retiring them a second
+// sooner means a request never lands on a socket the bot is closing.
+const IDLE_SOCKET_MS = 4000;
+
 export class Transport {
   constructor(config, limits) {
     this.config = config; this.limits = limits; this.active = 0; this.ordinary = 0; this.stops = 0;
@@ -35,16 +47,16 @@ export class Transport {
     // A shared maxTotalSockets can deadlock a one-slot pool when an idle Discord
     // connection occupies the slot needed by the bridge. Active requests are
     // capped above, and each of the fixed upstream origins retains at most four.
-    const options = { keepAlive: true, maxSockets: limits.upstream, maxFreeSockets: Math.min(4, limits.upstream) };
+    const options = { keepAlive: true, maxSockets: limits.upstream, maxFreeSockets: Math.min(4, limits.upstream), timeout: IDLE_SOCKET_MS };
     this.httpAgent = new http.Agent(options); this.httpsAgent = new https.Agent(options);
     // The held change long poll gets its own single socket so it never waits
     // behind, or occupies, the bounded protected-request pool.
-    const feed = { keepAlive: true, maxSockets: 1, maxFreeSockets: 1 };
+    const feed = { keepAlive: true, maxSockets: 1, maxFreeSockets: 1, timeout: IDLE_SOCKET_MS };
     this.feedAgents = { http: new http.Agent(feed), https: new https.Agent(feed) };
     // Audio streams to a phone for as long as its connection takes, so it has
     // its own small pool and never holds the protected-request slots.
     this.audioActive = 0;
-    this.audioAgent = new http.Agent({ keepAlive: true, maxSockets: limits.audioStreams, maxFreeSockets: 2 });
+    this.audioAgent = new http.Agent({ keepAlive: true, maxSockets: limits.audioStreams, maxFreeSockets: 2, timeout: IDLE_SOCKET_MS });
   }
 
   // Passes one audio byte range from the bot straight to the browser. Only an
@@ -96,15 +108,17 @@ export class Transport {
     } finally { this.active--; if (stop && this.stopCapacity > 0) this.stops--; else this.ordinary--; }
   }
 
-  send(url, { method = 'GET', headers = {}, body, signal, timeout = this.limits.upstreamMs, feed = false } = {}) {
+  send(url, { method = 'GET', headers = {}, body, signal, timeout = this.limits.upstreamMs, feed = false, retried = false } = {}) {
+    const started = Date.now();
     return new Promise((resolve, reject) => {
-      const target = new URL(url); const secure = target.protocol === 'https:';
+      const target = new URL(url); const secure = target.protocol === 'https:'; let responded = false;
       const agent = feed ? this.feedAgents[secure ? 'https' : 'http'] : secure ? this.httpsAgent : this.httpAgent;
       const req = (secure ? https : http).request(target, {
         method, headers: { Accept: 'application/json', 'Accept-Encoding': 'identity', ...headers,
           ...(body !== undefined && { 'Content-Length': Buffer.byteLength(body) }) },
         agent, signal, maxHeaderSize: this.limits.headerBytes,
       }, response => {
+        responded = true;
         let size = 0; const chunks = [];
         // Settle the terminal validation error before destroying the socket:
         // the resulting transport error must not replace its classification.
@@ -118,13 +132,27 @@ export class Transport {
           try {
             const data = JSON.parse(Buffer.concat(chunks).toString('utf8'));
             if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error();
+            const cursor = parseCursor(response.headers['x-change-cursor']);
+            if (cursor) cursors.set(data, cursor);
             resolve({ status: response.statusCode, data });
           } catch { reject(new InvalidUpstreamResponse()); }
         });
       });
       const timer = setTimeout(() => req.destroy(new Error('Upstream timeout')), timeout); timer.unref();
       req.once('close', () => clearTimeout(timer));
-      req.once('error', () => reject(unavailable()));
+      req.once('error', error => {
+        // A kept-alive socket can still close as a request reuses it. Only a
+        // read that got no response may go again, once, within its deadline.
+        // Commands and other writes are never resent.
+        const remaining = timeout - (Date.now() - started);
+        if (!retried && method === 'GET' && req.reusedSocket && !responded && !signal?.aborted && remaining > 0
+          && ['ECONNRESET', 'EPIPE'].includes(error?.code)) {
+          clearTimeout(timer);
+          resolve(this.send(url, { method, headers, body, signal, timeout: remaining, feed, retried: true }));
+          return;
+        }
+        reject(unavailable());
+      });
       req.end(body);
     });
   }
@@ -139,7 +167,10 @@ export class Transport {
     if (result.status !== 200 || typeof data.instanceId !== 'string' || data.instanceId.length > 64 || !Number.isSafeInteger(data.sequence) || data.sequence < 0
       || typeof data.reset !== 'boolean' || !Array.isArray(data.guildIds) || data.guildIds.length > 256
       || !data.guildIds.every(id => typeof id === 'string' && /^\d{1,20}$/.test(id))) throw new InvalidUpstreamResponse();
-    return data;
+    // Each guild's newest entry; an older bot sends only the overall sequence.
+    const sequences = Array.isArray(data.sequences) && data.sequences.length === data.guildIds.length
+      && data.sequences.every(value => Number.isSafeInteger(value) && value >= 0 && value <= data.sequence) ? data.sequences : undefined;
+    return { instanceId: data.instanceId, sequence: data.sequence, reset: data.reset, guildIds: data.guildIds, ...(sequences && { sequences }) };
   }
 
   sharedRead(url, options, signal) {

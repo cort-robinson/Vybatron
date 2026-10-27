@@ -11,6 +11,16 @@ const freshnessMs = 25_000;
 // Show a quiet syncing hint only when the bot is noticeably slow to confirm.
 const syncingAfterMs = 700;
 const maxQueued = 8;
+// After the API rotates a stream, the next one has this long to deliver state
+// before the page falls back to a fresh read.
+const rotateGraceMs = 5000;
+// What a viewer sees, apart from projection order and the moving position. As
+// on the API, a live session's hidden checkpoint time and position don't count.
+const viewOf = (snapshot: GuildSnapshot) => {
+  const live = snapshot.session.status === 'playing' || snapshot.session.status === 'paused';
+  return JSON.stringify({ ...snapshot, ordering: undefined, session: { ...snapshot.session, positionMs: undefined },
+    savedSession: live ? { ...snapshot.savedSession, savedAt: undefined, positionMs: undefined } : snapshot.savedSession });
+};
 interface Entry {
   body: Command; capability: Capability; key: string; epoch: number; guildId: string;
   intent: Intent | null; resolve: (value: boolean) => void;
@@ -118,8 +128,9 @@ export function usePortal() {
     let retryNotBefore = 0;
     let recoveryTimer: ReturnType<typeof setTimeout> | undefined;
     let policyTimer: ReturnType<typeof setTimeout> | undefined;
+    let rotateTimer: ReturnType<typeof setTimeout> | undefined;
     const valid = () => !abort.signal.aborted && !accessLost && epoch === generation.current && activeGuild.current === guildId;
-    const closeStream = () => { streamEpoch++; stream?.close(); stream = undefined; };
+    const closeStream = () => { streamEpoch++; stream?.close(); stream = undefined; clearTimeout(rotateTimer); rotateTimer = undefined; };
     const invalidateRead = () => { readEpoch++; refreshController?.abort(); refreshing = undefined; };
     const clearRecovery = () => { clearTimeout(recoveryTimer); recoveryTimer = undefined; };
     const pauseConnection = (message: string) => {
@@ -209,6 +220,9 @@ export function usePortal() {
       const openedEpoch = ++streamEpoch;
       const source = new EventSource(api.eventsUrl(guildId), { withCredentials: true }); stream = source;
       const liveSource = () => valid() && !offline && stream === source && openedEpoch === streamEpoch;
+      // The last snapshot this stream delivered: an `unchanged` event says the
+      // viewer's state still matches it.
+      let delivered: GuildSnapshot | null = null;
       // The stream supplies its own freshly authorized initial snapshot. Opening
       // it is not proof of freshness and does not need a duplicate protected GET.
       source.addEventListener('snapshot', event => {
@@ -216,6 +230,7 @@ export function usePortal() {
         try {
           const next = JSON.parse((event as MessageEvent).data) as GuildSnapshot;
           validate(next);
+          delivered = next; clearTimeout(rotateTimer); rotateTimer = undefined;
           const incoming = orderingOf(next); const accepted = orderingOf(current.current);
           if (incoming || accepted) {
             // Instance changes and lost freshness need an independent read. An
@@ -224,9 +239,37 @@ export function usePortal() {
               || !fresh.current || Date.now() - verifiedAt.current >= freshnessMs) { void refresh(); return; }
             if (incoming.sequence <= accepted.sequence) return; // No freshness extension.
           }
-          accept(next); recoveryAttempt = 0; retryNotBefore = 0;
+          accept(next); recoveryAttempt = 0; retryNotBefore = 0; delivered = current.current;
         }
         catch (error) { failure(error); }
+      });
+      // A fresh authorized read found nothing new for this viewer. It renews
+      // freshness under the same rules as a snapshot, and only when the page
+      // shows exactly what this stream last delivered; anything else gets a fresh read.
+      source.addEventListener('unchanged', event => {
+        if (!liveSource()) return;
+        try {
+          const data = JSON.parse((event as MessageEvent).data) as { revision?: unknown; ordering?: GuildSnapshot['ordering'] };
+          const incoming = orderingOf({ ordering: data.ordering } as GuildSnapshot); const accepted = orderingOf(current.current); const shown = current.current;
+          if (!incoming || !accepted || !shown || incoming.instanceId !== accepted.instanceId
+            || !fresh.current || Date.now() - verifiedAt.current >= freshnessMs) { void refresh(); return; }
+          if (incoming.sequence <= accepted.sequence) return; // No freshness extension.
+          if (!delivered || data.revision !== delivered.revision || data.revision !== shown.revision
+            || (shown !== delivered && viewOf(shown) !== viewOf(delivered))) { void refresh(); return; }
+          // Later replies are ordered against this read, so it carries the new stamp.
+          current.current = { ...shown, ordering: incoming }; delivered = current.current;
+          verifiedAt.current = Date.now(); recoveryAttempt = 0; retryNotBefore = 0;
+          clearTimeout(policyTimer); policyTimer = setTimeout(policyCheck, freshnessMs);
+        }
+        catch (error) { failure(error); }
+      });
+      // The API retires a stream after a while and says so first. Open the next
+      // one at once: controls stay live on the current lease, and the new
+      // stream's first snapshot renews it.
+      source.addEventListener('rotate', () => {
+        if (!liveSource()) return;
+        closeStream(); openStream();
+        rotateTimer = setTimeout(() => { rotateTimer = undefined; if (valid() && !offline) void refresh(); }, rotateGraceMs);
       });
       source.onerror = event => {
         if (!liveSource()) return;
@@ -310,7 +353,7 @@ export function usePortal() {
     document.addEventListener('visibilitychange', visibility);
     window.addEventListener('offline', wentOffline); window.addEventListener('online', online);
     return () => {
-      abort.abort(); refreshController?.abort(); libraryController?.abort(); closeStream(); clearRecovery(); clearTimeout(policyTimer); fresh.current = false;
+      abort.abort(); refreshController?.abort(); libraryController?.abort(); closeStream(); clearRecovery(); clearTimeout(policyTimer); clearTimeout(rotateTimer); fresh.current = false;
       refreshRef.current = async () => {}; libraryRefreshRef.current = async () => {};
       reconnectRef.current = () => {}; completeCommandRef.current = async () => {};
       document.removeEventListener('visibilitychange', visibility);

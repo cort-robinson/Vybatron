@@ -32,14 +32,13 @@ function initialAmbient(): AmbientMode {
 const surfaces: { id: Surface; label: string; icon: typeof MusicNotesIcon; only?: 'phone' | 'desktop' }[] = [
   { id: 'home', label: 'Home', icon: HouseIcon }, { id: 'search', label: 'Search', icon: MagnifyingGlassIcon, only: 'phone' }, { id: 'session', label: 'Queue', icon: MusicNotesIcon }, { id: 'music', label: 'My Music', icon: HeartIcon }, { id: 'server', label: 'Server', icon: UsersIcon, only: 'desktop' },
 ];
-const phoneQuery = '(max-width: 1023px)';
+const phoneLayout = () => matchMedia('(max-width: 1023px)').matches;
 
 export function App() {
   const portal = useListening(usePortal());
   const [surface, setSurface] = useState<Surface>('home');
   const [expanded, setExpanded] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
-  const [phone, setPhone] = useState(() => matchMedia(phoneQuery).matches);
   const [query, setQuery] = useState('');
   const [ambient, changeAmbient] = useState<AmbientMode>(initialAmbient);
   const [skin, changeSkin] = useState<Skin>(initialSkin);
@@ -109,18 +108,12 @@ export function App() {
   };
   // A swipe hands over `settle` so the transition starts from wherever the finger left the player.
   const toggleExpanded = (value: boolean, settle?: () => void) => { if (value === expanded) { settle?.(); return; } transition(value ? 'expand' : 'collapse', () => { settle?.(); setExpanded(value); }); };
-  // A phone searches on its own page; a desktop keeps the page it's on and searches in a dialog.
-  const openSearch = () => { if (phone) navigate('search'); else setSearchOpen(true); };
-  // Search is a page on a phone and a dialog on desktop. Crossing the breakpoint carries an open
-  // search (and its query) over to the other form instead of leaving both states half set.
-  useEffect(() => {
-    const media = matchMedia(phoneQuery); const change = () => setPhone(media.matches);
-    media.addEventListener('change', change); return () => media.removeEventListener('change', change);
-  }, []);
-  useEffect(() => {
-    if (phone && searchOpen) { setSearchOpen(false); setSurface('search'); setExpanded(false); }
-    else if (!phone && surface === 'search') { setSurface('home'); setSearchOpen(true); }
-  }, [phone, searchOpen, surface]);
+  // Search opens as a page on a phone and as a dialog on desktop, and keeps that form if the window
+  // is resized. With the Search page already showing, the top-bar search goes to its field.
+  const openSearch = () => {
+    if (surface === 'search' && !expanded) document.querySelector<HTMLInputElement>('.search-page input[type="search"]')?.focus();
+    else if (phoneLayout()) navigate('search'); else setSearchOpen(true);
+  };
   // Search stays open-able for drafts and browsing; a real permission block (not a stale read) demotes the call to action.
   const addBlocked = connection === 'live' && !!snapshot && !snapshot.session.canAdd;
   const install = () => { if (installPrompt) void installPrompt.prompt().then(() => installPrompt.userChoice).then(() => setInstallPrompt(null)).catch(() => portal.notify('Use your browser’s Install app option to try again.')); };

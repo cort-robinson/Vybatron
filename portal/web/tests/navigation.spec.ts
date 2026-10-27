@@ -70,24 +70,43 @@ test('the phone mini player favorites the current song without opening the playe
   expect(button.y).toBeGreaterThanOrEqual(deck.y);
 });
 
-test('an open search follows the layout across the breakpoint and keeps its query', async ({ page }) => {
+test('an open search keeps its form and query across the breakpoint, and never doubles up', async ({ page }) => {
   await page.setViewportSize(phone);
   await mockPortal(page); await page.goto('/');
   await page.getByRole('navigation', { name: 'Main navigation' }).getByRole('button', { name: 'Search' }).click();
   await page.getByRole('searchbox', { name: 'Music search' }).fill('Midnight');
   await page.setViewportSize({ width: 1280, height: 900 });
-  const dialog = page.getByRole('dialog', { name: 'Add music' });
-  await expect(dialog).toBeVisible();
-  await expect(dialog.getByRole('searchbox', { name: 'Music search' })).toHaveValue('Midnight');
-  await page.getByRole('button', { name: 'Close dialog' }).click();
+  const field = page.locator('.search-page').getByRole('searchbox', { name: 'Music search' });
+  await expect(field).toHaveValue('Midnight');
+  await page.getByRole('button', { name: 'Home', exact: true }).focus();
+  // The top-bar search goes to the Search page already showing, not a second search on top of it.
+  await page.getByRole('button', { name: 'Search music' }).click();
+  await expect(field).toBeFocused();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
   await page.getByRole('button', { name: 'Queue', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Shared Queue', level: 1 })).toBeVisible();
   await expect(page.getByRole('dialog')).toHaveCount(0);
+  // A desktop dialog stays a dialog on a phone, and resizing never opens one.
   await page.getByRole('button', { name: 'Search music' }).click();
-  await expect(dialog).toBeVisible();
+  const dialog = page.getByRole('dialog', { name: 'Add music' });
+  await expect(dialog.getByRole('searchbox', { name: 'Music search' })).toBeFocused();
   await page.setViewportSize(phone);
+  await expect(dialog.getByRole('searchbox', { name: 'Music search' })).toHaveValue('Midnight');
+  await page.getByRole('button', { name: 'Close dialog' }).click();
+  await page.setViewportSize({ width: 1280, height: 900 });
   await expect(page.getByRole('dialog')).toHaveCount(0);
-  await expect(page.locator('.search-page').getByRole('searchbox', { name: 'Music search' })).toHaveValue('Midnight');
+});
+
+test('resizing with the player open over phone Search leaves the player open and opens nothing', async ({ page }) => {
+  await page.setViewportSize(phone);
+  await mockPortal(page); await page.goto('/');
+  await page.getByRole('navigation', { name: 'Main navigation' }).getByRole('button', { name: 'Search' }).click();
+  await page.getByRole('button', { name: 'Open player', exact: true }).click();
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await expect(page.getByRole('button', { name: 'Close player', exact: true }).filter({ visible: true })).toBeVisible();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await page.setViewportSize(phone);
+  await expect(page.getByRole('button', { name: 'Close player', exact: true }).filter({ visible: true })).toBeVisible();
 });
 
 test('a playback error shows while the player covers the phone Search page', async ({ page }) => {

@@ -90,6 +90,10 @@ after fresh admin authorization. It returns `{guildId,channels,roles}` with the
 same visible text/voice filter and 500-channel/250-role projection bounds.
 Snapshot channels are the relevant verified subset, not a discovery catalog.
 
+Member reads use `cache: false`, so a late REST answer never rewrites the
+Gateway-maintained member that protected reads trust; a channel read that crossed
+a Gateway update for that channel leaves it untrusted for Gateway authority until
+a clean re-read (ADR-0011).
 Individual reads use `guild.channels.fetch(id, {force:true})`, immediately
 detaching overwrite objects and permission bitfields in `authority.js`.
 Version 14's `cache:false`

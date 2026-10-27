@@ -262,3 +262,11 @@ test('bootstrap authorizes guilds together: one REST round for 12 uncached guild
     f.guild.members.fetch = fetch;
   });
 });
+
+test('configuration discovery keeps fresh identity: a former maintainer loses it at once', async t => {
+  const f = await harness(t);
+  assert.equal((await f.request('/configuration', { actor: '900' })).status, 200);
+  f.client.application.fetch = async () => ({ owner: f.users.get('901') });
+  assert.equal((await f.request('/configuration', { actor: '900' })).status, 404);
+  assert.equal((await f.request('/diagnostics', { actor: '900' })).status, 404, 'a fresh read also refreshes the remembered owner');
+});

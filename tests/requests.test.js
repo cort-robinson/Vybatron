@@ -146,3 +146,15 @@ test('changes others make during an outside-lane lookup are not recorded as the 
   lookup.resolve(); await play;
   assert.deepEqual(recorded, ['201'], 'the lookup that changed nothing records nothing');
 });
+
+test('every addition keeps its place among additions; only /play may look up outside the lane', async () => {
+  const { commandMutationPolicy } = await import('../src/utils/requests.js');
+  for (const [name, action] of [['play'], ['playnext'], ['replay'], ['transfer'], ['favorite', 'play'], ['mix', 'load'], ['top', 'play'], ['mymix', 'play'], ['radio', 'promote']]) {
+    const policy = commandMutationPolicy(name, action);
+    assert.equal(policy.ordered, true, `${name} ${action || ''}`);
+    assert.equal(Boolean(policy.lookupOutsideLane), name === 'play');
+  }
+  for (const [name, action] of [['pause'], ['volume'], ['skip'], ['remove'], ['shuffle'], ['radio', 'remove'], ['stop']]) {
+    assert.equal(commandMutationPolicy(name, action).ordered, undefined, `${name} doesn't wait behind additions`);
+  }
+});

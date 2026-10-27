@@ -179,7 +179,8 @@ export function startPortalBridge(client, {
         if (request.method !== 'GET' || resource === 'commands') fail(400, 'invalid_method', 'That request method is unsupported.');
         const actorId = url.searchParams.get('actorId');
         const channelScope = ['library', 'stats', 'recap'].includes(resource) ? 'history' : resource === 'configuration' ? 'configuration' : ['activity', 'diagnostics'].includes(resource) ? 'none' : 'session';
-        const context = await policy.guild(actorId, guildId, undefined, { channelScope });
+        // Complete channel discovery keeps fresh identity and REST authority (ADR-0011).
+        const context = await policy.guild(actorId, guildId, undefined, { channelScope, fresh: channelScope === 'configuration' });
         let result;
         if (!resource) result = snapshotProjection(client, context, revisions.revision(guildId), revisions.nextSnapshot());
         if (resource === 'library') result = libraryProjection(client, context);

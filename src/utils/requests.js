@@ -87,8 +87,12 @@ export function commandMutationPolicy(name, action) {
     // An import preview only reads; its confirmation is a library write.
     || (['favorite', 'mix'].includes(name) && action === 'import');
   const libraryOnly = (['favorite', 'mix'].includes(name) && !['play', 'load'].includes(action)) || name === 'settings';
-  // /play looks its song up outside the playback lane when a session exists.
-  return { readOnly, playback: !libraryOnly, urgent: name === 'stop' || (name === 'radio' && action === 'off'), ...(name === 'play' && { lookupOutsideLane: true }) };
+  // Additions keep their order among themselves; only /play looks its song up
+  // outside the playback lane (when a session exists).
+  const addition = ['play', 'playnext', 'replay', 'transfer'].includes(name) || (name === 'radio' && action === 'promote')
+    || (['favorite', 'mix', 'top', 'mymix'].includes(name) && ['play', 'load'].includes(action));
+  return { readOnly, playback: !libraryOnly, urgent: name === 'stop' || (name === 'radio' && action === 'off'),
+    ...(addition && { ordered: true }), ...(name === 'play' && { lookupOutsideLane: true }) };
 }
 
 function activityState(interaction) {
@@ -104,7 +108,7 @@ function activityState(interaction) {
     : [Boolean(player), [player?.queue?.current, ...(player?.queue?.tracks || [])].map(trackReference), interaction.client.library.readGuild(interaction.guildId).session?.tracks]);
 }
 
-export async function guardedMutation(interaction, operation, { playback = false, urgent = false, lookupOutsideLane = false, beforeMutation } = {}) {
+export async function guardedMutation(interaction, operation, { playback = false, urgent = false, ordered = false, lookupOutsideLane = false, beforeMutation } = {}) {
   const release = playback ? acquirePlaybackRequest(interaction.client) : null;
   if (playback && !release) {
     if (interaction.portalUnavailable) return interaction.portalUnavailable();
@@ -138,6 +142,6 @@ export async function guardedMutation(interaction, operation, { playback = false
     };
     // Stop must stay responsive even while a catalog import is still loading.
     // Enqueue paths recheck the player identity and stopping flag after lookup.
-    return await (urgent ? run() : withGuildMutation(interaction.guildId, run, { ordered: lookupOutsideLane }));
+    return await (urgent ? run() : withGuildMutation(interaction.guildId, run, { ordered: ordered || lookupOutsideLane }));
   } finally { release?.(); }
 }

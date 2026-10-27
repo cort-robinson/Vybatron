@@ -47,6 +47,18 @@ is missing from the cache. A kicked member is removed from the cache, so their n
 the REST round and Discord answers that they are not a member. A guild the bot left is gone from
 `client.guilds.cache` and answers 404 before any read.
 
+**REST answers must not rewrite Gateway state.** A forced REST read started before a Gateway
+update can answer after it, and discord.js writes forced fetches into the same cache. So the
+REST round reads members (actor and bot) with `cache: false`, which patches a detached clone and
+leaves the cache to Gateway events: a late answer can't restore a kicked member or a removed
+role. discord.js can't fetch a channel fresh without writing it (`cache: false` returns the
+unpatched cached object), so a channel read that overlapped a `channelCreate`/`channelUpdate`/
+`channelDelete` for that channel marks it untrusted, and Gateway authority refuses any read that
+needs it until a later read of that channel completes with no update in between (a deleted
+channel never does, so it stays on REST). Native `/settings musicchannel` reads its bot member
+with `cache: false` too; its forced target-channel read is the one remaining cache write outside
+this tracking, a race needing an overwrite change on that channel within that read's round trip.
+
 The final disclosure of every command (`commands.js`, `finalDisclosure`) uses Gateway state when
 it can vouch, otherwise a **fresh** REST round as before. It decides only what the reply may show;
 the write already happened under its own authority.
@@ -62,8 +74,8 @@ unless the caller also asks for `gateway`. These stay fully fresh REST, unchange
 pre-write stage of Stop, queue edits (shuffle, remove, move, clear, loop, radio, voteskip,
 replay), settings, library and mix actions, session restore and discard (including their
 post-lookup and transaction rechecks); the `configuration` scope (complete channel discovery,
-after REST admin checks); the private `/v1/latency` maintainer check; and clearing request
-stats. Audible controls and additions keep the Gateway pre-write authority they already had,
+after REST admin checks, with a fresh identity); the private `/v1/latency` maintainer check; and
+clearing request stats. A fresh identity also refreshes the remembered answer. Audible controls and additions keep the Gateway pre-write authority they already had,
 which grants no maintainer access.
 
 **4. Bootstrap authorizes guilds together.** Guilds the Gateway can vouch for answer at once.
@@ -94,9 +106,11 @@ immediately (settings, library, Stop, queue edits) still reads Discord fresh.
   rounds to one (`tests/portal-authorization-cache.test.js`).
 - Discord rate-limit budget is left for the REST rounds that remain.
 - A maintainer's admin view on reads depends on the remembered owner for up to five minutes.
-- Correctness of reads now depends on discord.js applying Gateway events to its cache. The same
-  dependency was already accepted for audible controls; a cache that cannot be trusted falls
-  back to REST rather than guessing.
+- Correctness of reads now depends on discord.js applying Gateway events to its cache, and on
+  REST answers not overwriting them (above). The same dependency was already accepted for
+  audible controls; a cache that cannot be trusted falls back to REST rather than guessing
+  (`tests/portal-gateway-cache-races.test.js` replays the late-answer races on real discord.js
+  structures).
 - This supersedes the "Gateway/cache state supplies IDs only" and "no completed profile or
   ownership result is cached" statements in `docs/portal-channel-read-contract.md` and
   `src/portal/README.md` for protected reads and final disclosure. Pre-write stages keep them.

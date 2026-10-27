@@ -28,7 +28,8 @@ export async function execute(interaction) {
   let channel = interaction.options.getChannel?.('channel');
   if (action === 'musicchannel' && channel) {
     channel = await withTimeout(interaction.guild.channels.fetch(channel.id, { force: true }), 5000);
-    const me = await withTimeout(interaction.guild.members.fetchMe({ force: true }), 5000);
+    // cache:false leaves the Gateway-maintained bot member untouched (ADR-0011).
+    const me = await withTimeout(interaction.guild.members.fetchMe({ force: true, cache: false }), 5000);
     const permissions = channel?.permissionsFor?.(me);
     if (channel?.guildId !== interaction.guildId || ![ChannelType.GuildText, ChannelType.GuildAnnouncement].includes(channel.type)
       || !permissions?.has([PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.EmbedLinks])) {

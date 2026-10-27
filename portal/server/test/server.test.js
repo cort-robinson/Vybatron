@@ -7,9 +7,12 @@ import os from 'node:os';
 import path from 'node:path';
 import { once } from 'node:events';
 import zlib from 'node:zlib';
+import { randomBytes } from 'node:crypto';
 import { createPortalServer, SESSION_COOKIE, OAUTH_COOKIE } from '../src/app.js';
 import { loadConfig, LIMITS } from '../src/config.js';
 import { Transport } from '../src/transport.js';
+import { eventStream } from '../src/compression.js';
+import { Writable } from 'node:stream';
 
 const actorId = '123456789012345678'; const guildId = '234567890123456789';
 const secret = 'test-only-32-character-secret-abcdef0123456789';
@@ -1711,4 +1714,51 @@ test('Transport retries a read once when a reused socket resets, and never a wri
   requests = 0; reset = true;
   await assert.rejects(transport.send(`${botUrl}/v1/write`, { method: 'POST', body: '{}' }), error => error.status === 503);
   assert.equal(requests, 1, 'a write is never resent');
+});
+
+test('Compressed slow readers are closed on the drain deadline too', { timeout: 7000 }, async t => {
+  const f = await fixture(t, { limits: { pollMs: 10, drainMs: 100, snapshotBytes: 1024 * 1024 } });
+  // Incompressible state, so a paused socket fills behind the encoder.
+  const device = await f.login(); f.state.snapshot.session.reason = randomBytes(450 * 1024).toString('base64');
+  const socket = net.connect(new URL(f.base).port, '127.0.0.1'); t.after(() => socket.destroy());
+  await once(socket, 'connect');
+  socket.write(`GET /api/guilds/${guildId}/events HTTP/1.1\r\nHost: localhost\r\nAccept-Encoding: gzip\r\nCookie: ${device.cookie}\r\n\r\n`);
+  socket.pause();
+  await until(() => f.app.resourceCounts().streams === 1);
+  await until(() => f.app.resourceCounts().streams === 0, 4500);
+  const polls = f.state.calls.filter(call => call.path === `/v1/guilds/${guildId}`).length;
+  assert.ok(polls <= 10, `Slow consumer caused ${polls} unbounded polls`);
+});
+
+test('A session revoked while a reply compresses gets no protected data', { timeout: 5000 }, async t => {
+  const f = await fixture(t); const device = await f.login();
+  f.state.snapshot.session.reason = 'y'.repeat(200 * 1024);
+  const zlibModule = await import('node:zlib');
+  const original = zlibModule.default.brotliCompress; let release; const held = new Promise(resolve => { release = resolve; });
+  let entered = false;
+  zlibModule.default.brotliCompress = (...args) => { entered = true; void held.then(() => original(...args)); };
+  t.after(() => { zlibModule.default.brotliCompress = original; release(); });
+  const read = f.request(`/api/guilds/${guildId}`, { headers: { Cookie: device.cookie, 'Accept-Encoding': 'br' } });
+  await until(() => entered);
+  assert.equal((await f.request('/auth/logout', { method: 'POST', headers: { Cookie: device.cookie, Origin: origin, 'X-CSRF-Token': device.csrf } })).status, 200);
+  release();
+  const reply = await read;
+  assert.equal(reply.status, 401); assert.equal(reply.text.includes('yyyy'), false);
+});
+
+test('The compressed event writer waits for the socket, not only the encoder', { timeout: 5000 }, async () => {
+  const parked = [];
+  const res = new Writable({ highWaterMark: 1024, write(chunk, _encoding, done) { parked.push(done); } });
+  const out = eventStream({ headers: { 'accept-encoding': 'gzip' } }, res);
+  assert.equal(out.encoding, 'gzip');
+  // A small event backs up the socket while the encoder itself keeps up.
+  out.write(`event:snapshot\ndata:${randomBytes(4096).toString('base64')}\n\n`);
+  await until(() => res.writableNeedDrain);
+  assert.equal(out.write(': heartbeat\n\n'), false, 'a backed-up socket is backpressure');
+  let drained = false; out.onceDrained(() => { drained = true; });
+  await delay(100);
+  assert.equal(drained, false, 'a blocked socket keeps the writer waiting');
+  const release = () => { for (const done of parked.splice(0)) done(); };
+  const pump = setInterval(release, 5); await until(() => drained); clearInterval(pump);
+  out.end(); release();
 });

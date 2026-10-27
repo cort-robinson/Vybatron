@@ -184,12 +184,12 @@ export async function createPortalServer(config, testOptions = {}) {
       try {
         if (out.write(frame)) return true;
         drainWait = new Promise(resolve => {
-          let settled = false;
+          let settled = false; let stopWaiting = () => {};
           const finish = success => {
-            if (settled) return; settled = true; clearTimeout(drainTimer); out.target.off('drain', onDrain); unblock = null; resolve(success);
+            if (settled) return; settled = true; clearTimeout(drainTimer); stopWaiting(); unblock = null; resolve(success);
           };
-          const onDrain = () => finish(true); unblock = () => finish(false);
-          out.target.once('drain', onDrain);
+          unblock = () => finish(false);
+          stopWaiting = out.onceDrained(() => finish(true));
           drainTimer = setTimeout(() => { res.destroy(); close(); finish(false); }, limits.drainMs); drainTimer.unref();
         });
         return await drainWait;
@@ -381,6 +381,7 @@ export async function createPortalServer(config, testOptions = {}) {
         queryOnly(url, []);
         const { token, session } = sessionFor(req); checkCsrf(req, session);
         trusted = true;
+        const live = () => { if (!store.get(token)) throw unauthorized(); };
         if (commandReaders.size >= limits.commandReaders) {
           // Stop has no separate URL/header and cannot be classified before its
           // JSON arrives. Replace the oldest incomplete authenticated upload so
@@ -418,7 +419,7 @@ export async function createPortalServer(config, testOptions = {}) {
         const cursor = changeCursor(result);
         for (const stream of streams) if (stream.guildId === guildId) stream.wake(cursor);
         const preview = result.preview === undefined ? undefined : importPreview(result.preview);
-        await sendJson(req, res, 200, `{"ok":true,"message":${JSON.stringify(result.message)},"snapshot":${snapshotJson}${preview ? `,"preview":${JSON.stringify(preview)}` : ''}}`); return;
+        await sendJson(req, res, 200, `{"ok":true,"message":${JSON.stringify(result.message)},"snapshot":${snapshotJson}${preview ? `,"preview":${JSON.stringify(preview)}` : ''}}`, live); return;
       }
       admitOrdinary();
       if (pathname === '/health' && req.method === 'GET') {
@@ -483,6 +484,8 @@ export async function createPortalServer(config, testOptions = {}) {
         sameOrigin(req, config, { optional: req.method === 'GET' });
         const { token, session } = sessionFor(req);
         trusted = true;
+        // Rechecked after compression, just before a protected reply goes out.
+        const live = () => { if (!store.get(token)) throw unauthorized(); };
         limiter.check(`session:${session.key}`, 120);
         if (pathname === '/api/bootstrap' && req.method === 'GET') {
           queryOnly(url, []);
@@ -519,7 +522,7 @@ export async function createPortalServer(config, testOptions = {}) {
           queryOnly(url, []);
           const data = await transport.bridge(`/v1/guilds/${videoLyrics[1]}/lyrics/${videoLyrics[2]}`, session.actorId, { signal: controller.signal });
           if (!store.get(token)) throw unauthorized();
-          await sendJson(req, res, 200, JSON.stringify(data)); return;
+          await sendJson(req, res, 200, JSON.stringify(data), live); return;
         }
         const match = /^\/api\/guilds\/(\d{1,20})(?:\/(configuration|library|search|commands|diagnostics|activity|events|stats|recap|lyrics))?$/.exec(pathname);
         if (!match) throw notFound();
@@ -551,7 +554,7 @@ export async function createPortalServer(config, testOptions = {}) {
         const data = await transport.bridge(endpoint, session.actorId, { query, signal: controller.signal });
         if (!store.get(token)) throw unauthorized();
         if (resource === 'configuration') configurationData(data, guildId);
-        await sendJson(req, res, 200, resource ? JSON.stringify(data) : serializedSnapshot(data, guildId, limits)); return;
+        await sendJson(req, res, 200, resource ? JSON.stringify(data) : serializedSnapshot(data, guildId, limits), live); return;
       }
       if (!['GET', 'HEAD'].includes(req.method)) throw notFound();
       anonymousBudget();

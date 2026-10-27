@@ -18,3 +18,24 @@ export function validatePlaybackQuery(query) {
   }
   return null;
 }
+
+function within(promise, ms) {
+  let timer;
+  return Promise.race([promise, new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error('The audio source took too long to respond. Try again in a moment.')), Math.max(1, ms));
+  })]).finally(() => clearTimeout(timer));
+}
+
+// Song searches prefer YouTube Music: its results are official audio with the
+// real artist and square album art. Regular YouTube covers what it can't find
+// and keeps searches working when the music client is unavailable.
+export async function searchSongs(searcher, query, user, { timeoutMs = 10_000 } = {}) {
+  const deadline = Date.now() + timeoutMs;
+  try {
+    const music = await within(searcher.search({ query, source: 'ytmsearch' }, user), timeoutMs * 0.6);
+    if (music?.loadType !== 'error' && music?.tracks?.length) return music;
+  } catch {
+    // Fall back to regular YouTube within the remaining time.
+  }
+  return within(searcher.search({ query, source: 'ytsearch' }, user), deadline - Date.now());
+}

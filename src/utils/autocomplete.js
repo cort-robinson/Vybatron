@@ -1,6 +1,6 @@
 import { catalogUrl } from './library.js';
 import { isUrl, plainText, trackIdentity } from './presentation.js';
-import { validatePlaybackQuery } from './query.js';
+import { searchSongs, validatePlaybackQuery } from './query.js';
 
 const CACHE_TTL_MS = 15_000;
 const CACHE_LIMIT = 100;
@@ -47,20 +47,6 @@ function cacheSelection(value, track, ownerId) {
   });
 }
 
-async function withTimeout(promise, ms) {
-  let timer;
-  try {
-    return await Promise.race([
-      promise,
-      new Promise((_, reject) => {
-        timer = setTimeout(() => reject(new Error('Autocomplete search timed out')), ms);
-      }),
-    ]);
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
 function choiceFromTrack(track, ownerId) {
   const info = track?.info || {};
   const title = plainText(info.title, { fallback: 'Unknown track', maxLength: 72 });
@@ -98,10 +84,7 @@ export async function getTrackChoices(interaction, { timeoutMs = 2_500 } = {}) {
   if (!node?.search) return [];
 
   try {
-    const result = await withTimeout(
-      node.search({ query, source: 'ytsearch' }, interaction.user),
-      timeoutMs
-    );
+    const result = await searchSongs(node, query, interaction.user, { timeoutMs });
     const choices = [];
     const seenValues = new Set();
     for (const track of result?.tracks || []) {

@@ -215,7 +215,7 @@ export function initLavalink(client) {
     // Session history backs /history, /replay, and Back; it ends with the player.
     queueOptions: { maxPreviousTracks: LIBRARY_LIMITS.history },
     playerOptions: {
-      defaultSearchPlatform: 'ytsearch',
+      defaultSearchPlatform: 'ytmsearch',
       maxErrorsPerTime: { threshold: 30_000, maxAmount: 3 },
       onDisconnect: { autoReconnect: false, destroyPlayer: true },
       onEmptyQueue: {

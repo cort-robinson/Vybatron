@@ -21,6 +21,18 @@ test('track projections reject signed/private media and unrestricted artwork wit
   assert.equal(safeImage('https://i.ytimg.com/vi/abcdefghijk/hqdefault.jpg?token=private'), 'https://i.ytimg.com/vi/abcdefghijk/hqdefault.jpg');
 });
 
+test('YouTube Music album art reaches the portal instead of the video thumbnail', () => {
+  const art = 'https://lh3.googleusercontent.com/AbC_dEf-GhIjKlMnOpQrStUv=w1000-h1000';
+  const candidate = track();
+  candidate.info.uri = 'https://www.youtube.com/watch?v=abcdefghijk';
+  candidate.info.artworkUrl = art;
+  assert.equal(trackProjection(candidate).artworkUrl, art);
+  assert.equal(safeImage('https://yt3.ggpht.com/AbC_dEf-GhIjKlMnOpQrStUv=w1000-h1000'), 'https://yt3.ggpht.com/AbC_dEf-GhIjKlMnOpQrStUv=w1000-h1000');
+  for (const rejected of ['https://lh3.googleusercontent.com/a/private/photo.png', 'https://lh3.googleusercontent.com/AbC_dEf-GhIjKlMnOpQrStUv', 'https://docs.googleusercontent.com/AbC_dEf-GhIjKlMnOpQrStUv=w1000-h1000']) {
+    assert.equal(safeImage(rejected), null);
+  }
+});
+
 test('bridge is opt-in, authenticated, bounded, rejects browser origins and contains request/bind failures', async t => {
   const disabled = startPortalBridge({}, { token: null });
   assert.equal(disabled.enabled, false); await disabled.close();

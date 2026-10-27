@@ -2,6 +2,7 @@ import { isUrl, safeText } from './presentation.js';
 import { rememberedSearchTrack, resolveAutocompleteTrack } from './autocomplete.js';
 import { withTimeout } from './enqueue.js';
 import { parseSpotifyUrl, searchSpotifyEmbed } from './spotify.js';
+import { searchSongs } from './query.js';
 export { validatePlaybackQuery } from './query.js';
 
 export async function searchMusic(player, query, user, {
@@ -9,7 +10,7 @@ export async function searchMusic(player, query, user, {
   embedSearch = searchSpotifyEmbed,
 } = {}) {
   const spotify = parseSpotifyUrl(query);
-  if (!spotify) return withTimeout(player.search({ query }, user), timeoutMs);
+  if (!spotify) return isUrl(query) ? withTimeout(player.search({ query }, user), timeoutMs) : searchSongs(player, query, user, { timeoutMs });
   const deadline = Date.now() + spotifyTimeoutMs;
   try {
     const native = await withTimeout(player.search({ query: spotify.url }, user), Math.max(1, Math.min(nativeTimeoutMs, spotifyTimeoutMs)));

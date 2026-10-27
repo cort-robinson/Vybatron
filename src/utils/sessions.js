@@ -25,10 +25,14 @@ export function sessionSnapshot(player, now = Date.now(), { positionStepMs = 1 }
   };
 }
 
+// A stored checkpoint counts only while it is recent and not from the future.
+export function usableSession(session, now = Date.now()) {
+  return Boolean(session) && session.savedAt <= now + 60_000 && now - session.savedAt <= SESSION_RETENTION_MS;
+}
+
 export function savedSession(library, guildId, now = Date.now()) {
   const session = library.readGuild(guildId).session;
-  if (!session || session.savedAt > now + 60_000 || now - session.savedAt > SESSION_RETENTION_MS) return null;
-  return session;
+  return usableSession(session, now) ? session : null;
 }
 
 // True when `saved` already records `snapshot` and is recent enough to keep.

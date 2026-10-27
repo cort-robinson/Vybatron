@@ -6,10 +6,14 @@ import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { once } from 'node:events';
+import zlib from 'node:zlib';
+import { randomBytes } from 'node:crypto';
 import { brotliCompressSync, brotliDecompressSync, gunzipSync, gzipSync } from 'node:zlib';
 import { createPortalServer, SESSION_COOKIE, OAUTH_COOKIE } from '../src/app.js';
 import { loadConfig, LIMITS } from '../src/config.js';
 import { Transport } from '../src/transport.js';
+import { eventStream } from '../src/compression.js';
+import { Writable } from 'node:stream';
 import { parseUpstreamTiming } from '../src/timing.js';
 
 const actorId = '123456789012345678'; const guildId = '234567890123456789';
@@ -151,9 +155,9 @@ async function fixture(t, { limits = {}, now, dataDir, production = false, botOr
   return { state, config, begin, login, restart, request: (...args) => request(base, ...args), get base() { return base; }, get app() { return app; } };
 }
 
-async function stream(base, sessionCookie, extra = {}, streamGuildId = guildId) {
+async function stream(base, sessionCookie, extra = {}, streamGuildId = guildId, query = '') {
   return await new Promise((resolve, reject) => {
-    const req = http.get(`${base}/api/guilds/${streamGuildId}/events`, { headers: { Cookie: sessionCookie, ...extra }, agent: false }, res => {
+    const req = http.get(`${base}/api/guilds/${streamGuildId}/events${query}`, { headers: { Cookie: sessionCookie, ...extra }, agent: false }, res => {
       const handle = { req, res, text: '', ended: false, close: () => { res.destroy(); req.destroy(); } };
       res.setEncoding('utf8'); res.on('data', data => { handle.text += data; });
       res.on('end', () => { handle.ended = true; }); res.on('close', () => { handle.ended = true; });
@@ -998,8 +1002,11 @@ test('SSE genuine transport and bridge outages back off and recover on the same 
     await until(() => (live.text.match(/event:error/g) || []).length >= 2);
     assert.equal(live.res.statusCode, 200);
     assert.equal(live.ended, false, 'A genuine outage must not terminate the EventSource response');
-    assert.equal(attempts.length, 2);
-    assert.ok(attempts[1] - attempts[0] >= 2 * pollMs - 10, 'Retry must use the doubled first backoff, allowing timer precision');
+    // A reset on a reused keep-alive socket is retried once at once; that is the same read.
+    const reads = attempts.filter((at, index) => index === 0 || at - attempts[index - 1] >= pollMs);
+    assert.equal(reads.length, 2);
+    assert.ok(attempts.length <= (fault.name === 'connection reset' ? 4 : 2), `${attempts.length} bridge attempts`);
+    assert.ok(reads[1] - reads[0] >= 2 * pollMs - 10, 'Retry must use the doubled first backoff, allowing timer precision');
     assert.equal((live.text.match(/event:snapshot/g) || []).length, later ? 1 : 0);
     assert.match(live.text, /heartbeat/);
     assert.match(live.text, /"status":503,"code":"unavailable"/);
@@ -1632,6 +1639,276 @@ test('playlist imports accept a public link, an optional preview id, and pass th
   assert.equal((await sendCommand(f, device, { command: 'favorite', subcommand: 'import', options: { link } })).status, 503, 'an oversized preview is refused');
 });
 
+const unchangedEvents = live => [...live.text.matchAll(/event:unchanged\ndata:(.*)\n\n/g)].map(match => JSON.parse(match[1]));
+const botInstance = '11111111-2222-4333-8444-555555555555';
+// A bridge whose snapshots carry a fresh ordering stamp on every read, like the bot's.
+function orderedBridge(f, view) {
+  let sequence = 0;
+  f.state.bridgeResponse = (res, call) => {
+    const data = { ...structuredClone(typeof view === 'function' ? view() : view), ordering: { instanceId: botInstance, sequence: ++sequence } };
+    reply(res, 200, call.body ? { ok: true, message: 'Updated.', snapshot: data } : data);
+  };
+}
+
+test('Quiet streams send a snapshot only when what this viewer sees changes', { timeout: 7000 }, async t => {
+  const f = await fixture(t, { limits: { pollMs: 25 } }); const device = await f.login();
+  const view = snapshot(); orderedBridge(f, view);
+  const live = await stream(f.base, device.cookie, {}, guildId, '?protocol=2'); t.after(live.close);
+  await until(() => unchangedEvents(live).length >= 3);
+  assert.equal(streamSnapshots(live).length, 1, 'identical reads send no snapshot');
+  const renewals = unchangedEvents(live);
+  assert.ok(renewals.every(event => event.revision === 'revision-1' && event.ordering.instanceId === botInstance));
+  assert.ok(renewals.every((event, index) => index === 0 || event.ordering.sequence > renewals[index - 1].ordering.sequence));
+  assert.deepEqual(Object.keys(renewals[0]).sort(), ['ordering', 'revision'], 'a renewal carries no protected state');
+  const changes = [
+    ['a viewer-only capability', () => { view.session.canControl = false; }],
+    ['the shared revision', () => { view.revision = 'revision-2'; }],
+    ['a position jump', () => { view.session.positionMs = 9000; }],
+  ];
+  for (const [label, change] of changes) {
+    const before = streamSnapshots(live).length; change();
+    await until(() => streamSnapshots(live).length === before + 1);
+    const count = unchangedEvents(live).length; await until(() => unchangedEvents(live).length >= count + 2);
+    assert.equal(streamSnapshots(live).length, before + 1, `${label} is sent once`);
+  }
+  // An idle session's position stays put; small differences are not a change.
+  view.session.positionMs = 9500;
+  let count = unchangedEvents(live).length; await until(() => unchangedEvents(live).length >= count + 3);
+  assert.equal(streamSnapshots(live).length, 4);
+  assert.equal(streamSnapshots(live).at(-1).session.canControl, false);
+  // A saved checkpoint's time shows only while nothing plays.
+  view.savedSession = { ...view.savedSession, exists: true, savedAt: 1000, positionMs: 30_000 };
+  await until(() => streamSnapshots(live).length === 5);
+  view.session.status = 'paused';
+  await until(() => streamSnapshots(live).length === 6);
+  view.savedSession.savedAt = 2000; view.savedSession.positionMs = 60_000;
+  count = unchangedEvents(live).length; await until(() => unchangedEvents(live).length >= count + 3);
+  assert.equal(streamSnapshots(live).length, 6, 'a paused session hides its checkpoint time');
+  view.session.status = 'idle';
+  await until(() => streamSnapshots(live).length === 7);
+  assert.equal(streamSnapshots(live).at(-1).savedSession.savedAt, 2000);
+});
+
+test('A playing session stays quiet while its position advances on time', { timeout: 5000 }, async t => {
+  const f = await fixture(t, { limits: { pollMs: 25 } }); const device = await f.login();
+  const began = Date.now(); const view = snapshot(); view.session.status = 'playing';
+  orderedBridge(f, () => ({ ...view, session: { ...view.session, positionMs: 1000 + Date.now() - began } }));
+  const live = await stream(f.base, device.cookie, {}, guildId, '?protocol=2'); t.after(live.close);
+  await until(() => unchangedEvents(live).length >= 5);
+  assert.equal(streamSnapshots(live).length, 1);
+});
+
+test('Pages without protocol 2 keep receiving a snapshot on every read', { timeout: 5000 }, async t => {
+  const f = await fixture(t, { limits: { pollMs: 25 } }); const device = await f.login();
+  orderedBridge(f, snapshot());
+  const live = await stream(f.base, device.cookie); t.after(live.close);
+  await until(() => streamSnapshots(live).length >= 4);
+  assert.equal(unchangedEvents(live).length, 0);
+  for (const query of ['?protocol=3', '?protocol=2&protocol=2', '?quiet=1']) {
+    assert.equal((await f.request(`/api/guilds/${guildId}/events${query}`, { headers: { Cookie: device.cookie } })).status, 400, query);
+  }
+});
+
+test('Quiet streams resend a full snapshot after a transient error frame', { timeout: 5000 }, async t => {
+  const f = await fixture(t, { limits: { pollMs: 25, pollRetryMaxMs: 50 } }); const device = await f.login();
+  const view = snapshot(); orderedBridge(f, view); const ordered = f.state.bridgeResponse;
+  const live = await stream(f.base, device.cookie, {}, guildId, '?protocol=2'); t.after(live.close);
+  await until(() => unchangedEvents(live).length >= 1);
+  f.state.bridgeResponse = res => reply(res, 503, { error: { code: 'unavailable' } });
+  await until(() => live.text.includes('event:error'));
+  f.state.bridgeResponse = ordered;
+  await until(() => streamSnapshots(live).length === 2);
+  assert.equal(streamSnapshots(live)[1].revision, 'revision-1', 'only a snapshot can restore freshness after an error');
+});
+
+// Models the bot: one feed entry per change, found a little after the change
+// (the old bot's scan; Lavalink events), the feed position each snapshot read
+// began at, and a read that takes a moment for its Discord authorization round.
+function cursorBridge(f, { cursors, readMs = 30, feedMs = 60 }) {
+  let sequence = 0; let revision = 1; let hold = null; const entries = []; const held = []; const reads = [];
+  const send = (res, data, headers = {}) => {
+    const body = JSON.stringify(data);
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body), ...headers }); res.end(body);
+  };
+  const header = position => (cursors ? { 'X-Change-Cursor': `${botInstance}:${position}` } : {});
+  const answer = (res, after) => {
+    const latest = new Map(); for (const entry of entries) if (entry.sequence > after) latest.set(entry.guildId, entry.sequence);
+    send(res, { instanceId: botInstance, sequence, reset: false, guildIds: [...latest.keys()], sequences: [...latest.values()] });
+  };
+  f.state.changes = (res, call) => {
+    const after = Number(call.params.get('after'));
+    if (call.params.get('instance') !== botInstance) { send(res, { instanceId: botInstance, sequence, reset: true, guildIds: [] }); return; }
+    if (sequence > after) answer(res, after); else held.push({ res, after });
+  };
+  f.state.beforeReply = async call => {
+    if (call.body) return;
+    call.cursor = sequence; reads.push(call.params.get('actorId'));
+    const wait = hold; hold = null;
+    await (wait || delay(readMs));
+  };
+  f.state.bridgeResponse = (res, call) => {
+    const data = { ...snapshot(), revision: `revision-${revision}`, ordering: { instanceId: botInstance, sequence: 1000 + reads.length + sequence } };
+    if (!call.body) { send(res, data, header(call.cursor)); return; }
+    revision++; entries.push({ sequence: ++sequence, guildId });
+    send(res, { ok: true, message: 'Updated.', snapshot: { ...data, revision: `revision-${revision}` } }, header(sequence));
+    setTimeout(() => { for (const poll of held.splice(0)) answer(poll.res, poll.after); }, feedMs);
+  };
+  return { reads, held: () => held.length, hold: gate => { hold = gate; } };
+}
+
+test('One command reaches each stream as one fresh read and one frame', { timeout: 10_000 }, async t => {
+  const results = {};
+  for (const cursors of [false, true]) {
+    await t.test(cursors ? 'with change cursors' : 'without change cursors', async t => {
+      const f = await fixture(t, { changeFeed: true, limits: { pollMs: 10_000, pollFeedMs: 10_000 } });
+      const acting = await f.login(); f.state.identity = '456789012345678901'; const viewing = await f.login();
+      const bot = cursorBridge(f, { cursors });
+      await until(() => bot.held() === 1 && f.app.resourceCounts().feedLive);
+      const a = await stream(f.base, acting.cookie, {}, guildId, '?protocol=2'); const b = await stream(f.base, viewing.cookie, {}, guildId, '?protocol=2');
+      for (const live of [a, b]) t.after(live.close);
+      await until(() => streamSnapshots(a).length === 1 && streamSnapshots(b).length === 1);
+      await delay(100); const before = bot.reads.length;
+      assert.equal((await sendCommand(f, acting)).status, 200);
+      await until(() => streamSnapshots(a).length === 2 && streamSnapshots(b).length === 2);
+      await delay(300);
+      results[cursors] = { reads: bot.reads.length - before, snapshots: streamSnapshots(a).length + streamSnapshots(b).length - 2,
+        unchanged: unchangedEvents(a).length + unchangedEvents(b).length };
+      t.diagnostic(`${cursors ? 'with' : 'without'} cursors, 2 streams: ${JSON.stringify(results[cursors])}`);
+      assert.ok(streamSnapshots(a).at(-1).revision === 'revision-2' && streamSnapshots(b).at(-1).revision === 'revision-2');
+    });
+  }
+  assert.equal(results.false.reads, 4, 'the command wake and the later feed wake each cost a read per stream');
+  assert.deepEqual(results.true, { reads: 2, snapshots: 2, unchanged: 0 });
+});
+
+test('A wake during a read needs a follow-up only for a change after the read began', { timeout: 5000 }, async t => {
+  const f = await fixture(t, { changeFeed: true, limits: { pollMs: 10_000, pollFeedMs: 10_000 } });
+  const device = await f.login(); const bot = cursorBridge(f, { cursors: true, feedMs: 0 });
+  await until(() => bot.held() === 1 && f.app.resourceCounts().feedLive);
+  const live = await stream(f.base, device.cookie, {}, guildId, '?protocol=2'); t.after(live.close);
+  await until(() => streamSnapshots(live).length === 1);
+  await delay(100);
+  let release; const gate = new Promise(resolve => { release = resolve; }); t.after(release);
+  const before = bot.reads.length; bot.hold(gate);
+  assert.equal((await sendCommand(f, device)).status, 200);
+  await until(() => bot.reads.length === before + 1);
+  // That read began after the first command; the second lands while it is in flight.
+  assert.equal((await sendCommand(f, device)).status, 200);
+  await delay(100); release();
+  await until(() => streamSnapshots(live).at(-1)?.revision === 'revision-3');
+  await delay(300);
+  assert.equal(bot.reads.length - before, 2, 'the held read, then exactly one follow-up');
+});
+
+test('Streams announce rotation before their lifetime ends', { timeout: 5000 }, async t => {
+  const f = await fixture(t, { limits: { pollMs: 10_000, streamLifetimeMs: 300 } }); const device = await f.login();
+  const live = await stream(f.base, device.cookie, {}, guildId, '?protocol=2'); t.after(live.close);
+  await until(() => live.ended, 2000);
+  assert.match(live.text, /event:rotate\ndata:\{\}\n\n$/);
+  assert.equal(f.app.resourceCounts().streams, 0);
+});
+
+test('Streams and large JSON replies are compressed when accepted; bootstrap never is', { timeout: 5000 }, async t => {
+  const f = await fixture(t, { limits: { pollMs: 40 } }); const device = await f.login();
+  const view = snapshot(); view.session.queue = Array.from({ length: 200 }, (_, i) => ({ id: `${i}`.padStart(24, '0'), title: `Song ${i}`, author: 'Artist' }));
+  orderedBridge(f, view);
+  // Decompress incrementally: each event must arrive while the stream stays open.
+  let text = ''; let open = true;
+  const gzipped = await new Promise((resolve, reject) => {
+    const req = http.get(`${f.base}/api/guilds/${guildId}/events?protocol=2`, { headers: { Cookie: device.cookie, 'Accept-Encoding': 'gzip, deflate, br' }, agent: false }, res => {
+      const gunzip = zlib.createGunzip(); gunzip.setEncoding('utf8'); gunzip.on('data', chunk => { text += chunk; }); gunzip.on('error', () => {});
+      res.on('data', chunk => gunzip.write(chunk)); res.on('close', () => { open = false; }); res.on('error', () => {});
+      resolve({ res, close: () => { res.destroy(); req.destroy(); } });
+    });
+    req.once('error', reject);
+  });
+  t.after(gzipped.close);
+  assert.equal(gzipped.res.headers['content-encoding'], 'gzip'); assert.equal(gzipped.res.headers.vary, 'Accept-Encoding');
+  await until(() => text.includes('event:unchanged'));
+  assert.equal(open, true);
+  assert.match(text, /event:snapshot\ndata:\{/);
+  const plain = await f.request(`/api/guilds/${guildId}`, { headers: { Cookie: device.cookie } });
+  assert.equal(plain.headers['content-encoding'], undefined);
+  const encoded = await new Promise((resolve, reject) => {
+    const url = new URL(f.base);
+    http.get({ hostname: url.hostname, port: url.port, path: `/api/guilds/${guildId}`, headers: { Cookie: device.cookie, 'Accept-Encoding': 'br' }, agent: false }, res => {
+      const chunks = []; res.on('data', chunk => chunks.push(chunk)); res.on('end', () => resolve({ headers: res.headers, body: Buffer.concat(chunks) })); res.on('error', reject);
+    }).on('error', reject);
+  });
+  assert.equal(encoded.headers['content-encoding'], 'br');
+  const decoded = JSON.parse(zlib.brotliDecompressSync(encoded.body));
+  assert.equal(decoded.session.queue.length, 200); assert.ok(encoded.body.length < Buffer.byteLength(plain.text) / 3);
+  assert.equal(Number(encoded.headers['content-length']), encoded.body.length);
+  const boot = await f.request('/api/bootstrap', { headers: { Cookie: device.cookie, 'Accept-Encoding': 'gzip, br' } });
+  assert.equal(boot.headers['content-encoding'], undefined, 'the CSRF token is never compressed');
+  const refused = await f.request(`/api/guilds/${guildId}`, { headers: { Cookie: device.cookie, 'Accept-Encoding': 'br;q=0, gzip;q=0' } });
+  assert.equal(refused.headers['content-encoding'], undefined);
+});
+
+test('Transport retries a read once when a reused socket resets, and never a write', { timeout: 5000 }, async t => {
+  const seen = new Set(); let requests = 0; let reset = true;
+  const server = http.createServer((req, res) => {
+    requests++;
+    const reused = seen.has(req.socket); seen.add(req.socket);
+    if (reused && reset) { req.socket.destroy(); return; }
+    reply(res, 200, { ok: true, method: req.method });
+  });
+  const botUrl = await listen(server); t.after(() => { server.closeAllConnections(); server.close(); });
+  const transport = new Transport({ botUrl, bridgeToken: secret }, LIMITS); t.after(() => transport.close());
+  assert.equal((await transport.send(`${botUrl}/v1/read`)).status, 200);
+  const read = await transport.send(`${botUrl}/v1/read`);
+  assert.equal(read.status, 200); assert.equal(requests, 3, 'one reset, then one fresh-socket retry');
+  requests = 0; reset = true;
+  await assert.rejects(transport.send(`${botUrl}/v1/write`, { method: 'POST', body: '{}' }), error => error.status === 503);
+  assert.equal(requests, 1, 'a write is never resent');
+});
+
+test('Compressed slow readers are closed on the drain deadline too', { timeout: 7000 }, async t => {
+  const f = await fixture(t, { limits: { pollMs: 10, drainMs: 100, snapshotBytes: 1024 * 1024 } });
+  // Incompressible state, so a paused socket fills behind the encoder.
+  const device = await f.login(); f.state.snapshot.session.reason = randomBytes(450 * 1024).toString('base64');
+  const socket = net.connect(new URL(f.base).port, '127.0.0.1'); t.after(() => socket.destroy());
+  await once(socket, 'connect');
+  socket.write(`GET /api/guilds/${guildId}/events HTTP/1.1\r\nHost: localhost\r\nAccept-Encoding: gzip\r\nCookie: ${device.cookie}\r\n\r\n`);
+  socket.pause();
+  await until(() => f.app.resourceCounts().streams === 1);
+  await until(() => f.app.resourceCounts().streams === 0, 4500);
+  const polls = f.state.calls.filter(call => call.path === `/v1/guilds/${guildId}`).length;
+  assert.ok(polls <= 10, `Slow consumer caused ${polls} unbounded polls`);
+});
+
+test('A session revoked while a reply compresses gets no protected data', { timeout: 5000 }, async t => {
+  const f = await fixture(t); const device = await f.login();
+  f.state.snapshot.session.reason = 'y'.repeat(200 * 1024);
+  const zlibModule = await import('node:zlib');
+  const original = zlibModule.default.brotliCompress; let release; const held = new Promise(resolve => { release = resolve; });
+  let entered = false;
+  zlibModule.default.brotliCompress = (...args) => { entered = true; void held.then(() => original(...args)); };
+  t.after(() => { zlibModule.default.brotliCompress = original; release(); });
+  const read = f.request(`/api/guilds/${guildId}`, { headers: { Cookie: device.cookie, 'Accept-Encoding': 'br' } });
+  await until(() => entered);
+  assert.equal((await f.request('/auth/logout', { method: 'POST', headers: { Cookie: device.cookie, Origin: origin, 'X-CSRF-Token': device.csrf } })).status, 200);
+  release();
+  const reply = await read;
+  assert.equal(reply.status, 401); assert.equal(reply.text.includes('yyyy'), false);
+});
+
+test('The compressed event writer waits for the socket, not only the encoder', { timeout: 5000 }, async () => {
+  const parked = [];
+  const res = new Writable({ highWaterMark: 1024, write(chunk, _encoding, done) { parked.push(done); } });
+  const out = eventStream({ headers: { 'accept-encoding': 'gzip' } }, res);
+  assert.equal(out.encoding, 'gzip');
+  // A small event backs up the socket while the encoder itself keeps up.
+  out.write(`event:snapshot\ndata:${randomBytes(4096).toString('base64')}\n\n`);
+  await until(() => res.writableNeedDrain);
+  assert.equal(out.write(': heartbeat\n\n'), false, 'a backed-up socket is backpressure');
+  let drained = false; out.onceDrained(() => { drained = true; });
+  await delay(100);
+  assert.equal(drained, false, 'a blocked socket keeps the writer waiting');
+  const release = () => { for (const done of parked.splice(0)) done(); };
+  const pump = setInterval(release, 5); await until(() => drained); clearInterval(pump);
+  out.end(); release();
+});
 test('Server-Timing merges the real bot bridge timing into portal API responses', { timeout: 20_000 }, async t => {
   const { portalFixture } = await import('../../../tests/portal-fixtures.js');
   const bot = await portalFixture(t);

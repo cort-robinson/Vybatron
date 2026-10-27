@@ -1,6 +1,6 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { config } from '../config.js';
 import { plainText } from './presentation.js';
 import { attachSessionSnapshots } from './sessions.js';
@@ -177,6 +177,7 @@ export class MusicLibrary {
     // The shutdown mirror must fit library.json, so listening state shares its
     // size cap, as it did inside the document (ADR-0009).
     this.baseBytes = Buffer.byteLength(JSON.stringify(this.document)); this.mirrorBytes = new Map();
+    this.documentDigests = new WeakMap();
   }
   async open() {
     await this.io.mkdir(path.dirname(this.filePath), { recursive: true, mode: 0o700 });
@@ -291,6 +292,21 @@ export class MusicLibrary {
   readGuild(guildId) {
     assertId(guildId);
     return { ...structuredClone(documentPart(this.document.guilds[guildId] || emptyGuild())), ...this.state.read(guildId) };
+  }
+  // What a guild's portal revision depends on, without cloning its mixes or
+  // parsing its history: a digest of its saved settings and mixes, the history
+  // IDs readGuild would list and the raw checkpoint. Every write replaces the
+  // stored guild object rather than mutating it, so its digest is computed once.
+  revisionInputs(guildId) {
+    assertId(guildId);
+    const stored = this.document.guilds[guildId];
+    let document = stored && this.documentDigests.get(stored);
+    if (!document) {
+      const { settings, mixes } = documentPart(stored || emptyGuild());
+      document = createHash('sha256').update(JSON.stringify([settings, mixes])).digest('hex');
+      if (stored) this.documentDigests.set(stored, document);
+    }
+    return { document, ...this.state.revisionInputs(guildId) };
   }
   settings(guildId) { assertId(guildId); return { ...DEFAULT_SETTINGS, ...this.document.guilds[guildId]?.settings }; }
   favorites(userId) { assertId(userId); return structuredClone(this.document.favorites[userId] || []); }

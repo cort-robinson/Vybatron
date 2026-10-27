@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { plainText } from '../utils/presentation.js';
 import { catalogUrl, LIBRARY_LIMITS, validId } from '../utils/library.js';
-import { savedSession } from '../utils/sessions.js';
+import { savedSession, usableSession } from '../utils/sessions.js';
 import { AUDIO_PRESETS, getAudioPreset } from '../utils/filters.js';
 import { autoplayActive, autoplayMode, isAutoplayTrack, radioState, suggestions } from '../utils/radio.js';
 import { isPlaybackRecovering } from '../playback-recovery.js';
@@ -60,8 +60,12 @@ export function suggestionProjection(player) { return suggestions(player).map(tr
 export function guildProjection(context) { return { id: context.guild.id, name: plainText(context.guild.name, { maxLength: 100 }), iconUrl: safeImage(context.guild.iconURL?.()), admin: context.admin }; }
 export const FILTERS = Object.entries(AUDIO_PRESETS).map(([id, preset]) => ({ id, label: preset.label, description: preset.description }));
 
+// A session revision changes exactly when shared session state does. It runs
+// every scan for every active player, so its inputs are cheap: cached track IDs
+// and library digests rather than a cloned library and full track projections.
 export function createRevisions(client) {
   const epochs = new Map(); const objects = new WeakMap(); let nextObject = 0;
+  const trackIds = new WeakMap(); const checkpoints = new Map();
   const instanceId = randomUUID(); let sequence = 0, closed = false;
   const nextSnapshot = () => {
     if (closed || !Number.isSafeInteger(sequence + 1)) throw new Error('Snapshot ordering is unavailable.');
@@ -72,6 +76,28 @@ export function createRevisions(client) {
     if (!objects.has(value)) objects.set(value, ++nextObject);
     return objects.get(value);
   };
+  // publicTrackId hashes a parsed catalog URL. Lavalink can resolve a track in
+  // place, so a cached ID is reused only while its identity fields are unchanged.
+  const trackId = track => {
+    const info = track?.info || track || {};
+    const cached = track && typeof track === 'object' ? trackIds.get(track) : undefined;
+    if (cached && cached.info === info && cached.uri === info.uri && cached.sourceName === info.sourceName
+      && cached.identifier === info.identifier && cached.title === info.title) return cached.id;
+    const id = publicTrackId(track);
+    if (track && typeof track === 'object') trackIds.set(track, { info, uri: info.uri, sourceName: info.sourceName, identifier: info.identifier, title: info.title, id });
+    return id;
+  };
+  // The checkpoint fields a revision covers, parsed once per stored checkpoint.
+  const checkpoint = (guildId, text, now) => {
+    if (text === null) { checkpoints.delete(guildId); return null; }
+    let cached = checkpoints.get(guildId);
+    if (cached?.text !== text) {
+      const saved = JSON.parse(text);
+      cached = { text, saved: { savedAt: saved.savedAt }, digest: createHash('sha256').update(JSON.stringify([saved.voiceChannelId, saved.textChannelId, saved.tracks, saved.paused, saved.volume, saved.repeatMode])).digest('hex') };
+      checkpoints.set(guildId, cached);
+    }
+    return usableSession(cached.saved, now) ? cached.digest : null;
+  };
   const listeners = [];
   for (const event of ['trackStart', 'trackEnd', 'queueEnd', 'playerDestroy']) {
     const handler = player => { if (player?.guildId) epochs.set(player.guildId, (epochs.get(player.guildId) || 0) + 1); };
@@ -79,19 +105,17 @@ export function createRevisions(client) {
   }
   const revision = guildId => {
     const player = client.lavalink?.getPlayer(guildId);
-    const guild = client.library.readGuild(guildId);
-    const checkpoint = savedSession(client.library, guildId);
+    const library = client.library.revisionInputs(guildId);
     const current = player?.queue?.current;
-    const signature = [epochs.get(guildId) || 0, objectId(player), objectId(current), current ? trackProjection(current).id : null,
-      (player?.queue?.tracks || []).map(track => [objectId(track), trackProjection(track).id]), player?.voiceChannelId, player?.textChannelId,
+    const signature = [epochs.get(guildId) || 0, objectId(player), objectId(current), current ? trackId(current) : null,
+      (player?.queue?.tracks || []).map(track => [objectId(track), trackId(track)]), player?.voiceChannelId, player?.textChannelId,
       Boolean(player?.paused), Boolean(player?.playing), Boolean(isPlaybackRecovering(player)), player?.volume, player?.repeatMode, getAudioPreset(player).label,
       seekRevision(player), Boolean(player?.queue?.previous?.length), sleepTimer(player),
-      Boolean(radioState(player).enabled), radioState(player).override, autoplayActive(client, player), suggestionProjection(player).map(track => track.id),
-      Boolean(current && isAutoplayTrack(player, current)), guild.settings, guild.mixes, guild.history.map(item => item.id),
-      checkpoint ? [checkpoint.voiceChannelId, checkpoint.textChannelId, checkpoint.tracks, checkpoint.paused, checkpoint.volume, checkpoint.repeatMode] : null];
+      Boolean(radioState(player).enabled), radioState(player).override, autoplayActive(client, player), suggestions(player).map(trackId),
+      Boolean(current && isAutoplayTrack(player, current)), library.document, library.historyIds, checkpoint(guildId, library.session, Date.now())];
     return createHash('sha256').update(JSON.stringify(signature)).digest('hex').slice(0, 32);
   };
-  return { revision, nextSnapshot, close() { closed = true; for (const [event, handler] of listeners) client.lavalink?.off?.(event, handler); epochs.clear(); } };
+  return { revision, nextSnapshot, close() { closed = true; for (const [event, handler] of listeners) client.lavalink?.off?.(event, handler); epochs.clear(); checkpoints.clear(); } };
 }
 
 const channelProjection = channel => channel ? { id: channel.id, name: plainText(channel.name, { maxLength: 100 }) } : null;

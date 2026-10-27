@@ -46,7 +46,7 @@ test('production PWA installs under real CSP, serves an offline shell, and never
   // Fulfill only their exact HTTPS image URLs, preserving public track identity
   // and allowing every other resource error to reach the existing assertions.
   const artworkUrls = new Set(['abcdefghijk', 'lmnopqrstuv', '01234567890']
-    .map(id => `https://i.ytimg.com/vi/${id}/hqdefault.jpg`));
+    .map(id => `https://i.ytimg.com/vi/${id}/mqdefault.jpg`));
   const artworkPng = await sharp({ create: { width: 1, height: 1, channels: 4,
     background: { r: 0, g: 200, b: 255, alpha: 1 } } }).png().toBuffer();
   const origin = `http://127.0.0.1:${await freePort()}`;

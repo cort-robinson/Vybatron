@@ -2,7 +2,7 @@
 
 Discord music bot (`src/`, discord.js + lavalink-client) with a private web portal
 (`portal/server` API, `portal/web` React/Vite PWA), audio services (Lavalink, cipher,
-WARP via Docker Compose), and Python ops drivers (`ops/`) that run on one VPS.
+WARP via Docker Compose), and Python ops drivers (`ops/`) that run on one home server (ADR-0010).
 Node 24, npm, ESM. Read `README.md` (code map), `docs/adr/` and `docs/GLOSSARY.md`
 before designing. The repository is public: never commit secrets, hostnames of
 private infrastructure, guild or user IDs, or `.env*` values.
@@ -66,7 +66,7 @@ step.
 
 ## Hard limits
 
-- No production action without explicit approval for that action: no SSH or VPS
+- No production action without explicit approval for that action: no SSH or production-host
   commands, Deploy re-runs, tags or releases, secret or variable changes, or
   ruleset or repository-setting edits.
 - Approval is required to merge changes to the hold paths: audio services

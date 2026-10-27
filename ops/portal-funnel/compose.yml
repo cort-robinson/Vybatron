@@ -1,8 +1,7 @@
 # Publishes the portal (127.0.0.1:3001) with Tailscale Funnel from its own
 # tailnet node, for a host whose own Tailscale node is a personal workstation.
-# The node keeps the portal's existing name (PORTAL_ORIGIN, the OAuth redirect
-# and installed web apps keep working), and the workstation's node never
-# serves anything public. Separate project: deploys, recovery and rollback
+# The node's name is the portal's address (PORTAL_ORIGIN and the Discord OAuth
+# redirect), and the workstation's node never serves anything public. Separate project: deploys, recovery and rollback
 # never touch it. See docs/host-migration.md.
 name: vybertron-funnel
 
@@ -20,7 +19,7 @@ services:
     # networking adds no interface or routes, so the host's own tailscaled is
     # unaffected; --port=0 avoids its WireGuard port.
     network_mode: host
-    # The VPS daemon needed 160 MiB under cold browser downloads.
+    # The previous host's daemon needed 160 MiB under cold browser downloads.
     mem_limit: 192m
     memswap_limit: 256m
     cpus: "0.50"
@@ -31,7 +30,7 @@ services:
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
     environment:
-      TS_HOSTNAME: vybertron
+      TS_HOSTNAME: vybatron
       TS_USERSPACE: "true"
       TS_ACCEPT_DNS: "false"
       TS_STATE_DIR: /var/lib/tailscale

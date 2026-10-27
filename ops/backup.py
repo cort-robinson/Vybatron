@@ -341,7 +341,7 @@ class BotData:
 
 @contextlib.contextmanager
 def maintenance_lock(timeout):
-    import fcntl  # VPS only; unit tests import this module on Windows.
+    import fcntl  # Linux host only; unit tests import this module on Windows.
     with open(LOCK, 'a') as lock:
         deadline = time.monotonic() + timeout
         while True:

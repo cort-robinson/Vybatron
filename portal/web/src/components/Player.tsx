@@ -119,6 +119,20 @@ export function Player({ portal, expanded, setExpanded, onAdd, accent, animate, 
   const index = library?.favorites.findIndex(t => t.id === track?.id) ?? -1;
   const toggleFavorite = () => index < 0 ? run({ command: 'favorite', subcommand: 'add', expectedRevision: snapshot?.revision }, 'library') : run({ command: 'favorite', subcommand: 'remove', options: { index: index + 1 }, expectedTrackId: library?.favorites[index].id }, 'library');
   const active = session?.status === 'playing';
+  // Space plays and pauses from anywhere a key press isn't already spoken for, as in desktop music apps.
+  const playPause = useRef<() => boolean>(() => false);
+  playPause.current = () => {
+    if (!controllable || !track || !['playing', 'paused'].includes(session?.status || '')) return false;
+    void control({ command: active ? 'pause' : 'resume' }); return true;
+  };
+  useEffect(() => {
+    const key = (event: KeyboardEvent) => {
+      if (event.key !== ' ' || event.repeat || event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) return;
+      if ((event.target as Element).closest?.('input, textarea, select, button, a, summary, [role="slider"], [role="tab"], [role="button"], [contenteditable], dialog[open], [role="menu"], .menu-panel')) return;
+      if (playPause.current()) event.preventDefault();
+    };
+    document.addEventListener('keydown', key); return () => document.removeEventListener('keydown', key);
+  }, []);
   const blockedTitle = !can('control') ? portal.blockedReason : pending.length ? 'Waiting for confirmation. Playback controls are temporarily unavailable.' : undefined;
   const permissionReason = !can('control') ? portal.blockedReason : session?.reason;
   const controlDescription = [permissionReason ? reasonId : '', pending.length || syncing ? confirmationId : ''].filter(Boolean).join(' ') || undefined;
@@ -138,7 +152,7 @@ export function Player({ portal, expanded, setExpanded, onAdd, accent, animate, 
   const others = discord?.listeners.filter(listener => listener.id !== bootstrap?.viewer.id).length || 0;
   const favorite = track && <IconButton className={`favorite ${index >= 0 ? 'active' : ''}`} label={index >= 0 ? 'Remove current song from favorites' : 'Save current song to favorites'} aria-pressed={index >= 0} disabled={!can('library') || !library || !!pending.length || local && index < 0} title={local && index < 0 ? 'Save favorites while a song plays in Discord.' : undefined} onClick={() => void toggleFavorite()}><HeartIcon size={expanded ? 28 : 25} weight={index >= 0 ? 'fill' : 'regular'} /></IconButton>;
   // An autoplay pick names its provenance in place of the source.
-  const metadata = track ? <>{track.author}<span className="metadata-dot" aria-hidden="true">·</span><span className="track-source">{track.suggested ? 'Autoplay pick' : track.source}</span></> : 'Add a song to start the room.';
+  const metadata = track ? <>{track.author}<span className="metadata-dot" aria-hidden="true">·</span><span className="track-source">{track.suggested ? 'Autoplay pick' : track.source}</span></> : 'Add a song to start.';
   // The same size as the favorite button and on the title's other side, so the title stays centered.
   const lyricsToggle = track && <IconButton className={`lyrics-toggle ${lyricsOpen ? 'active-control' : ''}`} label={lyricsOpen ? 'Hide lyrics' : 'Show lyrics'} aria-pressed={lyricsOpen} aria-controls={lyricsOpen ? lyricsId : undefined} onClick={() => setLyricsOpen(!lyricsOpen)}><MicrophoneStageIcon size={26} weight={lyricsOpen ? 'fill' : 'regular'} /></IconButton>;
   const identity = <div className="player-identity" data-glass><div className="player-title-row">{lyricsToggle}<h2 ref={headingRef} tabIndex={-1} title={track?.title}>{track?.title || 'Nothing playing'}</h2>{favorite}</div><p title={track ? `${track.author} · ${track.source}` : undefined}>{metadata}</p>

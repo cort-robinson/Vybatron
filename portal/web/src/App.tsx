@@ -71,6 +71,16 @@ export function App() {
     return () => { active = false; };
   }, []);
   useEffect(() => longPress(), []);
+  // "/" opens search from anywhere that isn't taking text.
+  const searchKey = useRef(() => {});
+  useEffect(() => {
+    const key = (event: KeyboardEvent) => {
+      if (event.key !== '/' || event.ctrlKey || event.metaKey || event.altKey || event.defaultPrevented) return;
+      if ((event.target as Element).closest?.('input, textarea, select, [contenteditable], dialog[open]')) return;
+      event.preventDefault(); searchKey.current();
+    };
+    document.addEventListener('keydown', key); return () => document.removeEventListener('keydown', key);
+  }, []);
   useEffect(() => {
     if (auth !== 'ready') { setExpanded(false); setSearchOpen(false); setQuery(''); }
   }, [auth]);
@@ -114,6 +124,7 @@ export function App() {
     if (surface === 'search' && !expanded) document.querySelector<HTMLInputElement>('.search-page input[type="search"]')?.focus();
     else if (phoneLayout()) navigate('search'); else setSearchOpen(true);
   };
+  searchKey.current = () => { if (auth === 'ready' && bootstrap?.guilds.length) openSearch(); };
   // Search stays open-able for drafts and browsing; a real permission block (not a stale read) demotes the call to action.
   const addBlocked = connection === 'live' && !!snapshot && !snapshot.session.canAdd;
   const install = () => { if (installPrompt) void installPrompt.prompt().then(() => installPrompt.userChoice).then(() => setInstallPrompt(null)).catch(() => portal.notify('Use your browser’s Install app option to try again.')); };

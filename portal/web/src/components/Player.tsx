@@ -119,20 +119,6 @@ export function Player({ portal, expanded, setExpanded, onAdd, accent, animate, 
   const index = library?.favorites.findIndex(t => t.id === track?.id) ?? -1;
   const toggleFavorite = () => index < 0 ? run({ command: 'favorite', subcommand: 'add', expectedRevision: snapshot?.revision }, 'library') : run({ command: 'favorite', subcommand: 'remove', options: { index: index + 1 }, expectedTrackId: library?.favorites[index].id }, 'library');
   const active = session?.status === 'playing';
-  // Space plays and pauses from anywhere a key press isn't already spoken for, as in desktop music apps.
-  const playPause = useRef<() => boolean>(() => false);
-  playPause.current = () => {
-    if (!controllable || !track || !['playing', 'paused'].includes(session?.status || '')) return false;
-    void control({ command: active ? 'pause' : 'resume' }); return true;
-  };
-  useEffect(() => {
-    const key = (event: KeyboardEvent) => {
-      if (event.key !== ' ' || event.repeat || event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) return;
-      if ((event.target as Element).closest?.('input, textarea, select, button, a, summary, [role="slider"], [role="tab"], [role="button"], [contenteditable], dialog[open], [role="menu"], .menu-panel')) return;
-      if (playPause.current()) event.preventDefault();
-    };
-    document.addEventListener('keydown', key); return () => document.removeEventListener('keydown', key);
-  }, []);
   const blockedTitle = !can('control') ? portal.blockedReason : pending.length ? 'Waiting for confirmation. Playback controls are temporarily unavailable.' : undefined;
   const permissionReason = !can('control') ? portal.blockedReason : session?.reason;
   const controlDescription = [permissionReason ? reasonId : '', pending.length || syncing ? confirmationId : ''].filter(Boolean).join(' ') || undefined;

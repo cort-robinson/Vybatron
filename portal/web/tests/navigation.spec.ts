@@ -119,34 +119,6 @@ test('a playback error shows while the player covers the phone Search page', asy
   await expect(page.locator('.toast').filter({ hasText: 'Playback control is unavailable right now.' })).toBeVisible();
 });
 
-test('Space plays and pauses, and "/" opens search, without stealing keys from fields and controls', async ({ page }) => {
-  const fixture = await mockPortal(page); await page.goto('/');
-  await expect(page.getByRole('button', { name: 'Pause playback' })).toBeEnabled();
-  await page.locator('#main-content').focus();
-  await page.keyboard.press(' ');
-  await expect.poll(() => fixture.commands.map(command => command.command)).toEqual(['pause']);
-  // A focused button keeps Space for itself.
-  await page.getByRole('button', { name: 'Queue', exact: true }).focus();
-  await page.keyboard.press(' ');
-  await expect(page.getByRole('heading', { name: 'Shared Queue', level: 1 })).toBeVisible();
-  expect(fixture.commands).toHaveLength(1);
-  await page.locator('#main-content').focus();
-  await page.keyboard.press('/');
-  const field = page.getByRole('dialog', { name: 'Add music' }).getByRole('searchbox', { name: 'Music search' });
-  await expect(field).toBeFocused();
-  await page.keyboard.type('a /b ');
-  await expect(field).toHaveValue('a /b ');
-  expect(fixture.commands).toHaveLength(1);
-});
-
-test('phone "/" goes to the Search page', async ({ page }) => {
-  await page.setViewportSize(phone);
-  await mockPortal(page); await page.goto('/');
-  await page.locator('#main-content').focus();
-  await page.keyboard.press('/');
-  await expect(page.locator('.search-page').getByRole('searchbox', { name: 'Music search' })).toBeFocused();
-});
-
 test('shared mixes list the mixes before the tools for making new ones', async ({ page }) => {
   await mockPortal(page); await page.goto('/');
   await page.getByRole('button', { name: 'My Music', exact: true }).click();

@@ -12,11 +12,15 @@
 // Wrap only the call that writes the cache: a wrapper around an already
 // tracked read could finish after an older crossed read and clear its mark.
 const trackers = new WeakMap();
+const key = (guildId, id) => `${guildId}:${id}`;
+const covers = (reader, id) => !reader.ids || reader.ids.has(id);
 
 function tracker(client) {
   let state = trackers.get(client);
   if (state) return state;
   state = { readers: new Map(), stale: new Set() };
+  const cached = (guildId, id) => Boolean(client.guilds?.cache?.get?.(guildId)?.channels?.cache?.has?.(id));
+  const reading = (guildId, id) => [...(state.readers.get(guildId) || [])].some(reader => covers(reader, id));
   const cross = (guildId, id = null) => {
     for (const [readerGuild, readers] of state.readers) {
       if (guildId && readerGuild !== guildId) continue;
@@ -27,6 +31,11 @@ function tracker(client) {
     }
   };
   const channel = value => { if (value?.guildId && value.id) cross(value.guildId, value.id); };
+  // A deleted channel that nothing is reading can't hold a late answer.
+  const deleted = value => {
+    channel(value);
+    if (value?.guildId && value.id && !cached(value.guildId, value.id) && !reading(value.guildId, value.id)) state.stale.delete(key(value.guildId, value.id));
+  };
   const guild = value => {
     if (!value?.id) return;
     cross(value.id);
@@ -34,7 +43,7 @@ function tracker(client) {
     if (!client.guilds?.cache?.has?.(value.id)) for (const entry of state.stale) if (entry.startsWith(`${value.id}:`)) state.stale.delete(entry);
   };
   const everything = () => cross(null);
-  for (const [event, listener] of [['channelCreate', channel], ['channelUpdate', (_old, value) => channel(value)], ['channelDelete', channel],
+  for (const [event, listener] of [['channelCreate', channel], ['channelUpdate', (_old, value) => channel(value)], ['channelDelete', deleted],
     ['guildCreate', guild], ['guildDelete', guild], ['guildAvailable', guild], ['guildUnavailable', guild],
     ['shardReady', everything], ['shardResume', everything], ['shardReconnecting', everything], ['shardDisconnect', everything], ['invalidated', everything]]) {
     client.on?.(event, listener);
@@ -43,8 +52,6 @@ function tracker(client) {
   return state;
 }
 
-const key = (guildId, id) => `${guildId}:${id}`;
-const covers = (reader, id) => !reader.ids || reader.ids.has(id);
 
 // Runs a cache-writing channel fetch for `ids` (null: the guild's whole list).
 // On success, `written` names the channels the answer wrote.
@@ -56,6 +63,8 @@ export async function trackedChannelRead(client, guildId, ids, fetch, written = 
   readers.add(reader);
   try {
     const result = await fetch();
+    // A guild the bot has left has no cache to protect.
+    if (!client.guilds?.cache?.has?.(guildId)) return result;
     for (const id of written(result)) {
       if (reader.all || reader.crossed.has(id)) state.stale.add(key(guildId, id)); else state.stale.delete(key(guildId, id));
     }

@@ -87,3 +87,17 @@ test('native /settings musicchannel tracks its read; the portal path relies on t
     assert.equal(channelTrusted(client, '100', '400'), portal, portal ? 'portal: tracked inside the policy read, not here' : 'native: the crossed read is tracked');
   }
 });
+
+test('a read landing after the bot left the guild, and a deleted unread channel, leave no marks', async () => {
+  const { client, channels, read, update } = fixture();
+  const pending = read(); update('400');
+  client.guilds.cache.delete('100'); client.emit('guildDelete', { id: '100' });
+  pending.answer({}); await pending.reading;
+  client.guilds.cache.set('100', { id: '100', channels: { cache: channels } });
+  assert.equal(channelTrusted(client, '100', '400'), true, 'the late answer after the leave marked nothing');
+  const crossed = read(['401']); update('401'); crossed.answer({}); await crossed.reading;
+  assert.equal(channelTrusted(client, '100', '401'), false);
+  channels.delete('401'); client.emit('channelDelete', { id: '401', guildId: '100' });
+  channels.set('401', { id: '401', guildId: '100' });
+  assert.equal(channelTrusted(client, '100', '401'), true, 'the deletion dropped the mark; a later channel with that id starts trusted');
+});

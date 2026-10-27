@@ -42,7 +42,7 @@ async function setup(t) {
   return { directory, library, node, queries, logger, run: options => upgradeSavedSongs({ library, node, logger, pauseMs: 0, now: () => 0, ...options }) };
 }
 
-test('the deployed mode is a dry run', () => assert.equal(UPGRADE_MODE, 'dry-run'));
+test('the deployed mode applies the reviewed upgrade', () => assert.equal(UPGRADE_MODE, 'apply'));
 
 test('a dry run reports exact song matches once and changes nothing', async t => {
   const f = await setup(t);

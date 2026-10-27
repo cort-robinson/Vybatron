@@ -114,6 +114,9 @@ The optional portal uses the existing player and music store. Server members can
 browse permitted sessions and use their allowed music controls. Server owners,
 Manage Server members and the verified bot maintainer can manage configuration;
 playback still follows voice and DJ rules. Sign-in lasts seven days per device.
+Permissions follow Discord's live Gateway updates, so a removed role or hidden
+channel applies to the next read; the account and bot owner checks are reused
+for up to 30 seconds and five minutes ([ADR-0011](docs/adr/0011-portal-authorization-from-gateway-state.md)).
 
 Home is the landing view: Continue listening (the live or saved session and recent songs), On repeat in this server, Your mixes, Rediscover and Forgotten gems, each with Play, Shuffle or Add, then a Listening recap (your requests and the server's plays over a chosen week, month, three months or year, with played time and top tracks and artists) and Clear my request stats. The queue view has one persistent player that expands into an artwork view; its Lyrics button shows the current song's lyrics in place of the cover (for the Discord session or this device), following the song when the lyrics are synced.
 Artwork colors and subtle aurora motion set the atmosphere; motion can be reduced

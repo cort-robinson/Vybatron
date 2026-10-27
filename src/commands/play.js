@@ -34,7 +34,12 @@ export async function execute(interaction) {
   const { player, created } = getOrCreatePlayer(interaction, channel);
   let added = false;
   try {
-    const { result, expired } = await resolveTrackQuery(player, query, interaction.user);
+    const lookup = () => resolveTrackQuery(player, query, interaction.user);
+    // For an existing session the slow lookup runs outside the playback lane,
+    // so Pause, Skip or Volume don't wait on it. The rechecks and the queue
+    // write below run back inside the lane. A new session keeps the lane: its
+    // player exists only for this request until something is queued.
+    const { result, expired } = await (!created && interaction.outsideMutationLane ? interaction.outsideMutationLane(lookup) : lookup());
     if (expired) {
       return interaction.editReply(textPayload(
         'That search suggestion expired. Type your search again and choose a fresh result.'

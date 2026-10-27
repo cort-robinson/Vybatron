@@ -228,8 +228,9 @@ Unavailable stats return 503 `stats_unavailable`.
 - GET `/api/guilds/:guildId/events[?protocol=2]`: credentialed same-origin SSE. `event:snapshot`
   carries GuildSnapshot. Heartbeat comments. Permission/session loss closes
   stream; state-unavailable must not replay writes. Bound connections, polling,
-  buffers, requests and payloads; fresh policy before protected data/mutations.
-  With `protocol=2` a fresh read that would show this viewer nothing new sends
+  buffers, requests and payloads; current policy before protected data and fresh
+  policy before mutations (ADR-0011).
+  With `protocol=2` a read that would show this viewer nothing new sends
   `event:unchanged` with `{revision, ordering}` instead of the snapshot; it
   renews freshness only when the page shows exactly the stream's last snapshot.
   Every stream ends its lifetime with `event:rotate` (`{}`) before closing;

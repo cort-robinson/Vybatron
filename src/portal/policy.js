@@ -45,11 +45,20 @@ function channelPool(limit) {
 // One authorization round can admit identity (2), guild (1), both members (2)
 // and Stop's two channel reads together, so urgent work reserves a full round.
 export const READ_ADMISSIONS = Object.freeze({ ordinary: 128, urgent: 8 });
+// Identity inputs with no Gateway event that keeps them current (ADR-0011):
+// the actor's own account for 30 s and the bot application's owner for five
+// minutes. Only a validated success is kept; a failure is never remembered.
+export const IDENTITY_CACHE = Object.freeze({ userMs: 30_000, applicationMs: 300_000, users: 1000 });
 
-export function createPortalPolicy(client, { operatorIds = [] } = {}) {
+export function createPortalPolicy(client, { operatorIds = [], now = () => Date.now() } = {}) {
   const operators = new Set(operatorIds.map(String));
   if ([...operators].some(id => !validId(id))) throw new Error('Invalid trusted portal operator configuration.');
   const pendingReads = new Map();
+  // epoch fences out a read that started before an invalidation.
+  const remembered = { users: new Map(), owner: null, epoch: 0 };
+  const forgetUser = user => { if (user?.id) remembered.users.delete(user.id); remembered.epoch++; };
+  const onUserUpdate = (_old, user) => forgetUser(user);
+  client.on?.('userUpdate', onUserUpdate);
   const ordinaryChannels = channelPool(4);
   const urgentChannels = channelPool(2);
   const read = async (input, key, fetch, fresh, urgent) => {
@@ -87,27 +96,59 @@ export function createPortalPolicy(client, { operatorIds = [] } = {}) {
   const identity = async (actorId, { fresh = false, urgent = false } = {}) => {
     ready();
     if (!validId(actorId)) fail(400, 'invalid_actor', 'A valid session actor is required.');
+    // A fresh identity (the latency view, clearing request stats, every
+    // pre-mutation REST stage) always reads Discord. Others may use a recent
+    // validated answer; neither input has a Gateway event to keep it current.
+    const at = now(); const epoch = remembered.epoch;
+    const knownUser = fresh ? null : remembered.users.get(actorId);
+    const knownOwner = fresh ? null : remembered.owner;
+    let readUser = false, readOwner = false;
     // These independent identity inputs use at most two admissions. Observe
     // both promises even when one fails, and derive no grant before both pass.
     // Explicit trusted operators still need a valid user, but no owner lookup.
     const [user, ownerId] = await Promise.all([
-      read('user', `user:${actorId}`, async () => detachUser(await client.users.fetch(actorId, { force: true })), fresh, urgent),
-      operators.has(actorId) ? undefined : read('application', 'application', async () => {
-        const { owner } = await client.application.fetch();
-        // Capture the scalar inside the read, before a sibling/Gateway await.
-        // User owners and verified team owners only, never every team member.
-        return owner?.ownerId || owner?.id;
-      }, fresh, urgent),
+      knownUser && knownUser.expires > at ? detachUser(knownUser.user)
+        : (readUser = true, read('user', `user:${actorId}`, async () => detachUser(await client.users.fetch(actorId, { force: true })), fresh, urgent)),
+      operators.has(actorId) ? undefined : knownOwner && knownOwner.expires > at ? knownOwner.id
+        : (readOwner = true, read('application', 'application', async () => {
+          const { owner } = await client.application.fetch();
+          // Capture the scalar inside the read, before a sibling/Gateway await.
+          // User owners and verified team owners only, never every team member.
+          return owner?.ownerId || owner?.id;
+        }, fresh, urgent)),
     ]);
     if (!user || user.id !== actorId || user.bot) fail(403, 'forbidden', 'This account cannot use the portal.');
+    if (remembered.epoch === epoch) {
+      if (readUser) {
+        remembered.users.delete(actorId); remembered.users.set(actorId, { user: detachUser(user), expires: at + IDENTITY_CACHE.userMs });
+        if (remembered.users.size > IDENTITY_CACHE.users) remembered.users.delete(remembered.users.keys().next().value);
+      }
+      if (readOwner && typeof ownerId === 'string' && validId(ownerId)) remembered.owner = { id: ownerId, expires: at + IDENTITY_CACHE.applicationMs };
+    }
     const maintainer = operators.has(actorId) || actorId === ownerId;
     return { user, maintainer };
   };
-  const guild = async (actorId, guildId, verifiedIdentity, { fresh = false, urgent = false, channelScope = 'session', channelIds = [] } = {}) => {
+  // gateway: answer from the Gateway-maintained cache when it can vouch
+  // (gatewayView), else the REST round below. Protected reads default to it;
+  // fresh REST stages (pre-mutation command checks) never use it unless the
+  // caller asks, as the final disclosure does (ADR-0011).
+  const guild = async (actorId, guildId, verifiedIdentity, { fresh = false, gateway = !fresh, urgent = false, channelScope = 'session', channelIds = [] } = {}) => {
     ready();
     if (!['session', 'history', 'none', 'configuration'].includes(channelScope)) throw new Error('Invalid internal channel scope.');
     if (!validId(guildId) || !client.guilds.cache.has(guildId)) fail(404, 'guild_not_found', 'That server is unavailable.');
     if (!verifiedIdentity && !validId(actorId)) fail(400, 'invalid_actor', 'A valid session actor is required.');
+    // Complete channel discovery stays a REST read after REST admin checks.
+    if (gateway && channelScope !== 'configuration' && gatewaySource(actorId, guildId)) {
+      const who = verifiedIdentity || await identity(actorId, { urgent });
+      ready();
+      // Built after the identity wait, in one synchronous step, so it reflects
+      // the Gateway state at this moment and no patch can land mid-evaluation.
+      const view = gatewayView(actorId, guildId, who, { channelScope, channelIds });
+      if (view) return view;
+      // The cache stopped vouching meanwhile (a kick, a shard resume). A fresh
+      // caller still gets a fresh identity in the REST round.
+      if (!fresh) verifiedIdentity = who;
+    }
     const server = client.guilds.cache.get(guildId);
     const readGuild = () => read('guild', `guild:${guildId}`, async () =>
       detachGuildResponse(server, await client.rest.get(Routes.guild(guildId)), guildId), fresh, urgent);
@@ -196,21 +237,30 @@ export function createPortalPolicy(client, { operatorIds = [] } = {}) {
     return { ...who, guild: stage.guild, member: stage.member, channels: stage.channels, roles: admin ? stage.roles : new Map(),
       roleIds: new Set(allRoles.keys()), me: stage.me, guildAdmin, admin, fetchChannel };
   };
-  // Session-scope authority from the Gateway-maintained cache, for audible
-  // controls only. With the members intent, every input (owner, role
-  // definitions, actor roles and timeout, channel overwrites, voice) is kept
-  // current by push events, so this is event-sourced state rather than a
-  // time-based cache. It grants no maintainer access. Returns null, so the
-  // caller takes a fresh REST round, whenever the cache can't be trusted: no
-  // members intent, the guild's shard isn't Ready (missed events replay on
-  // resume), or any input is missing.
-  const gatewayGuild = (actorId, guildId) => {
-    ready();
+  // Authority from the Gateway-maintained cache. With the members intent, every
+  // input (owner, role definitions, actor roles and timeout, channel
+  // overwrites, voice) is kept current by push events, so this is
+  // event-sourced state rather than a time-based cache. gatewaySource returns
+  // null, so the caller takes a REST round, whenever the cache can't be
+  // trusted: no members intent, the guild's shard isn't Ready (missed events
+  // replay on resume), or the actor, bot member or @everyone role is missing.
+  const gatewaySource = (actorId, guildId) => {
     if (!validId(actorId) || !validId(guildId) || !client.options?.intents?.has?.(GatewayIntentBits.GuildMembers)) return null;
     const server = client.guilds.cache.get(guildId);
     if (!server || server.available === false || server.shard?.status !== Status.Ready) return null;
     const live = server.members.cache.get(actorId); const bot = server.members.me;
     if (!live || live.partial || !live.user || live.user.id !== actorId || live.user.bot || !bot || !server.roles.cache.has(guildId)) return null;
+    return { server, live, bot };
+  };
+  // The view a REST round would build, from the cache, for session, history
+  // or none channel scope. A channel missing from the cache is absent, as a
+  // deleted one is from REST; the Guilds intent caches every guild channel.
+  // Maintainer status comes only from a verified identity (who).
+  const gatewayView = (actorId, guildId, who, { channelScope = 'session', channelIds = [] } = {}) => {
+    ready();
+    const source = gatewaySource(actorId, guildId);
+    if (!source || !['session', 'history', 'none'].includes(channelScope) || (who && who.user?.id !== actorId)) return null;
+    const { server, live, bot } = source;
     const { guildInput, allRoles } = detachGuildResponse(server, { id: server.id, owner_id: server.ownerId, name: server.name, icon: server.icon ?? null,
       roles: [...server.roles.cache.values()].map(role => ({ id: role.id, name: role.name, position: role.rawPosition ?? 0,
         permissions: String(role.permissions?.bitfield ?? 0n) })) }, guildId);
@@ -220,13 +270,25 @@ export function createPortalPolicy(client, { operatorIds = [] } = {}) {
       return channel?.id === id && channel.guildId === guildId && (TEXT_TYPES.has(channel.type) || VOICE_TYPES.has(channel.type))
         ? stage.bindChannel(detachChannel(channel)) : null;
     };
-    for (const id of sessionIds(guildId, actorVoiceId(stage.member))) { const channel = cached(id); if (channel) stage.channels.set(id, channel); }
+    if (channelScope !== 'none') {
+      for (const id of sessionIds(guildId, actorVoiceId(stage.member), channelIds, channelScope === 'history')) {
+        const channel = cached(id); if (channel) stage.channels.set(id, channel);
+      }
+    }
+    const maintainer = who?.maintainer === true;
     const guildAdmin = Boolean(stage.guild.ownerId === actorId || stage.member.permissions?.has(P.ManageGuild));
-    return { user: stage.member.user, maintainer: false, guild: stage.guild, member: stage.member, channels: stage.channels,
-      roles: guildAdmin ? stage.roles : new Map(), roleIds: new Set(allRoles.keys()), me: stage.me, guildAdmin, admin: guildAdmin,
+    const admin = guildAdmin || maintainer;
+    return { user: who?.user || stage.member.user, maintainer, guild: stage.guild, member: stage.member, channels: stage.channels,
+      roles: admin ? stage.roles : new Map(), roleIds: new Set(allRoles.keys()), me: stage.me, guildAdmin, admin,
       fetchChannel: async id => cached(id) };
   };
-  return { ready, identity, guild, gatewayGuild, close() { pendingReads.clear(); } };
+  // Session-scope Gateway authority for audible controls, without an identity
+  // read: it grants no maintainer access.
+  const gatewayGuild = (actorId, guildId) => gatewayView(actorId, guildId, null);
+  return { ready, identity, guild, gatewayGuild, close() {
+    pendingReads.clear(); remembered.users.clear(); remembered.owner = null; remembered.epoch++;
+    client.off?.('userUpdate', onUserUpdate);
+  } };
 }
 
 export function requirePlayback(context, client, { dj = true, sourceOnly = false, queueSource = false, saved = null, allowIdle = false } = {}) {

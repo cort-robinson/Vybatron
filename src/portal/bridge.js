@@ -41,6 +41,23 @@ async function readBody(request, maxBytes) {
   catch { fail(400, 'invalid_json', 'The command body is not valid JSON.'); }
 }
 
+// Concurrent bootstrap guild authorizations. 16 x 3 reads leaves most of the
+// 128 ordinary read admissions to snapshot and command traffic.
+const BOOTSTRAP_GUILD_ROUNDS = 16;
+// Map with at most `width` calls in flight, in input order. After a failure no
+// further call starts, as the serial waves stopped before.
+async function boundedMap(items, width, map) {
+  const results = new Array(items.length); let next = 0, failed = false;
+  const worker = async () => {
+    while (!failed && next < items.length) {
+      const index = next++;
+      try { results[index] = await map(items[index]); } catch (error) { failed = true; throw error; }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(width, items.length) }, worker));
+  return results;
+}
+
 // This adapter is the sole bot-side portal entry point. It only uses the
 // existing client.library and hardened Lavalink manager/command implementations.
 export function startPortalBridge(client, {
@@ -113,21 +130,18 @@ export function startPortalBridge(client, {
         if (url.pathname === '/v1/bootstrap' && request.method === 'GET') {
           const actorId = url.searchParams.get('actorId');
           const who = await policy.identity(actorId);
-          const guilds = [];
-          // The server whose voice the viewer is in, so the portal opens there.
-          let voiceGuildId = null;
           // Discord's installed guild inventory is authoritative and bounded.
           const ids = [...client.guilds.cache.keys()].slice(0, 1000);
-          for (let start = 0; start < ids.length; start += 4) {
-            const results = await Promise.all(ids.slice(start, start + 4).map(async id => {
-              try {
-                const context = await policy.guild(actorId, id, who, { channelScope: 'none' });
-                if (!voiceGuildId && validId(actorVoiceId(context.member))) voiceGuildId = context.guild.id;
-                return guildProjection(context);
-              } catch (error) { if (error?.status === 404) return null; throw error; }
-            }));
-            guilds.push(...results.filter(Boolean));
-          }
+          // Gateway-backed guilds answer at once. The rest take their REST
+          // rounds together rather than in serial waves, bounded so they fit
+          // the ordinary read admission (three reads each with a verified identity).
+          const contexts = await boundedMap(ids, BOOTSTRAP_GUILD_ROUNDS, async id => {
+            try { return await policy.guild(actorId, id, who, { channelScope: 'none' }); }
+            catch (error) { if (error?.status === 404) return null; throw error; }
+          });
+          const guilds = contexts.filter(Boolean).map(guildProjection);
+          // The server whose voice the viewer is in, so the portal opens there.
+          const voiceGuildId = contexts.find(context => context && validId(actorVoiceId(context.member)))?.guild.id || null;
           return json(response, 200, { viewer: { id: who.user.id, username: who.user.username.slice(0, 80), displayName: actorProjection(who.user).displayName, avatarUrl: actorProjection(who.user).avatarUrl, maintainer: who.maintainer }, guilds, voiceGuildId, filters: FILTERS, commands: publicCommands(commandMap), inviteUrl: who.maintainer ? clientInviteUrl(client) : null }, maxResponseBytes);
         }
         if (url.pathname === '/v1/stats/requests/clear' && request.method === 'POST') {

@@ -34,16 +34,22 @@ Discord REST reads have individual five-second deadlines. Arbitrary upstream err
 replaced with safe error categories; bridge bind/request failures do not become
 fatal bot/audio errors. Shutdown closes the bridge before music data and Discord.
 
-Every protected read and command refreshes Discord identity, application-owner
+Every protected read and command checks Discord identity, application-owner
 verification, installed guild ownership, guild membership, channels, role
-definitions and the bot member. Voice state comes from the ready Discord
-gateway's trusted live voice-state cache. Both the session voice channel and
+definitions and the bot member. Protected reads and each command's final
+disclosure take them from the Gateway-maintained cache when it can vouch (members
+intent, shard Ready, actor, bot member and @everyone cached), else from a REST
+round; pre-write command stages read REST fresh. The actor's account is
+remembered for 30 seconds and the application owner for five minutes, successes
+only ([ADR-0011](../../docs/adr/0011-portal-authorization-from-gateway-state.md)).
+Voice state comes from the ready Discord gateway's trusted live voice-state cache. Both the session voice channel and
 controller text channel must be visible to reveal live/saved session data. History
 is independently filtered by its original voice channel. Basic members never
 receive settings, channels, roles, diagnostics or actor activity.
 
-Overlapping protected reads coalesce the same in-flight Discord REST request;
-completed profiles, ownership and permission results are never cached. Commands
+Overlapping protected reads coalesce the same in-flight Discord REST request.
+No completed REST permission result is reused; only the validated account and
+application owner are remembered (ADR-0011). Command stages that read REST
 always start separate fresh reads, including their post-lookup checks. Underlying
 reads retain their admission slot after an individual caller times out, until
 Discord settles, preventing stalled reads multiplying on every poll. The pool
@@ -111,8 +117,8 @@ verified maintainer retains configuration access. Private favorites remain scope
 to the actor. This prevents earlier
 captured embeds from disclosing names after current or history-source revocation;
 no mutation is rerun. Public help and visible-session native errors retain their
-useful text. Application ownership is still verified fresh at every required
-stage, with no new owner/operator lifetime or completed identity cache.
+useful text. Application ownership is verified fresh at every pre-write REST
+stage; reads and final disclosures may use the owner remembered for five minutes.
 
 Commands reuse the existing handlers and exactly one `guardedMutation` lane.
 Revision comparison runs inside that lane after a fresh access check. Slow
@@ -120,7 +126,12 @@ lookups recheck membership/voice/DJ/channel visibility before writes. Track-end
 events, queue/current identity changes, relevant player/settings/mix/history
 changes and explicit seeks invalidate revisions; interpolated time and periodic
 checkpoint timestamps do not. Stop ignores an old valid revision and preserves
-the urgent cancellation/player-fence path. Ordinary additions remain serialized.
+the urgent cancellation/player-fence path. Ordinary additions remain serialized
+among themselves. `/play` for a running session looks its song up outside the
+playback lane, so Pause, Skip or Volume don't wait on a slow catalog lookup; it
+re-enters the lane behind them, rechecks voice, session and authority, then
+writes. A play that starts a session keeps the lane throughout. Actor activity
+is recorded in lane order but the lane doesn't wait for its durable write.
 Portal option aliases are `skipto(position)` -> slash `index`, and `replay(index)`
 -> slash `position`. Replay resolves a fresh public reference from visible
 persisted history and verifies the same visible history entry after resolution,
@@ -193,6 +204,6 @@ and deployment release gates.
 
 Web Pause/Resume/Seek/Filter/Volume, and Loop/Shuffle/Remove/Move/Clear/Radio-on, await the actual playback API and schedule owned, bounded cosmetic writers. Their timing records report zero awaited presentation spans; native Pause/Resume retain awaited controller and voice-status spans. Background writer settlement is excluded from command timing and never represents audible delivery. Terminal Stop and idle paths retire presentation ownership immediately and do not await cosmetic REST settlement before destroying playback.
 
-Every handler whose first await is the native `requireControl` guard (those controls plus Skip, Skip-to, Voteskip and Stop) takes its only pre-write authority at that in-lane guard, followed by a fresh final disclosure.
+Every handler whose first await is the native `requireControl` guard (those controls plus Skip, Skip-to, Voteskip and Stop) takes its only pre-write authority at that in-lane guard, followed by the final disclosure (Gateway state when it can vouch, else fresh REST).
 
 `changes.js` serves the private `GET /v1/changes` wake-up long poll for the portal API: guild IDs and a cursor only, driven by Lavalink player events, a 250 ms local revision scan while a consumer is active, and Gateway voice/channel/role/guild updates. See [instant controls](../../docs/portal-instant-controls.md).

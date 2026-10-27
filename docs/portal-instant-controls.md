@@ -96,8 +96,9 @@ voice guard, a recheck after the lookup and after each of enqueue, connect and
 start, then the final disclosure): 56 Discord reads and, at the 300-570 ms
 measured per round, several seconds. Every recheck still runs, against Gateway
 state, so leaving or moving voice or losing the DJ role during a slow lookup
-still stops the addition. Only the final disclosure reads REST
-(`tests/portal-gateway-authority.test.js`). Two smaller savings come with it: a
+still stops the addition. Only the final disclosure read REST
+(`tests/portal-gateway-authority.test.js`); since ADR-0011 it reads none once the
+actor's identity is remembered (`tests/portal-authorization-cache.test.js`). Two smaller savings come with it: a
 song chosen from portal search is added from the track that search already
 loaded (kept per listener for five minutes) instead of loading its link again,
 and the Discord controller edit no longer holds the web reply.
@@ -105,8 +106,9 @@ and the Discord controller edit no longer holds the web reply.
 It returns nothing, and the command takes the fresh REST round as before, when
 the cache can't be trusted: no members intent, the guild's shard not Ready
 (missed events replay on resume), or a missing actor, bot member or @everyone
-role. Stop, queue edits, settings, library actions and every final disclosure
-keep fresh REST authority.
+role. Stop, queue edits, settings and library actions keep fresh REST authority
+before their write. Since ADR-0011 the final disclosure, and every protected
+read, also use Gateway state when it can vouch, else a REST round.
 
 The trade-off: a permission change takes effect when its Gateway event
 arrives (normally well under a second) rather than at the next REST read.

@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { guardedMutation, withGuildMutation, cancelGuildMutations } from '../src/utils/requests.js';
 import { maintenanceStatus, setMaintenance } from '../src/utils/maintenance.js';
+import { track } from './fixtures.js';
 
 function interaction(client, type = 'slash') {
   return {
@@ -72,4 +73,76 @@ test('authorized urgent stop runs before a slow import, cancels older waiting wo
   finish(); await Promise.all([loading, oldRejection]);
   assert.deepEqual(events, ['loading', 'stop', 'fresh']);
   assert.equal(maintenanceStatus(client).inFlight, 0);
+});
+
+const turn = () => new Promise(resolve => setImmediate(resolve));
+function gate() { let resolve; const promise = new Promise(done => { resolve = done; }); return { promise, resolve }; }
+
+test('an ordered addition looks up outside the lane: later controls run meanwhile, later additions keep their place', async () => {
+  const events = []; const lookup = gate();
+  const addition = withGuildMutation('100', async lane => {
+    events.push('A:start');
+    await lane.outsideLane(async () => { events.push('A:lookup'); await lookup.promise; });
+    events.push('A:write');
+  }, { ordered: true });
+  await turn();
+  const later = withGuildMutation('100', async () => { events.push('B:write'); }, { ordered: true });
+  const control = withGuildMutation('100', async lane => { assert.equal(lane.outsideLane, null, 'only additions may leave the lane'); events.push('pause'); });
+  await control;
+  assert.deepEqual(events, ['A:start', 'A:lookup', 'pause'], 'Pause ran during the lookup; the later addition waited');
+  lookup.resolve(); await Promise.all([addition, later]);
+  assert.deepEqual(events, ['A:start', 'A:lookup', 'pause', 'A:write', 'B:write']);
+});
+
+test('an addition re-entering the lane waits for the current holder and honors Stop', async () => {
+  const events = []; const lookup = gate(); const hold = gate(); const held = gate();
+  const addition = withGuildMutation('100', async lane => {
+    await lane.outsideLane(() => lookup.promise);
+    events.push('A:write');
+  }, { ordered: true });
+  await turn();
+  const control = withGuildMutation('100', async () => { held.resolve(); await hold.promise; events.push('volume'); });
+  await held.promise; lookup.resolve(); await turn(); await turn();
+  assert.deepEqual(events, [], 'the addition waits behind the control that holds the lane');
+  hold.resolve(); await Promise.all([control, addition]);
+  assert.deepEqual(events, ['volume', 'A:write']);
+  // Stop during the lookup cancels the write on re-entry.
+  const stopped = gate();
+  const cancelled = withGuildMutation('100', async lane => { await lane.outsideLane(() => stopped.promise); assert.fail('must not write after Stop'); }, { ordered: true });
+  const rejection = assert.rejects(cancelled, /cancelled by Stop/);
+  await turn(); cancelGuildMutations('100'); stopped.resolve(); await rejection;
+});
+
+function activityClient() {
+  const player = { queue: { current: track('aaaaaaaaaaa'), tracks: [] } };
+  const recorded = []; let release = null;
+  const client = {
+    lavalink: { getPlayer: () => player },
+    library: { readGuild: () => ({ session: null }), settings: () => ({}),
+      recordActivity: (guildId, user) => { recorded.push(user.id); return release ? release.promise : Promise.resolve(); } },
+  };
+  return { client, player, recorded, hold() { release = gate(); return release; } };
+}
+
+test('the lane does not wait for activity to be saved, and activity keeps lane order', async () => {
+  const { client, player, recorded, hold } = activityClient();
+  const saving = hold();
+  const skip = (id, identifier) => guardedMutation({ ...interaction(client), commandName: 'skip', user: { id }, options: { getSubcommand: () => null } },
+    async () => { player.queue.tracks.push(track(identifier)); }, { playback: true });
+  await skip('200', 'bbbbbbbbbbb');
+  await skip('201', 'ccccccccccc');
+  assert.deepEqual(recorded, ['200', '201'], 'both recorded in lane order while the first save is still pending');
+  saving.resolve();
+});
+
+test('changes others make during an outside-lane lookup are not recorded as the addition’s activity', async () => {
+  const { client, player, recorded } = activityClient();
+  const lookup = gate(); const looking = gate();
+  const play = guardedMutation({ ...interaction(client), commandName: 'play', user: { id: '200' }, options: { getSubcommand: () => null } },
+    async proxy => { await proxy.outsideMutationLane(async () => { looking.resolve(); await lookup.promise; }); }, { playback: true, lookupOutsideLane: true });
+  await looking.promise;
+  await guardedMutation({ ...interaction(client), commandName: 'skip', user: { id: '201' }, options: { getSubcommand: () => null } },
+    async () => { player.queue.current = track('bbbbbbbbbbb'); }, { playback: true });
+  lookup.resolve(); await play;
+  assert.deepEqual(recorded, ['201'], 'the lookup that changed nothing records nothing');
 });

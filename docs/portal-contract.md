@@ -228,7 +228,8 @@ Unavailable stats return 503 `stats_unavailable`.
 - GET `/api/guilds/:guildId/events`: credentialed same-origin SSE. `event:snapshot`
   carries GuildSnapshot. Heartbeat comments. Permission/session loss closes
   stream; state-unavailable must not replay writes. Bound connections, polling,
-  buffers, requests and payloads; fresh policy before protected data/mutations.
+  buffers, requests and payloads; current policy before protected data and fresh
+  policy before mutations (ADR-0011).
 
 Mutations require `X-CSRF-Token` from bootstrap and exact same-origin checks.
 Use HttpOnly/Secure/SameSite cookies and no-store API/auth responses. Do not

@@ -86,6 +86,17 @@ test('a run interrupted by shutdown writes no report and starts over next time',
   assert.deepEqual(f.library.favorites('201'), [video, song]);
 });
 
+test('shutdown during apply stops further writes and publishes no report', async t => {
+  const f = await setup(t);
+  let stopping = false;
+  const backup = f.library.publishBackup.bind(f.library);
+  f.library.publishBackup = async (...args) => { await backup(...args); stopping = true; };
+  assert.equal(await f.run({ mode: 'apply', draining: () => stopping }), null);
+  await assert.rejects(fs.stat(path.join(f.directory, UPGRADE_REPORT)), { code: 'ENOENT' });
+  assert.deepEqual(f.library.favorites('200'), [video, topic, live, soundcloud]);
+  assert.deepEqual(f.library.readGuild('100').mixes.night.tracks, [offline, video]);
+});
+
 test('upgradeList drops an upgraded entry when its song is already listed', () => {
   const list = [video, song, video];
   assert.equal(upgradeList(list, new Map([[video.uri, song]])), 2);

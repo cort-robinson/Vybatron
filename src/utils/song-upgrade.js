@@ -47,16 +47,17 @@ export function upgradeList(list, upgrades) {
   return changed;
 }
 
-async function applyUpgrades(library, upgrades) {
+async function applyUpgrades(library, upgrades, draining) {
   const affected = list => list.some(ref => upgrades.has(ref.uri));
   await library.publishBackup(`${library.filePath}.pre-song-upgrade.bak`, await fs.readFile(library.filePath, 'utf8'));
   let favorites = 0, mixes = 0;
   for (const userId of library.favoriteUserIds()) {
-    if (affected(library.favorites(userId))) favorites += await library.updateFavorites(userId, list => upgradeList(list, upgrades));
+    // Shutdown can begin between writes; each write checks again before it changes anything.
+    if (affected(library.favorites(userId))) favorites += await library.updateFavorites(userId, list => draining() ? 0 : upgradeList(list, upgrades));
   }
   for (const guildId of library.guildIds()) {
     if (!Object.values(library.readGuild(guildId).mixes || {}).some(mix => affected(mix.tracks))) continue;
-    mixes += await library.updateGuild(guildId, guild => Object.values(guild.mixes).reduce((sum, mix) => sum + upgradeList(mix.tracks, upgrades), 0));
+    mixes += await library.updateGuild(guildId, guild => draining() ? 0 : Object.values(guild.mixes).reduce((sum, mix) => sum + upgradeList(mix.tracks, upgrades), 0));
   }
   return { favorites, mixes };
 }
@@ -88,7 +89,8 @@ export async function upgradeSavedSongs({ library, node, mode = UPGRADE_MODE, dr
     await wait(pauseMs);
   }
   if (draining()) return null;
-  const applied = mode === 'apply' ? await applyUpgrades(library, upgrades) : null;
+  const applied = mode === 'apply' ? await applyUpgrades(library, upgrades, draining) : null;
+  if (draining()) return null;
   const report = { version: 1, mode, finishedAt: new Date(now()).toISOString(), ...counts, upgrades: upgrades.size, applied,
     changes: [...upgrades].map(([uri, song]) => ({ lists: [...lists.get(uri)],
       from: { title: saved.get(uri).title, author: saved.get(uri).author, uri }, to: { title: song.title, author: song.author, uri: song.uri } })) };

@@ -12,7 +12,7 @@ A shared soundtrack for Discord, with a player that stays out of the way and an 
 - **Web portal:** Discord sign-in, a live shared queue, an expanding artwork player, private favorites and server management on desktop or phone. Audio continues in Discord.
 - **Listen together:** optional fair queue, majority vote skip, a DJ role, and server volume defaults.
 - **Make it sound right:** Original, Bass, Warm, Clarity, Nightcore, Slow, and Mono presets. Each preset replaces previous effects.
-- **Keep the music going:** smart autoplay plays related songs from YouTube's "up next" mix after the human-requested queue runs out. Seeds drift with what's been playing, recent server plays and near-duplicates are skipped, and skipping a pick plays less like it. Servers choose off, on, or on only while someone is listening; `/radio` overrides it for a session.
+- **Keep the music going:** smart autoplay plays related songs from YouTube's "up next" mix after the human-requested queue runs out. Picks take turns between the people in the voice channel, seeded from each one's requests and favorites (anyone can opt out with `/radio mytaste`), and still drift with what's been playing. Recent server plays and near-duplicates are skipped, and skipping a pick plays less like it. Servers choose off, on, or on only while someone is listening; `/radio` overrides it for a session.
 - **One shared player:** artwork, progress, speed-aware timing, recovery state, Favorite, queue browsing, Seek, and confirmed Stop. Private confirmations keep the channel quiet.
 - **Reliable operations:** durable atomic library writes, a non-root container, bounded memory/logs, graceful shutdown, health diagnostics, and exact-commit deployment with rollback.
 
@@ -52,6 +52,7 @@ Start with `/help`. Join a voice channel and use `/play` with a song and artist,
 | `/top show/play` | Browse or queue this server's favorites: On repeat or Forgotten gems, optionally shuffled |
 | `/mymix show/play` | Browse or queue your personal playlists: Your mix, top tracks (with a time range), Rediscover, or an artist mix |
 | `/radio on [track]/off` | Turn autoplay on or off for this session; `track` starts it from a chosen song or link |
+| `/radio mytaste <enabled>` | Choose whether autoplay uses your requests and favorites while you're in voice with the bot (on by default, every server) |
 | `/radio promote/remove/less <position>` | Move a suggestion into the queue (any listener in voice; it stays an autoplay pick), remove it, or hear less like it; `/radio less` without a position skips the current autoplay pick |
 | `/session show/resume/discard` | Preview or explicitly restore a checkpoint kept for 72 hours |
 | `/settings show/volume/fairqueue/autoplay/djrole/musicchannel/reset` | Server defaults and portal controller channel; requires server owner or Manage Server |

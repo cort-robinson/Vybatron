@@ -1,5 +1,7 @@
 export interface Viewer {
   id: string; username: string; displayName: string; avatarUrl: string | null; maintainer: boolean;
+  // Whether autoplay takes turns with this listener's taste while they're in voice. Older bots omit it.
+  autoplayTaste?: boolean;
 }
 export interface Guild { id: string; name: string; iconUrl: string | null; admin: boolean }
 export interface Channel { id: string; name: string; type: 'voice' | 'text' }

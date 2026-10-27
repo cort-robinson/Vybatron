@@ -47,10 +47,13 @@ function publicOption(option) {
   if (option.portalCommand) result.name = publicName(option.portalCommand, result.name);
   return result;
 }
+// Personal preferences have their own portal endpoints, not a server's command lane.
+const PORTAL_HIDDEN = new Set(['radio:mytaste']);
+const portalOption = (name, option) => !(option.type === 1 && PORTAL_HIDDEN.has(`${name}:${option.name}`));
 export function publicCommands(commandMap) {
   return [...commandMap.entries()].filter(([name]) => ALLOWED.has(name)).map(([name, command]) => {
     const schema = command.data.toJSON();
-    return { name, description: plainText(schema.description, { maxLength: 100 }), options: (schema.options || []).map(option => publicOption({ ...option, portalCommand: name })) };
+    return { name, description: plainText(schema.description, { maxLength: 100 }), options: (schema.options || []).filter(option => portalOption(name, option)).map(option => publicOption({ ...option, portalCommand: name })) };
   });
 }
 export function validateCommand(body, commandMap) {
@@ -70,7 +73,7 @@ export function validateCommand(body, commandMap) {
     if (required && (typeof body[key] !== 'string' || !shape.test(body[key]))) fail(400, 'invalid_selection', 'Include the selected library item token before trying again.');
   }
   const schema = handler(commandMap, body.command).data.toJSON();
-  const subcommands = (schema.options || []).filter(option => option.type === 1);
+  const subcommands = (schema.options || []).filter(option => option.type === 1 && portalOption(body.command, option));
   let options = schema.options || [];
   if (subcommands.length) {
     const subcommand = subcommands.find(option => option.name === body.subcommand);

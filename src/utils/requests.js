@@ -86,7 +86,7 @@ export function commandMutationPolicy(name, action) {
     || (['favorite', 'mix', 'session', 'settings', 'top', 'mymix', 'sleep'].includes(name) && ['list', 'show'].includes(action))
     // An import preview only reads; its confirmation is a library write.
     || (['favorite', 'mix'].includes(name) && action === 'import');
-  const libraryOnly = (['favorite', 'mix'].includes(name) && !['play', 'load'].includes(action)) || name === 'settings';
+  const libraryOnly = (['favorite', 'mix'].includes(name) && !['play', 'load'].includes(action)) || name === 'settings' || (name === 'radio' && action === 'mytaste');
   // Additions keep their order among themselves; only /play looks its song up
   // outside the playback lane (when a session exists).
   const addition = ['play', 'playnext', 'replay', 'transfer'].includes(name) || (name === 'radio' && action === 'promote')

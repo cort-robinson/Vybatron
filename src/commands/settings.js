@@ -28,9 +28,12 @@ export async function execute(interaction) {
   const library = interaction.client.library;
   let channel = interaction.options.getChannel?.('channel');
   if (action === 'musicchannel' && channel) {
-    // Tracked: this forced read writes the cache portal Gateway authority trusts (ADR-0011).
     const target = channel.id;
-    channel = await withTimeout(trackedChannelRead(interaction.client, interaction.guildId, [target], () => interaction.guild.channels.fetch(target, { force: true })), 5000);
+    const read = () => interaction.guild.channels.fetch(target, { force: true });
+    // A native read writes the cache portal Gateway authority trusts, so it is
+    // tracked (ADR-0011). The portal's request-local view is already a tracked
+    // policy read; wrapping it again could clear a mark too early.
+    channel = await withTimeout(interaction.portalRecheck ? read() : trackedChannelRead(interaction.client, interaction.guildId, [target], read), 5000);
     // cache:false leaves the Gateway-maintained bot member untouched (ADR-0011).
     const me = await withTimeout(interaction.guild.members.fetchMe({ force: true, cache: false }), 5000);
     const permissions = channel?.permissionsFor?.(me);

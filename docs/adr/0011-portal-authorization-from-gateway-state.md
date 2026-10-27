@@ -56,8 +56,14 @@ unpatched cached object), so every forced channel read (the policy's, its config
 and native `/settings musicchannel`) runs through `src/utils/channel-reads.js`. A
 `channelCreate`/`channelUpdate`/`channelDelete` that arrives while a read of that channel is in
 flight makes the channel untrusted at once, before the late answer can be written, and it stays
-untrusted after that read lands until a later read of it completes with no update in between (a
-deleted channel never does, so it stays on REST). Gateway authority refuses any read or reply
+untrusted after that read lands until a later read of it completes with nothing crossing. Changes
+that re-patch a guild's channels without per-channel events cross every in-flight read of that
+guild: the guild becoming unavailable or available again (a new Gateway session marks every guild
+unavailable until its `GUILD_CREATE`), joining or leaving it, and shard ready, resume, reconnect,
+disconnect and session invalidation. A mark is dropped once the channel is gone from the cache
+with no read in flight (Gateway authority then treats it as absent, as REST would), or when the
+bot leaves the guild. Only the call that writes the cache is wrapped: the portal's settings
+path is already a tracked policy read and isn't wrapped again. Gateway authority refuses any read or reply
 that needs an untrusted channel. Native `/settings musicchannel` also reads its bot member with
 `cache: false`. Other channel fetches in the bot are unforced and only fill a missing entry.
 

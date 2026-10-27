@@ -116,3 +116,17 @@ test('native /settings musicchannel reads its channel through the same tracking'
   assert.equal(policy.gatewayGuild('200', '100'), null, 'so Gateway authority refuses that channel');
   assert.equal(replies.length, 1);
 });
+
+test('a REST channel read that spans the guild becoming available again cannot undo the refreshed overwrites', async t => {
+  const { f, guild, policy, hold, channelData } = await realGuild(t);
+  const hidden = [{ id: '200', type: OverwriteType.Member, allow: '0', deny: String(P.ViewChannel) }];
+  const gate = hold('/channels/400');
+  const reading = policy.guild('200', '100', undefined, { fresh: true }); await tick();
+  // GUILD_DELETE (unavailable), then GUILD_CREATE re-patching channels with no channelUpdate.
+  guild.available = false; f.client.emit('guildUnavailable', guild);
+  guild.channels.cache.get('400')._patch(channelData('400', ChannelType.GuildText, hidden));
+  guild.available = true; f.client.emit('guildAvailable', guild);
+  gate.resolve(); await reading;
+  assert.equal(guild.channels.cache.get('400').permissionOverwrites.cache.has('200'), false, 'the late answer rewrote the refresh');
+  assert.equal(policy.gatewayGuild('200', '100'), null, 'Gateway authority refuses the channel until a clean read');
+});

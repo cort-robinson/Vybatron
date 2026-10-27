@@ -1,6 +1,7 @@
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { CaretDownIcon, CheckIcon, DesktopIcon, DiscordLogoIcon, CaretUpIcon, DotsThreeIcon, HeartIcon, PauseIcon, PlayIcon, RepeatIcon, RepeatOnceIcon, ShuffleIcon, SkipBackIcon, SkipForwardIcon, SpeakerHighIcon, StopIcon, RadioIcon, HandPalmIcon, ArrowSquareOutIcon, TrashIcon, WarningCircleIcon, ThumbsDownIcon, VinylRecordIcon, MoonIcon, MicrophoneStageIcon } from '@phosphor-icons/react';
 import type { Portal } from '../usePortal';
+import { saveByLink, useSavingFavorite } from '../favorites';
 import type { Command, GuildSnapshot, Track } from '../types';
 import { publicUrl } from '../api';
 import { time, timestamp } from '../format';
@@ -117,7 +118,9 @@ export function Player({ portal, expanded, setExpanded, onAdd, accent, animate, 
     }, identity);
   }, [expanded, local]);
   const index = library?.favorites.findIndex(t => t.id === track?.id) ?? -1;
-  const toggleFavorite = () => index < 0 ? run({ command: 'favorite', subcommand: 'add', expectedRevision: snapshot?.revision }, 'library') : run({ command: 'favorite', subcommand: 'remove', options: { index: index + 1 }, expectedTrackId: library?.favorites[index].id }, 'library');
+  const savingFavorite = useSavingFavorite();
+  const toggleFavorite = () => index >= 0 ? run({ command: 'favorite', subcommand: 'remove', options: { index: index + 1 }, expectedTrackId: library?.favorites[index].id }, 'library')
+    : local ? saveByLink(portal, track?.uri) : run({ command: 'favorite', subcommand: 'add', expectedRevision: snapshot?.revision }, 'library');
   const active = session?.status === 'playing';
   const blockedTitle = !can('control') ? portal.blockedReason : pending.length ? 'Waiting for confirmation. Playback controls are temporarily unavailable.' : undefined;
   const permissionReason = !can('control') ? portal.blockedReason : session?.reason;
@@ -136,7 +139,7 @@ export function Player({ portal, expanded, setExpanded, onAdd, accent, animate, 
     : discordActive ? `Join the session in ${discord?.voiceChannel?.name || 'Discord'}`
     : discord?.viewerVoice ? `${track ? 'Move to' : 'Discord ·'} ${discord.viewerVoice.name}` : 'Discord · join a voice channel first';
   const others = discord?.listeners.filter(listener => listener.id !== bootstrap?.viewer.id).length || 0;
-  const favorite = track && <IconButton className={`favorite ${index >= 0 ? 'active' : ''}`} label={index >= 0 ? 'Remove current song from favorites' : 'Save current song to favorites'} aria-pressed={index >= 0} disabled={!can('library') || !library || !!pending.length || local && index < 0} title={local && index < 0 ? 'Save favorites while a song plays in Discord.' : undefined} onClick={() => void toggleFavorite()}><HeartIcon size={expanded ? 28 : 25} weight={index >= 0 ? 'fill' : 'regular'} /></IconButton>;
+  const favorite = track && <IconButton className={`favorite ${index >= 0 ? 'active' : ''}`} label={index >= 0 ? 'Remove current song from favorites' : 'Save current song to favorites'} aria-pressed={index >= 0} disabled={!can('library') || !library || !!pending.length || savingFavorite} onClick={() => void toggleFavorite()}><HeartIcon size={expanded ? 28 : 25} weight={index >= 0 ? 'fill' : 'regular'} /></IconButton>;
   // An autoplay pick names its provenance in place of the source.
   const metadata = track ? <>{track.author}<span className="metadata-dot" aria-hidden="true">·</span><span className="track-source">{track.suggested ? 'Autoplay pick' : track.source}</span></> : 'Add a song to start.';
   // The same size as the favorite button and on the title's other side, so the title stays centered.

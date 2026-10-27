@@ -26,8 +26,9 @@ moves the session between this device and Discord (Play on).
   YouTube link starts inside the tap that asked for it (iOS requires this); songs from
   other catalogs play their closest YouTube match. The next song is warmed in the bot's
   cache while the current one plays. CSP: `media-src 'self'`; no third-party script or frame.
-- Discord-only actions (filters, autoplay/radio, vote skip, saving sessions as mixes,
-  saved-session resume, and saving a new favorite) are hidden or disabled locally.
+- Discord-only actions (filters, autoplay/radio, vote skip, saving sessions as mixes
+  and saved-session resume) are hidden or disabled locally. Saving a favorite from this device
+  sends the song's public link through a one-song favorites import, since Discord's player doesn't hold it.
 
 ## Development and verification
 

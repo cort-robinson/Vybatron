@@ -135,3 +135,20 @@ test('offline Home explains the wait once, in the connection banner', async ({ p
   await expect(page.locator('.connection-banner')).toBeVisible();
   await expect(page.locator('.home-view .permission-note')).toHaveCount(0);
 });
+
+test('the phone Search field sticks to the top edge, with one focus ring in every look', async ({ page }) => {
+  await page.setViewportSize(phone);
+  for (const skin of ['fantastic', 'overdrive', 'classic']) {
+    await page.addInitScript(s => localStorage.setItem('vybertron.skin', s), skin);
+    const fixture = await mockPortal(page);
+    for (let i = 0; i < 8; i++) fixture.state.library.favorites.push({ ...fixture.state.library.favorites[0], id: `fav${i}`.padEnd(24, '0'), title: `Song ${i}`, uri: `https://example.com/music/s${i}` });
+    await page.goto('/');
+    await page.getByRole('navigation', { name: 'Main navigation' }).getByRole('button', { name: 'Search' }).click();
+    const field = page.locator('.search-page').getByRole('searchbox', { name: 'Music search' });
+    await expect(field).toBeFocused();
+    // The field's own pill draws the ring; the input inside it draws none.
+    expect(await field.evaluate(el => getComputedStyle(el).boxShadow)).toBe('none');
+    await page.evaluate(() => scrollTo(0, 400));
+    await expect.poll(async () => Math.round((await page.locator('.search-page .search-form').boundingBox())!.y)).toBe(0);
+  }
+});

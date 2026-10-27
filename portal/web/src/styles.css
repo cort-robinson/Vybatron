@@ -1053,7 +1053,10 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
   .mobile-account { display: block; position: relative; flex-shrink: 0; }
   .mobile-account-trigger { display: grid; place-items: center; width: 44px; height: 44px; padding: 0; border-radius: 50%; background: none; }
   .mobile-account-trigger .avatar { width: 36px; height: 36px; }
-  .search-page .search-form { position: sticky; top: var(--mobile-header); z-index: 2; margin: -16px -16px 0; padding: 12px 16px; background: color-mix(in oklab, var(--ground) 94%, transparent); }
+  /* The phone header scrolls away, so the search field sticks to the top edge itself. Its ground
+     reaches up under the status bar so nothing scrolls through behind it there. */
+  .search-page .search-form { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 2; margin: -16px -16px 0; padding: 12px 16px; background: color-mix(in oklab, var(--ground) 94%, transparent); }
+  .search-page .search-form::before { content: ''; position: absolute; left: 0; right: 0; bottom: 100%; height: env(safe-area-inset-top, 0px); background: inherit; }
 }
 .search-page { max-width: 880px; }
 .search-page .empty-state { min-height: 255px; }

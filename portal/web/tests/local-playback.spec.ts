@@ -158,8 +158,8 @@ test('home lists queue on this device from the tracks the portal already shows',
   await expect(title(page)).toHaveText('Midnight City');
   await page.getByRole('button', { name: 'Queue', exact: true }).click();
   await expect(page.locator('.track-row')).toHaveCount(3);
-  // Saving a song that isn't a favorite needs the Discord session.
-  await expect(page.getByTestId('player').getByRole('button', { name: 'Save current song to favorites' })).toBeDisabled();
+  // A song on this device can be saved too; it goes through a one-song import.
+  await expect(page.getByTestId('player').getByRole('button', { name: 'Save current song to favorites' })).toBeEnabled();
 });
 
 test.describe('on a touch screen', () => {
@@ -184,4 +184,71 @@ test.describe('on a touch screen', () => {
     await expect(page.getByTestId('player')).toHaveClass(/collapsed/);
     expect(fixture.commands).toEqual([]);
   });
+});
+
+// The bot's one-song import, as the server answers it: a preview, then the commit that saves it.
+async function favoriteImports(page: Page, fixture: Awaited<ReturnType<typeof portal>>, preview: (link: string) => object | null, hold?: Promise<void>) {
+  await page.route('**/api/guilds/*/commands', async route => {
+    const body = route.request().postDataJSON();
+    if (body.command !== 'favorite' || body.subcommand !== 'import') return route.fallback();
+    fixture.commands.push(body);
+    if (hold) await hold;
+    const reply = { ok: true, snapshot: fixture.state.snapshot };
+    if (!body.expectedImportId) return route.fulfill({ json: { ...reply, message: 'Preview ready.', preview: preview(body.options.link) } });
+    fixture.state.library.favorites.push(youtubeTrack('dX3k_QDnzHE', 'Midnight City'));
+    return route.fulfill({ json: { ...reply, message: 'Added 1 track.' } });
+  });
+}
+const onePreview = (overrides = {}) => ({ id: 'c'.repeat(32), target: 'favorites', name: null, title: 'Midnight City', found: 1, toAdd: 1, duplicates: 0, unmatched: 0, overLimit: 0, limit: 1000, notes: [], tracks: [{ title: 'Midnight City', author: 'M83' }], ...overrides });
+
+test('a song on this device saves to favorites through a one-song import', async ({ page }) => {
+  const fixture = await portal(page, { inVoice: false });
+  await favoriteImports(page, fixture, () => onePreview());
+  await addSongs(page);
+  await expect(title(page)).toHaveText('Midnight City');
+  const player = page.getByTestId('player');
+  await player.getByRole('button', { name: 'Save current song to favorites' }).filter({ visible: true }).click();
+  await expect.poll(() => fixture.commands.filter(c => c.command === 'favorite').map(c => [c.subcommand, c.options?.link, !!c.expectedImportId]))
+    .toEqual([['import', 'https://www.youtube.com/watch?v=dX3k_QDnzHE', false], ['import', 'https://www.youtube.com/watch?v=dX3k_QDnzHE', true]]);
+  // The saved song is the one playing, so its heart fills.
+  await expect(player.getByRole('button', { name: 'Remove current song from favorites' }).filter({ visible: true })).toBeVisible();
+  expect(fixture.commands.some(c => c.command === 'favorite' && c.subcommand === 'add')).toBe(false);
+});
+
+test('a save from this device that the bot declines says why', async ({ page }) => {
+  const fixture = await portal(page, { inVoice: false });
+  await favoriteImports(page, fixture, () => onePreview({ id: null, toAdd: 0, overLimit: 1 }));
+  await addSongs(page);
+  await page.getByTestId('player').getByRole('button', { name: 'Save current song to favorites' }).filter({ visible: true }).click();
+  await expect(page.getByRole('status').filter({ hasText: 'Your favorites hold at most 1,000 songs.' })).toBeVisible();
+  expect(fixture.commands.filter(c => c.command === 'favorite').map(c => !!c.expectedImportId)).toEqual([false]);
+});
+
+test('a second tap while a save is loading sends nothing more', async ({ page }) => {
+  const fixture = await portal(page, { inVoice: false });
+  let release = () => {}; const hold = new Promise<void>(resolve => { release = resolve; });
+  await favoriteImports(page, fixture, () => onePreview(), hold);
+  await addSongs(page);
+  const heart = page.getByTestId('player').getByRole('button', { name: 'Save current song to favorites' }).filter({ visible: true });
+  await heart.click();
+  await expect(heart).toBeDisabled();
+  await page.getByRole('button', { name: 'Queue', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Save Wait to favorites' })).toBeDisabled();
+  release();
+  await expect.poll(() => fixture.commands.filter(c => c.command === 'favorite').length).toBe(2);
+});
+
+test('a song from a source the import can\'t read explains instead of failing', async ({ page }) => {
+  const fixture = await portal(page, { inVoice: false });
+  // A queued song keeps its own catalog link until it plays through its YouTube match.
+  await page.route('**/api/guilds/*/search?*', route => route.fulfill({ json: { tracks: [youtubeTrack('dX3k_QDnzHE', 'Midnight City'), { ...youtubeTrack('bandcamp01', 'Bandcamp Song'), uri: 'https://artist.bandcamp.com/track/song', source: 'bandcamp' }], notice: null } }));
+  await page.getByRole('button', { name: 'Add music' }).first().click();
+  await page.getByRole('searchbox', { name: 'Music search' }).fill('song');
+  await page.getByRole('button', { name: 'Add Midnight City to queue' }).click();
+  await page.getByRole('button', { name: 'Add Bandcamp Song to queue' }).click();
+  await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: 'Queue', exact: true }).click();
+  await page.getByRole('button', { name: 'Save Bandcamp Song to favorites' }).click();
+  await expect(page.getByRole('status').filter({ hasText: 'can’t be saved to favorites from this device' })).toBeVisible();
+  expect(fixture.commands.some(c => c.command === 'favorite')).toBe(false);
 });

@@ -5,6 +5,7 @@ import type { Portal } from '../usePortal';
 import { time, totalTime } from '../format';
 import { ActionPopover, Artwork, Avatar, Empty, IconButton } from './ui';
 import { Pagination } from './Pagination';
+import { saveByLink, useSavingFavorite } from '../favorites';
 import { SaveSessionDialog } from './SessionMix';
 import { startRadioCommand } from '../radio';
 import './queue.css';
@@ -20,6 +21,7 @@ export function Queue({ portal, compact = false, onAdd }: { portal: Portal; comp
   const drag = useRef<{ index: number; revision: string; guildId: string } | null>(null);
   const lift = useRef<Lift | null>(null);
   const local = portal.target === 'local';
+  const savingFavorite = useSavingFavorite();
   const controllable = can('control') && !pending.length;
   const editable = can('library') && !pending.length;
   const duration = queue.reduce((sum, track) => sum + (track.isStream ? 0 : track.durationMs), 0);
@@ -36,6 +38,7 @@ export function Queue({ portal, compact = false, onAdd }: { portal: Portal; comp
   const favorite = async (track: Track, position: number) => {
     const index = library?.favorites.findIndex(t => t.id === track.id) ?? -1;
     if (index >= 0) await run({ command: 'favorite', subcommand: 'remove', options: { index: index + 1 }, expectedTrackId: track.id }, 'library');
+    else if (local) await saveByLink(portal, track.uri);
     else await run({ command: 'favorite', subcommand: 'add', options: { position }, expectedRevision: snapshot?.revision }, 'library');
   };
   const moveTo = (from: { index: number; revision: string; guildId: string }, index: number) => {
@@ -113,7 +116,7 @@ export function Queue({ portal, compact = false, onAdd }: { portal: Portal; comp
             <div className={`requester ${track.suggested ? 'suggested-source' : ''}`}>{track.suggested ? <span>Autoplay pick</span> : track.requestedBy && <><Avatar url={track.requestedBy.avatarUrl} name={track.requestedBy.displayName} /><span>{track.requestedBy.displayName}</span></>}</div>
             <span className="track-duration">{track.isStream ? 'LIVE' : time(track.durationMs)}</span>
             {!compact && <IconButton className={isFavorite ? 'favorite active' : 'favorite'} label={isFavorite ? `Remove ${track.title} from favorites` : `Save ${track.title} to favorites`} aria-pressed={isFavorite}
-              disabled={!editable || !library || local && !isFavorite} onClick={() => void favorite(track, index + 1)}><HeartIcon size={23} weight={isFavorite ? 'fill' : 'regular'} /></IconButton>}
+              disabled={!editable || !library || savingFavorite} onClick={() => void favorite(track, index + 1)}><HeartIcon size={23} weight={isFavorite ? 'fill' : 'regular'} /></IconButton>}
             <ActionPopover className="row-menu" label={`Song options for ${track.title}`} trigger={<DotsThreeIcon size={25} weight="bold" />}>
               {close => <>
                 <p>{track.title}</p>
@@ -122,7 +125,7 @@ export function Queue({ portal, compact = false, onAdd }: { portal: Portal; comp
                 <button disabled={!controllable || index === 0} onClick={() => { close(); void change('move', { from: index + 1, to: index }); }}><ArrowUpIcon />Move up</button>
                 <button disabled={!controllable || index === queue.length - 1} onClick={() => { close(); void change('move', { from: index + 1, to: index + 2 }); }}><ArrowDownIcon />Move down</button>
                 {radioButton(track, close)}
-                {<button className="menu-favorite" disabled={!editable || !library || local && !isFavorite} onClick={() => { close(); void favorite(track, index + 1); }}><HeartIcon weight={isFavorite ? 'fill' : 'regular'} />{isFavorite ? 'Remove favorite' : 'Save to favorites'}</button>}
+                {<button className="menu-favorite" disabled={!editable || !library || savingFavorite} onClick={() => { close(); void favorite(track, index + 1); }}><HeartIcon weight={isFavorite ? 'fill' : 'regular'} />{isFavorite ? 'Remove favorite' : 'Save to favorites'}</button>}
                 <button className="danger-text" disabled={!controllable} onClick={() => { close(); void change('remove', { position: index + 1 }); }}><TrashIcon />Remove from queue</button>
                 {!controllable && <small>{portal.blockedReason}</small>}
               </>}

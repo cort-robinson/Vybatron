@@ -1,15 +1,11 @@
 import { useEffect, useRef } from 'react';
-import { onModal, underModal } from '../motion';
+import { coveredByModal, onModal } from '../motion';
+import { random } from '../random';
 
 // Decorative VFD-style spectrum. The browser never receives audio, so motion is
 // generated per track rather than measured, and it makes no sync claim.
 export type SpectrumMode = 'playing' | 'standby';
 
-function random(seed: string) {
-  let h = 1779033703 ^ seed.length;
-  for (let i = 0; i < seed.length; i++) { h = Math.imul(h ^ seed.charCodeAt(i), 3432918353); h = (h << 13) | (h >>> 19); }
-  return () => { h = Math.imul(h ^ (h >>> 16), 2246822507); h = Math.imul(h ^ (h >>> 13), 3266489909); h ^= h >>> 16; return (h >>> 0) / 4294967296; };
-}
 function rgb(hex: string) { const n = parseInt(hex.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; }
 
 export function Spectrum({ seed, color, tint, mode, animate, bands = 48, segment = 3, gap = 2, glow = true, ghost = .09, className = '' }: {
@@ -35,9 +31,10 @@ export function Spectrum({ seed, color, tint, mode, animate, bands = 48, segment
     const level = new Float32Array(bands); const peak = new Float32Array(bands); const hold = new Float32Array(bands);
     const shown = [...live.current.target];
     let hit = 0; let frame = 0; let last = 0; let width = 0; let height = 0;
-    let intersecting = true; let pixelRatio = 0;
-    // Under a modal's blurred backdrop it holds its last frame (motion.ts onModal).
-    const visible = () => width > 0 && height > 0 && intersecting && !document.hidden && !underModal();
+    let intersecting = true; let pixelRatio = 0; let covered = false;
+    // Under a modal's blurred backdrop it holds its last frame (motion.ts onModal); inside its own
+    // modal (the full-screen visualizer's fallback) it plays.
+    const visible = () => width > 0 && height > 0 && intersecting && !document.hidden && !covered;
     // The phosphor glow is the lit segments' canvas shadow (blur 10, in device pixels), but blurred
     // once instead of on every draw: a strip holds every possible lit column (1 to rows segments),
     // already blurred in white, and each draw stamps one per column and tints them in one pass.
@@ -143,7 +140,7 @@ export function Spectrum({ seed, color, tint, mode, animate, bands = 48, segment
       wake();
     };
     const intersection = new IntersectionObserver(entries => { intersecting = entries[0].isIntersecting; wake(); }); intersection.observe(canvas);
-    document.addEventListener('visibilitychange', wake); const unmodal = onModal(wake);
+    document.addEventListener('visibilitychange', wake); const unmodal = onModal(() => { covered = coveredByModal(canvas); wake(); }); covered = coveredByModal(canvas);
     const observer = new ResizeObserver(resize); observer.observe(canvas); resize();
     return () => {
       observer.disconnect(); intersection.disconnect(); document.removeEventListener('visibilitychange', wake); unmodal(); stop(); live.current.wake = () => {}; live.current.reseed = () => {};

@@ -25,7 +25,7 @@ const loaders: Record<Skin, () => Promise<Look | undefined>> = {
 // The look's stylesheet is linked here rather than through the chunk's CSS import: Vite's
 // preloader remembers a stylesheet that failed and never requests it again, which would apply
 // the look unstyled on retry. Appended last, it keeps the cascade order of the main bundle.
-function stylesheet(href: string) {
+export function stylesheet(href: string) {
   return new Promise<void>((resolve, reject) => {
     const link = Object.assign(document.createElement('link'), { rel: 'stylesheet', href });
     link.onload = () => resolve();

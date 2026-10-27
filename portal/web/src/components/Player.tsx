@@ -1,8 +1,9 @@
-import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { CaretDownIcon, CheckIcon, DesktopIcon, DiscordLogoIcon, CaretUpIcon, DotsThreeIcon, HeartIcon, PauseIcon, PlayIcon, RepeatIcon, RepeatOnceIcon, ShuffleIcon, SkipBackIcon, SkipForwardIcon, SpeakerHighIcon, StopIcon, RadioIcon, HandPalmIcon, ArrowSquareOutIcon, TrashIcon, WarningCircleIcon, ThumbsDownIcon, VinylRecordIcon, MoonIcon, MicrophoneStageIcon } from '../icons';
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { CaretDownIcon, CheckIcon, DesktopIcon, DiscordLogoIcon, CaretUpIcon, DotsThreeIcon, HeartIcon, PauseIcon, PlayIcon, RepeatIcon, RepeatOnceIcon, ShuffleIcon, SkipBackIcon, SkipForwardIcon, SpeakerHighIcon, StopIcon, RadioIcon, HandPalmIcon, ArrowSquareOutIcon, TrashIcon, WarningCircleIcon, ThumbsDownIcon, VinylRecordIcon, MoonIcon, MicrophoneStageIcon, WaveformIcon, CornersOutIcon } from '../icons';
 import type { Portal } from '../usePortal';
 import { saveByLink, useSavingFavorite } from '../favorites';
-import type { Command, GuildSnapshot, Track } from '../types';
+import type { Command, Track } from '../types';
+import { usePosition, type Clock } from '../position';
 import { publicUrl } from '../api';
 import { time, timestamp } from '../format';
 import { RESTART_AFTER_MS } from '../playback';
@@ -16,8 +17,11 @@ import { swipe, type SwipeDirection } from '../swipe';
 import { useBackLayers } from '../backLayers';
 import { skinLook, skinTint, type Skin } from '../skin';
 import { activeLine, LyricsPanel, useLyrics } from './Lyrics';
+import { useVisualizer } from '../visualizer/load';
+import type { Palette } from '../art';
 
-export function Player({ portal, expanded, setExpanded, onAdd, accent, animate, skin = 'classic' }: { portal: Portal; expanded: boolean; setExpanded: (value: boolean, settle?: () => void) => void; onAdd: () => void; accent: string; animate: boolean; skin?: Skin }) {
+export function Player({ portal, expanded, setExpanded, onAdd, palette, animate, skin = 'classic' }: { portal: Portal; expanded: boolean; setExpanded: (value: boolean, settle?: () => void) => void; onAdd: () => void; palette: Palette; animate: boolean; skin?: Skin }) {
+  const accent = palette.accent;
   const { snapshot, bootstrap, can, run, receivedAt, connection, pending, confirming, queued, syncing, library } = portal;
   const session = snapshot?.session;
   const local = portal.target === 'local';
@@ -33,6 +37,10 @@ export function Player({ portal, expanded, setExpanded, onAdd, accent, animate, 
   const [queueOpen, setQueueOpen] = useState(false);
   // The open player can show the current song's lyrics in place of its cover.
   const [lyricsOpen, setLyricsOpen] = useState(false);
+  // Or a visualizer, there or over the whole screen. Its code loads the first time either opens.
+  const [visualsOpen, setVisualsOpen] = useState(false);
+  const [visualsFull, setVisualsFull] = useState(false);
+  const visuals = useVisualizer(visualsOpen || visualsFull, () => { setVisualsOpen(false); setVisualsFull(false); portal.notify('The visualizer couldn’t load. Check your connection, then reload the page and try again.', 'error'); });
   const playerRef = useRef<HTMLElement>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
   const identityTriggerRef = useRef<HTMLButtonElement>(null);
@@ -60,10 +68,12 @@ export function Player({ portal, expanded, setExpanded, onAdd, accent, animate, 
   const expand = useRef(setExpanded); expand.current = setExpanded;
   useEffect(() => swipe(playerRef.current, expanded ? 'down' : 'up', (_, settle) => { swiped.current = true; expand.current(!expanded, settle); }), [expanded]);
   // On phones the open player keeps Up next in a sheet: drag its handle up to open it, pull it down to close it.
-  useEffect(() => { if (!expanded) { setQueueOpen(false); setLyricsOpen(false); } }, [expanded]);
+  useEffect(() => { if (!expanded) { setQueueOpen(false); setLyricsOpen(false); setVisualsOpen(false); setVisualsFull(false); } }, [expanded]);
   useEffect(() => swipe(handleRef.current, queueOpen ? 'down' : 'up', (_, settle) => { settle(); setQueueOpen(!queueOpen); }, queueOpen ? sheetRef.current : handleRef.current), [expanded, queueOpen]);
   useEffect(() => queueOpen ? swipe(sheetRef.current, 'down', (_, settle) => { settle(); setQueueOpen(false); }) : undefined, [queueOpen]);
-  useBackLayers(expanded ? queueOpen ? 2 : 1 : 0, layer => { if (layer < 2) setQueueOpen(false); if (layer < 1) expand.current(false); });
+  // The full-screen visualizer, when open, is the top layer: Back closes it first.
+  const layers = expanded ? 1 + +queueOpen + +visualsFull : 0;
+  useBackLayers(layers, layer => { if (layer < layers) setVisualsFull(false); if (layer < 1 + +queueOpen) setQueueOpen(false); if (layer < 1) expand.current(false); });
   useEffect(() => { setVolumeDraft(null); }, [track?.id, snapshot?.guild.id]);
   // Acknowledge state that changes under the controls, whoever changed it: a new song settles
   // into the deck, the play mark swaps, repeat cycles, and a saved heart lifts once.
@@ -144,12 +154,17 @@ export function Player({ portal, expanded, setExpanded, onAdd, accent, animate, 
   // An autoplay pick names its provenance in place of the source.
   const metadata = track ? <>{track.author}<span className="metadata-dot" aria-hidden="true">·</span><span className="track-source">{track.suggested ? 'Autoplay pick' : track.source}</span></> : 'Add a song to start.';
   // The same size as the favorite button and on the title's other side, so the title stays centered.
-  const lyricsToggle = track && <IconButton className={`lyrics-toggle ${lyricsOpen ? 'active-control' : ''}`} label={lyricsOpen ? 'Hide lyrics' : 'Show lyrics'} aria-pressed={lyricsOpen} aria-controls={lyricsOpen ? lyricsId : undefined} onClick={() => setLyricsOpen(!lyricsOpen)}><MicrophoneStageIcon size={26} weight={lyricsOpen ? 'fill' : 'regular'} /></IconButton>;
+  const lyricsToggle = track && <IconButton className={`lyrics-toggle ${lyricsOpen ? 'active-control' : ''}`} label={lyricsOpen ? 'Hide lyrics' : 'Show lyrics'} aria-pressed={lyricsOpen} aria-controls={lyricsOpen ? lyricsId : undefined} onClick={() => { setLyricsOpen(!lyricsOpen); setVisualsOpen(false); }}><MicrophoneStageIcon size={26} weight={lyricsOpen ? 'fill' : 'regular'} /></IconButton>;
+  // The visualizer's switch sits on the cover's corner, on what it changes: the title row keeps its
+  // two balanced buttons. Over the visualizer it also offers the full screen.
+  const visualsFailed = () => { setVisualsOpen(false); portal.notify('The visualizer isn’t available on this device.', 'error'); };
+  const visualsSwitch = track && <div className="sleeve-visuals">{visualsOpen && <IconButton label="Full-screen visualizer" onClick={() => setVisualsFull(true)}><CornersOutIcon size={21} /></IconButton>}
+    <IconButton className={visualsOpen ? 'active-control' : ''} label={visualsOpen ? 'Hide visualizer' : 'Show visualizer'} aria-pressed={visualsOpen} onClick={() => setVisualsOpen(!visualsOpen)}><WaveformIcon size={21} weight={visualsOpen ? 'bold' : 'regular'} /></IconButton></div>;
   const identity = <div className="player-identity" data-glass><div className="player-title-row">{lyricsToggle}<h2 ref={headingRef} tabIndex={-1} title={track?.title}>{track?.title || 'Nothing playing'}</h2>{favorite}</div><p title={track ? `${track.author} · ${track.source}` : undefined}>{metadata}</p>
   </div>;
   const spectrumMode = track && active && live ? 'playing' : 'standby';
   const look = skinLook(skin);
-  const spectrum = (className: string, bands: number, ghost?: number) => <Spectrum className={className} seed={track?.id || 'idle'} color={accent} tint={skinTint(skin)} mode={spectrumMode} animate={animate} bands={bands} ghost={ghost} />;
+  const spectrum = (className: string, bands: number, ghost?: number, segment?: number, gap?: number) => <Spectrum className={className} seed={track?.id || 'idle'} color={accent} tint={skinTint(skin)} mode={spectrumMode} animate={animate} bands={bands} ghost={ghost} segment={segment} gap={gap} />;
   const timeline = <div className="playback-timeline"><Timeline clock={clock} track={track} duration={duration} seekable={seekable} reset={snapshot?.guild.id}
     onSeek={value => void control({ command: 'seek', options: { timestamp: timestamp(value) } })} /><div className="player-confirmation" id={confirmationId} role="status" aria-live="polite" aria-atomic="true">{confirming ? <><span className="spinner" aria-hidden="true" /><span className="sr-only">{pendingObservation}</span><span>Waiting for confirmation{queued > 0 && ` · ${queued} queued`}</span>{connection !== 'live' && <span className="sr-only">. {portal.blockedReason}</span>}</>
     : syncing ? <><span className="spinner" aria-hidden="true" /><span>Syncing with Discord…</span></> : null}</div></div>;
@@ -173,7 +188,8 @@ export function Player({ portal, expanded, setExpanded, onAdd, accent, animate, 
       {bootstrap?.filters.map(filter => <option key={filter.id} value={filter.id}>{filter.label}</option>)}
     </select><CaretDownIcon size={16} /></label>}
     <ActionPopover label="More playback controls" trigger={<DotsThreeIcon size={27} weight="bold" />} className="player-more" triggerClassName="icon-button">
-      {close => <>{!local && <><button disabled={!can('vote') || pending.includes('voteskip:') || !track} onClick={() => { close(); void run({ command: 'voteskip', expectedRevision: snapshot?.revision }, 'vote'); }}><HandPalmIcon />Vote to skip</button>
+      {close => <>{expanded && <button disabled={!track} onClick={() => { close(); setVisualsFull(true); }}><CornersOutIcon />Full-screen visualizer</button>}
+        {!local && <><button disabled={!can('vote') || pending.includes('voteskip:') || !track} onClick={() => { close(); void run({ command: 'voteskip', expectedRevision: snapshot?.revision }, 'vote'); }}><HandPalmIcon />Vote to skip</button>
         <button disabled={!controllable || !track} onClick={() => { close(); void control({ command: 'radio', subcommand: session?.radio ? 'off' : 'on' }); }}><RadioIcon />Turn autoplay {session?.radio ? 'off' : 'on'}</button>
         <button disabled={!controllable || !track && !sleep} onClick={() => { close(); setSleepOpen(true); }}><MoonIcon />{sleep ? `Sleep timer · ${sleep}` : 'Sleep timer'}</button></>}
         {!local && track?.suggested && <button disabled={!controllable} onClick={() => { close(); void run({ command: 'radio', subcommand: 'less', expectedTrackId: track.id }, 'control'); }}><ThumbsDownIcon />Less like this</button>}
@@ -192,7 +208,7 @@ export function Player({ portal, expanded, setExpanded, onAdd, accent, animate, 
     {!expanded && spectrum('player-spectrum', 56, 0)}
     {expanded && <div className="sleeve-content"><button className="mobile-collapse text-button" onClick={() => setExpanded(false)}><CaretDownIcon size={22} />Close player</button>
       <div className="sleeve-main">{lyricsOpen ? <div className="sleeve-artwork showing-lyrics"><LyricsView id={lyricsId} clock={clock} guildId={snapshot?.guild.id} track={track} local={local} /></div>
-        : <div className="sleeve-artwork" onPointerMove={look?.tilt} onPointerLeave={look?.untilt}><Artwork track={track} large />{spectrum('sleeve-spectrum', 40)}{look && <look.Sleeve track={track?.id || 'idle'} />}</div>}{identity}<div className="player-context" data-glass>{permissionReason && <p className="player-permission" id={reasonId}><WarningCircleIcon size={18} aria-hidden="true" /><span>{permissionReason}</span></p>}{connection === 'live' && session?.status === 'recovering' && <p className="player-state warm-text" role="status">Recovering your place. Playback controls will return when it’s ready.</p>}{sleep && <p className="player-state sleep-state"><MoonIcon size={16} aria-hidden="true" /><span>Sleep timer · {sleep}</span></p>}{connection !== 'live' && session?.status === 'paused' && <p className="player-state warm-text">Last known: paused</p>}</div></div>
+        : <div className="sleeve-artwork" onPointerMove={look?.tilt} onPointerLeave={look?.untilt}>{visualsOpen && visuals ? <visuals.SleeveVisualizer clock={clock} palette={palette} skin={skin} animate={animate} onFail={visualsFailed} onFull={() => setVisualsFull(true)} /> : <Artwork track={track} large />}{spectrum('sleeve-spectrum', 40)}{look && <look.Sleeve track={track?.id || 'idle'} />}{visualsSwitch}</div>}{identity}<div className="player-context" data-glass>{permissionReason && <p className="player-permission" id={reasonId}><WarningCircleIcon size={18} aria-hidden="true" /><span>{permissionReason}</span></p>}{connection === 'live' && session?.status === 'recovering' && <p className="player-state warm-text" role="status">Recovering your place. Playback controls will return when it’s ready.</p>}{sleep && <p className="player-state sleep-state"><MoonIcon size={16} aria-hidden="true" /><span>Sleep timer · {sleep}</span></p>}{connection !== 'live' && session?.status === 'paused' && <p className="player-state warm-text">Last known: paused</p>}</div></div>
       <div ref={sheetRef} id={queueId} className="sleeve-queue" data-glass>{queueOpen && <div className="queue-sheet-now"><span className="sheet-grabber" aria-hidden="true" /><Artwork track={track} /><span className="sheet-now-text"><strong>{track?.title || 'Nothing playing'}</strong><span>{track?.author}</span></span></div>}{queue}</div>
     </div>}
     <div className="player-footer" data-glass>{!expanded && <CompactProgress clock={clock} track={track} duration={duration} />}{!expanded && <div className="compact-identity"><button ref={identityTriggerRef} type="button" className="player-expand-trigger" aria-label={track ? `Open player for ${track.title}` : 'Open player details'} aria-expanded={false} onClick={() => { openedFromIdentity.current = true; setExpanded(true); }}><Artwork track={track} /><span className="compact-title"><span className="compact-track-title" title={track?.title}>{track?.title || 'Nothing playing'}</span><span className="compact-track-meta" title={track ? `${track.author} · ${track.source}` : undefined}>{metadata}</span></span></button><span className="compact-favorite">{favorite}</span></div>}
@@ -202,6 +218,7 @@ export function Player({ portal, expanded, setExpanded, onAdd, accent, animate, 
       {!expanded && permissionReason && <span className="sr-only" id={reasonId}>{permissionReason}</span>}
       <button ref={expandTriggerRef} className="expand-button" aria-expanded={expanded} aria-label={expanded ? 'Close player' : 'Open player'} title={expanded ? 'Close player' : 'Open player'} onClick={() => { openedFromIdentity.current = false; setExpanded(!expanded); }}>{expanded ? <CaretDownIcon size={29} /> : <CaretUpIcon size={29} />}<span>{expanded ? 'Close player' : 'Open player'}</span></button>
     </div>
+    {visualsFull && visuals && <visuals.FullscreenVisualizer clock={clock} palette={palette} skin={skin} onClose={() => setVisualsFull(false)} fallback={spectrum('visualizer-fallback', 48, undefined, 6, 4)} />}
     {confirmStop && (local ? <Confirm title="Stop playing on this device?" detail="Stops the current song and clears this device’s queue. The Discord session, your favorites and shared mixes aren’t affected." action="Stop" onClose={() => setConfirmStop(false)} onConfirm={() => { setConfirmStop(false); void run({ command: 'stop' }, 'control'); }} />
       : <StopDialog portal={portal} onClose={() => setConfirmStop(false)} />)}
     {sleepOpen && !local && <SleepDialog portal={portal} onClose={() => setSleepOpen(false)} />}
@@ -217,29 +234,6 @@ export function Player({ portal, expanded, setExpanded, onAdd, accent, animate, 
   </section>;
 }
 
-// The position advances locally between snapshots while a song plays. One shared clock ticks only
-// while something shows a moving position, and only those readouts re-render on each tick, not
-// the whole player twice a second.
-const ticks = new Set<() => void>();
-let now = Date.now(); let ticker: ReturnType<typeof setInterval> | undefined;
-const tick = () => { now = Date.now(); ticks.forEach(listener => listener()); };
-const resume = () => { clearInterval(ticker); ticker = undefined; if (!document.hidden && ticks.size) { tick(); ticker = setInterval(tick, 500); } };
-function subscribe(listener: () => void) {
-  ticks.add(listener);
-  if (ticks.size === 1) { document.addEventListener('visibilitychange', resume); resume(); }
-  return () => { ticks.delete(listener); if (!ticks.size) { document.removeEventListener('visibilitychange', resume); clearInterval(ticker); ticker = undefined; } };
-}
-const still = () => () => {};
-type Clock = { session: GuildSnapshot['session'] | undefined; receivedAt: number; live: boolean };
-// With no current song there is no timeline, whatever position an idle snapshot still carries.
-function usePosition({ session, receivedAt, live }: Clock) {
-  const track = session?.current;
-  const moving = !!track && session.status === 'playing' && live;
-  const clock = useSyncExternalStore(moving ? subscribe : still, () => moving ? now : 0);
-  if (!track) return 0;
-  const duration = session.durationMs || track.durationMs || 0;
-  return Math.min(duration || Infinity, Math.max(0, (session.positionMs || 0) + (moving ? Math.max(0, clock - receivedAt) : 0)));
-}
 function Timeline({ clock, track, duration, seekable, reset, onSeek }: { clock: Clock; track: Track | null; duration: number; seekable: boolean; reset?: string; onSeek: (value: number) => void }) {
   const position = usePosition(clock);
   const [scrub, setScrub] = useState<number | null>(null);

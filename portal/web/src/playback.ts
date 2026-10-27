@@ -5,6 +5,7 @@ import type { Capability, Command, GuildSnapshot, Track } from './types';
 import type { RemotePortal } from './usePortal';
 import { isLink } from './suggestions';
 import { youtubeId } from './youtube';
+import { useShared, useStableObject } from './stable';
 
 // Where music plays: the shared Discord session (the bot is the authority), or
 // this device, where the portal keeps a private queue and plays its audio,
@@ -367,7 +368,7 @@ export function useListening(remote: RemotePortal): Portal {
   useEffect(() => { if (!local) engine.hold(); }, [local, engine]);
   const base = remote.snapshot;
   const discord = base?.session ?? null;
-  const moveToDiscord = async () => {
+  const moveToDiscord = useCallback(async () => {
     const deck = engine.snapshot(); const session = latest.current.snapshot?.session;
     // A session already playing there is joined, not replaced; songs here wait, paused.
     if (!deck.current || session?.current || session?.queue.length) { engine.hold(); setChoice('discord'); return true; }
@@ -381,8 +382,8 @@ export function useListening(remote: RemotePortal): Portal {
       engine.stop(); setChoice('discord');
       return true;
     } finally { setPending([]); }
-  };
-  const moveHere = async (stop: boolean) => {
+  }, [engine]);
+  const moveHere = useCallback(async (stop: boolean) => {
     const live = latest.current; const session = live.snapshot?.session;
     if (!session?.current) { setChoice('local'); return true; }
     const elapsed = session.status === 'playing' ? Math.max(0, Date.now() - live.receivedAt) : 0;
@@ -391,7 +392,12 @@ export function useListening(remote: RemotePortal): Portal {
     setChoice('local');
     engine.adopt(session, at);
     return true;
-  };
+  }, [engine]);
+  // Listener actions keep one identity, so memoized views that receive them can skip a render.
+  const events = useMemo(() => ({
+    refreshLibrary: () => latest.current.refreshLibrary(), reconnect: () => latest.current.reconnect(),
+    dismissNotice: () => latest.current.dismissNotice(), logout: () => latest.current.logout(), selectGuild: (id: string) => latest.current.selectGuild(id),
+  }), []);
   const snapshot = useMemo((): GuildSnapshot | null => !local || !base ? base : {
     ...base, revision: `local:${deck.revision}`,
     session: { ...base.session, status: deck.status, voiceChannel: null, textChannel: null, current: deck.current, queue: deck.queue, hasPrevious: deck.history.length > 0,
@@ -404,8 +410,11 @@ export function useListening(remote: RemotePortal): Portal {
     if (capability === 'add' || capability === 'control') return !!remote.snapshot;
     return capability === 'vote' || capability === 'resume' ? false : remote.can(capability);
   }, [local, remote.can, remote.snapshot]);
-  const moves = { target, discord, moveToDiscord, moveHere };
-  if (!local) return { ...remote, ...moves };
-  return { ...remote, snapshot, receivedAt: deck.at, can, pending, confirming: pending.length > 0, queued: 0, syncing: false, run: engine.run, ...moves,
-    blockedReason: remote.snapshot ? remote.blockedReason : 'Connecting to your server. Search and your library load from Discord.' };
+  // Each live frame is new JSON; its unchanged songs, listeners and settings keep their identity.
+  const shown = useShared(local ? snapshot : base);
+  const moves = { target, discord: local ? discord : shown?.session ?? null, moveToDiscord, moveHere };
+  // One object for as long as nothing in it changes; a re-render elsewhere doesn't make a new portal.
+  return useStableObject(!local ? { ...remote, ...events, ...moves, snapshot: shown }
+    : { ...remote, ...events, snapshot: shown, receivedAt: deck.at, can, pending, confirming: pending.length > 0, queued: 0, syncing: false, run: engine.run, ...moves,
+      blockedReason: remote.snapshot ? remote.blockedReason : 'Connecting to your server. Search and your library load from Discord.' });
 }

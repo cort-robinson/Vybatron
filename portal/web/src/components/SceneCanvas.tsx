@@ -7,7 +7,16 @@ import { startScene } from '../scene';
 export function SceneCanvas({ onFail }: { onFail: () => void }) {
   const ref = useRef<HTMLCanvasElement>(null);
   const fail = useRef(onFail); fail.current = onFail;
-  useEffect(() => startScene(ref.current!, ref.current!.parentElement!, () => fail.current()), []);
+  // Creating the WebGL context and compiling shaders blocks the main thread. They wait until the
+  // page has painted and asked for its state (the app's own effects run after this one), so the
+  // first request and the first frame never queue behind them.
+  useEffect(() => {
+    const canvas = ref.current!; let stop: (() => void) | undefined;
+    const start = () => { stop = startScene(canvas, canvas.parentElement!, () => fail.current()); };
+    if ('requestIdleCallback' in window) { const id = requestIdleCallback(start, { timeout: 300 }); return () => { cancelIdleCallback(id); stop?.(); }; }
+    const timer = setTimeout(start, 50);
+    return () => { clearTimeout(timer); stop?.(); };
+  }, []);
   return <canvas ref={ref} className="scene-canvas" aria-hidden="true" />;
 }
 

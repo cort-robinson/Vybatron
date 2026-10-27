@@ -27,7 +27,7 @@ export function fixtureState() {
     settings: { volume: 100, fairQueue: false, autoplay: 'off', djRoleId: null, musicTextChannelId: 'text' }, channels: [{ id: 'voice', name: 'General', type: 'voice' }, { id: 'text', name: 'General', type: 'text' }], roles: [{ id: 'dj', name: 'DJs' }],
   };
   const configuration: Configuration = { guildId: snapshot.guild.id, channels: [...structuredClone(snapshot.channels), { id: 'lounge', name: 'music-lounge', type: 'text' }], roles: structuredClone(snapshot.roles) };
-  const bootstrap: Bootstrap = { viewer: { id: 'alex', username: 'alex', displayName: 'Alex', avatarUrl: art('alex'), maintainer: false }, guilds: [snapshot.guild], csrfToken: 'local-test-csrf', inviteUrl: INVITE_URL, filters: [{ id: 'off', label: 'Original', description: 'Unfiltered playback' }, { id: 'warm', label: 'Warm', description: 'A softer, warm sound' }], commands: [
+  const bootstrap: Bootstrap = { viewer: { id: 'alex', username: 'alex', displayName: 'Alex', avatarUrl: art('alex'), maintainer: false, autoplayTaste: true }, guilds: [snapshot.guild], csrfToken: 'local-test-csrf', inviteUrl: INVITE_URL, filters: [{ id: 'off', label: 'Original', description: 'Unfiltered playback' }, { id: 'warm', label: 'Warm', description: 'A softer, warm sound' }], commands: [
     { name: 'play', description: 'Add a song or public playlist', options: [{ name: 'query', type: 3, required: true, max_length: 200 }] },
     { name: 'playnext', description: 'Play a song next', options: [{ name: 'query', type: 3, required: true, max_length: 200 }] },
     { name: 'replay', description: 'Replay a visible history entry', options: [{ name: 'index', type: 4, required: true, min_value: 1, max_value: 100 }] },
@@ -89,7 +89,7 @@ export async function mockPortal(page: Page, options: { signedOut?: boolean; bas
     Object.assign(state.snapshot.session, { status: 'idle', current: null, queue: [], listeners: [], voiceChannel: null, textChannel: null, canAdd: false, canControl: false, canVote: false, reason: 'Join this server to control playback.' });
   }
   if (options.saved) { state.snapshot.session.status = 'idle'; state.snapshot.session.current = null; state.snapshot.session.queue = []; state.snapshot.savedSession = { exists: true, savedAt: 1_791_147_600_000, positionMs: 107_000, paused: true, trackCount: 5, voiceChannel: { id: 'voice', name: 'General' }, canResume: true }; }
-  const commands: Command[] = []; const requests: string[] = []; const requestClears: string[] = []; const recapWindows: string[] = [];
+  const commands: Command[] = []; const requests: string[] = []; const requestClears: string[] = []; const recapWindows: string[] = []; const tastePreferences: string[] = [];
   const logouts: { method: string; body: string | null; contentType: string | null; csrfToken: string | null }[] = [];
   let signedOut = !!options.signedOut;
   let conflict = false; let snapshotDelay = 0; let libraryFailure = false; let snapshotFailure = 0;
@@ -133,6 +133,12 @@ export async function mockPortal(page: Page, options: { signedOut?: boolean; bas
       const window = new URL(route.request().url()).searchParams.get('window') || '30d';
       recapWindows.push(window);
       await route.fulfill(reply({ ...state.recap, window }));
+    }
+    else if (path.startsWith('/api/preferences/autoplay-taste/')) {
+      if (route.request().method() !== 'POST' || route.request().headers()['x-csrf-token'] !== 'local-test-csrf' || route.request().postData()) throw new Error('The taste preference needs a CSRF-checked, bodiless POST');
+      tastePreferences.push(path);
+      state.bootstrap.viewer.autoplayTaste = path.endsWith('/on');
+      await route.fulfill(reply({ ok: true, enabled: state.bootstrap.viewer.autoplayTaste }));
     }
     else if (path === '/api/stats/requests/clear') {
       if (route.request().method() !== 'POST' || route.request().headers()['x-csrf-token'] !== 'local-test-csrf') throw new Error('Clearing stats needs a CSRF-checked POST');
@@ -221,7 +227,7 @@ export async function mockPortal(page: Page, options: { signedOut?: boolean; bas
     if (logout.method !== 'POST' || logout.body !== null || logout.contentType !== null || logout.csrfToken !== 'local-test-csrf') { await route.fulfill({ status: 400, json: { error: { code: 'invalid_logout', message: 'Logout requires a bodyless CSRF-protected POST.' } } }); return; }
     signedOut = true; await route.fulfill({ json: { ok: true } });
   });
-  return { state, commands, requests, requestClears, recapWindows, logouts, signIn: () => { signedOut = false; }, conflictNext: () => { conflict = true; }, uncertainNext: () => { uncertain = true; }, delayCommand: (ms: number) => { commandDelay = ms; }, holdCommands: () => { let release!: () => void; commandGate = new Promise(resolve => { release = resolve; }); return () => { commandGate = undefined; release(); }; }, delaySnapshot: (ms: number) => { snapshotDelay = ms; }, delayLibrary: (ms: number) => { libraryDelay = ms; }, failLibrary: () => { libraryFailure = true; }, denySnapshot: (status: number) => { snapshotFailure = status; } };
+  return { state, commands, requests, requestClears, recapWindows, tastePreferences, logouts, signIn: () => { signedOut = false; }, conflictNext: () => { conflict = true; }, uncertainNext: () => { uncertain = true; }, delayCommand: (ms: number) => { commandDelay = ms; }, holdCommands: () => { let release!: () => void; commandGate = new Promise(resolve => { release = resolve; }); return () => { commandGate = undefined; release(); }; }, delaySnapshot: (ms: number) => { snapshotDelay = ms; }, delayLibrary: (ms: number) => { libraryDelay = ms; }, failLibrary: () => { libraryFailure = true; }, denySnapshot: (status: number) => { snapshotFailure = status; } };
 }
 
 export async function streamAction(page: Page, action: 'disconnect' | 'reconnect', data?: GuildSnapshot) {

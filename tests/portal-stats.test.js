@@ -157,3 +157,27 @@ test('/top play follows voice rules and the queue limit', async t => {
   assert.equal(full.status, 400);
   assert.equal(f.player.queue.tracks.length, 500);
 });
+
+test('the autoplay taste preference is identity-scoped, on by default and shown in bootstrap', async t => {
+  const f = await withStats(t);
+  assert.equal((await f.request('/v1/bootstrap?actorId=200')).body.viewer.autoplayTaste, true);
+  const off = await f.request('/v1/preferences/autoplay-taste/off?actorId=200', { method: 'POST' });
+  assert.deepEqual(off, { status: 200, body: { ok: true, enabled: false } });
+  assert.equal(f.library.tasteInAutoplay('200'), false);
+  assert.equal(f.library.tasteInAutoplay('201'), true, 'another listener is unaffected');
+  assert.equal((await f.request('/v1/bootstrap?actorId=200')).body.viewer.autoplayTaste, false);
+  assert.equal((await f.request('/v1/preferences/autoplay-taste/maybe?actorId=200', { method: 'POST' })).status, 404);
+  assert.equal((await f.request('/v1/preferences/autoplay-taste/on?actorId=999999', { method: 'POST' })).status, 403, 'unknown or bot accounts are rejected');
+  assert.equal((await f.request('/v1/preferences/autoplay-taste/on?actorId=200')).status, 404, 'GET is not a change');
+  assert.equal(f.library.tasteInAutoplay('200'), false);
+});
+
+test('the portal command lane neither lists nor runs the personal taste subcommand', async t => {
+  const f = await withStats(t);
+  const radio = (await f.request('/v1/bootstrap?actorId=200')).body.commands.find(command => command.name === 'radio');
+  assert.ok(radio.options.some(option => option.name === 'on'));
+  assert.ok(!radio.options.some(option => option.name === 'mytaste'));
+  const response = await f.command({ command: 'radio', subcommand: 'mytaste', options: { enabled: false } });
+  assert.equal(response.status, 400);
+  assert.equal(f.library.tasteInAutoplay('200'), true);
+});

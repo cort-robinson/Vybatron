@@ -532,6 +532,16 @@ export async function createPortalServer(config, testOptions = {}) {
           if (result?.ok !== true || !Number.isSafeInteger(result.cleared) || result.cleared < 0) throw unavailable();
           json(res, 200, { ok: true, cleared: result.cleared }); return;
         }
+        const taste = /^\/api\/preferences\/autoplay-taste\/(on|off)$/.exec(pathname);
+        if (taste && req.method === 'POST') {
+          // Whether autoplay uses the signed-in listener's taste, in every server (ADR-0012).
+          queryOnly(url, []); checkCsrf(req, session);
+          limiter.check(`preference:${session.key}`, 20);
+          const result = await transport.bridge(`/v1/preferences/autoplay-taste/${taste[1]}`, session.actorId, { method: 'POST', signal: controller.signal });
+          if (!store.get(token)) throw unauthorized();
+          if (result?.ok !== true || typeof result.enabled !== 'boolean') throw unavailable();
+          json(res, 200, { ok: true, enabled: result.enabled }); return;
+        }
         const audio = /^\/api\/guilds\/(\d{1,20})\/audio\/([\w-]{11})$/.exec(pathname);
         if (audio && req.method === 'GET') {
           // This device's player. The browser's media element sends only byte ranges.

@@ -12,6 +12,7 @@ import { actorVoiceId, createPortalPolicy, visibleSession } from './policy.js';
 import { FILTERS, actorProjection, guildProjection, trackProjection, snapshotProjection, libraryProjection, activityProjection, configurationProjection, createRevisions, statsProjection, STATS_WINDOW_IDS, recapProjection, RECAP_WINDOW_IDS } from './projection.js';
 import { publicCommands, executePortalCommand } from './commands.js';
 import { fail, safeError } from './errors.js';
+import { refreshSuggestions } from '../utils/radio.js';
 import { createCommandTimings, commandTimingSpan } from './timing.js';
 import { createChangeFeed } from './changes.js';
 import { createAudioCache, sendAudio } from './audio.js';
@@ -144,7 +145,8 @@ export function startPortalBridge(client, {
           const guilds = contexts.filter(Boolean).map(guildProjection);
           // The server whose voice the viewer is in, so the portal opens there.
           const voiceGuildId = contexts.find(context => context && validId(actorVoiceId(context.member)))?.guild.id || null;
-          return json(response, 200, { viewer: { id: who.user.id, username: who.user.username.slice(0, 80), displayName: actorProjection(who.user).displayName, avatarUrl: actorProjection(who.user).avatarUrl, maintainer: who.maintainer }, guilds, voiceGuildId, filters: FILTERS, commands: publicCommands(commandMap), inviteUrl: who.maintainer ? clientInviteUrl(client) : null }, maxResponseBytes);
+          return json(response, 200, { viewer: { id: who.user.id, username: who.user.username.slice(0, 80), displayName: actorProjection(who.user).displayName, avatarUrl: actorProjection(who.user).avatarUrl, maintainer: who.maintainer,
+            autoplayTaste: client.library.tasteInAutoplay(who.user.id) }, guilds, voiceGuildId, filters: FILTERS, commands: publicCommands(commandMap), inviteUrl: who.maintainer ? clientInviteUrl(client) : null }, maxResponseBytes);
         }
         if (url.pathname === '/v1/stats/requests/clear' && request.method === 'POST') {
           // Personal data across every server: identity only, never a guild grant.
@@ -153,6 +155,15 @@ export function startPortalBridge(client, {
           let cleared;
           try { cleared = client.stats.clearRequests(who.user.id); } catch { fail(503, 'stats_unavailable', 'Your request stats could not be cleared. Try again shortly.'); }
           return json(response, 200, { ok: true, cleared }, maxResponseBytes);
+        }
+        const tasteMatch = url.pathname.match(/^\/v1\/preferences\/autoplay-taste\/(on|off)$/);
+        if (tasteMatch && request.method === 'POST') {
+          // A personal preference for every server (ADR-0012): identity only, never a guild grant.
+          const who = await policy.identity(url.searchParams.get('actorId'), { fresh: true });
+          try { await client.library.setTasteInAutoplay(who.user.id, tasteMatch[1] === 'on'); } catch { fail(503, 'preference_unavailable', 'Your autoplay preference could not be saved. Try again shortly.'); }
+          // Picks already prepared for this listener drop before the next one plays.
+          for (const player of client.lavalink?.players?.values?.() || []) void refreshSuggestions(player, client).catch(() => {});
+          return json(response, 200, { ok: true, enabled: client.library.tasteInAutoplay(who.user.id) }, maxResponseBytes);
         }
         const audioMatch = url.pathname.match(/^\/v1\/guilds\/(\d{1,22})\/audio\/([\w-]{11})$/);
         if (audioMatch && request.method === 'GET') {

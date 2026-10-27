@@ -117,6 +117,7 @@ async function fixture(t, { limits = {}, now, dataDir, production = false, botOr
     else if (url.pathname.endsWith('/stats')) reply(res, 200, { serverFavorites: { onRepeat: [], forgottenGems: [] }, personal: { window: url.searchParams.get('window') || '30d', topTracks: [], topArtists: [], rediscover: [] } });
     else if (url.pathname.endsWith('/recap')) reply(res, 200, { window: url.searchParams.get('window') || '30d', since: 0, personal: { plays: 0, playedMs: 0, songs: 0, topTracks: [], topArtists: [] }, server: { plays: 0, playedMs: 0, songs: 0, topTracks: [] } });
     else if (url.pathname === '/v1/stats/requests/clear') reply(res, 200, { ok: true, cleared: 2 });
+    else if (url.pathname.startsWith('/v1/preferences/autoplay-taste/')) reply(res, 200, { ok: true, enabled: url.pathname.endsWith('/on') });
     else if (/\/lyrics\/[\w-]{11}$/.test(url.pathname)) reply(res, 200, { trackId: 'b'.repeat(24), status: 'not_found', lyrics: null });
     else if (url.pathname.endsWith('/lyrics')) reply(res, 200, { trackId: 'a'.repeat(24), status: 'found', lyrics: { source: 'lrclib', provider: 'LRCLIB', synced: true, lines: [{ startMs: 0, text: 'First line' }] } });
     else reply(res, 200, state.snapshot);
@@ -1479,6 +1480,25 @@ test('stats reads forward only a supported window, and clearing request stats ne
   const forwarded = f.state.calls.findLast(item => item.path === '/v1/stats/requests/clear');
   assert.equal(forwarded.params.get('actorId'), actorId);
   assert.equal(forwarded.body, null);
+});
+
+test('the autoplay taste preference needs CSRF and same origin, and forwards only the choice and trusted actor', async t => {
+  const f = await fixture(t); const device = await f.login();
+  const post = (choice, headers = { Cookie: device.cookie, Origin: origin, 'X-CSRF-Token': device.csrf }) => f.request(`/api/preferences/autoplay-taste/${choice}`, { method: 'POST', headers });
+  const calls = () => f.state.calls.filter(item => item.path.startsWith('/v1/preferences/autoplay-taste/'));
+  assert.equal((await post('off', { Cookie: device.cookie, Origin: origin })).status, 403, 'CSRF required');
+  assert.equal((await post('off', { Cookie: device.cookie, 'X-CSRF-Token': device.csrf })).status, 403, 'Origin required');
+  assert.equal((await post('maybe')).status, 404);
+  assert.equal((await f.request('/api/preferences/autoplay-taste/off', { headers: { Cookie: device.cookie } })).status, 404, 'GET does not change it');
+  assert.equal((await f.request('/api/preferences/autoplay-taste/off?actorId=1', { method: 'POST', headers: { Cookie: device.cookie, Origin: origin, 'X-CSRF-Token': device.csrf } })).status, 400);
+  assert.equal(calls().length, 0);
+  const saved = await post('off');
+  assert.equal(saved.status, 200);
+  assert.deepEqual(saved.json(), { ok: true, enabled: false });
+  assert.equal(calls().at(-1).path, '/v1/preferences/autoplay-taste/off');
+  assert.equal(calls().at(-1).params.get('actorId'), actorId);
+  assert.equal(calls().at(-1).body, null);
+  assert.deepEqual((await post('on')).json(), { ok: true, enabled: true });
 });
 
 test('recap reads forward only a recap window and the trusted actor', async t => {

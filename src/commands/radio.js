@@ -17,7 +17,9 @@ export const data = new SlashCommandBuilder().setName('radio').setDescription('K
   .addSubcommand(s => s.setName('off').setDescription('Stop autoplay for this session; keep all queued songs'))
   .addSubcommand(s => s.setName('promote').setDescription('Move a suggested song into the queue').addIntegerOption(o => position(o)))
   .addSubcommand(s => s.setName('remove').setDescription('Remove a suggested song').addIntegerOption(o => position(o)))
-  .addSubcommand(s => s.setName('less').setDescription('Hear less like a suggestion; omit the number to skip the current autoplay song').addIntegerOption(o => position(o, false)));
+  .addSubcommand(s => s.setName('less').setDescription('Hear less like a suggestion; omit the number to skip the current autoplay song').addIntegerOption(o => position(o, false)))
+  .addSubcommand(s => s.setName('mytaste').setDescription('Choose whether autoplay uses your taste while you are in voice with the bot')
+    .addBooleanOption(o => o.setName('enabled').setDescription('On by default. Off keeps your requests and favorites out of autoplay').setRequired(true)));
 
 export const autocomplete = autocompleteTracks;
 
@@ -49,8 +51,21 @@ async function turnOn(interaction, player) {
   return interaction.reply(ephemeralText(`Autoplay is on, starting from **${title}**. Related songs play after the queue ends; songs people queue always play first. Use /radio off to stop.`));
 }
 
+// A personal preference for every server: no voice channel or DJ access needed (ADR-0012).
+async function setTaste(interaction) {
+  const enabled = interaction.options.getBoolean('enabled');
+  await interaction.client.library.setTasteInAutoplay(interaction.user.id, enabled);
+  // Picks already prepared for this listener are dropped before the next one plays.
+  const player = interaction.client.lavalink?.getPlayer?.(interaction.guildId);
+  if (player) void refreshSuggestions(player, interaction.client).catch(() => {});
+  return interaction.reply(ephemeralText(enabled
+    ? 'Autoplay will take turns with your taste while you’re in voice with Vybatron. It uses songs you’ve requested and your favorites, in every server.'
+    : 'Autoplay won’t use your taste anymore, in any server. Your requests and favorites are unchanged. Use /radio mytaste enabled:True to turn it back on.'));
+}
+
 export async function execute(interaction) {
   const action = interaction.options.getSubcommand();
+  if (action === 'mytaste') return setTaste(interaction);
   // Promoting a suggestion is an ordinary addition; listeners in voice may do it.
   const player = await requireControl(interaction, { checkDJ: action !== 'promote' }); if (!player) return;
   const index = (interaction.options.getInteger?.('position') || 0) - 1;

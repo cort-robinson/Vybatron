@@ -1,4 +1,6 @@
+import { useState } from 'react';
 import { DiscordLogoIcon, DownloadSimpleIcon } from '../icons';
+import { api, errorMessage } from '../api';
 import type { Portal } from '../usePortal';
 import type { Skin } from '../skin';
 
@@ -23,7 +25,27 @@ export function SettingsView({ portal, active, ambient, setAmbient, skin, setSki
     </div></section>
     <section className="personal-settings" aria-labelledby="settings-account"><h2 id="settings-account">Account</h2><div className="settings-list">
       {portal.bootstrap?.inviteUrl && <div className="setting-row"><div><h3>Add to another server</h3><p>Pick any server where you have Manage Server permission. Discord shows what Vybatron can access before you confirm.</p></div><a className="button secondary" href={portal.bootstrap.inviteUrl} target="_blank" rel="noopener noreferrer"><DiscordLogoIcon size={19} weight="fill" />Add to server</a></div>}
+      <AutoplayTaste portal={portal} />
       <div className="setting-row"><div><h3>This device’s session</h3><p>Discord sign-in lasts up to seven days per device.</p></div><button className="text-button" onClick={() => void portal.logout()}>Sign out</button></div>
     </div></section>
   </div>;
+}
+
+// Account-wide: applies in every server and on every device (ADR-0012).
+function AutoplayTaste({ portal }: { portal: Portal }) {
+  const { bootstrap, notify } = portal;
+  const [enabled, setEnabled] = useState<boolean | null>(null);
+  const [saving, setSaving] = useState(false);
+  const stored = bootstrap?.viewer.autoplayTaste;
+  if (!bootstrap || stored === undefined) return null;
+  const value = enabled ?? stored;
+  const toggle = () => {
+    setSaving(true);
+    void api.setAutoplayTaste(bootstrap.csrfToken, !value).then(setEnabled)
+      .catch(failure => notify(errorMessage(failure), 'error')).finally(() => setSaving(false));
+  };
+  return <div className="setting-row"><div><h3>Autoplay uses my taste</h3><p>{value
+    ? 'While you’re in voice with Vybatron, autoplay takes turns between everyone listening and picks some songs from what you request and favorite. Others in the channel may notice your picks.'
+    : 'Autoplay won’t draw on your requests or favorites. It still follows what the room is playing.'} Applies in every server.</p></div>
+    <button role="switch" aria-checked={value} className="switch" aria-label="Autoplay uses my taste" disabled={saving} onClick={toggle}><span />{value ? 'On' : 'Off'}</button></div>;
 }

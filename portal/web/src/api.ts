@@ -72,6 +72,13 @@ export const api = {
   clearRequestStats: (csrfToken: string) => request<{ ok: true; cleared: number }>('/api/stats/requests/clear', {
     method: 'POST', headers: { 'X-CSRF-Token': csrfToken },
   }),
+  setAutoplayTaste: async (csrfToken: string, enabled: boolean) => {
+    const data = await request<{ ok: true; enabled: boolean }>(`/api/preferences/autoplay-taste/${enabled ? 'on' : 'off'}`, {
+      method: 'POST', headers: { 'X-CSRF-Token': csrfToken },
+    });
+    if (typeof data.enabled !== 'boolean') throw new ApiError(503, 'invalid_response', 'Your autoplay preference could not be confirmed. Try again.');
+    return data.enabled;
+  },
   diagnostics: (id: string, signal?: AbortSignal) => request<Diagnostics>(`${guildPath(id)}/diagnostics`, { signal }),
   activity: (id: string, signal?: AbortSignal) => request<Activity>(`${guildPath(id)}/activity`, { signal }),
   logout: (csrfToken: string) => request<{ ok: boolean }>('/auth/logout', {

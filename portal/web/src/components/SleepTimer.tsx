@@ -16,12 +16,14 @@ export function sleepText(sleep: SleepTimer | null | undefined, now = Date.now()
 // The countdown is shown in whole minutes, so a coarse tick keeps it current.
 export function useSleepText(sleep: SleepTimer | null | undefined) {
   const [now, setNow] = useState(Date.now);
+  // Keyed on the timer's values: every live frame brings an equal timer in a new object.
+  const endsAt = sleep?.mode === 'time' ? sleep.endsAt : null;
   useEffect(() => {
     setNow(Date.now());
-    if (sleep?.mode !== 'time') return;
+    if (endsAt === null) return;
     const timer = setInterval(() => setNow(Date.now()), 15_000);
     return () => clearInterval(timer);
-  }, [sleep]);
+  }, [sleep?.mode, endsAt]);
   return sleepText(sleep, now);
 }
 

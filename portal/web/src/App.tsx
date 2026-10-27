@@ -1,10 +1,10 @@
-import { useEffect, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { ArrowClockwiseIcon, ArrowRightIcon, CaretDownIcon, DiscordLogoIcon, GearSixIcon, HeartIcon, HouseIcon, MagnifyingGlassIcon, MusicNotesIcon, PlusIcon, SignOutIcon, UsersIcon, WarningCircleIcon, WaveformIcon, WifiSlashIcon, XIcon } from './icons';
-import type { Surface } from './types';
+import type { Bootstrap, GuildSnapshot, Surface } from './types';
 import { usePortal } from './usePortal';
 import { useListening } from './playback';
 import { publicUrl } from './api';
-import { useArtPalette } from './art';
+import { useArtPalette, type Palette } from './art';
 import { Spectrum } from './components/Spectrum';
 import { RoomLight } from './components/RoomLight';
 import { FpsMeter, SceneCanvas, fpsChosen, glSceneChosen } from './components/SceneCanvas';
@@ -12,7 +12,7 @@ import { statusLabel } from './format';
 import { ActionPopover, Avatar, Empty, ErrorState, FallbackCover, IconButton, Loading } from './components/ui';
 import { Player } from './components/Player';
 import { Queue } from './components/Queue';
-import { Search } from './components/Search';
+import { Search, SearchDraft, setSearchDraft } from './components/Search';
 import { LibraryView } from './components/Library';
 import { Home } from './components/Home';
 import type { AmbientMode, InstallPrompt } from './components/Settings';
@@ -23,6 +23,7 @@ import { holdForSignIn, initialShare } from './share';
 import { transition } from './motion';
 import { longPress } from './longPress';
 import { applyPerformance, applySkin, initialPerformance, initialSkin, loadLook, skinLook, type Skin } from './skin';
+import { useEvent } from './stable';
 
 function initialAmbient(): AmbientMode {
   try { const value = localStorage.getItem('vybertron.ambient'); return value === 'off' || value === 'subtle' || value === 'on' ? value : 'on'; } catch { return 'on'; }
@@ -39,7 +40,6 @@ export function App() {
   const [surface, setSurface] = useState<Surface>('home');
   const [expanded, setExpanded] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
-  const [query, setQuery] = useState('');
   const [ambient, changeAmbient] = useState<AmbientMode>(initialAmbient);
   const [skin, changeSkin] = useState<Skin>(initialSkin);
   const [performance, changePerformance] = useState(initialPerformance);
@@ -73,7 +73,7 @@ export function App() {
   }, []);
   useEffect(() => longPress(), []);
   useEffect(() => {
-    if (auth !== 'ready') { setExpanded(false); setSearchOpen(false); setQuery(''); }
+    if (auth !== 'ready') { setExpanded(false); setSearchOpen(false); setSearchDraft(''); }
   }, [auth]);
   useEffect(() => {
     const previous = navigationState.current;
@@ -89,35 +89,39 @@ export function App() {
     return () => clearTimeout(timer);
   }, [portal.notice]);
   // Look and lighting changes crossfade the whole page instead of repainting it in one frame.
-  const setAmbient = (value: AmbientMode) => transition('theme', () => { changeAmbient(value); try { localStorage.setItem('vybertron.ambient', value); } catch { /* Optional, non-sensitive preference. */ } });
+  const setAmbient = useEvent((value: AmbientMode) => transition('theme', () => { changeAmbient(value); try { localStorage.setItem('vybertron.ambient', value); } catch { /* Optional, non-sensitive preference. */ } }));
   // A look's chunk loads before it applies, so the switch stays one atomic crossfade. The
   // latest choice wins if an earlier one is still loading. The browser won't refetch a script
   // chunk that failed, so a failed look asks for a reload; the current look stays meanwhile.
   const skinChoice = useRef(0);
-  const setSkin = (value: Skin) => {
+  const setSkin = useEvent((value: Skin) => {
     const choice = ++skinChoice.current;
     loadLook(value).then(() => {
       if (choice === skinChoice.current) transition('theme', () => { applySkin(value); changeSkin(value); });
     }, () => { if (choice === skinChoice.current) portal.notify('That look couldn’t load. Check your connection, then reload the page and try again.', 'error'); });
-  };
-  const setPerformance = (value: boolean) => transition('theme', () => { applyPerformance(value); changePerformance(value); });
+  });
+  const setPerformance = useEvent((value: boolean) => transition('theme', () => { applyPerformance(value); changePerformance(value); }));
   const order = (value: Surface) => value === 'settings' ? surfaces.length : surfaces.findIndex(item => item.id === value);
   // Leaving the sleeve folds the cover back into the deck; otherwise the view slides along the nav.
-  const navigate = (value: Surface) => {
+  // Handlers handed to memoized views keep one identity and act on the latest state.
+  const navigate = useEvent((value: Surface) => {
     if (value === surface && !expanded) return;
     transition(expanded ? 'collapse' : 'view', () => { setSurface(value); setExpanded(false); }, order(value) < order(surface) ? 'back' : 'forward');
-  };
+  });
   // A swipe hands over `settle` so the transition starts from wherever the finger left the player.
-  const toggleExpanded = (value: boolean, settle?: () => void) => { if (value === expanded) { settle?.(); return; } transition(value ? 'expand' : 'collapse', () => { settle?.(); setExpanded(value); }); };
+  const toggleExpanded = useEvent((value: boolean, settle?: () => void) => { if (value === expanded) { settle?.(); return; } transition(value ? 'expand' : 'collapse', () => { settle?.(); setExpanded(value); }); });
+  const openPlayer = useEvent(() => toggleExpanded(true));
   // Search opens as a page on a phone and as a dialog on desktop, and keeps that form if the window
   // is resized. With the Search page already showing, the top-bar search goes to its field.
-  const openSearch = () => {
+  const openSearch = useEvent(() => {
     if (surface === 'search' && !expanded) document.querySelector<HTMLInputElement>('.search-page input[type="search"]')?.focus();
     else if (phoneLayout()) navigate('search'); else setSearchOpen(true);
-  };
+  });
+  const closeSearch = useCallback(() => setSearchOpen(false), []);
+  const chooseGuild = useEvent((id: string) => { portal.selectGuild(id); setExpanded(false); });
   // Search stays open-able for drafts and browsing; a real permission block (not a stale read) demotes the call to action.
   const addBlocked = connection === 'live' && !!snapshot && !snapshot.session.canAdd;
-  const install = () => { if (installPrompt) void installPrompt.prompt().then(() => installPrompt.userChoice).then(() => setInstallPrompt(null)).catch(() => portal.notify('Use your browser’s Install app option to try again.')); };
+  const install = useEvent(() => { if (installPrompt) void installPrompt.prompt().then(() => installPrompt.userChoice).then(() => setInstallPrompt(null)).catch(() => portal.notify('Use your browser’s Install app option to try again.')); });
   // Ambient motion: off by choice, reduced motion, a hidden tab, or performance mode stills it.
   const still = ambient === 'off' || reduced || hidden || performance;
   const motion = !still && connection === 'live' && snapshot?.session.status === 'playing';
@@ -131,22 +135,13 @@ export function App() {
     document.documentElement.style.setProperty('--ground', palette.ground);
     document.querySelector('meta[name="theme-color"]')?.setAttribute('content', palette.ground);
   }, [palette]);
-  const Look = skinLook(skin);
-  // The room draws in one WebGL canvas; the DOM scenery below stays as its layout source.
-  const gl = glScene;
-  const scene = (moving: boolean) => <div className={`ambient-scene ${gl ? 'gl-scene' : ''} ${expanded ? 'immersive' : ''} ${moving ? 'moving' : 'settled'} ${ambient === 'subtle' ? 'subtle' : ''} ${ambient === 'off' ? 'disabled' : ''}`} aria-hidden="true">
-    {gl && <SceneCanvas onFail={() => setGlScene(false)} />}
-    <RoomLight palette={palette} instant={hidden} quick={reduced}>{prepared => <>
-    <ArtworkField url={artwork} />
-    {Look && <Look.Scenery prepared={prepared} />}
-    </>}</RoomLight>
-  </div>;
+  const sceneFailed = useCallback(() => setGlScene(false), []);
+  const scene = (moving: boolean) => <AmbientScene gl={glScene} immersive={expanded} moving={moving} ambient={ambient} palette={palette} hidden={hidden} reduced={reduced} artwork={artwork} skin={skin} onFail={sceneFailed} />;
   const background = <>{scene(motion)}{fps && <FpsMeter />}</>;
   // Sign-in has no session to wait for; the horizon idles there whenever ambient motion is allowed.
   const welcome = <>{scene(!still)}{fps && <FpsMeter />}</>;
   if (auth === 'loading') return <div className="auth-page">{welcome}<Brand /><Loading label="Finding your listening space…" /></div>;
   if (auth === 'signed-out' || auth === 'error') return <div className="auth-page">{welcome}<Brand /><main className="sign-in"><h1 className="sr-only">Sign in to Vybatron</h1><div className="signin-sleeve"><FallbackCover /></div><Spectrum className="signin-spectrum" seed="vybertron" color={palette.accent} mode="playing" animate={!still} bands={36} /><p>{shared?.link ? 'Sign in with Discord to add the link you shared.' : 'Sign in with Discord to pick songs and control the music in your server.'}</p>{auth === 'error' ? <ErrorState message={portal.authError} retry={() => void portal.loadBootstrap()} /> : <a className="button primary discord-signin" href="/auth/discord" onClick={() => holdForSignIn(shared)}><DiscordLogoIcon size={25} weight="fill" />Continue with Discord<ArrowRightIcon size={20} /></a>}<span className="signin-footnote">Plays in your Discord voice channel, or right here when you’re not in one.</span></main></div>;
-  const viewer = bootstrap!.viewer;
   const noGuilds = !bootstrap!.guilds.length;
   const inviteUrl = bootstrap!.inviteUrl;
   const heading = surface === 'home' ? 'Home' : surface === 'search' ? 'Search' : surface === 'session' ? portal.target === 'local' ? 'Your Queue' : 'Shared Queue' : surface === 'music' ? 'My Music' : surface === 'settings' ? 'Settings' : 'Your Server';
@@ -154,30 +149,62 @@ export function App() {
   // Voice room and listeners live once, in the server header; tabs name each page's sections.
   const place = portal.target === 'local' ? 'On this device' : room ? room.name : snapshot?.savedSession.voiceChannel ? `Saved in ${snapshot.savedSession.voiceChannel.name}` : 'Join a voice channel';
   return <div className={`app-shell ${expanded ? 'player-open' : ''} ${motion ? 'motion-live' : ''} ${connection !== 'live' ? 'has-connection-notice' : ''}`}>{background}<a href="#main-content" className="skip-link" onClick={event => { event.preventDefault(); document.getElementById('main-content')?.focus(); }}>Skip to content</a>
-    <aside className="sidebar" data-glass><Brand /><div className="guild-card"><div className="guild-icon">{snapshot?.guild.iconUrl || bootstrap!.guilds.find(g => g.id === portal.guildId)?.iconUrl ? <img src={publicUrl(snapshot?.guild.iconUrl || bootstrap!.guilds.find(g => g.id === portal.guildId)?.iconUrl)} alt="" /> : <DiscordLogoIcon size={26} weight="fill" />}</div><div className="guild-info"><label className="sr-only" htmlFor="guild">Server</label><select id="guild" aria-label="Server" value={portal.guildId} disabled={noGuilds} onChange={event => { portal.selectGuild(event.target.value); setExpanded(false); }}><option value="" disabled>Select server</option>{bootstrap!.guilds.map(guild => <option key={guild.id} value={guild.id}>{guild.name}</option>)}</select><span className={`guild-status ${snapshot?.session.status || 'idle'}`}><span className="status-dot" /><span className="guild-status-text">{statusLabel(snapshot)} · {place}{listening > 0 && <span className="guild-listeners"> · {listening} listening</span>}</span></span></div><CaretDownIcon className="guild-caret" size={16} /></div>
-      <nav className="navigation" aria-label="Main navigation">{surfaces.map(item => <button key={item.id} className={`${surface === item.id ? 'selected' : ''} ${item.only ? `nav-${item.only}` : ''}`} aria-current={surface === item.id ? 'page' : undefined} onClick={() => navigate(item.id)}>{surface === item.id && <span className="nav-indicator" aria-hidden="true" />}<item.icon size={26} /><span>{item.label}</span></button>)}</nav>
-      <div className="sidebar-session">{snapshot?.session.voiceChannel && snapshot.session.listeners.length > 0 && <div className="listeners"><div>{snapshot.session.listeners.slice(0, 5).map(listener => <Avatar key={listener.id} url={listener.avatarUrl} name={listener.displayName} />)}</div><span>{snapshot.session.listeners.length} listening</span></div>}</div>
-      <ActionPopover label="Account options" className="mobile-account" triggerClassName="mobile-account-trigger" trigger={<Avatar url={viewer.avatarUrl} name={viewer.displayName} />}>{close => <><p>{viewer.displayName}</p><button onClick={() => { close(); navigate('settings'); }}><GearSixIcon />Settings</button><button onClick={() => { close(); navigate('server'); }}><UsersIcon />Server</button><button onClick={() => { close(); void portal.logout(); }}><SignOutIcon />Sign out on this device</button></>}</ActionPopover>
-      <div className="account"><ActionPopover label="Account options" className="account-popover" panelClassName="account-menu" triggerClassName="account-identity" trigger={<><Avatar url={viewer.avatarUrl} name={viewer.displayName} /><span><strong>{viewer.displayName}</strong><small>{viewer.maintainer ? 'Maintainer' : portal.target === 'local' ? 'Listening here' : snapshot?.session.canAdd ? 'In voice' : 'Signed in'}</small></span></>}>{close => <><p>{viewer.displayName}</p><button onClick={() => { close(); navigate('settings'); }}>Settings</button>{inviteUrl && <a href={inviteUrl} target="_blank" rel="noopener noreferrer" onClick={close}>Add Vybatron to a server</a>}<button onClick={() => { close(); void portal.logout(); }}>Sign out on this device</button></>}</ActionPopover><IconButton label="Open settings" onClick={() => navigate('settings')}><GearSixIcon size={23} weight="fill" /></IconButton></div>
-    </aside>
-    <div className="portal-main"><header className={`topbar ${expanded ? 'sleeve-topbar' : ''}`}><div className="page-title"><h1 hidden={expanded}>{heading}</h1></div><div className="topbar-actions"><button type="button" className="header-search" aria-label="Search music" disabled={noGuilds} onClick={openSearch}><MagnifyingGlassIcon size={21} /><span>{query || 'Search songs, artists, or paste a link...'}</span></button><button className={`button ${addBlocked ? 'secondary' : 'primary'}`} title={addBlocked ? portal.blockedReason : undefined} disabled={noGuilds} onClick={openSearch}><PlusIcon size={23} /><span>Add music</span></button></div></header>
+    <Sidebar bootstrap={bootstrap!} guildId={portal.guildId} iconUrl={snapshot?.guild.iconUrl || bootstrap!.guilds.find(g => g.id === portal.guildId)?.iconUrl} status={snapshot?.session.status || 'idle'}
+      statusText={`${statusLabel(snapshot)} · ${place}`} listening={listening} listeners={snapshot?.session.voiceChannel ? snapshot.session.listeners : null} surface={surface}
+      accountNote={bootstrap!.viewer.maintainer ? 'Maintainer' : portal.target === 'local' ? 'Listening here' : snapshot?.session.canAdd ? 'In voice' : 'Signed in'}
+      navigate={navigate} chooseGuild={chooseGuild} logout={portal.logout} />
+    <div className="portal-main"><header className={`topbar ${expanded ? 'sleeve-topbar' : ''}`}><div className="page-title"><h1 hidden={expanded}>{heading}</h1></div><div className="topbar-actions"><button type="button" className="header-search" aria-label="Search music" disabled={noGuilds} onClick={openSearch}><MagnifyingGlassIcon size={21} /><span><SearchDraft placeholder="Search songs, artists, or paste a link..." /></span></button><button className={`button ${addBlocked ? 'secondary' : 'primary'}`} title={addBlocked ? portal.blockedReason : undefined} disabled={noGuilds} onClick={openSearch}><PlusIcon size={23} /><span>Add music</span></button></div></header>
       {!noGuilds && connection !== 'live' && <div className={`connection-banner ${connection === 'offline' ? 'offline' : ''}`} role="status">{connection === 'offline' ? <WifiSlashIcon size={21} /> : <span className="spinner" />}<div><strong>{connection === 'offline' ? 'Live updates paused' : 'Getting fresh state'}</strong><span>{connection === 'offline' ? portal.connectionError || 'Reconnect before making changes. Discord playback continues.' : 'Controls return once the current session is verified.'}</span></div>{connection === 'offline' && <button className="text-button" onClick={portal.reconnect}><ArrowClockwiseIcon size={18} />Reconnect</button>}</div>}
-      <main id="main-content" tabIndex={-1} className={expanded ? 'main-surface expanded-main' : 'main-surface page-content'}>{expanded && <h1 className="sr-only">Now playing</h1>}<div className="surface-stage" hidden={expanded}>{noGuilds ? <Empty title="No listening spaces available" description={inviteUrl ? 'Vybatron isn’t in any of your servers yet. Add it to a server you manage, then refresh.' : 'Sign in with an account that belongs to a server where Vybatron is installed. Vybatron is private, so ask its owner to add it to yours.'} action={<div className="empty-actions">{inviteUrl && <a className="button primary" href={inviteUrl} target="_blank" rel="noopener noreferrer"><DiscordLogoIcon size={18} weight="fill" />Add to a server</a>}<button className="button secondary" onClick={() => void portal.loadBootstrap()}><ArrowClockwiseIcon size={18} />Refresh access</button></div>} /> : !snapshot ? connection === 'offline' ? <ErrorState message={portal.connectionError} retry={portal.reconnect} /> : <Loading /> : <>
+      <main id="main-content" tabIndex={-1} className={expanded ? 'main-surface expanded-main' : 'main-surface page-content'}>{expanded && <h1 className="sr-only">Now playing</h1>}<div className="surface-stage" hidden={expanded}><Held held={expanded}>{noGuilds ? <Empty title="No listening spaces available" description={inviteUrl ? 'Vybatron isn’t in any of your servers yet. Add it to a server you manage, then refresh.' : 'Sign in with an account that belongs to a server where Vybatron is installed. Vybatron is private, so ask its owner to add it to yours.'} action={<div className="empty-actions">{inviteUrl && <a className="button primary" href={inviteUrl} target="_blank" rel="noopener noreferrer"><DiscordLogoIcon size={18} weight="fill" />Add to a server</a>}<button className="button secondary" onClick={() => void portal.loadBootstrap()}><ArrowClockwiseIcon size={18} />Refresh access</button></div>} /> : !snapshot ? connection === 'offline' ? <ErrorState message={portal.connectionError} retry={portal.reconnect} /> : <Loading /> : <>
         {surface === 'session' && <><Recovery portal={portal} />{snapshot.session.reason && <div className="permission-note"><WarningCircleIcon size={20} /><span>{snapshot.session.reason}</span></div>}<Queue portal={portal} onAdd={openSearch} /></>}
-        {/* The sleeve hides the selected page without rebuilding its shelves when it closes. */}
-        <Home portal={portal} active={surface === 'home'} onOpenPlayer={() => toggleExpanded(true)} />
-        <LibraryView portal={portal} active={surface === 'music'} />
-        {surface === 'search' && <Search portal={portal} page open onClose={() => navigate('home')} query={query} setQuery={setQuery} />}
-        <ServerView portal={portal} active={surface === 'server'} />
-        <SettingsView portal={portal} active={surface === 'settings'} ambient={ambient} setAmbient={setAmbient} skin={skin} setSkin={setSkin} performance={performance} setPerformance={setPerformance} installPrompt={installPrompt} install={install} />
-      </>}</div>{!noGuilds && <Player portal={portal} expanded={expanded} setExpanded={toggleExpanded} onAdd={openSearch} accent={palette.accent} animate={!still} skin={skin} />}</main>
+        {/* The sleeve hides the selected page without rebuilding its shelves when it closes, and
+            neither it nor a page in the background re-renders until it shows again. */}
+        <Held held={surface !== 'home'}><Home portal={portal} active={surface === 'home'} onOpenPlayer={openPlayer} /></Held>
+        <Held held={surface !== 'music'}><LibraryView portal={portal} active={surface === 'music'} /></Held>
+        {surface === 'search' && <Search portal={portal} page open onClose={() => navigate('home')} />}
+        <Held held={surface !== 'server'}><ServerView portal={portal} active={surface === 'server'} /></Held>
+        <Held held={surface !== 'settings'}><SettingsView portal={portal} active={surface === 'settings'} ambient={ambient} setAmbient={setAmbient} skin={skin} setSkin={setSkin} performance={performance} setPerformance={setPerformance} installPrompt={installPrompt} install={install} /></Held>
+      </>}</Held></div>{!noGuilds && <Player portal={portal} expanded={expanded} setExpanded={toggleExpanded} onAdd={openSearch} accent={palette.accent} animate={!still} skin={skin} />}</main>
     </div>
     {shared && <ShareDialog portal={portal} link={shared.link} onClose={() => setShared(null)} />}
-    <Search portal={portal} open={searchOpen} onClose={() => setSearchOpen(false)} query={query} setQuery={setQuery} />
+    <Search portal={portal} open={searchOpen} onClose={closeSearch} />
     {portal.notice && !searchOpen && !(surface === 'search' && !expanded) && !shared && <div className={`toast ${portal.notice.kind}`} role={portal.notice.kind === 'error' ? 'alert' : 'status'}><span>{portal.notice.message}</span><IconButton label="Dismiss notification" onClick={portal.dismissNotice}><XIcon size={19} /></IconButton></div>}
     {update && <div className="update-notice"><span>A fresh version of Vybatron is ready.</span><button className="text-button" onClick={() => { navigator.serviceWorker.addEventListener('controllerchange', () => location.reload(), { once: true }); update.postMessage({ type: 'ACTIVATE' }); }}>Update app</button></div>}
   </div>;
 }
+// A page nobody can see keeps its state and elements, but skips rendering again until it shows:
+// it renders once as it hides, then waits.
+const Held = memo(function Held({ children }: { held: boolean; children: ReactNode }) { return children; }, (previous, next) => previous.held && next.held);
+
+const AmbientScene = memo(function AmbientScene({ gl, immersive, moving, ambient, palette, hidden, reduced, artwork, skin, onFail }: {
+  gl: boolean; immersive: boolean; moving: boolean; ambient: AmbientMode; palette: Palette; hidden: boolean; reduced: boolean; artwork?: string; skin: Skin; onFail: () => void;
+}) {
+  const Look = skinLook(skin);
+  // The room draws in one WebGL canvas; the DOM scenery below stays as its layout source.
+  return <div className={`ambient-scene ${gl ? 'gl-scene' : ''} ${immersive ? 'immersive' : ''} ${moving ? 'moving' : 'settled'} ${ambient === 'subtle' ? 'subtle' : ''} ${ambient === 'off' ? 'disabled' : ''}`} aria-hidden="true">
+    {gl && <SceneCanvas onFail={onFail} />}
+    <RoomLight palette={palette} instant={hidden} quick={reduced}>{prepared => <>
+    <ArtworkField url={artwork} />
+    {Look && <Look.Scenery prepared={prepared} />}
+    </>}</RoomLight>
+  </div>;
+});
+
+// Brand, server, navigation and account. It renders again only when one of them changes, not on
+// every live frame.
+const Sidebar = memo(function Sidebar({ bootstrap, guildId, iconUrl, status, statusText, listening, listeners, surface, accountNote, navigate, chooseGuild, logout }: {
+  bootstrap: Bootstrap; guildId: string; iconUrl?: string | null; status: GuildSnapshot['session']['status']; statusText: string; listening: number;
+  listeners: GuildSnapshot['session']['listeners'] | null; surface: Surface; accountNote: string; navigate: (value: Surface) => void; chooseGuild: (id: string) => void; logout: () => Promise<void>;
+}) {
+  const { viewer, guilds, inviteUrl } = bootstrap;
+  return <aside className="sidebar" data-glass><Brand /><div className="guild-card"><div className="guild-icon">{iconUrl ? <img src={publicUrl(iconUrl)} alt="" /> : <DiscordLogoIcon size={26} weight="fill" />}</div><div className="guild-info"><label className="sr-only" htmlFor="guild">Server</label><select id="guild" aria-label="Server" value={guildId} disabled={!guilds.length} onChange={event => chooseGuild(event.target.value)}><option value="" disabled>Select server</option>{guilds.map(guild => <option key={guild.id} value={guild.id}>{guild.name}</option>)}</select><span className={`guild-status ${status}`}><span className="status-dot" /><span className="guild-status-text">{statusText}{listening > 0 && <span className="guild-listeners"> · {listening} listening</span>}</span></span></div><CaretDownIcon className="guild-caret" size={16} /></div>
+    <nav className="navigation" aria-label="Main navigation">{surfaces.map(item => <button key={item.id} className={`${surface === item.id ? 'selected' : ''} ${item.only ? `nav-${item.only}` : ''}`} aria-current={surface === item.id ? 'page' : undefined} onClick={() => navigate(item.id)}>{surface === item.id && <span className="nav-indicator" aria-hidden="true" />}<item.icon size={26} /><span>{item.label}</span></button>)}</nav>
+    <div className="sidebar-session">{listeners && listeners.length > 0 && <div className="listeners"><div>{listeners.slice(0, 5).map(listener => <Avatar key={listener.id} url={listener.avatarUrl} name={listener.displayName} />)}</div><span>{listeners.length} listening</span></div>}</div>
+    <ActionPopover label="Account options" className="mobile-account" triggerClassName="mobile-account-trigger" trigger={<Avatar url={viewer.avatarUrl} name={viewer.displayName} />}>{close => <><p>{viewer.displayName}</p><button onClick={() => { close(); navigate('settings'); }}><GearSixIcon />Settings</button><button onClick={() => { close(); navigate('server'); }}><UsersIcon />Server</button><button onClick={() => { close(); void logout(); }}><SignOutIcon />Sign out on this device</button></>}</ActionPopover>
+    <div className="account"><ActionPopover label="Account options" className="account-popover" panelClassName="account-menu" triggerClassName="account-identity" trigger={<><Avatar url={viewer.avatarUrl} name={viewer.displayName} /><span><strong>{viewer.displayName}</strong><small>{accountNote}</small></span></>}>{close => <><p>{viewer.displayName}</p><button onClick={() => { close(); navigate('settings'); }}>Settings</button>{inviteUrl && <a href={inviteUrl} target="_blank" rel="noopener noreferrer" onClick={close}>Add Vybatron to a server</a>}<button onClick={() => { close(); void logout(); }}>Sign out on this device</button></>}</ActionPopover><IconButton label="Open settings" onClick={() => navigate('settings')}><GearSixIcon size={23} weight="fill" /></IconButton></div>
+  </aside>;
+});
+
 // The blurred cover behind the room crossfades between songs: the next layer joins only once it has
 // decoded, and the previous one fades out beneath it, so the room never blinks empty or snaps.
 function ArtworkField({ url }: { url?: string }) {

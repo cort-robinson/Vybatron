@@ -111,6 +111,20 @@ contains a temporary code/state), headers, cookies, environment values, or
 upstream bodies in a reverse proxy. This service logs only a fixed startup line
 or a fixed startup-failure message.
 
+## Static delivery
+
+The compiled UI is served from `PORTAL_WEB_DIST` with no request-time compression:
+
+- Text files (`.html`, `.js`, `.css`, `.json`, `.webmanifest`, `.svg`) come from the
+  build's `.br`/`.gz` copies when `Accept-Encoding` allows (brotli first), with
+  `Content-Encoding` and `Vary: Accept-Encoding`. A copy older than its original is
+  ignored. The copies are never URLs of their own.
+- Every stored response carries a strong `ETag` from the file content (one per encoding),
+  and a matching `If-None-Match` gets an empty 304.
+- Vite-hashed files in `/assets/` are `public, max-age=31536000, immutable`. Everything
+  else revalidates (`no-cache`). The service worker script and `/share` are `no-store`.
+- Byte ranges are ignored for static files: the whole representation is sent.
+
 ## Resource and failure behavior
 
 - 128 inbound sockets, 32 ordinary request handlers, four isolated authenticated

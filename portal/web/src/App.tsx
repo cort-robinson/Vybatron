@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
-import { ArrowClockwiseIcon, ArrowRightIcon, CaretDownIcon, DiscordLogoIcon, GearSixIcon, HeartIcon, HouseIcon, MagnifyingGlassIcon, MusicNotesIcon, PlusIcon, SignOutIcon, UsersIcon, WarningCircleIcon, WaveformIcon, WifiSlashIcon, XIcon } from '@phosphor-icons/react';
+import { Suspense, useEffect, useRef, useState } from 'react';
+import { ArrowClockwiseIcon, ArrowRightIcon, CaretDownIcon, DiscordLogoIcon, GearSixIcon, HeartIcon, HouseIcon, MagnifyingGlassIcon, MusicNotesIcon, PlusIcon, SignOutIcon, UsersIcon, WarningCircleIcon, WaveformIcon, WifiSlashIcon, XIcon } from './icons';
 import type { Surface } from './types';
 import { usePortal } from './usePortal';
 import { useListening } from './playback';
@@ -15,10 +15,9 @@ import { Queue } from './components/Queue';
 import { Search } from './components/Search';
 import { LibraryView } from './components/Library';
 import { Home } from './components/Home';
-import { ServerView } from './components/Server';
-import { SettingsView, type AmbientMode, type InstallPrompt } from './components/Settings';
+import type { AmbientMode, InstallPrompt } from './components/Settings';
+import { ServerView, SettingsView, ShareDialog, usePrefetchViews } from './views';
 import { Recovery } from './components/Recovery';
-import { ShareDialog } from './components/Share';
 import { holdForSignIn, initialShare } from './share';
 import { transition } from './motion';
 import { longPress } from './longPress';
@@ -52,6 +51,7 @@ export function App() {
   const [shared, setShared] = useState(initialShare);
   const navigationState = useRef({ surface, expanded });
   const { bootstrap, snapshot, connection, auth } = portal;
+  usePrefetchViews(auth === 'ready');
   useEffect(() => {
     const change = () => setHidden(document.hidden); const media = matchMedia('(prefers-reduced-motion: reduce)'); const motionChange = () => setReduced(media.matches);
     document.addEventListener('visibilitychange', change); media.addEventListener('change', motionChange);
@@ -171,7 +171,7 @@ export function App() {
         <SettingsView portal={portal} active={surface === 'settings'} ambient={ambient} setAmbient={setAmbient} skin={skin} setSkin={setSkin} performance={performance} setPerformance={setPerformance} installPrompt={installPrompt} install={install} />
       </>}</div>{!noGuilds && <Player portal={portal} expanded={expanded} setExpanded={toggleExpanded} onAdd={openSearch} accent={palette.accent} animate={!still} skin={skin} />}</main>
     </div>
-    {shared && <ShareDialog portal={portal} link={shared.link} onClose={() => setShared(null)} />}
+    {shared && <Suspense fallback={null}><ShareDialog portal={portal} link={shared.link} onClose={() => setShared(null)} /></Suspense>}
     <Search portal={portal} open={searchOpen} onClose={() => setSearchOpen(false)} query={query} setQuery={setQuery} />
     {portal.notice && !searchOpen && !(surface === 'search' && !expanded) && !shared && <div className={`toast ${portal.notice.kind}`} role={portal.notice.kind === 'error' ? 'alert' : 'status'}><span>{portal.notice.message}</span><IconButton label="Dismiss notification" onClick={portal.dismissNotice}><XIcon size={19} /></IconButton></div>}
     {update && <div className="update-notice"><span>A fresh version of Vybatron is ready.</span><button className="text-button" onClick={() => { navigator.serviceWorker.addEventListener('controllerchange', () => location.reload(), { once: true }); update.postMessage({ type: 'ACTIVATE' }); }}>Update app</button></div>}

@@ -6,6 +6,7 @@ import { App } from './App';
 import { applyPerformance, applySkin, initialPerformance, initialSkin, loadLook } from './skin';
 import './styles.css';
 import './overdrive.css';
+import './boot.css';
 
 // Apply the look before the first paint so no look ever flashes another. An opt-in look's
 // stylesheet and scenery load first; until then the page is the bare ground every look shares.

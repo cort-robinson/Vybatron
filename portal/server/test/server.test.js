@@ -6,6 +6,7 @@ import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { once } from 'node:events';
+import { brotliCompressSync, brotliDecompressSync, gunzipSync, gzipSync } from 'node:zlib';
 import { createPortalServer, SESSION_COOKIE, OAUTH_COOKIE } from '../src/app.js';
 import { loadConfig, LIMITS } from '../src/config.js';
 import { Transport } from '../src/transport.js';
@@ -45,8 +46,8 @@ async function request(base, pathname, { method = 'GET', headers = {}, body } = 
       agent: keepAlive, timeout: 2000 }, res => {
       const chunks = []; res.on('data', chunk => chunks.push(chunk));
       res.on('end', () => {
-        const text = Buffer.concat(chunks).toString();
-        resolve({ status: res.statusCode, headers: res.headers, text, json: () => JSON.parse(text) });
+        const body = Buffer.concat(chunks); const text = body.toString();
+        resolve({ status: res.statusCode, headers: res.headers, body, text, json: () => JSON.parse(text) });
       });
       res.on('error', reject);
     });
@@ -677,6 +678,99 @@ test('Completed static GET and HEAD responses preserve subsequent HTTP connectio
     assert.equal(head.headers['content-type'], script.headers['content-type']);
     assert.equal((await f.request('/guilds/123')).text, shell.text);
     assert.equal((await f.request('/api/bootstrap')).status, 401);
+  }
+});
+
+test('Static files are sent precompressed, revalidate with ETags, and only hashed build assets are immutable', { timeout: 5000 }, async t => {
+  const f = await fixture(t);
+  const dist = f.config.webDist;
+  const write = async (name, data) => { await fs.mkdir(path.dirname(path.join(dist, name)), { recursive: true }); await fs.writeFile(path.join(dist, name), data); };
+  const script = Buffer.from(`window.portal = "${'compressible '.repeat(200)}";`);
+  await write('assets/index-Ab_9-xYz.js', script);
+  await write('assets/index-Ab_9-xYz.js.br', brotliCompressSync(script));
+  await write('assets/index-Ab_9-xYz.js.gz', gzipSync(script));
+  await write('index.html.br', brotliCompressSync(await fs.readFile(path.join(dist, 'index.html'))));
+  await write('assets/fallback-cover-320-Dw5JH-Cp.webp', 'RIFF-cover');
+  await write('icons/apple-touch-icon.png', 'png');
+  await write('manifest.webmanifest', '{"name":"Vybatron"}');
+  const get = (pathname, headers = {}, method = 'GET') => f.request(pathname, { method, headers });
+  const scriptPath = '/assets/index-Ab_9-xYz.js';
+
+  // The browser's usual header gets brotli; the body and length are the encoded file's.
+  const brotli = await get(scriptPath, { 'Accept-Encoding': 'gzip, deflate, br, zstd' });
+  assert.equal(brotli.status, 200); assert.equal(brotli.headers['content-encoding'], 'br');
+  assert.equal(brotli.headers.vary, 'Accept-Encoding');
+  assert.equal(Number(brotli.headers['content-length']), brotli.body.length);
+  assert.ok(brotli.body.length < script.length);
+  assert.deepEqual(brotliDecompressSync(brotli.body), script);
+  assert.equal(brotli.headers['cache-control'], 'public, max-age=31536000, immutable');
+  // Chromium treats Pragma: no-cache as "always revalidate", which would defeat immutable.
+  assert.equal(brotli.headers.pragma, undefined);
+  assert.match(brotli.headers.etag, /^"[\w-]{32}-br"$/);
+  // gzip when brotli is refused or unknown; identity when nothing is accepted.
+  for (const accept of ['gzip', 'br;q=0, gzip;q=0.5', 'gzip;q=1, br;q=0.4, *;q=0']) {
+    const gzip = await get(scriptPath, { 'Accept-Encoding': accept });
+    assert.equal(gzip.headers['content-encoding'], 'gzip', accept); assert.deepEqual(gunzipSync(gzip.body), script);
+    assert.match(gzip.headers.etag, /-gz"$/);
+  }
+  for (const accept of [undefined, 'identity', 'br;q=0, gzip;q=0', 'zstd']) {
+    const plain = await get(scriptPath, accept ? { 'Accept-Encoding': accept } : {});
+    assert.equal(plain.headers['content-encoding'], undefined, accept); assert.deepEqual(plain.body, script);
+    assert.equal(Number(plain.headers['content-length']), script.length); assert.equal(plain.headers.vary, 'Accept-Encoding');
+  }
+  const head = await get(scriptPath, { 'Accept-Encoding': 'br' }, 'HEAD');
+  assert.equal(head.status, 200); assert.equal(head.body.length, 0);
+  assert.equal(head.headers['content-encoding'], 'br'); assert.equal(head.headers['content-length'], brotli.headers['content-length']);
+  assert.equal(head.headers.etag, brotli.headers.etag);
+  // Static files ignore byte ranges: the whole representation, never a partial one.
+  const ranged = await get(scriptPath, { Range: 'bytes=0-9' });
+  assert.equal(ranged.status, 200); assert.deepEqual(ranged.body, script);
+
+  // Revalidation: a matching tag (weak or strong, alone or in a list) is a bodyless 304.
+  for (const tag of [brotli.headers.etag, `W/${brotli.headers.etag}`, `"other", ${brotli.headers.etag}`, '*']) {
+    const cached = await get(scriptPath, { 'Accept-Encoding': 'br', 'If-None-Match': tag });
+    assert.equal(cached.status, 304, tag); assert.equal(cached.body.length, 0);
+    assert.equal(cached.headers.etag, brotli.headers.etag); assert.equal(cached.headers.vary, 'Accept-Encoding');
+    assert.equal(cached.headers['cache-control'], 'public, max-age=31536000, immutable');
+  }
+  // Each encoding is its own representation.
+  const otherCoding = await get(scriptPath, { 'Accept-Encoding': 'gzip', 'If-None-Match': brotli.headers.etag });
+  assert.equal(otherCoding.status, 200); assert.equal(otherCoding.headers['content-encoding'], 'gzip');
+
+  // The shell revalidates on every load and costs one 304 when unchanged, including SPA routes.
+  const shell = await get('/', { 'Accept-Encoding': 'br' });
+  assert.equal(shell.headers['cache-control'], 'no-cache'); assert.equal(shell.headers['content-encoding'], 'br'); assert.equal(shell.headers.pragma, undefined);
+  assert.match(brotliDecompressSync(shell.body).toString(), /Portal shell/);
+  for (const pathname of ['/', '/guilds/123', '/index.html']) {
+    const revalidated = await get(pathname, { 'Accept-Encoding': 'br', 'If-None-Match': shell.headers.etag });
+    assert.equal(revalidated.status, 304, pathname); assert.equal(revalidated.headers['cache-control'], 'no-cache');
+  }
+  const manifest = await get('/manifest.webmanifest');
+  assert.equal(manifest.headers['cache-control'], 'no-cache'); assert.match(manifest.headers.etag, /^"[\w-]{32}"$/);
+  assert.equal((await get('/manifest.webmanifest', { 'If-None-Match': manifest.headers.etag })).status, 304);
+  // A changed file gets a new validator, so a stale copy is never confirmed.
+  await write('manifest.webmanifest', '{"name":"Vybatron 2"}');
+  const changed = await get('/manifest.webmanifest', { 'If-None-Match': manifest.headers.etag });
+  assert.equal(changed.status, 200); assert.notEqual(changed.headers.etag, manifest.headers.etag); assert.equal(changed.text, '{"name":"Vybatron 2"}');
+
+  // Immutable caching needs a Vite-hashed name inside /assets/; public files keep their names.
+  assert.equal((await get('/assets/fallback-cover-320-Dw5JH-Cp.webp')).headers['cache-control'], 'public, max-age=31536000, immutable');
+  assert.equal((await get('/assets/fallback-cover-320-Dw5JH-Cp.webp')).headers.vary, undefined);
+  for (const pathname of ['/icons/apple-touch-icon.png', '/app-abcdefgh.js']) assert.equal((await get(pathname)).headers['cache-control'], 'no-cache', pathname);
+  // Encoded copies are not URLs of their own.
+  for (const pathname of [`${scriptPath}.br`, `${scriptPath}.gz`, '/index.html.br']) assert.equal((await get(pathname)).status, 404, pathname);
+
+  // A copy older than its original belongs to a previous build and is never served.
+  const old = new Date(Date.now() - 60_000);
+  await fs.utimes(path.join(dist, 'index.html.br'), old, old);
+  const stale = await get('/', { 'Accept-Encoding': 'br' });
+  assert.equal(stale.headers['content-encoding'], undefined); assert.match(stale.text, /Portal shell/);
+
+  // The worker script and the share target are never stored, so they carry no validator.
+  for (const pathname of ['/sw.js', '/share?text=x']) {
+    const fresh = await get(pathname, { 'If-None-Match': '*' });
+    assert.equal(fresh.status, 200, pathname); assert.equal(fresh.headers['cache-control'], 'no-store'); assert.equal(fresh.headers.etag, undefined);
+    assert.equal(fresh.headers.pragma, 'no-cache', pathname);
   }
 });
 

@@ -11,4 +11,6 @@ Regenerate from the original PNG directory with
 `node scripts/optimize-assets.mjs PATH_TO_SOURCE_PNGS` in `portal/web`.
 Sharp 0.35.5 converts the background to WebP and makes responsive 320, 640 and
 1024 pixel cover variants. All four total 309,686 bytes, replacing 4,054,126 bytes
-of public PNGs. The static PWA cache contains derivatives only.
+of public PNGs. The static PWA cache contains derivatives only. Components import
+the covers, so the build ships them under content-hashed names; the unused aurora
+derivative isn't shipped.

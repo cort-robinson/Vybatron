@@ -105,3 +105,4 @@
 .import-tracks li { display: flex; flex-direction: column; min-width: 0; }
 .import-tracks strong { font-size: 14px; overflow-wrap: anywhere; }
 .import-tracks span { color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
+.library-view .mix-create { margin-top: 36px; }

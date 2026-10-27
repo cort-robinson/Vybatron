@@ -289,6 +289,9 @@ picture.artwork { display: block; overflow: hidden; }
 .menu-panel button, .menu-panel a { background: transparent; width: 100%; display: flex; gap: 10px; align-items: center; min-height: 44px; text-align: left; font-size: 16px; border-radius: 9px; padding: 8px 10px; color: var(--text-soft); text-decoration: none; }
 .menu-panel button:hover:not(:disabled), .menu-panel a:hover { background: var(--secondary-hover); color: var(--text); }
 .menu-panel > p.menu-section { border-bottom: 0; border-top: 1px solid var(--line); margin: 4px 0 0; padding-top: 11px; }
+/* Destructive actions start their own group, apart from the choices above them. */
+.menu-panel > :not(.danger-text) + button.danger-text { margin-top: 9px; position: relative; }
+.menu-panel > :not(.danger-text) + button.danger-text::before { content: ''; position: absolute; left: 0; right: 0; top: -5px; border-top: 1px solid var(--line); }
 .menu-check { margin-left: auto; color: var(--accent); }
 /* Phone menus are bottom sheets (ui.tsx ActionPopover): a scrim, a grabber, and actions in thumb reach. */
 .menu-sheet-layer { position: fixed; inset: 0; z-index: 100; display: flex; flex-direction: column; justify-content: flex-end; }

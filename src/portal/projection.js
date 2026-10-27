@@ -50,8 +50,10 @@ export function trackProjection(track, suggested) {
   // Encodings, requester tokens, pluginInfo and media URLs never enter a DTO.
   const id = publicTrackId(track);
   const youtubeId = uri?.startsWith('https://www.youtube.com/watch?') ? new URL(uri).searchParams.get('v') : null;
+  // Saved songs keep no artwork. The widescreen thumbnail always exists, and the portal's square
+  // crop of an official song upload is its album cover; hqdefault would add letterbox bars.
   return { id, title: plainText(info.title, { fallback: 'Unknown track', maxLength: 180 }), author: plainText(info.author, { fallback: 'Unknown artist', maxLength: 120 }), uri, source,
-    durationMs: boundedNumber(info.duration), artworkUrl: safeImage(info.artworkUrl) || (youtubeId ? `https://i.ytimg.com/vi/${youtubeId}/hqdefault.jpg` : null),
+    durationMs: boundedNumber(info.duration), artworkUrl: safeImage(info.artworkUrl) || (youtubeId ? `https://i.ytimg.com/vi/${youtubeId}/mqdefault.jpg` : null),
     isStream: Boolean(info.isStream), requestedBy: actorProjection(track?.requester), ...(suggested === undefined ? {} : { suggested: Boolean(suggested) }) };
 }
 export function suggestionProjection(player) { return suggestions(player).map(track => trackProjection(track, true)); }

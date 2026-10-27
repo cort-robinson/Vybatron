@@ -21,6 +21,11 @@ test('track projections reject signed/private media and unrestricted artwork wit
   assert.equal(safeImage('https://i.ytimg.com/vi/abcdefghijk/hqdefault.jpg?token=private'), 'https://i.ytimg.com/vi/abcdefghijk/hqdefault.jpg');
 });
 
+test('saved YouTube songs without artwork use the widescreen thumbnail the portal crops to the cover', () => {
+  const saved = { uri: 'https://www.youtube.com/watch?v=abcdefghijk', sourceName: 'youtube', identifier: 'abcdefghijk', title: 'Song', author: 'Artist', duration: 1, isStream: false };
+  assert.equal(trackProjection(saved).artworkUrl, 'https://i.ytimg.com/vi/abcdefghijk/mqdefault.jpg');
+});
+
 test('YouTube Music album art reaches the portal instead of the video thumbnail', () => {
   const art = 'https://lh3.googleusercontent.com/AbC_dEf-GhIjKlMnOpQrStUv=w1000-h1000';
   const candidate = track();

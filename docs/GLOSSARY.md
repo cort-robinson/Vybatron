@@ -11,7 +11,7 @@ Domain terms for Vybatron. One meaning per term; commands, code, and docs use th
 - **youtube-source** — Lavalink plugin providing YouTube + YouTube Music support (v4 removed built-in YouTube).
 - **LavaSrc** — Lavalink plugin resolving Spotify (and other) links to metadata, mirrored to YouTube for audio.
 - **Mirroring** — playing a Spotify-identified track by finding its closest YouTube match (Spotify has no streaming API).
-- **Search** — resolving a user query to tracks. URLs load directly; plain text uses a source prefix (`ytsearch:` default, `ytmsearch:`, `spsearch:`, `scsearch:`).
+- **Search** — resolving a user query to tracks. URLs load directly. Plain text searches YouTube Music (`ytmsearch:`) and falls back to YouTube (`ytsearch:`) when that finds nothing. Internal lookups may also use `spsearch:` or `scsearch:`.
 - **Announce channel** — the text channel where `/play` was invoked; receives the one "Now Playing" embed per track start.
 - **Control command** — any command that mutates playback (`/skip`, `/stop`, `/volume`, `/shuffle`, `/pause`, `/resume`, `/skipto`). Requires invoker in the bot's voice channel.
 - **Idle timeout** — 5-minute timer started when the queue empties or the voice channel becomes humanless; on expiry the player disconnects and is destroyed.

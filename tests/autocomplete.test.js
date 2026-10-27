@@ -45,7 +45,7 @@ test('autocomplete limits results and caches normalized queries', async () => {
   let searches = 0;
   const search = async ({ query, source }) => {
     searches += 1;
-    assert.equal(source, 'ytsearch');
+    assert.equal(source, 'ytmsearch');
     assert.equal(query.toLowerCase(), 'daft punk');
     return { tracks: tracks(12) };
   };
@@ -93,7 +93,8 @@ test('a search that finishes after the autocomplete deadline caches nothing', as
     return { tracks: [] };
   }));
   assert.deepEqual(fresh, []);
-  assert.equal(searches, 2);
+  // Each attempt tries YouTube Music, then regular YouTube.
+  assert.equal(searches, 4);
 });
 
 test('autocomplete cache evicts its least-recently-used entry at 100 queries', async () => {

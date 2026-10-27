@@ -23,6 +23,10 @@ export function safeImage(value) {
       'media.discordapp.net': /^\/(?:avatars|icons)\/[\w/.-]+$/,
       'i.ytimg.com': /^\/vi(?:_webp)?\/[\w-]{11}\/[\w.-]+$/,
       'img.youtube.com': /^\/vi\/[\w-]{11}\/[\w.-]+$/,
+      // YouTube Music album art, which Lavalink sizes as `=w1000-h1000`.
+      'lh3.googleusercontent.com': /^\/[\w-]{16,}=w\d{1,4}-h\d{1,4}$/,
+      'yt3.googleusercontent.com': /^\/[\w-]{16,}=w\d{1,4}-h\d{1,4}$/,
+      'yt3.ggpht.com': /^\/[\w-]{16,}=w\d{1,4}-h\d{1,4}$/,
       'i.scdn.co': /^\/image\/[a-z0-9]+$/,
       'i1.sndcdn.com': /^\/[\w-]+\.(?:jpg|png|webp)$/,
       'f4.bcbits.com': /^\/img\/[\w-]+\.(?:jpg|png|webp)$/,

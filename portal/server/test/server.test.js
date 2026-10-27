@@ -10,6 +10,7 @@ import { brotliCompressSync, brotliDecompressSync, gunzipSync, gzipSync } from '
 import { createPortalServer, SESSION_COOKIE, OAUTH_COOKIE } from '../src/app.js';
 import { loadConfig, LIMITS } from '../src/config.js';
 import { Transport } from '../src/transport.js';
+import { parseUpstreamTiming } from '../src/timing.js';
 
 const actorId = '123456789012345678'; const guildId = '234567890123456789';
 const secret = 'test-only-32-character-secret-abcdef0123456789';
@@ -92,6 +93,7 @@ async function fixture(t, { limits = {}, now, dataDir, production = false, botOr
     // The change feed is a held long poll; tests answer it explicitly.
     if (url.pathname === '/v1/changes') { state.feedCalls = (state.feedCalls || 0) + 1; if (state.changes) state.changes(res, call); else reply(res, 404, { error: { code: 'not_found' } }); return; }
     if (state.beforeReply) await state.beforeReply(call);
+    if (state.serverTiming !== undefined) res.setHeader('Server-Timing', state.serverTiming);
     if (state.delayMs) await delay(state.delayMs);
     if (res.destroyed) return;
     if (state.bridgeResponse) { state.bridgeResponse(res, call); return; }
@@ -486,6 +488,52 @@ test('Actual HTTP routes forward exact contract shapes, bounded search and fresh
     assert.equal(denied.status, 403); assert.equal(denied.text.includes('SECRET'), false);
   }
   assert.equal(f.state.calls.length, before + 5);
+});
+
+test('API responses carry Server-Timing with only fixed metric names and durations', { timeout: 5000 }, async t => {
+  const f = await fixture(t); const device = await f.login(); const headers = { Cookie: device.cookie };
+  f.state.serverTiming = 'bot;dur=12.5, discord;dur=4';
+  const metric = name => `${name};dur=\\d{1,7}\\.\\d`;
+  const full = new RegExp(`^${['portal', 'bridge', 'bot', 'discord'].map(metric).join(', ')}$`);
+  const responses = [];
+  for (const resource of ['/api/bootstrap', `/api/guilds/${guildId}`, `/api/guilds/${guildId}/library`,
+    `/api/guilds/${guildId}/stats?window=7d`, `/api/guilds/${guildId}/recap`]) responses.push([resource, await f.request(resource, { headers })]);
+  responses.push(['commands', await sendCommand(f, device)]);
+  for (const [resource, response] of responses) {
+    assert.equal(response.status, 200, resource);
+    const timing = response.headers['server-timing'];
+    assert.match(timing, full, resource);
+    assert.match(timing, /bot;dur=12\.5, discord;dur=4\.0$/);
+    // Nothing identifying: no snowflakes, names or response content.
+    for (const secretValue of [actorId, guildId, 'listener', 'Private guild', 'revision-1']) assert.equal(timing.includes(secretValue), false);
+    assert.equal(response.headers['timing-allow-origin'], undefined);
+    assert.match(response.headers['content-security-policy'], /default-src 'self'/);
+    assert.equal(response.headers['cache-control'], 'no-store');
+  }
+  // Missing or malformed bot timing is dropped, never forwarded or fatal.
+  for (const upstream of ['bot;dur=abc, evil;dur=5', `discord;dur=1;desc="${actorId}"`, 'x'.repeat(300)]) {
+    f.state.serverTiming = upstream;
+    const response = await f.request(`/api/guilds/${guildId}/library`, { headers });
+    assert.equal(response.status, 200);
+    assert.match(response.headers['server-timing'], new RegExp(`^${metric('portal')}, ${metric('bridge')}$`));
+  }
+  // A live stream may join a read already in flight, so its bot numbers are not merged.
+  f.state.serverTiming = 'bot;dur=12.5, discord;dur=4';
+  const live = await stream(f.base, device.cookie); t.after(live.close);
+  assert.equal(live.res.statusCode, 200);
+  assert.match(live.res.headers['server-timing'], new RegExp(`^${metric('portal')}, ${metric('bridge')}$`));
+  delete f.state.serverTiming;
+  const failed = await f.request(`/api/guilds/${guildId}/nope`, { headers });
+  assert.equal(failed.status, 404); assert.match(failed.headers['server-timing'], new RegExp(`^${metric('portal')}$`));
+  // Static files and sign-in routes are not API responses.
+  assert.equal((await f.request('/')).headers['server-timing'], undefined);
+  assert.equal((await f.request('/health')).headers['server-timing'], undefined);
+});
+
+test('Upstream timing parser keeps only known bot metrics', () => {
+  assert.deepEqual(parseUpstreamTiming('bot;dur=10.25, discord;dur=3, bot;dur=1'), { bot: 11.25, discord: 3 });
+  assert.deepEqual(parseUpstreamTiming('bot;dur=-1, discord;dur=1e9, lane;dur=2, bot ; dur=1'), {});
+  for (const value of [undefined, null, 42, ['bot;dur=1'], '', 'bot;dur=1,'.repeat(40)]) assert.deepEqual(parseUpstreamTiming(value), {});
 });
 
 test('Configuration discovery derives identity from the device session and never accepts client authority', { timeout: 5000 }, async t => {
@@ -1582,4 +1630,27 @@ test('playlist imports accept a public link, an optional preview id, and pass th
   }
   f.state.commandExtra = { preview: { ...preview, tracks: Array.from({ length: 101 }, () => preview.tracks[0]), toAdd: 101 } };
   assert.equal((await sendCommand(f, device, { command: 'favorite', subcommand: 'import', options: { link } })).status, 503, 'an oversized preview is refused');
+});
+
+test('Server-Timing merges the real bot bridge timing into portal API responses', { timeout: 20_000 }, async t => {
+  const { portalFixture } = await import('../../../tests/portal-fixtures.js');
+  const bot = await portalFixture(t);
+  const f = await fixture(t, { botOrigin: bot.origin, botToken: bot.token });
+  f.state.identity = '200'; const device = await f.login();
+  const full = /^portal;dur=\d+\.\d, bridge;dur=\d+\.\d, bot;dur=\d+\.\d, discord;dur=\d+\.\d$/;
+  for (const [label, response] of [
+    ['bootstrap', await f.request('/api/bootstrap', { headers: { Cookie: device.cookie } })],
+    ['snapshot', await f.request('/api/guilds/100', { headers: { Cookie: device.cookie } })],
+    ['library', await f.request('/api/guilds/100/library', { headers: { Cookie: device.cookie } })],
+    ['pause', await f.request('/api/guilds/100/commands', { method: 'POST', body: '{"command":"pause"}',
+      headers: { Cookie: device.cookie, Origin: origin, 'X-CSRF-Token': device.csrf, 'Content-Type': 'application/json' } })],
+  ]) {
+    assert.equal(response.status, 200, `${label}: ${response.text}`);
+    const timing = response.headers['server-timing'];
+    assert.match(timing, full, label);
+    const metrics = Object.fromEntries(timing.split(', ').map(part => [part.split(';')[0], Number(part.split('=')[1])]));
+    // Each layer contains the one inside it.
+    assert.ok(metrics.portal >= metrics.bridge && metrics.bridge >= metrics.bot && metrics.bot >= metrics.discord, `${label}: ${timing}`);
+    t.diagnostic(`${label}: Server-Timing: ${timing}`);
+  }
 });

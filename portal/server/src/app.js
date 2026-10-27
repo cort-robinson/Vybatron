@@ -6,6 +6,7 @@ import { SessionStore, randomToken, tokenHash } from './store.js';
 import { Transport, isRetryableReadError } from './transport.js';
 import { validateCommand } from './commands.js';
 import { COMPRESSIBLE, EntityTags, acceptedCodings, immutable, notModified, openVariant } from './static.js';
+import { timeRequests } from './timing.js';
 import { HttpError, RateLimiter, busy, invalid, unauthorized, unavailable, cookie, setCookie,
   equal, sameOrigin, securityHeaders, readBody, json, sendError } from './security.js';
 
@@ -306,7 +307,7 @@ export async function createPortalServer(config, testOptions = {}) {
     }
   }
 
-  const server = http.createServer({ maxHeaderSize: limits.headerBytes }, async (req, res) => {
+  const server = http.createServer({ maxHeaderSize: limits.headerBytes }, timeRequests(async (req, res) => {
     securityHeaders(res, config.production);
     const controller = new AbortController();
     res.once('close', () => controller.abort());
@@ -517,7 +518,7 @@ export async function createPortalServer(config, testOptions = {}) {
       else if (admission === 'stop') stops--;
       if (req.method === 'POST' && res.writableEnded && !req.socket.destroyed) req.setTimeout(30_000);
     }
-  });
+  }));
   server.maxConnections = limits.connections;
   server.headersTimeout = 5000; server.requestTimeout = limits.requestMs;
   server.keepAliveTimeout = 5000; server.setTimeout(30_000, socket => socket.destroy());

@@ -1,6 +1,6 @@
 import { SlashCommandBuilder } from 'discord.js';
 import { requireControl } from '../utils/guards.js';
-import { AUTOPLAY_LIMITS, dismissSuggestion, fillRadioQueue, isAutoplayTrack, lessLikeThis, promoteSuggestion, refreshSuggestions, setRadio, takeSuggestion } from '../utils/radio.js';
+import { AUTOPLAY_LIMITS, dismissSuggestion, fillRadioQueue, isAutoplayTrack, lessLikeThis, promoteSuggestion, pruneSuggestions, refreshSuggestions, setRadio, takeSuggestion } from '../utils/radio.js';
 import { autocompleteTracks } from '../utils/autocomplete.js';
 import { ephemeralText } from '../utils/messages.js';
 import { skipCurrent } from '../utils/operations.js';
@@ -57,7 +57,7 @@ async function setTaste(interaction) {
   await interaction.client.library.setTasteInAutoplay(interaction.user.id, enabled);
   // Picks already prepared for this listener are dropped before the next one plays.
   const player = interaction.client.lavalink?.getPlayer?.(interaction.guildId);
-  if (player) void refreshSuggestions(player, interaction.client).catch(() => {});
+  if (player) { pruneSuggestions(player, interaction.client); void refreshSuggestions(player, interaction.client).catch(() => {}); }
   return interaction.reply(ephemeralText(enabled
     ? 'Autoplay will take turns with your taste while you’re in voice with Vybatron. It uses songs you’ve requested and your favorites, in every server.'
     : 'Autoplay won’t use your taste anymore, in any server. Your requests and favorites are unchanged. Use /radio mytaste enabled:True to turn it back on.'));
@@ -81,7 +81,10 @@ export async function execute(interaction) {
   if (action === 'promote') {
     const entry = takeSuggestion(player, index, expected);
     if (!entry) return interaction.reply(ephemeralText('That suggestion changed. Check the queue and try again.'));
-    await promoteSuggestion(player, interaction.client, entry);
+    if (!await promoteSuggestion(player, interaction.client, entry)) {
+      requestControllerRefresh(interaction.client, player);
+      return interaction.reply(ephemeralText('That suggestion was picked for someone who left or turned off their taste, so it was removed. Check the queue and try again.'));
+    }
     if (!player.playing && !player.paused && !player.queue.current) await player.play();
     void refreshSuggestions(player, interaction.client).catch(() => {});
     requestControllerRefresh(interaction.client, player);

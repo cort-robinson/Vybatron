@@ -12,7 +12,7 @@ import { actorVoiceId, createPortalPolicy, visibleSession } from './policy.js';
 import { FILTERS, actorProjection, guildProjection, trackProjection, snapshotProjection, libraryProjection, activityProjection, configurationProjection, createRevisions, statsProjection, STATS_WINDOW_IDS, recapProjection, RECAP_WINDOW_IDS } from './projection.js';
 import { publicCommands, executePortalCommand } from './commands.js';
 import { fail, safeError } from './errors.js';
-import { refreshSuggestions } from '../utils/radio.js';
+import { pruneSuggestions, refreshSuggestions } from '../utils/radio.js';
 import { createCommandTimings, commandTimingSpan } from './timing.js';
 import { createChangeFeed } from './changes.js';
 import { createAudioCache, sendAudio } from './audio.js';
@@ -162,7 +162,7 @@ export function startPortalBridge(client, {
           const who = await policy.identity(url.searchParams.get('actorId'), { fresh: true });
           try { await client.library.setTasteInAutoplay(who.user.id, tasteMatch[1] === 'on'); } catch { fail(503, 'preference_unavailable', 'Your autoplay preference could not be saved. Try again shortly.'); }
           // Picks already prepared for this listener drop before the next one plays.
-          for (const player of client.lavalink?.players?.values?.() || []) void refreshSuggestions(player, client).catch(() => {});
+          for (const player of client.lavalink?.players?.values?.() || []) { pruneSuggestions(player, client); void refreshSuggestions(player, client).catch(() => {}); }
           return json(response, 200, { ok: true, enabled: client.library.tasteInAutoplay(who.user.id) }, maxResponseBytes);
         }
         const audioMatch = url.pathname.match(/^\/v1\/guilds\/(\d{1,22})\/audio\/([\w-]{11})$/);

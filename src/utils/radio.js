@@ -168,7 +168,7 @@ function pick(candidates, state, random) {
   return choices[Math.min(choices.length - 1, Math.max(0, Math.floor(random() * choices.length)))];
 }
 
-const EMPTY_ROOM = Object.freeze({ listeners: [], songs: new Map(), artists: new Map() });
+const EMPTY_ROOM = Object.freeze({ listeners: [], songs: new Map(), artists: new Map(), skipped: new Set(), scope: '' });
 function roomTaste(client, player, now) {
   try { return readRoomTaste(client, client.guilds?.cache?.get(player.guildId), presentMembers(client, player), now); } catch { return EMPTY_ROOM; }
 }
@@ -186,11 +186,17 @@ function tasteSeed(listener, room, state) {
   return usable[cursor % usable.length];
 }
 
-// Picks prepared for someone who left, deafened or opted out are dropped. Someone
-// new to the session takes the next pick instead of waiting behind the buffer.
+// A taste pick stays valid while its listener still counts and the audience can
+// still see every channel its taste was read from.
+function validFor(entry, room) {
+  return !entry.for || (entry.scope === room.scope && room.listeners.some(listener => listener.id === entry.for));
+}
+
+// Picks prepared for someone who left, deafened or opted out, or under another
+// audience, are dropped. Someone new to the session takes the next pick
+// instead of waiting behind the buffer.
 function pruneForRoom(state, room) {
-  const present = new Set(room.listeners.map(listener => listener.id));
-  state.suggestions = state.suggestions.filter(entry => !entry.for || present.has(entry.for));
+  state.suggestions = state.suggestions.filter(entry => validFor(entry, room));
   if (room.listeners.some(listener => !state.turns.has(listener.id))) state.suggestions = [];
 }
 
@@ -198,7 +204,7 @@ async function discover(player, client, state, { timeoutMs, random, now }) {
   const avoid = avoidance(player, client, state, now);
   const room = roomTaste(client, player, now);
   // A present listener's early skips stay out while they are in the room.
-  for (const listener of room.listeners) for (const key of listener.skipped) avoid.near.add(`song:${key}`);
+  for (const key of room.skipped) avoid.near.add(`song:${key}`);
   const listener = nextListener(room, state.turns);
   const personal = listener && tasteSeed(listener, room, state);
   const recent = chooseSeeds(player, state);
@@ -210,7 +216,7 @@ async function discover(player, client, state, { timeoutMs, random, now }) {
   for (const seed of seeds) {
     let candidates = [];
     try { candidates = rankShared((await mixTracks(player, client, seed, state, timeoutMs, now)).filter(track => fresh(track, avoid)), room); } catch {}
-    if (candidates.length) return { track: pick(candidates, state, random), origin: sourceKey(seed), seed, from: 'mix', listenerId: forListener(seed) };
+    if (candidates.length) return { track: pick(candidates, state, random), origin: sourceKey(seed), seed, from: 'mix', listenerId: forListener(seed), scope: room.scope };
   }
   // Mix loading unavailable: the original same-artist search keeps the room going.
   const seed = seeds[0];
@@ -219,7 +225,7 @@ async function discover(player, client, state, { timeoutMs, random, now }) {
   const response = await withTimeout(player.search({ query: `${artist} music`, source: 'ytmsearch' }, client.user), timeoutMs);
   const candidates = (response?.tracks || []).filter(track => fresh(track, avoid));
   if (!candidates.length) throw new Error('No fresh autoplay results.');
-  return { track: candidates[Math.min(candidates.length - 1, Math.max(0, Math.floor(random() * candidates.length)))], origin: sourceKey(seed), seed, from: 'artist', listenerId: forListener(seed) };
+  return { track: candidates[Math.min(candidates.length - 1, Math.max(0, Math.floor(random() * candidates.length)))], origin: sourceKey(seed), seed, from: 'artist', listenerId: forListener(seed), scope: room.scope };
 }
 
 function presentMembers(client, player) {
@@ -265,7 +271,10 @@ export async function refreshSuggestions(player, client, { timeoutMs = 8000, ran
         const choice = await discover(player, client, state, { timeoutMs, random, now: now() });
         if (state.generation !== generation || !current(player, client) || !autoplayActive(client, player)) return added;
         if (!fresh(choice.track, avoidance(player, client, state, now()))) continue;
-        state.suggestions.push({ track: { ...choice.track, requester: client.user }, origin: choice.origin, for: choice.listenerId });
+        // The listener may have left or opted out during the lookup.
+        const entry = { track: { ...choice.track, requester: client.user }, origin: choice.origin, for: choice.listenerId, scope: choice.scope };
+        if (!validFor(entry, roomTaste(client, player, now()))) continue;
+        state.suggestions.push(entry);
         recordTurn(state.turns, choice.listenerId, now());
         state.lastArtist = compact(radioArtist(choice.track)); state.failures = 0; added = true;
         if (state.anchor && sourceKey(choice.seed) === sourceKey(state.anchor)) state.anchorUses++;
@@ -300,22 +309,22 @@ export async function fillRadioQueue(player, lastTrack, client, { timeoutMs = 80
   try { return await fill(player, client, state, { timeoutMs, random, now }); } finally { state.filling = false; }
 }
 
-async function fill(player, client, state, { timeoutMs, random, now }) {
+async function fill(player, client, state, { timeoutMs, random, now }, retry = true) {
   if (state.pending) await state.pending.catch(() => {});
   const generation = state.generation;
   pruneForRoom(state, roomTaste(client, player, now()));
-  let entry = null;
+  let entry = null; let discovered = false;
   while (state.suggestions.length && !entry) {
     const next = state.suggestions.shift();
     if (fresh(next.track, avoidance(player, client, state, now()))) entry = next;
   }
   if (!entry) {
+    discovered = true;
     const release = acquirePlaybackRequest(client);
     if (!release) return false;
     try {
       const choice = await discover(player, client, state, { timeoutMs, random, now: now() });
-      entry = { track: choice.track, origin: choice.origin, for: choice.listenerId };
-      recordTurn(state.turns, choice.listenerId, now());
+      entry = { track: choice.track, origin: choice.origin, for: choice.listenerId, scope: choice.scope };
       state.lastArtist = compact(radioArtist(choice.track));
       if (state.anchor && sourceKey(choice.seed) === sourceKey(state.anchor)) state.anchorUses++;
     } catch {
@@ -327,6 +336,9 @@ async function fill(player, client, state, { timeoutMs, random, now }) {
   }
   if (state.generation !== generation || !current(player, client) || !autoplayActive(client, player) || player.queue.current || player.queue.tracks.length
     || !audiencePresent(client, player, state)) return false;
+  // The listener may have left or opted out during the lookup: try once more without them.
+  if (!validFor(entry, roomTaste(client, player, now()))) return retry ? fill(player, client, state, { timeoutMs, random, now }, false) : false;
+  if (discovered) recordTurn(state.turns, entry.for, now());
   await insert(player, client, entry, state);
   state.failures = 0;
   void refreshSuggestions(player, client, { timeoutMs, random, now }).catch(() => {});
@@ -389,7 +401,15 @@ export function noteSkip(player, track) { if (isAutoplayTrack(player, track)) le
 // "Add to queue" on a suggestion: it joins the real queue (and plays before any
 // later autoplay pick) but stays an autoplay pick, still eligible for "less like this".
 export async function promoteSuggestion(player, client, entry) {
+  if (!validFor(entry, roomTaste(client, player, Date.now()))) return false;
   await queuePick(player, client, entry, stateFor(player), {});
+  return true;
+}
+
+// Drops prepared picks that no longer fit the room, e.g. after an opt-out.
+export function pruneSuggestions(player, client) {
+  const state = states.get(player);
+  if (state) pruneForRoom(state, roomTaste(client, player, Date.now()));
 }
 
 export function takeSuggestion(player, index, expected = () => true) {

@@ -64,17 +64,22 @@ function profile(client, guildId, member, channelIds, now) {
 /**
  * The room's taste for one pick. Returns no listeners when stats are
  * unavailable; a listener whose reads fail is left out, never the whole room.
- * @returns {{ listeners: { id: string, seeds: object[], artists: Set<string>, skipped: Set<string> }[], songs: Map<string, number>, artists: Map<string, number> }}
+ * `scope` names the shared channels, so picks made under another audience can
+ * be told apart. `skipped` holds every present listener's early skips, even
+ * one with nothing to seed from.
+ * @returns {{ listeners: { id: string, seeds: object[], artists: Set<string>, skipped: Set<string> }[], songs: Map<string, number>, artists: Map<string, number>, skipped: Set<string>, scope: string }}
  */
 export function readRoomTaste(client, guild, members, now = Date.now()) {
-  const room = { listeners: [], songs: new Map(), artists: new Map() };
+  const room = { listeners: [], songs: new Map(), artists: new Map(), skipped: new Set(), scope: '' };
   const listeners = tasteListeners(client?.library, members);
   if (!listeners.length || !client.stats?.available) return room;
   let channelIds;
   try { channelIds = sharedChannelIds(client.stats, guild, members); } catch { return room; }
+  room.scope = [...channelIds].sort().join(',');
   for (const member of listeners) {
     let taste;
     try { taste = profile(client, guild.id, member, channelIds, now); } catch { continue; }
+    for (const key of taste.skipped) room.skipped.add(key);
     if (!taste.seeds.length) continue;
     room.listeners.push(taste);
     for (const reference of taste.seeds) { const key = songKey(reference); room.songs.set(key, (room.songs.get(key) || 0) + 1); }

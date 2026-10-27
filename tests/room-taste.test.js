@@ -6,7 +6,7 @@ import path from 'node:path';
 import { PermissionFlagsBits } from 'discord.js';
 import { PlayStats } from '../src/utils/play-stats.js';
 import { MusicLibrary, trackReference } from '../src/utils/library.js';
-import { fillRadioQueue, lessLikeThis, mixUrl, refreshSuggestions, setRadio, suggestions } from '../src/utils/radio.js';
+import { fillRadioQueue, lessLikeThis, mixUrl, promoteSuggestion, pruneSuggestions, refreshSuggestions, setRadio, suggestions, takeSuggestion } from '../src/utils/radio.js';
 import { nextListener, rankShared, rankedSeeds, readRoomTaste, recordTurn, sharedChannelIds, tasteListeners } from '../src/utils/room-taste.js';
 import { artistKeyOf, songKey } from '../src/utils/song-identity.js';
 import { track } from './fixtures.js';
@@ -92,18 +92,18 @@ test('songs and artists shared by people in the room come first', () => {
 });
 
 // A session with two listeners in voice and the real autoplay engine.
-function session({ mixes, top = {}, favorites = {}, optedOut = [], skips = {}, members = [member('200'), member('201')] }) {
+function session({ mixes, top = {}, favorites = {}, optedOut = [], skips = {}, members = [member('200'), member('201')], onSearch, channels = { 300: channel('300') } }) {
   const requests = [];
   const player = {
     guildId: '100', voiceChannelId: '300', playing: false, paused: false,
     queue: { current: null, previous: [song('roomseed001')], tracks: [], async add(tracks) { this.tracks.push(...tracks); }, async splice() {} },
-    async search({ query }) { requests.push(query); const id = query.match(/list=RD([\w-]{11})/)?.[1]; return mixes[id] || { loadType: 'error', tracks: [] }; },
+    async search({ query }) { requests.push(query); const id = query.match(/list=RD([\w-]{11})/)?.[1]; onSearch?.(id); return mixes[id] || { loadType: 'error', tracks: [] }; },
   };
   const voice = { members: new Map(members.map(item => [item.id, item])) };
-  const guild = { id: '100', channels: { cache: new Map([['300', Object.assign(voice, channel('300'))]]) } };
+  const guild = { id: '100', channels: { cache: new Map(Object.entries({ ...channels, 300: Object.assign(voice, channels[300]) })) } };
   const library = { ...fakeLibrary({ favorites, optedOut }), settings: () => ({ autoplay: 'on' }), readGuild: () => ({ history: [] }) };
-  const client = { user: { id: '999' }, library, stats: fakeStats({ top, skips }), lavalink: { getPlayer: () => player }, guilds: { cache: new Map([['100', guild]]) } };
-  return { player, client, voice, requests };
+  const client = { user: { id: '999' }, library, stats: fakeStats({ top, skips, channels: Object.keys(channels) }), lavalink: { getPlayer: () => player }, guilds: { cache: new Map([['100', guild]]) } };
+  return { player, client, voice, requests, optedOut };
 }
 const mix = (...ids) => ({ loadType: 'playlist', tracks: ids.map(id => song(id)) });
 
@@ -201,4 +201,48 @@ test('/radio mytaste changes only the caller’s preference, without voice or DJ
   assert.match(replies[1], /take turns with your taste/);
   assert.ok(data.toJSON().options.some(option => option.name === 'mytaste'));
   assert.equal(commandMutationPolicy('radio', 'mytaste').playback, false, 'a preference write takes no playback lease');
+});
+
+test('a pick whose listener opts out or leaves during the lookup never plays, and costs them no turn', async () => {
+  const optedOut = [];
+  const f = session({ optedOut, members: [member('200')], top: { 200: [song('aliceseed01')] },
+    mixes: { aliceseed01: mix('alicepick01'), roomseed001: mix('roompick001') }, onSearch: id => { if (id === 'aliceseed01') optedOut.push('200'); } });
+  assert.equal(await fillRadioQueue(f.player, null, f.client, { random: () => 0, now: () => NOW }), true);
+  assert.deepEqual(f.player.queue.tracks.map(item => item.info.identifier), ['roompick001']);
+  const g = session({ members: [member('200')], top: { 200: [song('aliceseed01')] }, mixes: { aliceseed01: mix('alicepick01', 'alicepick02') },
+    onSearch: () => g.voice.members.clear() });
+  g.player.queue.current = song('playing0001');
+  await refreshSuggestions(g.player, g.client, { random: () => 0, now: () => NOW });
+  assert.deepEqual(suggestions(g.player), [], 'a refresh keeps nothing picked for someone who left');
+});
+
+test('prepared picks drop when someone joins who cannot see a channel their taste came from', async () => {
+  const f = session({ members: [member('200')], top: { 200: [song('aliceseed01')] }, channels: { 300: channel('300'), 301: channel('301') },
+    mixes: { aliceseed01: mix('alicepick01', 'alicepick02', 'alicepick03') } });
+  f.player.queue.current = song('playing0001');
+  await refreshSuggestions(f.player, f.client, { random: () => 0, now: () => NOW });
+  assert.equal(suggestions(f.player).length, 3);
+  pruneSuggestions(f.player, f.client);
+  assert.equal(suggestions(f.player).length, 3, 'the same audience keeps its picks');
+  f.optedOut.push('202');
+  f.voice.members.set('202', member('202', { hidden: ['301'] }));
+  pruneSuggestions(f.player, f.client);
+  assert.deepEqual(suggestions(f.player), [], 'an opted-out newcomer still narrows what taste may be read from');
+});
+
+test('promoting a pick made for someone who left is refused', async () => {
+  const f = session({ members: [member('200')], top: { 200: [song('aliceseed01')] }, mixes: { aliceseed01: mix('alicepick01') } });
+  f.player.queue.current = song('playing0001');
+  await refreshSuggestions(f.player, f.client, { random: () => 0, now: () => NOW });
+  f.voice.members.clear();
+  assert.equal(await promoteSuggestion(f.player, f.client, takeSuggestion(f.player, 0)), false);
+  assert.equal(f.player.queue.tracks.length, 0);
+});
+
+test('a present listener with nothing to seed from still keeps their early skips out', async () => {
+  const skipped = song('skipped0001');
+  const f = session({ members: [member('200'), member('201')], top: { 200: [song('aliceseed01')] }, skips: { 201: [songKey(trackReference(skipped))] },
+    mixes: { aliceseed01: { loadType: 'playlist', tracks: [skipped, song('keeppick001')] } } });
+  assert.equal(await fillRadioQueue(f.player, null, f.client, { random: () => 0, now: () => NOW }), true);
+  assert.equal(f.player.queue.tracks[0].info.identifier, 'keeppick001');
 });

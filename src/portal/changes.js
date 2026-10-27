@@ -9,6 +9,8 @@ const PLAYER_EVENTS = ['trackStart', 'trackEnd', 'queueEnd', 'playerCreate', 'pl
 // A private wake-up feed for the portal API. Entries carry only a guild ID and
 // a counter: no actor, track, channel or permission data, and never a snapshot.
 // Every consumer still performs its own fresh authorized read after a wake.
+// Reads and commands report the feed cursor they saw, so the portal can skip a
+// wake that an authorized read begun after it already covers.
 export function createChangeFeed(client, revisions, { scanMs = 250, idleMs = 60_000, retained = 256, maxWaiters = 4, now = Date.now } = {}) {
   const instanceId = randomUUID();
   const entries = []; const waiters = new Set(); const known = new Map(); const pending = new Set();
@@ -64,11 +66,28 @@ export function createChangeFeed(client, revisions, { scanMs = 250, idleMs = 60_
 
   const read = after => {
     const oldest = entries.length ? entries[0].sequence : sequence + 1;
-    if (!Number.isSafeInteger(after) || after < oldest - 1 || after > sequence) return { instanceId, sequence, reset: true, guildIds: [] };
-    const guildIds = [...new Set(entries.filter(entry => entry.sequence > after).map(entry => entry.guildId))];
-    return { instanceId, sequence, reset: false, guildIds };
+    if (!Number.isSafeInteger(after) || after < oldest - 1 || after > sequence) return { instanceId, sequence, reset: true, guildIds: [], sequences: [] };
+    // Each guild's latest entry, so a wake can be compared with a read's cursor.
+    const latest = new Map();
+    for (const entry of entries) if (entry.sequence > after) latest.set(entry.guildId, entry.sequence);
+    return { instanceId, sequence, reset: false, guildIds: [...latest.keys()], sequences: [...latest.values()] };
+  };
+  // Every change already seen gets its entry first, so a read that starts now
+  // reflects all entries up to the returned sequence. Without a consumer no
+  // entries are kept, so there is no position to report.
+  const cursor = () => {
+    if (closed || !consuming()) return null;
+    flush(); return { instanceId, sequence };
   };
   return {
+    cursor,
+    // A completed command always wakes the guild's other viewers, and records
+    // its resulting revision so the next scan does not report it a second time.
+    touch(guildId, revision) {
+      publish(guildId);
+      if (typeof revision === 'string' && !closed && validId(guildId) && consuming()) known.set(guildId, revision);
+      return cursor();
+    },
     // Long poll: answer immediately with anything newer than the caller's
     // cursor, otherwise hold until a change or the bounded wait expires.
     async next({ instance, after, waitMs = 20_000, signal } = {}) {

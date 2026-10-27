@@ -77,7 +77,8 @@ export const api = {
   logout: (csrfToken: string) => request<{ ok: boolean }>('/auth/logout', {
     method: 'POST', headers: { 'X-CSRF-Token': csrfToken },
   }),
-  eventsUrl: (id: string) => `${guildPath(id)}/events`,
+  // Protocol 2 lets the API answer an unchanged read with a short `unchanged` event.
+  eventsUrl: (id: string) => `${guildPath(id)}/events?protocol=2`,
 };
 
 export function errorMessage(error: unknown): string {

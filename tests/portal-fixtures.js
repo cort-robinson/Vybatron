@@ -98,7 +98,8 @@ export async function portalFixture(t, options = {}) {
   const request = async (resource = '', { actor = '200', body, headers, method, ...rest } = {}) => {
     const endpoint = resource.startsWith('/v1/') || resource === '/health' ? resource : `/v1/guilds/100${resource}${resource.includes('?') ? '&' : '?'}actorId=${actor}`;
     const response = await fetch(`${origin}${endpoint}`, { method: method || (body ? 'POST' : 'GET'), headers: { Authorization: `Bearer ${token}`, ...(body ? { 'Content-Type': 'application/json' } : {}), ...headers }, body: body ? JSON.stringify({ actorId: actor, ...body }) : undefined, ...rest });
-    return { status: response.status, body: await response.json() };
+    // Headers stay out of deep equality checks on the result.
+    return Object.defineProperty({ status: response.status, body: await response.json() }, 'headers', { value: response.headers });
   };
   const command = (body, options) => request('/v1/guilds/100/commands', { body, ...options });
   t.after(async () => { await bridge.close(); await library.close(); await closeLibraries(); await fs.rm(dir, { recursive: true, force: true }); });

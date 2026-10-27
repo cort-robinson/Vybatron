@@ -139,6 +139,7 @@ export async function startHttpFixture(options: { initialSnapshotFailures?: numb
     failNextConfigurationReads: (count: number, status = 503) => { configurationFailures = count; configurationFailureStatus = status; },
     replaceNextConfiguration: (configuration: Configuration) => { configurationOverride = configuration; },
     applicationError: (status: number) => { for (const response of streams) response.write(`event:error\ndata:${JSON.stringify({ error: { status, code: status === 401 ? 'unauthenticated' : status === 403 ? 'forbidden' : status === 404 ? 'not_found' : 'unavailable', message: status === 503 ? 'The bot or audio service is unavailable. Refresh before making another change.' : 'You no longer have access to this listening space.' } })}\n\n`); },
+    emitEvent: (type: string, data: unknown) => { for (const response of streams) response.write(`event:${type}\ndata:${JSON.stringify(data)}\n\n`); },
     disconnect: () => { for (const response of streams) response.end(); },
     disconnectAndHold: () => { hold = true; for (const response of streams) response.end(); },
     releaseFreshSnapshot: () => { hold = false; state.snapshot.revision = 'http-fresh-revision'; state.snapshot.session.queue[0].title = 'Fresh Night Drive'; for (const response of held) json(response, state.snapshot); held.clear(); },

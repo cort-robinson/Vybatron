@@ -134,12 +134,13 @@ export async function createPortalServer(config, testOptions = {}) {
         res.setHeader('Vary', 'Accept-Encoding');
         for (const [coding, extension] of acceptedCodings(req.headers['accept-encoding'])) {
           variant = await openVariant(file + extension, stat, limits.staticBytes);
-          if (variant) { variant.coding = coding; suffix = `-${extension.slice(1)}`; break; }
+          if (variant) { variant.coding = coding; variant.file = file + extension; suffix = `-${extension.slice(1)}`; break; }
         }
       }
       if (!noStore) {
-        // Each encoding is its own representation, so it gets its own validator.
-        const etag = `"${await entityTags.get(file, handle, stat)}${suffix}"`;
+        // Each encoding is its own representation: its validator hashes the bytes actually sent.
+        const tag = variant ? await entityTags.get(variant.file, variant.handle, variant.stat) : await entityTags.get(file, handle, stat);
+        const etag = `"${tag}${suffix}"`;
         res.setHeader('ETag', etag);
         if (notModified(req.headers['if-none-match'], etag)) { res.writeHead(304); res.end(); return; }
       }

@@ -133,8 +133,8 @@ creates source-left/browser-right comparisons.
 - `index.html` shows a look-neutral loading line (`src/boot.css`) while the script loads, so
   the page isn't blank, and preloads the latin Archivo font. The line sits outside `#root` and
   hides as soon as a look applies.
-- The Server and Settings pages and the shared-link dialog are separate chunks
-  (`src/views.tsx`), fetched when the signed-in portal goes idle.
+- The Server and Settings pages are a separate chunk (`src/views.tsx`), fetched when the
+  signed-in portal goes idle. If it can't load, the page shows an error that reloads the portal.
 - Import icons from `src/icons.tsx`, never from `@phosphor-icons/react`: each Phosphor module
   ships all six weights. After using a new icon or weight, run
   `node scripts/build-icon-set.mjs`; the build fails while the file is out of date.

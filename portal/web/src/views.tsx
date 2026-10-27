@@ -1,11 +1,10 @@
-import { lazy, Suspense, useEffect, useState, type ComponentType } from 'react';
-import { Loading } from './components/ui';
+import { Component, lazy, Suspense, useEffect, useState, type ComponentType, type ReactNode } from 'react';
+import { ErrorState, Loading } from './components/ui';
 import type { ServerView as ServerPage, SettingsView as SettingsPage } from './components/pages';
 
-// Pages and dialogs that the first screen never shows load in their own chunks: the Server and
-// Settings pages share one, the shared-link dialog has another. The pages are fetched once the
-// signed-in portal is idle. A loaded page renders in the same commit that opens it, like a page
-// in the main bundle; one opened before its chunk arrives shows Loading until it does.
+// The Server and Settings pages aren't on the first screen, so they load as one chunk of their
+// own, fetched once the signed-in portal is idle. A loaded page renders in the same commit that
+// opens it, like a page in the main bundle; one opened before its chunk arrives shows Loading.
 type Pages = typeof import('./components/pages');
 let pages: Pages | undefined;
 let pending: Promise<Pages> | undefined;
@@ -17,7 +16,6 @@ const lazyPages = {
   ServerView: lazy(() => loadPages().then(module => ({ default: module.ServerView }))),
   SettingsView: lazy(() => loadPages().then(module => ({ default: module.SettingsView }))),
 };
-export const ShareDialog = lazy(() => import('./components/Share').then(module => ({ default: module.ShareDialog })));
 
 export function usePrefetchViews(ready: boolean) {
   useEffect(() => {
@@ -29,6 +27,18 @@ export function usePrefetchViews(ready: boolean) {
   }, [ready]);
 }
 
+// A chunk that fails to arrive (offline before the worker cached it) shows an error in the page's
+// place; the rest of the portal keeps working. The browser won't refetch a script chunk that
+// failed, so trying again reloads the portal.
+class ChunkBoundary extends Component<{ active: boolean; children: ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+  static getDerivedStateFromError() { return { failed: true }; }
+  render() {
+    if (!this.state.failed) return this.props.children;
+    return this.props.active ? <ErrorState message="This page couldn’t load. Check your connection, then try again to reload Vybatron." retry={() => location.reload()} /> : null;
+  }
+}
+
 // A page mounts the first time it's opened and then stays mounted, hidden while another page
 // shows, as the pages in the main bundle do.
 function deferred<P extends { active?: boolean }>(name: keyof Pages): ComponentType<P> {
@@ -38,7 +48,7 @@ function deferred<P extends { active?: boolean }>(name: keyof Pages): ComponentT
     const [Page, setPage] = useState<ComponentType<P> | null>(() => props.active ? choose() : null);
     if (props.active && !Page) setPage(() => choose());
     if (!Page) return null;
-    return <Suspense fallback={props.active ? <Loading /> : null}><Page {...props} /></Suspense>;
+    return <ChunkBoundary active={!!props.active}><Suspense fallback={props.active ? <Loading /> : null}><Page {...props} /></Suspense></ChunkBoundary>;
   };
 }
 export const ServerView = deferred<Parameters<typeof ServerPage>[0]>('ServerView');

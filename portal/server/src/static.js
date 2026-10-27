@@ -42,7 +42,7 @@ export async function openVariant(file, original, maxBytes) {
   try {
     handle = await fs.open(file, fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW || 0));
     const stat = await handle.stat();
-    if (stat.isFile() && stat.size <= maxBytes && stat.mtimeMs >= original.mtimeMs) return { handle, size: stat.size };
+    if (stat.isFile() && stat.size <= maxBytes && stat.mtimeMs >= original.mtimeMs) return { handle, stat, size: stat.size };
   } catch { /* No usable variant: serve the original. */ }
   await handle?.close();
   return null;

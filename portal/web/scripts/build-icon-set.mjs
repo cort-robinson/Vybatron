@@ -36,15 +36,18 @@ function attributes(text, start) {
   throw new Error('Unterminated JSX tag');
 }
 
-// The tag's own weight attribute, not one on an element passed in another attribute.
+// The tag's own weight attribute, not one on an element passed in another attribute. A weight
+// written any other way than weight="x" or weight={…} is returned unparsed, never skipped.
 function ownWeight(tag) {
   let depth = 0;
   for (let index = 0; index < tag.length; index++) {
-    if (tag[index] === '{') depth++;
-    else if (tag[index] === '}') depth--;
-    else if (depth === 0 && /\sweight=/.test(tag.slice(index - 1, index + 7))) {
-      const match = /^weight=(?:"([a-z]+)"|\{)/.exec(tag.slice(index));
-      if (match) return Object.assign(match, { index });
+    if (tag[index] === '{') {
+      if (depth === 0 && tag.startsWith('{...', index)) return { unparsed: true };
+      depth++;
+    } else if (tag[index] === '}') depth--;
+    else if (depth === 0 && /^\sweight(?![\w-])/.test(tag.slice(index - 1, index + 7))) {
+      const match = /^weight\s*=\s*(?:["']([a-z]+)["']|\{)/.exec(tag.slice(index));
+      return match ? Object.assign(match, { index }) : { unparsed: true };
     }
   }
   return null;
@@ -77,7 +80,11 @@ for (const path of await files(source)) {
     const weight = ownWeight(tag);
     if (!weight) { if (names.has(match[1])) used.get(match[1]).add('regular'); continue; }
     const line = text.slice(0, match.index).split('\n').length;
-    if (!names.has(match[1])) { problems.push(`${name}:${line}: weight on <${match[1]}> must name an imported icon directly`); continue; }
+    if (!names.has(match[1])) {
+      if (!weight.unparsed) problems.push(`${name}:${line}: weight on <${match[1]}> must name an imported icon directly`);
+      continue;
+    }
+    if (weight.unparsed) { problems.push(`${name}:${line}: write <${match[1]}>'s weight as weight="x" or weight={…} with literal weights, not spread props`); continue; }
     const value = weight[1] ? [weight[1]] : [...expression(tag, weight.index + weight[0].length - 1).matchAll(/'([a-z]+)'/g)].map(item => item[1]);
     if (!value.length || value.some(item => !weights.includes(item))) problems.push(`${name}:${line}: weight on <${match[1]}> must be written as literal weights`);
     for (const item of value) used.get(match[1]).add(item);

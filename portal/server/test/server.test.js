@@ -736,6 +736,11 @@ test('Static files are sent precompressed, revalidate with ETags, and only hashe
   // Each encoding is its own representation.
   const otherCoding = await get(scriptPath, { 'Accept-Encoding': 'gzip', 'If-None-Match': brotli.headers.etag });
   assert.equal(otherCoding.status, 200); assert.equal(otherCoding.headers['content-encoding'], 'gzip');
+  // Recompressing the same source differently is a different representation with a new validator.
+  await write('assets/index-Ab_9-xYz.js.gz', gzipSync(script, { level: 1 }));
+  const recompressed = await get(scriptPath, { 'Accept-Encoding': 'gzip', 'If-None-Match': otherCoding.headers.etag });
+  assert.equal(recompressed.status, 200); assert.notEqual(recompressed.headers.etag, otherCoding.headers.etag);
+  assert.deepEqual(gunzipSync(recompressed.body), script);
 
   // The shell revalidates on every load and costs one 304 when unchanged, including SPA routes.
   const shell = await get('/', { 'Accept-Encoding': 'br' });

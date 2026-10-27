@@ -2,7 +2,7 @@ import { closeSync, mkdirSync, openSync } from 'node:fs';
 import path from 'node:path';
 import { logEvent } from '../runtime.js';
 import { trackReference, validId } from './library.js';
-import { referenceRank, songIdentity, songKey } from './song-identity.js';
+import { isYouTubeMusicSong, referenceRank, songIdentity, songKey } from './song-identity.js';
 import { forgottenGems, onRepeat, SCORING } from './stats-scoring.js';
 import { createPlayTracker } from './play-tracking.js';
 
@@ -179,7 +179,7 @@ export class PlayStats {
     if (!ref || ref.isStream) return null;
     const identity = songIdentity(ref);
     return { ref, row: { songKey: identity.key, artistKey: identity.artistKey, artist: identity.artist, uri: ref.uri, sourceName: ref.sourceName,
-      identifier: ref.identifier, title: ref.title, author: ref.author, duration: ref.duration, rank: referenceRank(ref), now: this.now() } };
+      identifier: ref.identifier, title: ref.title, author: ref.author, duration: ref.duration, rank: referenceRank(ref, { youtubeMusic: isYouTubeMusicSong(track) }), now: this.now() } };
   }
 
   /**

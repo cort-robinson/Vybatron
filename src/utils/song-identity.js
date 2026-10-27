@@ -96,11 +96,19 @@ export function artistKeyOf(name) { return songIdentity({ author: name }).artist
  * Music topic uploads first, then official audio, then other uploads. Spotify
  * references must be mirrored at play time, so they rank lowest.
  */
-export function referenceRank(reference = {}) {
+// Lavalink gives YouTube Music song results their album art from Google's image hosts;
+// videos loaded from YouTube get i.ytimg.com thumbnails.
+export function isYouTubeMusicSong(track) {
+  const info = track?.info || track || {};
+  return info.sourceName === 'youtube' && /^https:\/\/(?:lh3|yt3)\.googleusercontent\.com\//.test(String(info.artworkUrl || ''));
+}
+
+export function referenceRank(reference = {}, { youtubeMusic = false } = {}) {
   if (reference.isStream) return 0;
   const title = fold(reference.title);
   let rank = { youtube: 30, soundcloud: 20, bandcamp: 20, spotify: 10 }[reference.sourceName] ?? 5;
-  if (TOPIC.test(String(reference.author || ''))) rank += 8;
+  // A YouTube Music song result is a topic upload that names the artist, not the channel.
+  if (youtubeMusic || TOPIC.test(String(reference.author || ''))) rank += 8;
   else if (/\baudio\b/.test(title)) rank += 4;
   if (/\b(?:video|lyrics?|visuali[sz]er)\b/.test(title)) rank -= 4;
   return rank;

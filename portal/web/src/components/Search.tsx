@@ -91,7 +91,7 @@ export function Search({ portal, open, onClose, query, setQuery, page = false }:
   const stale = searching || (!!lastQuery && lastQuery !== typed);
   if (!open) return null;
   const body = <>
-    <form onSubmit={event => { event.preventDefault(); void search(); }} className="search-form" role="search"><label className="search-field"><MagnifyingGlassIcon size={22} /><span className="sr-only">Music search</span><input ref={input} type="search" aria-label="Music search" aria-describedby="search-hint" value={query} maxLength={maxLength} onChange={event => setQuery(event.target.value)} placeholder="Song, artist, or music link…" autoComplete="off" spellCheck={false} /></label>
+    <form onSubmit={event => { event.preventDefault(); void search(); }} className="search-form" role="search"><label className="search-field"><MagnifyingGlassIcon size={22} /><span className="sr-only">Music search</span><input ref={input} type="search" aria-label="Music search" aria-describedby="search-hint" value={query} maxLength={maxLength} onChange={event => setQuery(event.target.value)} placeholder="Song, artist or link…" autoComplete="off" spellCheck={false} /></label>
       <button type="submit" className="button primary" disabled={searching || !typed || portal.connection !== 'live'}>{searching ? <span className="spinner" /> : <MagnifyingGlassIcon size={20} />}Search</button></form>
     <p id="search-hint" className="sr-only">Results update as you type. Links load when you choose Search or add them directly.</p>
     {!portal.can('add') && <p className="permission-note">{portal.blockedReason}</p>}

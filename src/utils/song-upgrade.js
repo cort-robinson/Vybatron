@@ -8,7 +8,7 @@ import { songKey } from './song-identity.js';
 // One-time upgrade of saved YouTube videos (favorites and mixes) to their YouTube
 // Music song uploads, after search switched to YouTube Music. 'dry-run' only writes
 // the report; 'apply' backs up library.json and rewrites the matches.
-export const UPGRADE_MODE = 'dry-run';
+export const UPGRADE_MODE = 'apply';
 export const UPGRADE_REPORT = 'saved-song-upgrade.json';
 const CANDIDATES = 5;
 

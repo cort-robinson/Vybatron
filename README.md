@@ -106,7 +106,7 @@ Server history, actor activity and session checkpoints are kept in `listening-st
 
 Play statistics are kept separately in `stats.sqlite` next to the library: server, song, voice channel, time, who requested it (or that the bot queued it), and whether it finished or was skipped early. Who was merely listening is never recorded. The store is bounded to one year, 10,000 plays per server and 16 MiB, and imports existing history once. If it cannot be opened or written, playback continues and stats show as unavailable; the file is left in place for inspection. Listeners can clear their own request stats from the portal API, which anonymizes their requests everywhere.
 
-`ops/backup.py` makes verified backups of `bot-data` while the bot runs. [Music data backups](ops/README.md#music-data-backups) covers the daily schedule, copies off the VPS and restore. Normal rebuilds preserve the volume; deleting the volume removes favorites, mixes, settings, history, checkpoints, and play statistics. Native mode uses `data/library.json`; set an absolute `VYBERTRON_DATA_DIR` to change it.
+`ops/backup.py` makes verified backups of `bot-data` while the bot runs. [Music data backups](ops/README.md#music-data-backups) covers the daily schedule, copies off the host and restore. Normal rebuilds preserve the volume; deleting the volume removes favorites, mixes, settings, history, checkpoints, and play statistics. Native mode uses `data/library.json`; set an absolute `VYBERTRON_DATA_DIR` to change it.
 
 ## Web portal
 
@@ -139,7 +139,7 @@ See the [operations runbook](ops/README.md) for canaries, maintenance, bounded s
 
 WARP and the audio services share a network namespace. If the WARP container needs replacement, recreate its audio dependents together under the maintenance lock; restarting WARP alone can strand them in its old namespace. Keep `warp-data` to retain registration.
 
-The optional GitHub deployment workflow activates only with `DEPLOY_ENABLED=true` and `VPS_HOST`, `VPS_HOST_KEY`, `VPS_USER`, and `VPS_SSH_KEY` secrets. It deploys the exact successful main-push CI commit and the images that CI tested, waits for an idle queue, preserves the running audio image IDs, decodes two full canaries, registers the complete command catalog, and verifies bot readiness. A durable journal retains the previous commit, config, images, and command catalog for rollback. Merging to main can deploy when that gate is enabled.
+The optional GitHub deployment workflow activates only with `DEPLOY_ENABLED=true` and `VPS_HOST`, `VPS_HOST_KEY`, `VPS_USER`, and `VPS_SSH_KEY` secrets (named before production moved to the home server, ADR-0010; a host without public SSH also sets `TS_OAUTH_CLIENT_ID` and `TS_AUDIENCE`). It deploys the exact successful main-push CI commit and the images that CI tested, waits for an idle queue, preserves the running audio image IDs, decodes two full canaries, registers the complete command catalog, and verifies bot readiness. A durable journal retains the previous commit, config, images, and command catalog for rollback. Merging to main can deploy when that gate is enabled.
 
 ## Verification
 

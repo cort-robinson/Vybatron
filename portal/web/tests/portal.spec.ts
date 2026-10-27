@@ -13,13 +13,9 @@ for (const viewport of [{ width: 1280, height: 720 }, { width: 393, height: 852 
   test(`normal ${viewport.width}x${viewport.height} account sign-out sends no body and leaves playback running`, async ({ page }) => {
     await page.setViewportSize(viewport); const fixture = await mockPortal(page); await gotoSession(page);
     await expect(page.getByRole('button', { name: 'Pause playback' })).toBeEnabled();
-    if (viewport.width > 960) {
-      await page.getByRole('button', { name: 'Account options' }).click();
-      await page.getByRole('button', { name: 'Sign out on this device' }).click();
-    } else {
-      await page.getByRole('button', { name: 'Server', exact: true }).click();
-      await page.getByRole('button', { name: 'Sign out', exact: true }).click();
-    }
+    // Desktop and phone both sign out from the account menu.
+    await page.getByRole('button', { name: 'Account options' }).filter({ visible: true }).click();
+    await page.getByRole('button', { name: 'Sign out on this device' }).filter({ visible: true }).click();
     await expect(page.getByRole('link', { name: /Continue with Discord/ })).toBeVisible();
     await expect(page.getByTestId('player')).toHaveCount(0);
     expect(fixture.logouts).toEqual([{ method: 'POST', body: null, contentType: null, csrfToken: 'local-test-csrf' }]);

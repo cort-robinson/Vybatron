@@ -11,8 +11,20 @@ import { mockPortal } from './fixtures';
 test.skip(!process.env.UX_LABEL, 'UX scoring runs on demand.');
 
 const viewports = [{ name: 'desktop', width: 1488, height: 1056, density: 1, target: 24 }, { name: 'phone', width: 393, height: 852, density: 2, target: 44 }];
-const screens = ['home', 'session', 'music', 'server', 'player'] as const;
-const tabs: Record<string, string> = { home: 'Home', session: 'Session', music: 'My Music', server: 'Server' };
+const screens = ['home', 'search', 'session', 'music', 'server', 'settings', 'player'] as const;
+// Reaches a screen by whatever route this build offers; a screen the build lacks is skipped.
+async function open(page: Page, screen: typeof screens[number]) {
+  const button = (name: string | RegExp) => page.getByRole('button', { name, exact: typeof name === 'string' }).filter({ visible: true });
+  const tap = async (...names: string[]) => { for (const name of names) if (await button(name).count()) { await button(name).first().click(); return true; } return false; };
+  if (screen === 'player') return tap('Open player');
+  if (screen === 'home') return tap('Home');
+  if (screen === 'search') return tap('Search');
+  if (screen === 'session') return tap('Queue', 'Session');
+  if (screen === 'music') return tap('My Music');
+  if (screen === 'server') { if (await tap('Server')) return true; if (!(await tap('Account options'))) return false; return tap('Server'); }
+  if (await tap('Open settings')) return (await page.getByRole('heading', { name: 'Settings', level: 1 }).count()) > 0;
+  if (!(await tap('Account options'))) return false; return tap('Settings');
+}
 // Deduction per finding, and the most a check can deduct from one capture.
 export const weights = {
   contrast: { each: 6, cap: 30, label: 'Text below WCAG contrast on the pixels behind it' },
@@ -146,8 +158,7 @@ for (const { name, width, height, density, target } of viewports) {
     await expect(page.getByRole('button', { name: 'Pause playback' })).toBeEnabled();
     const results: Record<string, unknown> = {};
     for (const screen of screens) {
-      if (screen === 'player') await page.getByRole('button', { name: 'Open player', exact: true }).click();
-      else await page.getByRole('button', { name: tabs[screen], exact: true }).first().click();
+      if (!(await open(page, screen))) { await page.keyboard.press('Escape'); continue; }
       await page.waitForTimeout(400); await page.evaluate(() => scrollTo(0, 0));
       const axe = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze();
       const axeFindings: Finding[] = axe.violations.map(v => ({ kind: 'axe', box: { x: 0, y: 0, w: 0, h: 0 }, note: `${v.id} (${v.nodes.length})` }));

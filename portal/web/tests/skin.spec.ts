@@ -1,5 +1,5 @@
 import { test, expect, type Page } from './test';
-import { mockPortal } from './fixtures';
+import { mockPortal, openSettings } from './fixtures';
 
 test('Classic look renders without Overdrive scenery and switches back live from Settings', async ({ page }) => {
   await page.addInitScript(() => { if (!sessionStorage.getItem('seeded')) { localStorage.setItem('vybertron.skin', 'classic'); sessionStorage.setItem('seeded', '1'); } });
@@ -7,7 +7,7 @@ test('Classic look renders without Overdrive scenery and switches back live from
   await expect(page.getByRole('button', { name: 'Pause playback' })).toBeEnabled();
   await expect(page.locator('html')).toHaveAttribute('data-skin', 'classic');
   await expect(page.locator('.od-horizon')).toHaveCount(0);
-  await page.getByRole('button', { name: 'Server', exact: true }).click();
+  await openSettings(page);
   await page.getByLabel('Portal look').selectOption('overdrive');
   await expect(page.locator('html')).toHaveAttribute('data-skin', 'overdrive');
   await expect(page.locator('.od-horizon')).toHaveCount(1);
@@ -19,7 +19,7 @@ test('Fantastic Four is opt-in: it swaps in the Earth-828 scenery and the sleeve
   await mockPortal(page); await page.goto('/');
   await expect(page.getByRole('button', { name: 'Pause playback' })).toBeEnabled();
   await expect(page.locator('html')).toHaveAttribute('data-skin', 'overdrive');
-  await page.getByRole('button', { name: 'Server', exact: true }).click();
+  await openSettings(page);
   await page.getByLabel('Portal look').selectOption('fantastic');
   await expect(page.locator('html')).toHaveAttribute('data-skin', 'fantastic');
   await expect(page.locator('.ff-scene')).toHaveCount(1);
@@ -56,7 +56,7 @@ test('Fantastic loads only when chosen, and every look is styled the moment it a
   await expect(page.getByRole('button', { name: 'Pause playback' })).toBeEnabled();
   await expect(page.locator('.od-horizon')).toHaveCount(1);
   expect(requested).toEqual([]);
-  await page.getByRole('button', { name: 'Server', exact: true }).click();
+  await openSettings(page);
   await page.getByLabel('Portal look').selectOption('fantastic');
   await expect(page.locator('.ff-scene')).toHaveCount(1);
   expect(requested.some(url => url.endsWith('.css'))).toBe(true);
@@ -73,7 +73,7 @@ test('a look that fails to load keeps the current one, and choosing it again fet
   const looks = await watchLook(page);
   await mockPortal(page); await page.goto('/');
   await expect(page.getByRole('button', { name: 'Pause playback' })).toBeEnabled();
-  await page.getByRole('button', { name: 'Server', exact: true }).click();
+  await openSettings(page);
   const look = page.getByLabel('Portal look');
   await look.selectOption('fantastic');
   await expect(page.getByText('That look couldn’t load. Check your connection, then reload the page and try again.')).toBeVisible();
@@ -89,13 +89,13 @@ test('a look whose script fails keeps the current one across the reload it asks 
   await page.route(/\/assets\/Fantastic-[^/]*\.js$/, route => failures-- > 0 ? route.fulfill({ status: 503, body: '' }) : route.continue());
   await mockPortal(page); await page.goto('/');
   await expect(page.getByRole('button', { name: 'Pause playback' })).toBeEnabled();
-  await page.getByRole('button', { name: 'Server', exact: true }).click();
+  await openSettings(page);
   await page.getByLabel('Portal look').selectOption('fantastic');
   await expect(page.getByText('That look couldn’t load. Check your connection, then reload the page and try again.')).toBeVisible();
   await expect(page.locator('html')).toHaveAttribute('data-skin', 'overdrive');
   await page.reload();
   await expect(page.locator('.od-horizon')).toHaveCount(1);
-  await page.getByRole('button', { name: 'Server', exact: true }).click();
+  await openSettings(page);
   await page.getByLabel('Portal look').selectOption('fantastic');
   await expect(page.locator('.ff-scene')).toHaveCount(1);
 });
@@ -108,7 +108,7 @@ test('performance mode drops glass blur and stills the scene, and stays on after
   // The one-time power-on animates the chrome; read the settled style.
   await expect(page.locator('html')).not.toHaveAttribute('data-boot');
   expect(await blur()).not.toBe('none');
-  await page.getByRole('button', { name: 'Server', exact: true }).click();
+  await openSettings(page);
   const toggle = page.getByRole('switch', { name: 'Performance mode' });
   await toggle.click();
   await expect(toggle).toHaveAttribute('aria-checked', 'true');
@@ -117,7 +117,7 @@ test('performance mode drops glass blur and stills the scene, and stays on after
   await expect(page.locator('.ambient-scene')).toHaveClass(/settled/);
   await page.reload();
   await expect(page.locator('html')).toHaveAttribute('data-performance', '');
-  await page.getByRole('button', { name: 'Server', exact: true }).click();
+  await openSettings(page);
   await page.getByRole('switch', { name: 'Performance mode' }).click();
   await expect(page.locator('html')).not.toHaveAttribute('data-performance');
 });

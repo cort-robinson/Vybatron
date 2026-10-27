@@ -1,5 +1,5 @@
 import { test, expect, type Page } from './test';
-import { mockPortal, landed } from './fixtures';
+import { mockPortal, landed, openSettings } from './fixtures';
 import { startHttpFixture } from './http-fixture';
 import { fileURLToPath } from 'node:url';
 
@@ -26,7 +26,7 @@ test('changing views crossfades the page in equal halves and overlaps the views 
   await recordTransitions(page);
   await mockPortal(page); await page.goto('/');
   await expect(page.getByRole('button', { name: 'Pause playback' })).toBeEnabled();
-  await page.getByRole('button', { name: 'Session', exact: true }).click();
+  await page.getByRole('button', { name: 'Queue', exact: true }).click();
   await expect.poll(async () => (await transitions(page)).length).toBe(1);
   const [timings] = await transitions(page);
   const find = (pseudo: string) => timings.find(timing => timing.pseudo === pseudo)!;
@@ -40,7 +40,7 @@ test('changing views crossfades the page in equal halves and overlaps the views 
 test('changing the look crossfades instead of repainting in one frame', async ({ page }) => {
   await recordTransitions(page);
   await mockPortal(page); await page.goto('/');
-  await page.getByRole('button', { name: 'Server', exact: true }).click();
+  await openSettings(page);
   await page.waitForFunction(() => !document.documentElement.dataset.motion);
   const before = (await transitions(page)).length;
   await page.getByLabel('Portal look').selectOption('classic');

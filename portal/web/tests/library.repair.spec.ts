@@ -196,7 +196,7 @@ test('paused library cache removes its heavy subtree and retains the mix draft a
   await page.getByRole('tab', { name: 'Shared mixes' }).click();
   await page.getByLabel('Save this session as a mix').fill('Draft to keep');
   await page.getByLabel('Search shared mixes').fill('Night');
-  await page.getByRole('button', { name: 'Session', exact: true }).click();
+  await page.getByRole('button', { name: 'Queue', exact: true }).click();
   await expect(page.locator('.library-view *')).toHaveCount(0);
   await page.getByRole('button', { name: 'My Music', exact: true }).click();
   await expect(page.getByLabel('Save this session as a mix')).toHaveValue('Draft to keep');

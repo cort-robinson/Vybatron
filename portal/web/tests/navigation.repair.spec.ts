@@ -1,6 +1,6 @@
 import { test, expect } from './test';
 import AxeBuilder from '@axe-core/playwright';
-import { mockPortal } from './fixtures';
+import { mockPortal, openServer, openSettings } from './fixtures';
 
 test('voice context and an accessible main landmark remain available in the expanded phone player', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
@@ -26,9 +26,10 @@ test('voice context and an accessible main landmark remain available in the expa
 
 test('basic members get personal preferences without requesting the admin catalog', async ({ page }) => {
   const fixture = await mockPortal(page, { basic: true }); await page.goto('/');
-  await page.getByRole('button', { name: 'Server', exact: true }).click();
-  await expect(page.getByRole('tab', { name: 'Preferences', exact: true })).toBeVisible();
+  await openSettings(page);
   await expect(page.getByLabel('Ambient motion')).toBeEnabled();
+  await openServer(page);
+  await expect(page.getByText('Server settings need Manage Server permission.')).toBeVisible();
   await expect(page.getByRole('tab', { name: 'Activity', exact: true })).toHaveCount(0);
   await expect(page.getByRole('tab', { name: 'Diagnostics', exact: true })).toHaveCount(0);
   await expect(page.locator('#music-channel')).toHaveCount(0);
@@ -44,7 +45,7 @@ test('server settings drafts survive navigation and opening the artwork player',
   await page.getByRole('button', { name: 'Open player', exact: true }).click();
   await page.getByRole('button', { name: 'Close player', exact: true }).click();
   await expect(page.getByLabel('Default volume', { exact: true })).toHaveValue('42');
-  await page.getByRole('button', { name: 'Session', exact: true }).click();
+  await page.getByRole('button', { name: 'Queue', exact: true }).click();
   await page.getByRole('button', { name: 'Server', exact: true }).click();
   await expect(page.getByLabel('Default volume', { exact: true })).toHaveValue('42');
   expect(fixture.commands).toEqual([]);

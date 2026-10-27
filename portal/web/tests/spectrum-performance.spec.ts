@@ -1,5 +1,5 @@
 import { expect, test, type Locator, type Page } from './test';
-import { mockPortal } from './fixtures';
+import { mockPortal, openSettings } from './fixtures';
 
 type SpectrumCounters = { spectrumDrawCounts: WeakMap<HTMLCanvasElement, number>; blurredDraws: number };
 
@@ -125,7 +125,7 @@ for (const preference of ['ambient off', 'reduced motion'] as const) {
     const canvas = page.locator('canvas.player-spectrum');
     await expectMoving(canvas);
     if (preference === 'ambient off') {
-      await page.getByRole('button', { name: 'Server', exact: true }).click();
+      await openSettings(page);
       await page.getByLabel('Ambient motion', { exact: true }).selectOption('off');
     } else await page.emulateMedia({ reducedMotion: 'reduce' });
 

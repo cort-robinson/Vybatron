@@ -52,7 +52,7 @@ export function Artwork({ track, className = '', large = false }: { track: Track
 }
 export function Avatar({ url, name, className = '' }: { url?: string | null; name: string; className?: string }) {
   const src = publicUrl(url);
-  return <span className={`avatar ${className}`} title={name}><UserIcon size={20} aria-hidden="true" />{src && <img src={src} alt="" referrerPolicy="no-referrer" onError={event => { event.currentTarget.style.display = 'none'; }} />}</span>;
+  return <span className={`avatar ${className}`} title={name}><UserIcon size={20} aria-hidden="true" />{src && <img src={src} alt="" referrerPolicy="no-referrer" loading="lazy" decoding="async" onError={event => { event.currentTarget.style.display = 'none'; }} />}</span>;
 }
 export function Empty({ title, description, action, icon }: { title: string; description: string; action?: ReactNode; icon?: ReactNode }) {
   return <div className="empty-state"><div className="empty-art">{icon || <MusicNotesIcon size={30} />}</div><h2>{title}</h2><p>{description}</p>{action}</div>;

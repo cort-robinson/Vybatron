@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from 'react';
+import { memo, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { ArrowDownIcon, ArrowLineUpIcon, ArrowUpIcon, DotsThreeIcon, HeartIcon, ListNumbersIcon, PlayIcon, PlusIcon, RadioIcon, ThumbsDownIcon, TrashIcon, DotsSixVerticalIcon, VinylRecordIcon, XIcon } from '@phosphor-icons/react';
 import type { Track } from '../types';
 import type { Portal } from '../usePortal';
@@ -8,6 +8,7 @@ import { Pagination } from './Pagination';
 import { saveByLink, useSavingFavorite } from '../favorites';
 import { SaveSessionDialog } from './SessionMix';
 import { startRadioCommand } from '../radio';
+import { useEvent } from '../stable';
 import './queue.css';
 
 export function Queue({ portal, compact = false, onAdd }: { portal: Portal; compact?: boolean; onAdd: () => void }) {
@@ -32,11 +33,23 @@ export function Queue({ portal, compact = false, onAdd }: { portal: Portal; comp
   useEffect(() => () => { if (lift.current) cancelAnimationFrame(lift.current.frame); }, []);
   useEffect(() => { if (page !== currentPage) setPage(currentPage); }, [page, currentPage]);
   const changePage = (nextPage: number) => { setPage(nextPage); drag.current = null; setDropIndex(null); };
+  // Each saved song's first place in favorites, looked up once per library rather than once per row.
+  const favoriteIndexes = useMemo(() => {
+    const indexes = new Map<string, number>();
+    library?.favorites.forEach((track, index) => { if (!indexes.has(track.id)) indexes.set(track.id, index); });
+    return indexes;
+  }, [library?.favorites]);
+  // A row keeps its element when songs ahead of it leave or move, so a skip doesn't reload every
+  // cover. The same song queued twice is told apart by its occurrence, not its position.
+  const keys = useMemo(() => {
+    const seen = new Map<string, number>();
+    return queue.map(track => { const count = seen.get(track.id) || 0; seen.set(track.id, count + 1); return count ? `${track.id}:${count}` : track.id; });
+  }, [queue]);
   const change = async (command: string, options: Record<string, number>, revision = snapshot?.revision) => {
     await run({ command, options, expectedRevision: revision }, 'control');
   };
   const favorite = async (track: Track, position: number) => {
-    const index = library?.favorites.findIndex(t => t.id === track.id) ?? -1;
+    const index = favoriteIndexes.get(track.id) ?? -1;
     if (index >= 0) await run({ command: 'favorite', subcommand: 'remove', options: { index: index + 1 }, expectedTrackId: track.id }, 'library');
     else if (local) await saveByLink(portal, track.uri);
     else await run({ command: 'favorite', subcommand: 'add', options: { position }, expectedRevision: snapshot?.revision }, 'library');
@@ -81,6 +94,25 @@ export function Queue({ portal, compact = false, onAdd }: { portal: Portal; comp
     if (commit) moveTo(current, current.target);
   };
   const startRadio = (track: Track) => { const command = startRadioCommand(track); if (command) void run(command, 'control'); };
+  // Rows are memoized; their handlers keep one identity and act on this render's state.
+  const handle = useEvent((action: RowAction) => {
+    switch (action.type) {
+      case 'change': void change(action.command, action.options); break;
+      case 'favorite': void favorite(action.track, action.position); break;
+      case 'radio': startRadio(action.track); break;
+      case 'raise': raise(action.event, action.index); break;
+      case 'follow': follow(action.event); break;
+      case 'lower': lower(action.event, action.commit); break;
+      case 'over': if (controllable && drag.current) { action.event.preventDefault(); setDropIndex(action.index); } break;
+      case 'drop': { action.event.preventDefault(); setDropIndex(null); const from = drag.current; drag.current = null; if (from) moveTo(from, action.index); break; }
+      case 'grab': {
+        const { event, index, key } = action;
+        if (!snapshot || !controllable || lift.current) { event.preventDefault(); return; }
+        drag.current = { index, revision: snapshot.revision, guildId: snapshot.guild.id }; event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', key); break;
+      }
+      case 'release': drag.current = null; setDropIndex(null); break;
+    }
+  });
   const radioButton = (track: Track, close: () => void) => local ? null : <button disabled={!controllable || !track.uri} onClick={() => { close(); startRadio(track); }}><RadioIcon />Start radio from this song</button>;
   return <section className={`queue ${compact ? 'queue-compact' : ''}`} aria-label={local ? 'Queue on this device' : 'Shared queue'}>
     <div className="section-heading"><div className="heading-line"><h2>Up Next</h2>{queue.length > 0 && <span className="count">{queue.length} {queue.length === 1 ? 'song' : 'songs'}{queue.length ? ` · ${totalTime(duration)}${queue.some(t => t.isStream) ? ' + live' : ''}` : ''}</span>}</div>
@@ -97,40 +129,9 @@ export function Queue({ portal, compact = false, onAdd }: { portal: Portal; comp
       <ol className="track-list" start={startIndex + 1}>
         {queue.slice(startIndex, startIndex + pageSize).map((track, pageIndex) => {
           const index = startIndex + pageIndex;
-          const favoriteIndex = library?.favorites.findIndex(t => t.id === track.id) ?? -1;
-          const isFavorite = favoriteIndex >= 0;
-          const key = `${track.id}:${index}`;
-          return <li key={key} className={`track-row ${dropIndex === index ? 'drop-target' : ''}`} data-track-id={track.id}
-            onDragOver={event => { if (controllable && drag.current) { event.preventDefault(); setDropIndex(index); } }}
-            onDrop={event => {
-              event.preventDefault(); setDropIndex(null); const from = drag.current; drag.current = null;
-              if (from) moveTo(from, index);
-            }}>
-            <span className="track-index">{index + 1}</span>
-            <span className={`drag-handle ${controllable ? '' : 'disabled'}`} draggable={controllable} title={controllable ? 'Drag to reorder; the song menu also has keyboard controls' : portal.blockedReason}
-              onPointerDown={event => raise(event, index)} onPointerMove={follow} onPointerUp={event => lower(event, true)} onPointerCancel={event => lower(event, false)}
-              onDragStart={event => { if (!snapshot || !controllable || lift.current) { event.preventDefault(); return; } drag.current = { index, revision: snapshot.revision, guildId: snapshot.guild.id }; event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', key); }} onDragEnd={() => { drag.current = null; setDropIndex(null); }}><DotsSixVerticalIcon size={23} /></span>
-            <div className="track-main"><Artwork track={track} /><div className="track-text"><strong title={track.title}>{track.title}</strong><span title={track.author}>{track.author}</span></div>
-              {/* The two most common edits sit on the row with a pointer; the menu keeps the rest. */}
-              {!compact && <span className="row-quick"><IconButton label={`Play ${track.title} next`} disabled={!controllable || index === 0} title={index === 0 ? 'Already next' : !controllable ? portal.blockedReason : 'Play next'} onClick={() => void change('move', { from: index + 1, to: 1 })}><ArrowLineUpIcon size={21} /></IconButton><IconButton label={`Remove ${track.title} from queue`} disabled={!controllable} title={!controllable ? portal.blockedReason : 'Remove from queue'} onClick={() => void change('remove', { position: index + 1 })}><XIcon size={21} /></IconButton></span>}</div>
-            <div className={`requester ${track.suggested ? 'suggested-source' : ''}`}>{track.suggested ? <span>Autoplay pick</span> : track.requestedBy && <><Avatar url={track.requestedBy.avatarUrl} name={track.requestedBy.displayName} /><span>{track.requestedBy.displayName}</span></>}</div>
-            <span className="track-duration">{track.isStream ? 'LIVE' : time(track.durationMs)}</span>
-            {!compact && <IconButton className={isFavorite ? 'favorite active' : 'favorite'} label={isFavorite ? `Remove ${track.title} from favorites` : `Save ${track.title} to favorites`} aria-pressed={isFavorite}
-              disabled={!editable || !library || savingFavorite} onClick={() => void favorite(track, index + 1)}><HeartIcon size={23} weight={isFavorite ? 'fill' : 'regular'} /></IconButton>}
-            <ActionPopover className="row-menu" label={`Song options for ${track.title}`} trigger={<DotsThreeIcon size={25} weight="bold" />}>
-              {close => <>
-                <p>{track.title}</p>
-                <button disabled={!controllable} onClick={() => { close(); void change('skipto', { position: index + 1 }); }}><PlayIcon />Play now</button>
-                <button disabled={!controllable || index === 0} onClick={() => { close(); void change('move', { from: index + 1, to: 1 }); }}><ArrowLineUpIcon />Play next</button>
-                <button disabled={!controllable || index === 0} onClick={() => { close(); void change('move', { from: index + 1, to: index }); }}><ArrowUpIcon />Move up</button>
-                <button disabled={!controllable || index === queue.length - 1} onClick={() => { close(); void change('move', { from: index + 1, to: index + 2 }); }}><ArrowDownIcon />Move down</button>
-                {radioButton(track, close)}
-                {<button className="menu-favorite" disabled={!editable || !library || savingFavorite} onClick={() => { close(); void favorite(track, index + 1); }}><HeartIcon weight={isFavorite ? 'fill' : 'regular'} />{isFavorite ? 'Remove favorite' : 'Save to favorites'}</button>}
-                <button className="danger-text" disabled={!controllable} onClick={() => { close(); void change('remove', { position: index + 1 }); }}><TrashIcon />Remove from queue</button>
-                {!controllable && <small>{portal.blockedReason}</small>}
-              </>}
-            </ActionPopover>
-          </li>;
+          return <QueueRow key={keys[index]} rowKey={keys[index]} track={track} index={index} last={index === queue.length - 1} compact={compact} local={local}
+            favorite={favoriteIndexes.has(track.id)} controllable={controllable} editable={editable && !!library && !savingFavorite} dropTarget={dropIndex === index}
+            blockedReason={portal.blockedReason} handle={handle} />;
         })}
       </ol>
       <Pagination page={currentPage} total={queue.length} pageSize={pageSize} onPageChange={changePage} label={compact ? 'Expanded queue pages' : 'Queue pages'} />
@@ -138,6 +139,46 @@ export function Queue({ portal, compact = false, onAdd }: { portal: Portal; comp
     {suggested.length > 0 && <Suggestions portal={portal} tracks={suggested} compact={compact} radioButton={radioButton} />}
   </section>;
 }
+
+type RowAction = { type: 'change'; command: string; options: Record<string, number> } | { type: 'favorite'; track: Track; position: number } | { type: 'radio'; track: Track }
+  | { type: 'raise'; event: React.PointerEvent<HTMLElement>; index: number } | { type: 'follow'; event: React.PointerEvent<HTMLElement> } | { type: 'lower'; event: React.PointerEvent<HTMLElement>; commit: boolean }
+  | { type: 'over' | 'drop'; event: React.DragEvent<HTMLElement>; index: number } | { type: 'grab'; event: React.DragEvent<HTMLElement>; index: number; key: string } | { type: 'release' };
+
+// One queued song. It renders again only when its song, place or permissions change, not on every
+// live frame or keystroke elsewhere.
+const QueueRow = memo(function QueueRow({ track, index, rowKey, last, compact, local, favorite, controllable, editable, dropTarget, blockedReason, handle }: {
+  track: Track; index: number; rowKey: string; last: boolean; compact: boolean; local: boolean; favorite: boolean; controllable: boolean; editable: boolean; dropTarget: boolean; blockedReason: string; handle: (action: RowAction) => void;
+}) {
+  const change = (command: string, options: Record<string, number>) => handle({ type: 'change', command, options });
+  const save = () => handle({ type: 'favorite', track, position: index + 1 });
+  return <li className={`track-row ${dropTarget ? 'drop-target' : ''}`} data-track-id={track.id}
+    onDragOver={event => handle({ type: 'over', event, index })} onDrop={event => handle({ type: 'drop', event, index })}>
+    <span className="track-index">{index + 1}</span>
+    <span className={`drag-handle ${controllable ? '' : 'disabled'}`} draggable={controllable} title={controllable ? 'Drag to reorder; the song menu also has keyboard controls' : blockedReason}
+      onPointerDown={event => handle({ type: 'raise', event, index })} onPointerMove={event => handle({ type: 'follow', event })} onPointerUp={event => handle({ type: 'lower', event, commit: true })} onPointerCancel={event => handle({ type: 'lower', event, commit: false })}
+      onDragStart={event => handle({ type: 'grab', event, index, key: rowKey })} onDragEnd={() => handle({ type: 'release' })}><DotsSixVerticalIcon size={23} /></span>
+    <div className="track-main"><Artwork track={track} /><div className="track-text"><strong title={track.title}>{track.title}</strong><span title={track.author}>{track.author}</span></div>
+      {/* The two most common edits sit on the row with a pointer; the menu keeps the rest. */}
+      {!compact && <span className="row-quick"><IconButton label={`Play ${track.title} next`} disabled={!controllable || index === 0} title={index === 0 ? 'Already next' : !controllable ? blockedReason : 'Play next'} onClick={() => change('move', { from: index + 1, to: 1 })}><ArrowLineUpIcon size={21} /></IconButton><IconButton label={`Remove ${track.title} from queue`} disabled={!controllable} title={!controllable ? blockedReason : 'Remove from queue'} onClick={() => change('remove', { position: index + 1 })}><XIcon size={21} /></IconButton></span>}</div>
+    <div className={`requester ${track.suggested ? 'suggested-source' : ''}`}>{track.suggested ? <span>Autoplay pick</span> : track.requestedBy && <><Avatar url={track.requestedBy.avatarUrl} name={track.requestedBy.displayName} /><span>{track.requestedBy.displayName}</span></>}</div>
+    <span className="track-duration">{track.isStream ? 'LIVE' : time(track.durationMs)}</span>
+    {!compact && <IconButton className={favorite ? 'favorite active' : 'favorite'} label={favorite ? `Remove ${track.title} from favorites` : `Save ${track.title} to favorites`} aria-pressed={favorite}
+      disabled={!editable} onClick={save}><HeartIcon size={23} weight={favorite ? 'fill' : 'regular'} /></IconButton>}
+    <ActionPopover className="row-menu" label={`Song options for ${track.title}`} trigger={<DotsThreeIcon size={25} weight="bold" />}>
+      {close => <>
+        <p>{track.title}</p>
+        <button disabled={!controllable} onClick={() => { close(); change('skipto', { position: index + 1 }); }}><PlayIcon />Play now</button>
+        <button disabled={!controllable || index === 0} onClick={() => { close(); change('move', { from: index + 1, to: 1 }); }}><ArrowLineUpIcon />Play next</button>
+        <button disabled={!controllable || index === 0} onClick={() => { close(); change('move', { from: index + 1, to: index }); }}><ArrowUpIcon />Move up</button>
+        <button disabled={!controllable || last} onClick={() => { close(); change('move', { from: index + 1, to: index + 2 }); }}><ArrowDownIcon />Move down</button>
+        {!local && <button disabled={!controllable || !track.uri} onClick={() => { close(); handle({ type: 'radio', track }); }}><RadioIcon />Start radio from this song</button>}
+        {<button className="menu-favorite" disabled={!editable} onClick={() => { close(); save(); }}><HeartIcon weight={favorite ? 'fill' : 'regular'} />{favorite ? 'Remove favorite' : 'Save to favorites'}</button>}
+        <button className="danger-text" disabled={!controllable} onClick={() => { close(); change('remove', { position: index + 1 }); }}><TrashIcon />Remove from queue</button>
+        {!controllable && <small>{blockedReason}</small>}
+      </>}
+    </ActionPopover>
+  </li>;
+});
 
 // Autoplay picks wait outside the queue: they play only after every queued song.
 function Suggestions({ portal, tracks, compact, radioButton }: { portal: Portal; tracks: Track[]; compact: boolean; radioButton: (track: Track, close: () => void) => React.ReactNode }) {

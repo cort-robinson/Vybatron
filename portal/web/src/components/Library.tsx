@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowClockwiseIcon, HeartIcon, PlayIcon, PlusIcon, RadioIcon, TrashIcon, VinylRecordIcon } from '@phosphor-icons/react';
 import type { Portal } from '../usePortal';
-import type { Track } from '../types';
+import type { Capability, Command, Library, Track } from '../types';
 import { date, time, totalTime } from '../format';
 import { Artwork, Confirm, Empty, ErrorState, IconButton, Loading } from './ui';
 import { Pagination } from './Pagination';
@@ -9,6 +9,7 @@ import { ServerFavorites } from './ServerFavorites';
 import { PlaylistImport } from './PlaylistImport';
 import { transition } from '../motion';
 import { radioLabel, startRadioCommand } from '../radio';
+import { useEvent } from '../stable';
 import './library.css';
 
 const sections = ['favorites', 'mixes', 'history', 'server'] as const;
@@ -81,6 +82,10 @@ export function LibraryView({ portal, active = true }: { portal: Portal; active?
   const noMatches = <Empty title={`No matching ${label}`} description={tab === 'mixes' ? 'Try a mix name, song, or artist.' : 'Try a song, artist, or source.'}
     action={<button type="button" className="button secondary" onClick={clearSearch}>Clear search</button>} />;
 
+  // Rows are memoized; the command they send keeps one identity.
+  const act = useEvent((body: Command, capability: Capability) => void run(body, capability));
+  const radio = portal.target === 'local' ? null : controllable;
+
   // A paused cache keeps drafts and filters, but mounts no heavy list or modal.
   if (!active) return <div className="library-view" hidden />;
   return <div className="library-view"><div className="tabs" role="tablist" aria-label="My music sections">
@@ -103,12 +108,8 @@ export function LibraryView({ portal, active = true }: { portal: Portal; active?
       {queries[listTab] && <button type="button" className="text-button" onClick={clearSearch}>Clear search</button>}
     </div></div>
     {tab === 'favorites' && <>
-      {!library.favorites.length ? <Empty title="A place for your repeat favorites" description="Tap the heart on the current song to keep it here. Only you can see this shelf." icon={<HeartIcon size={30} />} /> : !favorites.length ? noMatches : <ul className="library-track-list" aria-label="Favorite songs">{favorites.slice(offset, offset + pageSize).map(({ track, index }) => <li key={`${track.id}:${index}`}>
-        <Artwork track={track} /><div className="track-text"><strong dir="auto" title={track.title}>{track.title}</strong><span dir="auto">{track.author}<span className="track-source"> · {track.source}</span></span></div><span className="track-duration">{track.isStream ? 'Live' : time(track.durationMs)}</span>
-        <IconButton label={`Queue favorite ${track.title}`} disabled={!addable} title={!addable ? portal.blockedReason : undefined} onClick={() => void run({ command: 'favorite', subcommand: 'play', options: { index: index + 1 }, expectedTrackId: track.id }, 'add')}><PlusIcon size={23} /></IconButton>
-        <RadioButton portal={portal} track={track} />
-        <IconButton className="favorite active" label={`Remove favorite ${track.title}`} disabled={!editable} onClick={() => void run({ command: 'favorite', subcommand: 'remove', options: { index: index + 1 }, expectedTrackId: track.id }, 'library')}><HeartIcon size={23} weight="fill" /></IconButton>
-      </li>)}</ul>}
+      {!library.favorites.length ? <Empty title="A place for your repeat favorites" description="Tap the heart on the current song to keep it here. Only you can see this shelf." icon={<HeartIcon size={30} />} /> : !favorites.length ? noMatches : <ul className="library-track-list" aria-label="Favorite songs">{favorites.slice(offset, offset + pageSize).map(({ track, index }) => <FavoriteRow key={`${track.id}:${index}`}
+        track={track} index={index} addable={addable} editable={editable} radio={radio} blockedReason={portal.blockedReason} act={act} />)}</ul>}
       <Pagination label="favorites" page={currentPage} total={favorites.length} pageSize={pageSize} onPageChange={page => setPages(previous => ({ ...previous, favorites: page }))} />
       <PlaylistImport portal={portal} target="favorites" />
       {library.favorites.length > 0 && <button type="button" className="text-button danger-text library-clear" disabled={!editable} onClick={() => setConfirm({ kind: 'favorites' })}>Clear favorites</button>}
@@ -140,11 +141,8 @@ export function LibraryView({ portal, active = true }: { portal: Portal; active?
       {!addable && <p className="library-note">{portal.blockedReason}</p>}
     </>}
     {tab === 'history' && <>
-      {!library.history.length ? <Empty title="Your server’s story starts here" description="Songs appear after they play in a visible voice channel." /> : !history.length ? noMatches : <ul className="history-list" aria-label="Recently played songs">{history.slice(offset, offset + pageSize).map(({ entry, index }) => <li key={entry.id}>
-        <Artwork track={entry.track} /><div className="track-text"><strong dir="auto" title={entry.track.title}>{entry.track.title}</strong><span dir="auto">{entry.track.author}{entry.voiceChannel ? ` · ${entry.voiceChannel.name}` : ''}</span></div><time dateTime={new Date(entry.playedAt).toISOString()}>{date(entry.playedAt)}</time>
-        <IconButton label={`Replay ${entry.track.title}`} disabled={!controllable} title={!controllable ? portal.blockedReason : undefined} onClick={() => void run({ command: 'replay', options: { index: index + 1 }, expectedHistoryId: entry.id, expectedRevision: snapshot?.revision }, 'control')}><PlusIcon size={23} /></IconButton>
-        <RadioButton portal={portal} track={entry.track} />
-      </li>)}</ul>}
+      {!library.history.length ? <Empty title="Your server’s story starts here" description="Songs appear after they play in a visible voice channel." /> : !history.length ? noMatches : <ul className="history-list" aria-label="Recently played songs">{history.slice(offset, offset + pageSize).map(({ entry, index }) => <HistoryRow key={entry.id}
+        entry={entry} index={index} controllable={controllable} radio={radio} revision={snapshot?.revision} blockedReason={portal.blockedReason} act={act} />)}</ul>}
       <Pagination label="listening history" page={currentPage} total={history.length} pageSize={pageSize} onPageChange={page => setPages(previous => ({ ...previous, history: page }))} />
       {!controllable && <p className="library-note">{portal.blockedReason}</p>}
     </>}
@@ -159,11 +157,31 @@ export function LibraryView({ portal, active = true }: { portal: Portal; active?
   </div>;
 }
 
-// Seeds autoplay from a saved song. Needs a live session and playback control.
-function RadioButton({ portal, track }: { portal: Portal; track: Track }) {
-  if (portal.target === 'local') return null;
+type Act = (body: Command, capability: Capability) => void;
+// Library rows render again when their song, place or permissions change, not on every live frame.
+const FavoriteRow = memo(function FavoriteRow({ track, index, addable, editable, radio, blockedReason, act }: { track: Track; index: number; addable: boolean; editable: boolean; radio: boolean | null; blockedReason: string; act: Act }) {
+  return <li>
+    <Artwork track={track} /><div className="track-text"><strong dir="auto" title={track.title}>{track.title}</strong><span dir="auto">{track.author}<span className="track-source"> · {track.source}</span></span></div><span className="track-duration">{track.isStream ? 'Live' : time(track.durationMs)}</span>
+    <IconButton label={`Queue favorite ${track.title}`} disabled={!addable} title={!addable ? blockedReason : undefined} onClick={() => act({ command: 'favorite', subcommand: 'play', options: { index: index + 1 }, expectedTrackId: track.id }, 'add')}><PlusIcon size={23} /></IconButton>
+    <RadioButton track={track} enabled={radio} blockedReason={blockedReason} act={act} />
+    <IconButton className="favorite active" label={`Remove favorite ${track.title}`} disabled={!editable} onClick={() => act({ command: 'favorite', subcommand: 'remove', options: { index: index + 1 }, expectedTrackId: track.id }, 'library')}><HeartIcon size={23} weight="fill" /></IconButton>
+  </li>;
+});
+// A replay binds to the session the listener saw, so the row also follows its revision.
+const HistoryRow = memo(function HistoryRow({ entry, index, controllable, radio, revision, blockedReason, act }: { entry: Library['history'][number]; index: number; controllable: boolean; radio: boolean | null; revision?: string; blockedReason: string; act: Act }) {
+  return <li>
+    <Artwork track={entry.track} /><div className="track-text"><strong dir="auto" title={entry.track.title}>{entry.track.title}</strong><span dir="auto">{entry.track.author}{entry.voiceChannel ? ` · ${entry.voiceChannel.name}` : ''}</span></div><time dateTime={new Date(entry.playedAt).toISOString()}>{date(entry.playedAt)}</time>
+    <IconButton label={`Replay ${entry.track.title}`} disabled={!controllable} title={!controllable ? blockedReason : undefined} onClick={() => act({ command: 'replay', options: { index: index + 1 }, expectedHistoryId: entry.id, expectedRevision: revision }, 'control')}><PlusIcon size={23} /></IconButton>
+    <RadioButton track={entry.track} enabled={radio} blockedReason={blockedReason} act={act} />
+  </li>;
+});
+
+// Seeds autoplay from a saved song. Needs a live session and playback control; `enabled` is null
+// on this device's own playback, which has no autoplay.
+function RadioButton({ track, enabled, blockedReason, act }: { track: Track; enabled: boolean | null; blockedReason: string; act: Act }) {
+  if (enabled === null) return null;
   const command = startRadioCommand(track);
-  const enabled = !!command && portal.can('control') && !portal.pending.length;
-  return <IconButton className="radio-start" label={radioLabel(track)} disabled={!enabled} title={!command ? 'This song has no public source reference' : !enabled ? portal.blockedReason : radioLabel(track)}
-    onClick={() => { if (command) void portal.run(command, 'control'); }}><RadioIcon size={22} /></IconButton>;
+  const allowed = !!command && enabled;
+  return <IconButton className="radio-start" label={radioLabel(track)} disabled={!allowed} title={!command ? 'This song has no public source reference' : !allowed ? blockedReason : radioLabel(track)}
+    onClick={() => { if (command) act(command, 'control'); }}><RadioIcon size={22} /></IconButton>;
 }

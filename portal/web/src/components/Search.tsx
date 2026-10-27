@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { ArrowBendUpRightIcon, LinkIcon, MagnifyingGlassIcon, PlusIcon, RadioIcon, SparkleIcon } from '@phosphor-icons/react';
 import { api, errorMessage } from '../api';
 import type { Track } from '../types';
@@ -16,12 +16,22 @@ const CACHE_TTL_MS = 60_000;
 const CACHE_LIMIT = 30;
 type Result = { tracks: Track[]; notice: string | null };
 
+// The typed search lives outside the app's state: both search forms and the top bar's echo of it
+// share it, and a keystroke re-renders only them, not every page behind the dialog.
+let draft = '';
+const drafts = new Set<() => void>();
+export function setSearchDraft(value: string) { if (value !== draft) { draft = value; drafts.forEach(listener => listener()); } }
+const subscribeDraft = (listener: () => void) => { drafts.add(listener); return () => { drafts.delete(listener); }; };
+const useSearchDraft = () => useSyncExternalStore(subscribeDraft, () => draft);
+export function SearchDraft({ placeholder }: { placeholder: string }) { return useSearchDraft() || placeholder; }
+
 function ResultRow({ track, detail, enabled, nextEnabled, radioEnabled, blockedReason, onAdd, onNext, onRadio }: { track: Track; detail: string; enabled: boolean; nextEnabled: boolean; radioEnabled: boolean | null; blockedReason: string; onAdd: (track: Track) => void; onNext: (track: Track) => void; onRadio: (uri: string) => void }) {
   return <li><Artwork track={track} /><div className="track-text"><strong>{track.title}</strong><span>{track.author} · {detail}</span></div><span className="result-length">{track.isStream ? 'Live' : time(track.durationMs)}</span>
     {radioEnabled !== null && <IconButton className="radio-start" label={radioLabel(track)} disabled={!radioEnabled || !track.uri} title={!track.uri ? 'This result has no public source reference' : !radioEnabled ? blockedReason : radioLabel(track)} onClick={() => { if (track.uri) onRadio(track.uri); }}><RadioIcon size={21} /></IconButton>}<IconButton className="next-result" label={`Play ${track.title} next`} disabled={!nextEnabled || !track.uri} title={!nextEnabled ? blockedReason : `Play ${track.title} next`} onClick={() => onNext(track)}><ArrowBendUpRightIcon size={21} /></IconButton><button className="button secondary add-result" aria-label={`Add ${track.title} to queue`} disabled={!enabled || !track.uri} title={!track.uri ? 'This result has no public source reference' : !enabled ? blockedReason : undefined} onClick={() => { if (track.uri) onAdd(track); }}><PlusIcon size={19} /><span>Add</span></button></li>;
 }
 
-export function Search({ portal, open, onClose, query, setQuery, page = false }: { portal: Portal; open: boolean; onClose: () => void; query: string; setQuery: (value: string) => void; page?: boolean }) {
+export function Search({ portal, open, onClose, page = false }: { portal: Portal; open: boolean; onClose: () => void; page?: boolean }) {
+  const query = useSearchDraft(); const setQuery = setSearchDraft;
   const [tracks, setTracks] = useState<Track[] | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState('');
@@ -77,10 +87,12 @@ export function Search({ portal, open, onClose, query, setQuery, page = false }:
     return () => clearTimeout(timer);
   // search reads the same render's state; these are the inputs that change it.
   }, [typed, open, hasAccess, portal.connection, portal.guildId, maxLength]);
+  // Suggestions rank the whole library, so a closed dialog skips them. They read only the current
+  // song and the queue, not the position that changes with every live frame.
   const session = portal.snapshot?.session;
-  const picks = useMemo(() => typed ? [] : suggestTracks(portal.library, session), [typed, portal.library, session]);
-  const artists = useMemo(() => typed ? [] : suggestArtists(portal.library, session), [typed, portal.library, session]);
-  const mine = useMemo(() => !typed || isLink(typed) ? [] : libraryMatches(portal.library, typed), [typed, portal.library]);
+  const picks = useMemo(() => !open || typed ? [] : suggestTracks(portal.library, session), [open, typed, portal.library, session?.current, session?.queue]);
+  const artists = useMemo(() => !open || typed ? [] : suggestArtists(portal.library, session), [open, typed, portal.library, session?.current]);
+  const mine = useMemo(() => !open || !typed || isLink(typed) ? [] : libraryMatches(portal.library, typed), [open, typed, portal.library]);
   // A chosen result travels with its query, so playing it here needs no second lookup.
   const add = (next: boolean, value: string, track?: Track) => portal.run({ command: next ? 'playnext' : 'play', options: { query: value } }, next ? 'control' : 'add', track && [track]);
   const explore = (artist: string) => { setQuery(artist); input.current?.focus(); void search(artist); };

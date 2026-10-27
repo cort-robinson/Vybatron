@@ -67,7 +67,8 @@ export function Player({ portal, expanded, setExpanded, onAdd, accent, animate, 
   useEffect(() => { setVolumeDraft(null); }, [track?.id, snapshot?.guild.id]);
   // Acknowledge state that changes under the controls, whoever changed it: a new song settles
   // into the deck, the play mark swaps, repeat cycles, and a saved heart lifts once.
-  const saved = (library?.favorites.some(t => t.id === track?.id)) ?? false;
+  const index = useMemo(() => library?.favorites.findIndex(t => t.id === track?.id) ?? -1, [library?.favorites, track?.id]);
+  const saved = index >= 0;
   const observed = useRef({ track: track?.id, status: session?.status, repeat: session?.repeat, saved });
   useLayoutEffect(() => {
     const previous = observed.current; const player = playerRef.current;
@@ -117,7 +118,6 @@ export function Player({ portal, expanded, setExpanded, onAdd, accent, animate, 
       settle();
     }, identity);
   }, [expanded, local]);
-  const index = library?.favorites.findIndex(t => t.id === track?.id) ?? -1;
   const savingFavorite = useSavingFavorite();
   const toggleFavorite = () => index >= 0 ? run({ command: 'favorite', subcommand: 'remove', options: { index: index + 1 }, expectedTrackId: library?.favorites[index].id }, 'library')
     : local ? saveByLink(portal, track?.uri) : run({ command: 'favorite', subcommand: 'add', expectedRevision: snapshot?.revision }, 'library');

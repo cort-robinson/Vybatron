@@ -635,7 +635,8 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
   .topbar { gap: 12px; padding-right: 20px; }
   .requester > span:not(.avatar) { display: none; }
   .track-row, .queue-columns { grid-template-columns: 24px 24px minmax(0, 1fr) 44px 44px 44px 44px; gap: 8px; }
-  .queue-columns > :nth-child(4) { overflow: hidden; }
+  /* The column holds only avatars at this width, so its label would clip; the avatars speak for it. */
+  .queue-columns > :nth-child(4) { visibility: hidden; }
   .track-main { gap: 12px; }
   .artwork { width: 60px; height: 62px; }
   .compact-favorite { display: none; }
@@ -1070,5 +1071,22 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
   .row-quick { display: flex; gap: 2px; margin-left: auto; flex-shrink: 0; opacity: 0; transition: opacity 120ms; }
   .track-row:hover .row-quick, .track-row:focus-within .row-quick { opacity: 1; }
   .row-quick .icon-button { color: var(--text-soft); }
+}
+
+/* Short last lines: a date or a word no longer sits alone on a line of its own. */
+p, .continue-text > span, .section-description, .field-hint { text-wrap: pretty; }
+
+/* Phones: song titles in library rows take two lines before they truncate. */
+@media (max-width: 599px) {
+  .library-track-list .track-text strong, .history-list .track-text strong { white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+}
+
+/* The smallest phones: the playing card and the mini player give the title more of the row. */
+@media (max-width: 380px) {
+  .continue-feature:has(.continue-open) { grid-template-columns: 48px minmax(0, 1fr) 44px; gap: 10px; padding: 12px; }
+  .continue-feature:has(.continue-open) .continue-art { width: 48px; height: 48px; }
+  .continue-feature:has(.continue-open) .continue-text strong { font-size: 16px; }
+  .player-expand-trigger > .artwork { width: 40px; height: 40px; }
+  .collapsed .player-footer { padding-inline: max(8px, env(safe-area-inset-left, 0px)) max(4px, env(safe-area-inset-right, 0px)); }
 }
 

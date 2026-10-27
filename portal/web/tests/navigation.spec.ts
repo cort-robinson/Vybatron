@@ -1,5 +1,5 @@
 import { test, expect } from './test';
-import { mockPortal, gotoSession, openServer, openSettings } from './fixtures';
+import { mockPortal, gotoSession, openServer, openSettings, streamAction } from './fixtures';
 
 const phone = { width: 393, height: 852 };
 
@@ -117,4 +117,21 @@ test('a playback error shows while the player covers the phone Search page', asy
   await page.route('**/api/guilds/*/commands', route => route.fulfill({ status: 503, json: { error: { code: 'unavailable', message: 'Playback control is unavailable right now.' } } }));
   await page.getByRole('button', { name: 'Skip current song' }).filter({ visible: true }).click();
   await expect(page.locator('.toast').filter({ hasText: 'Playback control is unavailable right now.' })).toBeVisible();
+});
+
+test('shared mixes list the mixes before the tools for making new ones', async ({ page }) => {
+  await mockPortal(page); await page.goto('/');
+  await page.getByRole('button', { name: 'My Music', exact: true }).click();
+  await page.getByRole('tab', { name: /Shared mixes/ }).click();
+  const mix = await page.getByRole('button', { name: 'View mix Night shift' }).boundingBox();
+  const save = await page.getByLabel('Save this session as a mix').boundingBox();
+  expect(mix!.y).toBeLessThan(save!.y);
+});
+
+test('offline Home explains the wait once, in the connection banner', async ({ page }) => {
+  await mockPortal(page); await page.goto('/');
+  await expect(page.getByRole('button', { name: 'Pause playback' })).toBeEnabled();
+  await streamAction(page, 'disconnect');
+  await expect(page.locator('.connection-banner')).toBeVisible();
+  await expect(page.locator('.home-view .permission-note')).toHaveCount(0);
 });

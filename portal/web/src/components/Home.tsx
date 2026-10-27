@@ -104,7 +104,8 @@ export function Home({ portal, active, onOpenPlayer }: { portal: Portal; active:
     </>;
 
   return <div className="home-view">
-    {ready && !can('add') && <div className="permission-note"><WarningCircleIcon size={20} aria-hidden="true" /><span>{blockedReason} You can still browse; Play, Shuffle and Add unlock once you can add music.</span></div>}
+    {/* Offline, the connection banner above already explains why controls wait. */}
+    {ready && !can('add') && portal.connection === 'live' && <div className="permission-note"><WarningCircleIcon size={20} aria-hidden="true" /><span>{blockedReason} You can still browse; Play, Shuffle and Add unlock once you can add music.</span></div>}
     <ContinueListening portal={portal} onOpenPlayer={onOpenPlayer} add={add} disabled={!addable} title={disabledTitle} />
     {statsShelves}
     {ready && <ListeningRecap guildId={guildId} version={recapVersion} range={recapWindow} onRange={setRecapWindow} />}

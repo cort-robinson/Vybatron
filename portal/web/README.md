@@ -129,7 +129,22 @@ creates source-left/browser-right comparisons.
   Tokens remain top-level command fields accepted only on their matching actions;
   playable references and all authority still come from the bot.
 - Serving static files must preserve root `/sw.js`, manifest, icons, and hashed assets.
-  Runtime rasters `public/assets/aurora.png` and `fallback-cover.png` are root-owned.
+  Runtime rasters in `src/assets/` (aurora and fallback-cover derivatives) are root-owned.
+  Components import images so they get hashed `/assets/` names; `public/` is only for files
+  that need a fixed URL (manifest, app icons).
+
+## Load performance
+
+- `npm run build` also writes `.br` and `.gz` copies of text files (`scripts/compress.mjs`);
+  the portal server picks one by `Accept-Encoding`. They are not extra precache URLs.
+- `index.html` shows a look-neutral loading line (`src/boot.css`) while the script loads, so
+  the page isn't blank, and preloads the latin Archivo font. The line sits outside `#root` and
+  hides as soon as a look applies.
+- The Server and Settings pages are a separate chunk (`src/views.tsx`), fetched when the
+  signed-in portal goes idle. If it can't load, the page shows an error that reloads the portal.
+- Import icons from `src/icons.tsx`, never from `@phosphor-icons/react`: each Phosphor module
+  ships all six weights. After using a new icon or weight, run
+  `node scripts/build-icon-set.mjs`; the build fails while the file is out of date.
 
 The root `npm run portal:integration` check passes through real browser OAuth,
 Vite, API, and bot bridge with deterministic fakes only at the external Discord

@@ -218,7 +218,7 @@ test('missing and failed source covers use responsive variants and fresh source 
   for (const index of [0, 1]) {
     const cover = rows.nth(index).locator('picture.artwork');
     await expect(cover).toBeVisible();
-    await expect(cover.locator('source')).toHaveAttribute('srcset', /fallback-cover-320.webp 320w.*fallback-cover-640.webp 640w.*fallback-cover-1024.webp 1024w/);
+    await expect(cover.locator('source')).toHaveAttribute('srcset', /\/assets\/fallback-cover-320-[\w-]{8}\.webp 320w.*fallback-cover-640-[\w-]{8}\.webp 640w.*fallback-cover-1024-[\w-]{8}\.webp 1024w/);
     await expect.poll(() => cover.locator('img').evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0)).toBe(true);
   }
   fixture.state.snapshot.session.queue[0].artworkUrl = fixture.state.snapshot.session.current!.artworkUrl;

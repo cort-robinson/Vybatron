@@ -5,8 +5,8 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { resolve } from 'node:path';
 
-const source = resolve(process.argv[2] || 'public/assets');
-const destination = resolve('public/assets');
+const source = resolve(process.argv[2] || 'src/assets');
+const destination = resolve('src/assets');
 await mkdir(destination, { recursive: true });
 const assets = [];
 for (const [name, width, quality] of [

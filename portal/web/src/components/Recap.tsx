@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { ArrowClockwiseIcon, WarningCircleIcon } from '@phosphor-icons/react';
+import { ArrowClockwiseIcon, WarningCircleIcon } from '../icons';
 import type { Recap, RecapTotals, RecapWindow, Track } from '../types';
 import { recapRead, useRead } from '../reads';
 import { totalTime } from '../format';

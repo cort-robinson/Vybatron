@@ -28,7 +28,7 @@ use are equally complete, commonly while Discord is already open in a dim room.
 
 - Behavior and DTOs: `../docs/portal-contract.md`.
 - Approved visuals: `../docs/portal-references/queue.png`, `player.png`, `phone.png`.
-- Root-supplied runtime aurora and cover rasters in `web/public/assets/`.
+- Root-supplied runtime aurora and cover rasters in `web/src/assets/`.
 - Browser-test fixtures are explicit synthetic local evidence, never public content.
 
 ## Product principles

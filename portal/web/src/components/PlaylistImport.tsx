@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { DownloadSimpleIcon } from '@phosphor-icons/react';
+import { DownloadSimpleIcon } from '../icons';
 import type { Portal } from '../playback';
 import type { ImportPreview } from '../types';
 import { Dialog } from './ui';

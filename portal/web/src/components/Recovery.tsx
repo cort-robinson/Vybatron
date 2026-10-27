@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ArrowCounterClockwiseIcon, BookmarkSimpleIcon } from '@phosphor-icons/react';
+import { ArrowCounterClockwiseIcon, BookmarkSimpleIcon } from '../icons';
 import type { Portal } from '../usePortal';
 import { date, time } from '../format';
 import { Confirm } from './ui';

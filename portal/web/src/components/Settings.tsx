@@ -1,4 +1,4 @@
-import { DiscordLogoIcon, DownloadSimpleIcon } from '@phosphor-icons/react';
+import { DiscordLogoIcon, DownloadSimpleIcon } from '../icons';
 import type { Portal } from '../usePortal';
 import type { Skin } from '../skin';
 

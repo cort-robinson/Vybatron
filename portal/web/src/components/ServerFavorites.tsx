@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ArrowClockwiseIcon, PlayIcon, ShuffleIcon, SparkleIcon } from '@phosphor-icons/react';
+import { ArrowClockwiseIcon, PlayIcon, ShuffleIcon, SparkleIcon } from '../icons';
 import type { Portal } from '../usePortal';
 import type { Stats, StatEntry } from '../types';
 import { api, ApiError, errorMessage } from '../api';

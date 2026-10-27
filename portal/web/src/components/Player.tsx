@@ -1,5 +1,5 @@
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { CaretDownIcon, CheckIcon, DesktopIcon, DiscordLogoIcon, CaretUpIcon, DotsThreeIcon, HeartIcon, PauseIcon, PlayIcon, RepeatIcon, RepeatOnceIcon, ShuffleIcon, SkipBackIcon, SkipForwardIcon, SpeakerHighIcon, StopIcon, RadioIcon, HandPalmIcon, ArrowSquareOutIcon, TrashIcon, WarningCircleIcon, ThumbsDownIcon, VinylRecordIcon, MoonIcon, MicrophoneStageIcon } from '@phosphor-icons/react';
+import { CaretDownIcon, CheckIcon, DesktopIcon, DiscordLogoIcon, CaretUpIcon, DotsThreeIcon, HeartIcon, PauseIcon, PlayIcon, RepeatIcon, RepeatOnceIcon, ShuffleIcon, SkipBackIcon, SkipForwardIcon, SpeakerHighIcon, StopIcon, RadioIcon, HandPalmIcon, ArrowSquareOutIcon, TrashIcon, WarningCircleIcon, ThumbsDownIcon, VinylRecordIcon, MoonIcon, MicrophoneStageIcon } from '../icons';
 import type { Portal } from '../usePortal';
 import { saveByLink, useSavingFavorite } from '../favorites';
 import type { Command, GuildSnapshot, Track } from '../types';

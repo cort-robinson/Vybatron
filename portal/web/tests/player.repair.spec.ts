@@ -163,7 +163,8 @@ test('short offline sleeve keeps transport visible and reduced motion leaves int
   await gotoSession(page);
   await waitForPlayer(page);
   await page.getByRole('button', { name: 'Open player', exact: true }).click();
-  fixture.delayCommand(1500);
+  // The reply waits until the checks below finish; landing earlier would end the offline state they look at.
+  const release = fixture.holdCommands();
   await page.getByTestId('player').getByRole('button', { name: 'Pause playback' }).click();
   const pending = page.getByTestId('player').locator('.player-confirmation .spinner');
   await expect(pending).toBeVisible();
@@ -179,6 +180,7 @@ test('short offline sleeve keeps transport visible and reduced motion leaves int
   await expect(resume).toBeDisabled();
   await visibleBounds(resume, page);
   await expect(page.getByTestId('player').locator('.player-permission')).toContainText('Reconnect for fresh state');
+  release();
 });
 
 test('phone sleeve centers the empty cover icon and rings the whole filter pill', async ({ page }) => {

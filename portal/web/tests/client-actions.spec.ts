@@ -242,3 +242,46 @@ test('rapid song changes read history once they settle', async ({ page }) => {
   await page.waitForTimeout(1600);
   expect(count(fixture.requests, '/library')).toBe(2);
 });
+
+test('a queued save is not moved onto a song an earlier change brought in', async ({ page }) => {
+  const fixture = await mockPortal(page);
+  const current = fixture.state.snapshot.session.current!;
+  fixture.state.library.favorites = fixture.state.library.favorites.filter(track => track.id !== current.id);
+  Object.assign(fixture.state.snapshot.session, { hasPrevious: true, positionMs: 1000, status: 'paused' });
+  // Back brings in another song; the fixture models that before replying.
+  await page.route('**/api/guilds/testing/commands', async route => {
+    if (route.request().postDataJSON().command === 'back') {
+      const s = fixture.state.snapshot.session; s.queue.unshift(s.current!); s.current = fixture.state.library.history[0].track;
+    }
+    await route.fallback();
+  });
+  await gotoSession(page);
+  const release = fixture.holdCommands();
+  await player(page).getByRole('button', { name: 'Previous song' }).click();
+  await expect.poll(() => fixture.commands.map(command => command.command)).toEqual(['back']);
+  // The heart still shows the song that was playing when it was tapped.
+  await player(page).getByRole('button', { name: 'Save current song to favorites' }).click();
+  release();
+  await expect.poll(() => fixture.commands.map(command => command.command)).toEqual(['back', 'favorite']);
+  // Bound to the session the listener saw, so the bot refuses it rather than saving the new song.
+  expect(fixture.commands[0].expectedRevision).toBe('revision-1');
+  expect(fixture.commands[1].expectedRevision).toBe('revision-1');
+});
+
+test('lost access to one stats range drops every range held for that server', async ({ page }) => {
+  const fixture = await mockPortal(page);
+  await page.route('**/api/guilds/testing/stats?window=7d', route => route.fulfill({ status: 403, json: { error: { code: 'forbidden', message: 'You no longer have access to this listening space.' } } }));
+  await page.goto('/');
+  await expect(page.getByRole('heading', { name: 'On repeat in this server' })).toBeVisible();
+  expect(count(fixture.requests, '/stats')).toBe(1);
+  const range = page.getByLabel('Time range for Your top tracks');
+  await range.selectOption('7d');
+  await expect(page.locator('.home-unavailable')).toContainText('no longer have access');
+  await page.unroute('**/api/guilds/testing/stats?window=7d');
+  await page.getByRole('button', { name: 'Try again' }).click();
+  // The past-month read held from before was dropped with it, so it's read again.
+  await expect(range).toBeVisible();
+  const before = count(fixture.requests, '/stats');
+  await range.selectOption('30d');
+  await expect.poll(() => count(fixture.requests, '/stats')).toBe(before + 1);
+});

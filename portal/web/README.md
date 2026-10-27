@@ -81,7 +81,8 @@ creates source-left/browser-right comparisons.
 - Returning to the app with a fresh live stream only checks quietly; controls stay
   usable. Listening stats and recaps are held in this tab's memory (never a
   persistent cache) per viewer, server and range, shared by Home and Server
-  favorites, re-read after a minute, and cleared on sign-out.
+  favorites, re-read after a minute, and cleared on sign-out; lost access to a
+  server drops everything held for it.
 - API errors clear protected data after 401/403/404. A temporary connection failure
   retains a read-only session projection while disabling commands.
 - The service worker caches a versioned static shell only. No API, auth, external

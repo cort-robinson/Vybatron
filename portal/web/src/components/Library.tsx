@@ -7,6 +7,7 @@ import { Artwork, Confirm, Empty, ErrorState, IconButton, Loading } from './ui';
 import { Pagination } from './Pagination';
 import { ServerFavorites } from './ServerFavorites';
 import { PlaylistImport } from './PlaylistImport';
+import { fromList } from '../favorites';
 import { transition } from '../motion';
 import { radioLabel, startRadioCommand } from '../radio';
 import './library.css';
@@ -105,7 +106,7 @@ export function LibraryView({ portal, active = true }: { portal: Portal; active?
     {tab === 'favorites' && <>
       {!library.favorites.length ? <Empty title="A place for your repeat favorites" description="Tap the heart on the current song to keep it here. Only you can see this shelf." icon={<HeartIcon size={30} />} /> : !favorites.length ? noMatches : <ul className="library-track-list" aria-label="Favorite songs">{favorites.slice(offset, offset + pageSize).map(({ track, index }) => <li key={`${track.id}:${index}`}>
         <Artwork track={track} /><div className="track-text"><strong dir="auto" title={track.title}>{track.title}</strong><span dir="auto">{track.author}<span className="track-source"> · {track.source}</span></span></div><span className="track-duration">{track.isStream ? 'Live' : time(track.durationMs)}</span>
-        <IconButton label={`Queue favorite ${track.title}`} disabled={!addable} title={!addable ? portal.blockedReason : undefined} onClick={() => void run({ command: 'favorite', subcommand: 'play', options: { index: index + 1 }, expectedTrackId: track.id }, 'add')}><PlusIcon size={23} /></IconButton>
+        <IconButton label={`Queue favorite ${track.title}`} disabled={!addable} title={!addable ? portal.blockedReason : undefined} onClick={() => void run(fromList({ command: 'favorite', subcommand: 'play', options: { index: index + 1 }, expectedTrackId: track.id }), 'add')}><PlusIcon size={23} /></IconButton>
         <RadioButton portal={portal} track={track} />
         <IconButton className="favorite active" label={`Remove favorite ${track.title}`} disabled={!editable} onClick={() => portal.favorite(track, async () => false)}><HeartIcon size={23} weight="fill" /></IconButton>
       </li>)}</ul>}

@@ -79,9 +79,10 @@ which accounted for the 2-5 s outliers.
   ordered queue as playback changes, so a tap made meanwhile is queued, shown
   where it can be, and sent after them: "Waiting for confirmation · N queued".
   A second identical tap while the first is on its way is recognized, not sent.
-  When a revision-checked change is confirmed, a later queued change that was
-  bound to the same revision is bound to its result instead of failing with a
-  self-made 409. Changes clicked over this device's own still-settling
+  When a revision-checked change is confirmed and its result still shows the
+  songs a later queued change saw, that change is bound to the result instead of
+  failing with a self-made 409; if the songs moved (Back brought in another
+  song), it conflicts and asks for a deliberate retry. Changes clicked over this device's own still-settling
   predictions still use the confirmed revision when the verified tracks match
   what was shown. A rejected change that wasn't predicted leaves the taps behind
   it queued; a rejected prediction still rolls back everything built on it.
@@ -104,6 +105,8 @@ which accounted for the 2-5 s outliers.
   minute, or a song changed while the page was hidden). Stale state still takes
   the ordinary fresh read with controls held until it lands.
 - A song change re-reads history quietly once rapid skips settle (1.5 s).
+- Songs added on this device while an earlier one is still being looked up wait
+  their turn instead of being dropped.
 - Controls stay usable while changes settle. "Syncing with Discord…" appears
   only when confirmation takes longer than 700 ms.
 

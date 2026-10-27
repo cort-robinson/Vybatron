@@ -12,17 +12,28 @@ export interface Read<T> { value?: T; error: string; at: number }
 const reads = new Map<string, Read<unknown>>();
 const loading = new Map<string, Promise<void>>();
 const listeners = new Set<() => void>();
+// Bumped whenever reads are forgotten, so results already on their way are discarded.
 let generation = 0;
+// Bumped only by a deliberate clear (Clear my request stats), which shown reads start again after.
+let resets = 0;
+let unauthorized: () => void = () => {};
+// The portal signs out when a read finds the session gone.
+export function onReadsUnauthorized(handler: () => void) { unauthorized = handler; return () => { if (unauthorized === handler) unauthorized = () => {}; }; }
 const publish = () => listeners.forEach(listener => listener());
 const subscribe = (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener); }; };
 
-// Forget reads whose key starts with `prefix` (all of them by default), or that
-// belong to `guildId`, including any still on their way.
-export function clearReads(prefix = '', guildId?: string) {
+function forget(prefix: string, guildId?: string) {
   generation++;
   const drop = (key: string) => key.startsWith(prefix) && (!guildId || key.split(':')[1] === guildId);
   for (const key of [...reads.keys()]) if (drop(key)) reads.delete(key);
   for (const key of [...loading.keys()]) if (drop(key)) loading.delete(key);
+}
+// Forget reads whose key starts with `prefix` (all of them by default), or that
+// belong to `guildId`, including any still on their way. Reads still on screen
+// start again, except after lost access, which must not ask again by itself.
+export function clearReads(prefix = '', guildId?: string, { reload = true } = {}) {
+  forget(prefix, guildId);
+  if (reload) resets++;
   publish();
 }
 
@@ -39,9 +50,14 @@ export function loadRead<T>(key: string, fetch: () => Promise<T>, force = false)
     reads.set(key, { value, error: '', at: Date.now() });
   }, failure => {
     if (started !== generation) return;
-    // Lost access, or a store that would refuse Play too, clears protected lists
-    // rather than leaving a stale view. Anything else keeps what's shown.
-    const drop = failure instanceof ApiError && [401, 403, 404, 503].includes(failure.status);
+    const status = failure instanceof ApiError ? failure.status : 0;
+    // Lost access clears everything held under that grant: every read for the server
+    // (or, signed out, all of them), including any still on their way.
+    if (status === 401) { forget(''); unauthorized(); return; }
+    if (status === 403 || status === 404) forget('', key.split(':')[1]);
+    // A store that would refuse Play too clears its lists rather than leaving a stale
+    // view. Anything else keeps what's shown.
+    const drop = [403, 404, 503].includes(status);
     reads.set(key, { value: drop ? undefined : reads.get(key)?.value, error: errorMessage(failure), at: reads.get(key)?.at ?? 0 });
   }).finally(() => {
     if (loading.get(key) === request) loading.delete(key);
@@ -56,7 +72,7 @@ export function loadRead<T>(key: string, fetch: () => Promise<T>, force = false)
 // when it's old. Cleared reads (after Clear my request stats) start again.
 export function useRead<T>(key: string | null, fetch: () => Promise<T>) {
   const read = useSyncExternalStore(subscribe, () => key ? reads.get(key) as Read<T> | undefined : undefined);
-  const cleared = useSyncExternalStore(subscribe, () => generation);
+  const cleared = useSyncExternalStore(subscribe, () => resets);
   const fetchRef = useRef(fetch); fetchRef.current = fetch;
   useEffect(() => { if (key) void loadRead(key, () => fetchRef.current()); }, [key, cleared]);
   const reload = useCallback(() => key ? loadRead(key, () => fetchRef.current(), true) : Promise.resolve(), [key]);

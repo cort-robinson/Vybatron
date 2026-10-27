@@ -2,7 +2,7 @@ import { closeSync, mkdirSync, openSync } from 'node:fs';
 import path from 'node:path';
 import { logEvent } from '../runtime.js';
 import { trackReference, validId } from './library.js';
-import { referenceRank, songIdentity, songKey } from './song-identity.js';
+import { isYouTubeMusicSong, referenceRank, songIdentity, songKey } from './song-identity.js';
 import { forgottenGems, onRepeat, SCORING } from './stats-scoring.js';
 import { createPlayTracker } from './play-tracking.js';
 
@@ -179,7 +179,7 @@ export class PlayStats {
     if (!ref || ref.isStream) return null;
     const identity = songIdentity(ref);
     return { ref, row: { songKey: identity.key, artistKey: identity.artistKey, artist: identity.artist, uri: ref.uri, sourceName: ref.sourceName,
-      identifier: ref.identifier, title: ref.title, author: ref.author, duration: ref.duration, rank: referenceRank(ref), now: this.now() } };
+      identifier: ref.identifier, title: ref.title, author: ref.author, duration: ref.duration, rank: referenceRank(ref, { youtubeMusic: isYouTubeMusicSong(track) }), now: this.now() } };
   }
 
   /**
@@ -405,6 +405,21 @@ export class PlayStats {
     if (!validId(userId)) return 0;
     this.flush();
     return Number(this.db.prepare("UPDATE plays SET requester_kind = 'cleared', requester_id = NULL WHERE requester_id = ?").run(userId).changes);
+  }
+
+  // The YouTube link each song shows, for the one-time YouTube Music upgrade.
+  youtubeSongs() {
+    this.assertAvailable();
+    this.flush();
+    return this.db.prepare("SELECT * FROM songs WHERE source_name = 'youtube'").all().map(row => ({ songKey: row.song_key, rank: row.rank, ref: reference(row) }));
+  }
+
+  // Points a song at another upload of the same song. Its key, and so its plays, stay.
+  replaceSong(songKey, ref, rank) {
+    this.assertAvailable();
+    this.flush();
+    return Number(this.db.prepare(`UPDATE songs SET uri = ?, identifier = ?, title = ?, author = ?, duration = ?, rank = MAX(rank, ?), updated_at = ?
+      WHERE song_key = ? AND source_name = 'youtube'`).run(ref.uri, ref.identifier, ref.title, ref.author, ref.duration, rank, this.now(), songKey).changes);
   }
 
   status() {

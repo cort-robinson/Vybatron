@@ -1,22 +1,34 @@
+import { randomUUID } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { logEvent } from '../runtime.js';
 import { withTimeout } from './enqueue.js';
 import { trackReference } from './library.js';
-import { songKey } from './song-identity.js';
+import { referenceRank, songKey } from './song-identity.js';
 
-// One-time upgrade of saved YouTube videos (favorites and mixes) to their YouTube
-// Music song uploads, after search switched to YouTube Music. 'dry-run' only writes
-// the report; 'apply' backs up library.json and rewrites the matches.
+// One-time upgrade of saved YouTube videos to their YouTube Music song uploads, after
+// search switched to YouTube Music. 'dry-run' only writes the report; 'apply' backs up
+// library.json and rewrites the matches. Run 1 covered favorites and mixes; run 2 adds
+// server history and the play stats songs that Home and the recap show.
 export const UPGRADE_MODE = 'apply';
-export const UPGRADE_REPORT = 'saved-song-upgrade.json';
+export const UPGRADE_REPORT = 'saved-song-upgrade-2.json';
+const BACKUP = '.pre-song-upgrade-2.bak';
+// Previous stats rows and history items, written before the first change, to undo run 2.
+export const UPGRADE_UNDO = 'saved-song-upgrade-2.undo.json';
 const CANDIDATES = 5;
 
-function* savedReferences(library) {
+// A link can be saved under different song identities (its title can change), so each
+// pair is matched on its own.
+const entryId = ref => `${ref.uri} ${songKey(ref)}`;
+
+function* savedReferences(library, statsSongs) {
   for (const userId of library.favoriteUserIds()) yield* library.favorites(userId).map(ref => ['favorites', ref]);
   for (const guildId of library.guildIds()) {
-    for (const mix of Object.values(library.readGuild(guildId).mixes || {})) yield* mix.tracks.map(ref => ['mix', ref]);
+    const guild = library.readGuild(guildId);
+    for (const mix of Object.values(guild.mixes || {})) yield* mix.tracks.map(ref => ['mix', ref]);
+    yield* (guild.history || []).map(item => ['history', item.track]);
   }
+  yield* statsSongs.map(song => ['stats', song.ref]);
 }
 
 // The song upload whose identity matches, `null` when the saved link is already
@@ -38,7 +50,7 @@ export async function findSong(node, ref, { timeoutMs = 10_000 } = {}) {
 export function upgradeList(list, upgrades) {
   let changed = 0;
   for (let index = list.length - 1; index >= 0; index -= 1) {
-    const next = upgrades.get(list[index].uri);
+    const next = upgrades.get(entryId(list[index]));
     if (!next) continue;
     if (list.some(ref => ref.uri === next.uri)) list.splice(index, 1);
     else list[index] = next;
@@ -47,19 +59,73 @@ export function upgradeList(list, upgrades) {
   return changed;
 }
 
-async function applyUpgrades(library, upgrades, draining) {
-  const affected = list => list.some(ref => upgrades.has(ref.uri));
-  await library.publishBackup(`${library.filePath}.pre-song-upgrade.bak`, await fs.readFile(library.filePath, 'utf8'));
-  let favorites = 0, mixes = 0;
+// History keeps every play, so a replay of the same song stays a separate item.
+function upgradeHistory(history, upgrades) {
+  let changed = 0;
+  for (const item of history) {
+    const next = upgrades.get(entryId(item.track));
+    if (next) { item.track = next; changed += 1; }
+  }
+  return changed;
+}
+
+// A stats row changes only to a song with its own key, so its plays stay that song's.
+function statsTarget(song, upgrades) {
+  const next = upgrades.get(entryId(song.ref));
+  return next && songKey(next) === song.songKey ? next : null;
+}
+
+// History lives in the listening-state store, not library.json, so its previous items
+// are recorded here with the previous stats rows.
+function undoRecord(library, statsSongs, upgrades) {
+  const history = [];
+  for (const guildId of library.guildIds()) {
+    for (const item of library.readGuild(guildId).history || []) if (upgrades.has(entryId(item.track))) history.push({ guildId, id: item.id, track: item.track });
+  }
+  const songs = statsSongs.filter(song => statsTarget(song, upgrades)).map(({ songKey: key, rank, ref }) => ({ songKey: key, rank, ...ref }));
+  return { version: 1, history, stats: songs };
+}
+
+// A rerun after an interruption can find more matches. It adds those records and keeps
+// every original already recorded, so the file can always restore the state before run 2.
+async function recordUndo(file, record) {
+  let previous = { version: 1, history: [], stats: [] };
+  try { previous = JSON.parse(await fs.readFile(file, 'utf8')); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+  const history = new Set(previous.history.map(item => `${item.guildId} ${item.id}`));
+  const songs = new Set(previous.stats.map(row => row.songKey));
+  const merged = { version: 1, history: [...previous.history, ...record.history.filter(item => !history.has(`${item.guildId} ${item.id}`))],
+    stats: [...previous.stats, ...record.stats.filter(row => !songs.has(row.songKey))] };
+  const temporary = `${file}.${randomUUID()}.tmp`;
+  try {
+    const handle = await fs.open(temporary, 'wx', 0o600);
+    try { await handle.writeFile(JSON.stringify(merged, null, 2)); await handle.sync(); } finally { await handle.close(); }
+    await fs.rename(temporary, file);
+  } finally { await fs.unlink(temporary).catch(() => {}); }
+}
+
+async function applyUpgrades(library, stats, statsSongs, upgrades, draining) {
+  const affected = list => list.some(ref => upgrades.has(entryId(ref)));
+  await library.publishBackup(`${library.filePath}${BACKUP}`, await fs.readFile(library.filePath, 'utf8'));
+  await recordUndo(path.join(path.dirname(library.filePath), UPGRADE_UNDO), undoRecord(library, statsSongs, upgrades));
+  let favorites = 0, mixes = 0, history = 0, songs = 0;
   for (const userId of library.favoriteUserIds()) {
     // Shutdown can begin between writes; each write checks again before it changes anything.
     if (affected(library.favorites(userId))) favorites += await library.updateFavorites(userId, list => draining() ? 0 : upgradeList(list, upgrades));
   }
   for (const guildId of library.guildIds()) {
-    if (!Object.values(library.readGuild(guildId).mixes || {}).some(mix => affected(mix.tracks))) continue;
-    mixes += await library.updateGuild(guildId, guild => draining() ? 0 : Object.values(guild.mixes).reduce((sum, mix) => sum + upgradeList(mix.tracks, upgrades), 0));
+    const guild = library.readGuild(guildId);
+    if (!Object.values(guild.mixes || {}).some(mix => affected(mix.tracks)) && !affected((guild.history || []).map(item => item.track))) continue;
+    const counts = await library.updateGuild(guildId, draft => draining() ? { mixes: 0, history: 0 } : {
+      mixes: Object.values(draft.mixes).reduce((sum, mix) => sum + upgradeList(mix.tracks, upgrades), 0),
+      history: upgradeHistory(draft.history || [], upgrades),
+    });
+    mixes += counts.mixes; history += counts.history;
   }
-  return { favorites, mixes };
+  for (const song of statsSongs) {
+    const next = statsTarget(song, upgrades);
+    if (next && !draining()) songs += stats.replaceSong(song.songKey, next, referenceRank(next, { youtubeMusic: true }));
+  }
+  return { favorites, mixes, history, stats: songs };
 }
 
 /**
@@ -67,15 +133,16 @@ async function applyUpgrades(library, upgrades, draining) {
  * an interrupted run writes none and starts over on the next start.
  * @returns {Promise<object|null>} the report, or null when skipped or interrupted
  */
-export async function upgradeSavedSongs({ library, node, mode = UPGRADE_MODE, draining = () => false,
+export async function upgradeSavedSongs({ library, stats, node, mode = UPGRADE_MODE, draining = () => false,
   pauseMs = 1_000, logger = console, now = Date.now, wait = ms => new Promise(resolve => setTimeout(resolve, ms)) }) {
   const reportPath = path.join(path.dirname(library.filePath), UPGRADE_REPORT);
   try { if (JSON.parse(await fs.readFile(reportPath, 'utf8')).mode === mode) return null; } catch {}
+  const statsSongs = stats?.available ? stats.youtubeSongs() : [];
   const saved = new Map(); const lists = new Map();
-  for (const [list, ref] of savedReferences(library)) {
+  for (const [list, ref] of savedReferences(library, statsSongs)) {
     if (ref.sourceName !== 'youtube' || ref.isStream) continue;
-    saved.set(ref.uri, ref);
-    lists.set(ref.uri, new Set([...(lists.get(ref.uri) || []), list]));
+    saved.set(entryId(ref), ref);
+    lists.set(entryId(ref), new Set([...(lists.get(entryId(ref)) || []), list]));
   }
   const upgrades = new Map(); const counts = { checked: 0, current: 0, unmatched: 0, failed: 0 };
   for (const ref of saved.values()) {
@@ -83,17 +150,17 @@ export async function upgradeSavedSongs({ library, node, mode = UPGRADE_MODE, dr
     counts.checked += 1;
     try {
       const song = await findSong(node, ref);
-      if (song) upgrades.set(ref.uri, song);
+      if (song) upgrades.set(entryId(ref), song);
       else counts[song === null ? 'current' : 'unmatched'] += 1;
     } catch { counts.failed += 1; }
     await wait(pauseMs);
   }
   if (draining()) return null;
-  const applied = mode === 'apply' ? await applyUpgrades(library, upgrades, draining) : null;
+  const applied = mode === 'apply' ? await applyUpgrades(library, stats, statsSongs, upgrades, draining) : null;
   if (draining()) return null;
   const report = { version: 1, mode, finishedAt: new Date(now()).toISOString(), ...counts, upgrades: upgrades.size, applied,
-    changes: [...upgrades].map(([uri, song]) => ({ lists: [...lists.get(uri)],
-      from: { title: saved.get(uri).title, author: saved.get(uri).author, uri }, to: { title: song.title, author: song.author, uri: song.uri } })) };
+    changes: [...upgrades].map(([id, song]) => ({ lists: [...lists.get(id)],
+      from: { title: saved.get(id).title, author: saved.get(id).author, uri: saved.get(id).uri }, to: { title: song.title, author: song.author, uri: song.uri } })) };
   const temporary = `${reportPath}.tmp`;
   await fs.writeFile(temporary, JSON.stringify(report, null, 2), { mode: 0o600 });
   await fs.rename(temporary, reportPath);
@@ -108,7 +175,7 @@ export function scheduleSavedSongUpgrade(client, { delayMs = 5 * 60_000, retryMs
     if (client.runtimeState?.draining) return;
     const node = client.lavalink?.nodeManager?.leastUsedNodes?.()[0];
     if (!node?.connected) { schedule(retryMs); return; }
-    await upgradeSavedSongs({ library: client.library, node, draining: () => Boolean(client.runtimeState?.draining) });
+    await upgradeSavedSongs({ library: client.library, stats: client.stats, node, draining: () => Boolean(client.runtimeState?.draining) });
   };
   const schedule = ms => setTimeout(() => attempt().catch(error => logEvent(console, 'error', 'saved_song_upgrade_failed', error)), ms).unref?.();
   schedule(delayMs);

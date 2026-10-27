@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ArrowClockwiseIcon, CheckCircleIcon, ClockIcon, GearSixIcon, ShieldCheckIcon, WarningCircleIcon } from '@phosphor-icons/react';
+import { ArrowClockwiseIcon, CheckCircleIcon, ClockIcon, GearSixIcon, ShieldCheckIcon, WarningCircleIcon } from '../icons';
 import { api, ApiError, errorMessage } from '../api';
 import type { Activity, AutoplayMode, Capability, Command, CommandOption, Configuration, Diagnostics } from '../types';
 import type { Portal } from '../usePortal';

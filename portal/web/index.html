@@ -13,8 +13,10 @@
     <title>Vybatron · A better vibe together</title>
   </head>
   <body>
-
     <div id="root"></div>
+    <!-- Shown while the script loads, before any look applies (boot.css). Outside #root, so React never
+         adopts it, and look-neutral, so no look flashes another. -->
+    <div class="boot-shell" role="status"><span class="spinner"></span><span>Finding your listening space…</span></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

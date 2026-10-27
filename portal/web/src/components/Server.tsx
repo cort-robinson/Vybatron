@@ -1,15 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
-import { ArrowClockwiseIcon, CheckCircleIcon, ClockIcon, DiscordLogoIcon, DownloadSimpleIcon, GearSixIcon, ShieldCheckIcon, WarningCircleIcon } from '@phosphor-icons/react';
+import { ArrowClockwiseIcon, CheckCircleIcon, ClockIcon, GearSixIcon, ShieldCheckIcon, WarningCircleIcon } from '@phosphor-icons/react';
 import { api, ApiError, errorMessage } from '../api';
 import type { Activity, AutoplayMode, Capability, Command, CommandOption, Configuration, Diagnostics } from '../types';
 import type { Portal } from '../usePortal';
 import { date, totalTime } from '../format';
 import { Confirm, Empty, ErrorState, Loading } from './ui';
 import { transition } from '../motion';
-import type { Skin } from '../skin';
 
-export type AmbientMode = 'on' | 'subtle' | 'off';
-export interface InstallPrompt extends Event { prompt: () => Promise<void>; userChoice: Promise<{ outcome: string }> }
 const discordIdPattern = '[0-9]{1,20}';
 const isDiscordId = (value: string) => /^[0-9]{1,20}$/.test(value);
 
@@ -20,13 +17,8 @@ const AUTOPLAY_HELP: Record<AutoplayMode, string> = {
   listening: 'Related songs keep playing after the queue ends, but only while someone in voice isn’t deafened.',
 };
 
-const lookDescription: Record<Skin, string> = {
-  overdrive: 'A neon horizon, chrome wordmark, HUD-framed panels and a reactor-ring play button. Classic restores the original receiver.',
-  fantastic: 'Earth-828, 1964: a ringed planet over a Googie skyline, Kirby krackle in the sky, and the cover playing on a vintage TV set. Flame on.',
-  classic: 'The original smoked-glass receiver. Overdrive adds a neon horizon; Fantastic Four tunes in a retro-future broadcast.',
-};
 
-export function ServerView({ portal, ambient, setAmbient, skin, setSkin, performance, setPerformance, installPrompt, install, active = true }: { active?: boolean; portal: Portal; ambient: AmbientMode; setAmbient: (value: AmbientMode) => void; skin: Skin; setSkin: (value: Skin) => void; performance: boolean; setPerformance: (value: boolean) => void; installPrompt: InstallPrompt | null; install: () => void }) {
+export function ServerView({ portal, active = true }: { active?: boolean; portal: Portal }) {
   const [tab, setTab] = useState<'settings' | 'activity' | 'diagnostics' | 'commands'>('settings');
   const [reset, setReset] = useState(false);
   const { pending, can, run } = portal;
@@ -66,10 +58,10 @@ export function ServerView({ portal, ambient, setAmbient, skin, setSkin, perform
   const tabs = ['settings', ...(snapshot?.guild.admin ? ['activity', 'diagnostics'] : []), 'commands'] as const;
   const selectTab = (next: typeof tab) => { if (next !== tab) transition('tab', () => setTab(next), tabs.indexOf(next) < tabs.indexOf(tab) ? 'back' : 'forward'); };
   return <div className="server-view" hidden={!active}><div className="tabs" role="tablist" aria-label="Server sections">{tabs.map(t => <button key={t} id={`server-tab-${t}`} role="tab" aria-selected={tab === t} aria-controls={`server-panel-${t}`} tabIndex={tab === t ? 0 : -1}
-    onClick={() => selectTab(t as typeof tab)} onKeyDown={event => { if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return; event.preventDefault(); const index = tabs.indexOf(tab); const next = event.key === 'Home' ? tabs[0] : event.key === 'End' ? tabs[tabs.length - 1] : tabs[(index + (event.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length]; selectTab(next as typeof tab); document.getElementById(`server-tab-${next}`)?.focus(); }}>{tab === t && <span className="tab-indicator" aria-hidden="true" />}{t === 'settings' ? admin ? 'Settings' : 'Preferences' : t === 'activity' ? 'Activity' : t === 'diagnostics' ? 'Diagnostics' : 'Advanced controls'}</button>)}</div>
+    onClick={() => selectTab(t as typeof tab)} onKeyDown={event => { if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return; event.preventDefault(); const index = tabs.indexOf(tab); const next = event.key === 'Home' ? tabs[0] : event.key === 'End' ? tabs[tabs.length - 1] : tabs[(index + (event.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length]; selectTab(next as typeof tab); document.getElementById(`server-tab-${next}`)?.focus(); }}>{tab === t && <span className="tab-indicator" aria-hidden="true" />}{t === 'settings' ? 'Settings' : t === 'activity' ? 'Activity' : t === 'diagnostics' ? 'Diagnostics' : 'Advanced controls'}</button>)}</div>
     <section role="tabpanel" id={`server-panel-${tab}`} aria-labelledby={`server-tab-${tab}`}>
-      {active && tab === 'settings' && <><div className="section-heading"><div><h2>{admin ? 'Your listening space' : 'Your preferences'}</h2><p className="section-description">{admin ? 'Defaults for everyone listening in this server.' : 'These choices apply to this device.'}</p></div></div>
-        {!admin ? null : !settings ? <div className="permission-note"><ShieldCheckIcon size={23} /><div><strong>Server settings need Manage Server permission.</strong><p>You can still add music, save favorites, and use the controls your voice and DJ access allow.</p></div></div> : <div className="settings-list">
+      {active && tab === 'settings' && <><div className="section-heading"><div><h2>Your listening space</h2><p className="section-description">Defaults for everyone listening in this server.</p></div></div>
+        {!admin || !settings ? <div className="permission-note"><ShieldCheckIcon size={23} /><div><strong>Server settings need Manage Server permission.</strong><p>You can still add music, save favorites, and use the controls your voice and DJ access allow.</p></div></div> : <div className="settings-list">
           <div className="setting-row" role="group" aria-label="Channel and role options">
             <div><h3>Channel and role options</h3>{configuration.loading ? <p role="status"><span className="spinner" aria-hidden="true" /> Loading channel and role options…</p> : configuration.error ? <p role="alert">{configuration.error}</p> : <p>Refresh after adding channels or roles in Discord.</p>}</div>
             <button type="button" className="button secondary" disabled={configuration.loading} onClick={configuration.reload}><ArrowClockwiseIcon size={18} />{configuration.error ? 'Try again' : 'Refresh options'}</button>
@@ -89,13 +81,6 @@ export function ServerView({ portal, ambient, setAmbient, skin, setSkin, perform
           </form>
           <div className="setting-row"><div><h3>Reset listening defaults</h3><p>Restore default volume, open controls, and normal queue order.</p></div><button className="text-button danger-text" disabled={!editable} onClick={() => setReset(true)}>Reset defaults</button></div>
         </div>}
-        <div className="personal-settings">{admin && <h2>On this device</h2>}<div className="settings-list"><div className="setting-row"><div><label htmlFor="ambient-mode">Ambient motion</label><p>Album-colored lighting and the decorative spectrum display. Both settle on pause and respect reduced motion.</p></div><select id="ambient-mode" value={ambient} onChange={event => setAmbient(event.target.value as AmbientMode)}><option value="on">Immersive</option><option value="subtle">Subtle</option><option value="off">Off</option></select></div>
-          <div className="setting-row"><div><label htmlFor="portal-look">Portal look</label><p>{lookDescription[skin]}</p></div><select id="portal-look" value={skin} onChange={event => setSkin(event.target.value as Skin)}><option value="overdrive">Overdrive</option><option value="fantastic">Fantastic Four</option><option value="classic">Classic</option></select></div>
-          <div className="setting-row"><div><h3>Performance mode</h3><p>{performance ? 'Lighter rendering is on: solid panels instead of glass blur, no blurred cover light, and a still scene and spectrum. Controls and playback are unchanged.' : 'Full effects: glass blur, cover-colored light, and a moving scene. Turn this on if the portal feels slow or drains battery.'}</p></div><button role="switch" aria-checked={performance} className="switch" aria-label="Performance mode" onClick={() => setPerformance(!performance)}><span />{performance ? 'On' : 'Off'}</button></div>
-          <div className="setting-row"><div><h3>Install the app</h3><p>{installPrompt ? 'Open Vybatron in its own window, like an app.' : 'Use your browser’s Install app or Add to Home Screen option when available.'}</p></div><button className="button secondary" disabled={!installPrompt} onClick={install}><DownloadSimpleIcon size={19} />Install app</button></div>
-          <div className="setting-row"><div><h3>This device’s session</h3><p>Discord sign-in lasts up to seven days per device.</p></div><button className="text-button" onClick={() => void portal.logout()}>Sign out</button></div>
-        </div></div>
-        {portal.bootstrap?.inviteUrl && <div className="personal-settings"><h2>Share Vybatron</h2><div className="settings-list"><div className="setting-row"><div><h3>Add to another server</h3><p>Pick any server where you have Manage Server permission. Discord shows what Vybatron can access before you confirm.</p></div><a className="button secondary" href={portal.bootstrap.inviteUrl} target="_blank" rel="noopener noreferrer"><DiscordLogoIcon size={19} weight="fill" />Add to server</a></div></div></div>}
       </>}
       {active && tab === 'activity' && snapshot?.guild.admin && <ActivityView portal={portal} />}
       {active && tab === 'diagnostics' && snapshot?.guild.admin && <DiagnosticsView portal={portal} />}

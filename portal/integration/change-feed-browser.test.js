@@ -67,7 +67,7 @@ test('Discord-side playback, queue and voice changes reach the browser through t
   await page.getByRole('link', { name: /Continue with Discord/ }).click();
   await expect(page.getByRole('button', { name: 'Pause playback' })).toBeEnabled();
   // Home is the landing view; the shared queue lives under Session.
-  await page.getByRole('button', { name: 'Session', exact: true }).click();
+  await page.getByRole('button', { name: 'Queue', exact: true }).click();
   const timings = {};
   const measure = async (label, change, observed) => {
     const started = performance.now(); change(); await observed();

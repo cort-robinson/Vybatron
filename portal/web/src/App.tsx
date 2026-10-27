@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ArrowClockwiseIcon, ArrowRightIcon, CaretDownIcon, DiscordLogoIcon, GearSixIcon, HeartIcon, HouseIcon, MagnifyingGlassIcon, MusicNotesIcon, PlusIcon, UsersIcon, WarningCircleIcon, WaveformIcon, WifiSlashIcon, XIcon } from '@phosphor-icons/react';
+import { ArrowClockwiseIcon, ArrowRightIcon, CaretDownIcon, DiscordLogoIcon, GearSixIcon, HeartIcon, HouseIcon, MagnifyingGlassIcon, MusicNotesIcon, PlusIcon, SignOutIcon, UsersIcon, WarningCircleIcon, WaveformIcon, WifiSlashIcon, XIcon } from '@phosphor-icons/react';
 import type { Surface } from './types';
 import { usePortal } from './usePortal';
 import { useListening } from './playback';
@@ -15,7 +15,8 @@ import { Queue } from './components/Queue';
 import { Search } from './components/Search';
 import { LibraryView } from './components/Library';
 import { Home } from './components/Home';
-import { ServerView, type AmbientMode, type InstallPrompt } from './components/Server';
+import { ServerView } from './components/Server';
+import { SettingsView, type AmbientMode, type InstallPrompt } from './components/Settings';
 import { Recovery } from './components/Recovery';
 import { ShareDialog } from './components/Share';
 import { holdForSignIn, initialShare } from './share';
@@ -26,9 +27,12 @@ import { applyPerformance, applySkin, initialPerformance, initialSkin, loadLook,
 function initialAmbient(): AmbientMode {
   try { const value = localStorage.getItem('vybertron.ambient'); return value === 'off' || value === 'subtle' || value === 'on' ? value : 'on'; } catch { return 'on'; }
 }
-const surfaces: { id: Surface; label: string; icon: typeof MusicNotesIcon }[] = [
-  { id: 'home', label: 'Home', icon: HouseIcon }, { id: 'session', label: 'Session', icon: MusicNotesIcon }, { id: 'music', label: 'My Music', icon: HeartIcon }, { id: 'server', label: 'Server', icon: UsersIcon },
+// Phones keep Search in the thumb's reach and reach Server through the account menu; desktop
+// searches from the top bar. Settings is personal, so it opens from the account, not the nav.
+const surfaces: { id: Surface; label: string; icon: typeof MusicNotesIcon; only?: 'phone' | 'desktop' }[] = [
+  { id: 'home', label: 'Home', icon: HouseIcon }, { id: 'search', label: 'Search', icon: MagnifyingGlassIcon, only: 'phone' }, { id: 'session', label: 'Queue', icon: MusicNotesIcon }, { id: 'music', label: 'My Music', icon: HeartIcon }, { id: 'server', label: 'Server', icon: UsersIcon, only: 'desktop' },
 ];
+const phoneLayout = () => matchMedia('(max-width: 1023px)').matches;
 
 export function App() {
   const portal = useListening(usePortal());
@@ -73,7 +77,8 @@ export function App() {
   useEffect(() => {
     const previous = navigationState.current;
     navigationState.current = { surface, expanded };
-    if (previous.surface !== surface) document.getElementById('main-content')?.focus();
+    // Opening Search puts the cursor in its field; other pages start reading from the top.
+    if (previous.surface !== surface) (surface === 'search' && document.querySelector<HTMLInputElement>('.search-page input[type="search"]') || document.getElementById('main-content'))?.focus();
   }, [surface, expanded]);
   // Confirmations clear themselves; errors stay until dismissed.
   const dismissNotice = useRef(portal.dismissNotice); dismissNotice.current = portal.dismissNotice;
@@ -95,7 +100,7 @@ export function App() {
     }, () => { if (choice === skinChoice.current) portal.notify('That look couldn’t load. Check your connection, then reload the page and try again.', 'error'); });
   };
   const setPerformance = (value: boolean) => transition('theme', () => { applyPerformance(value); changePerformance(value); });
-  const order = (value: Surface) => surfaces.findIndex(item => item.id === value);
+  const order = (value: Surface) => value === 'settings' ? surfaces.length : surfaces.findIndex(item => item.id === value);
   // Leaving the sleeve folds the cover back into the deck; otherwise the view slides along the nav.
   const navigate = (value: Surface) => {
     if (value === surface && !expanded) return;
@@ -103,7 +108,12 @@ export function App() {
   };
   // A swipe hands over `settle` so the transition starts from wherever the finger left the player.
   const toggleExpanded = (value: boolean, settle?: () => void) => { if (value === expanded) { settle?.(); return; } transition(value ? 'expand' : 'collapse', () => { settle?.(); setExpanded(value); }); };
-  const openSearch = () => setSearchOpen(true);
+  // Search opens as a page on a phone and as a dialog on desktop, and keeps that form if the window
+  // is resized. With the Search page already showing, the top-bar search goes to its field.
+  const openSearch = () => {
+    if (surface === 'search' && !expanded) document.querySelector<HTMLInputElement>('.search-page input[type="search"]')?.focus();
+    else if (phoneLayout()) navigate('search'); else setSearchOpen(true);
+  };
   // Search stays open-able for drafts and browsing; a real permission block (not a stale read) demotes the call to action.
   const addBlocked = connection === 'live' && !!snapshot && !snapshot.session.canAdd;
   const install = () => { if (installPrompt) void installPrompt.prompt().then(() => installPrompt.userChoice).then(() => setInstallPrompt(null)).catch(() => portal.notify('Use your browser’s Install app option to try again.')); };
@@ -138,16 +148,16 @@ export function App() {
   const viewer = bootstrap!.viewer;
   const noGuilds = !bootstrap!.guilds.length;
   const inviteUrl = bootstrap!.inviteUrl;
-  const heading = surface === 'home' ? 'Home' : surface === 'session' ? portal.target === 'local' ? 'Your Queue' : 'Shared Queue' : surface === 'music' ? 'My Music' : 'Your Server';
+  const heading = surface === 'home' ? 'Home' : surface === 'search' ? 'Search' : surface === 'session' ? portal.target === 'local' ? 'Your Queue' : 'Shared Queue' : surface === 'music' ? 'My Music' : surface === 'settings' ? 'Settings' : 'Your Server';
   const room = snapshot?.session.voiceChannel; const listening = snapshot?.session.listeners.length || 0;
   // Voice room and listeners live once, in the server header; tabs name each page's sections.
   const place = portal.target === 'local' ? 'On this device' : room ? room.name : snapshot?.savedSession.voiceChannel ? `Saved in ${snapshot.savedSession.voiceChannel.name}` : 'Join a voice channel';
   return <div className={`app-shell ${expanded ? 'player-open' : ''} ${motion ? 'motion-live' : ''} ${connection !== 'live' ? 'has-connection-notice' : ''}`}>{background}<a href="#main-content" className="skip-link" onClick={event => { event.preventDefault(); document.getElementById('main-content')?.focus(); }}>Skip to content</a>
     <aside className="sidebar" data-glass><Brand /><div className="guild-card"><div className="guild-icon">{snapshot?.guild.iconUrl || bootstrap!.guilds.find(g => g.id === portal.guildId)?.iconUrl ? <img src={publicUrl(snapshot?.guild.iconUrl || bootstrap!.guilds.find(g => g.id === portal.guildId)?.iconUrl)} alt="" /> : <DiscordLogoIcon size={26} weight="fill" />}</div><div className="guild-info"><label className="sr-only" htmlFor="guild">Server</label><select id="guild" aria-label="Server" value={portal.guildId} disabled={noGuilds} onChange={event => { portal.selectGuild(event.target.value); setExpanded(false); }}><option value="" disabled>Select server</option>{bootstrap!.guilds.map(guild => <option key={guild.id} value={guild.id}>{guild.name}</option>)}</select><span className={`guild-status ${snapshot?.session.status || 'idle'}`}><span className="status-dot" /><span className="guild-status-text">{statusLabel(snapshot)} · {place}{listening > 0 && <span className="guild-listeners"> · {listening} listening</span>}</span></span></div><CaretDownIcon className="guild-caret" size={16} /></div>
-      <nav className="navigation" aria-label="Main navigation">{surfaces.map(item => <button key={item.id} className={surface === item.id ? 'selected' : ''} aria-current={surface === item.id ? 'page' : undefined} onClick={() => navigate(item.id)}>{surface === item.id && <span className="nav-indicator" aria-hidden="true" />}<item.icon size={26} /><span>{item.label}</span></button>)}</nav>
+      <nav className="navigation" aria-label="Main navigation">{surfaces.map(item => <button key={item.id} className={`${surface === item.id ? 'selected' : ''} ${item.only ? `nav-${item.only}` : ''}`} aria-current={surface === item.id ? 'page' : undefined} onClick={() => navigate(item.id)}>{surface === item.id && <span className="nav-indicator" aria-hidden="true" />}<item.icon size={26} /><span>{item.label}</span></button>)}</nav>
       <div className="sidebar-session">{snapshot?.session.voiceChannel && snapshot.session.listeners.length > 0 && <div className="listeners"><div>{snapshot.session.listeners.slice(0, 5).map(listener => <Avatar key={listener.id} url={listener.avatarUrl} name={listener.displayName} />)}</div><span>{snapshot.session.listeners.length} listening</span></div>}</div>
-      <IconButton className={`mobile-add ${addBlocked ? 'blocked' : ''}`} label="Add music" title={addBlocked ? portal.blockedReason : 'Add music'} disabled={noGuilds} onClick={openSearch}><PlusIcon size={24} weight="bold" /></IconButton>
-      <div className="account"><ActionPopover label="Account options" className="account-popover" panelClassName="account-menu" triggerClassName="account-identity" trigger={<><Avatar url={viewer.avatarUrl} name={viewer.displayName} /><span><strong>{viewer.displayName}</strong><small>{viewer.maintainer ? 'Maintainer' : portal.target === 'local' ? 'Listening here' : snapshot?.session.canAdd ? 'In voice' : 'Signed in'}</small></span></>}>{close => <><p>{viewer.displayName}</p><button onClick={() => { close(); navigate('server'); }}>Settings & appearance</button>{inviteUrl && <a href={inviteUrl} target="_blank" rel="noopener noreferrer" onClick={close}>Add Vybatron to a server</a>}<button onClick={() => { close(); void portal.logout(); }}>Sign out on this device</button></>}</ActionPopover><IconButton label="Open settings" onClick={() => navigate('server')}><GearSixIcon size={23} weight="fill" /></IconButton></div>
+      <ActionPopover label="Account options" className="mobile-account" triggerClassName="mobile-account-trigger" trigger={<Avatar url={viewer.avatarUrl} name={viewer.displayName} />}>{close => <><p>{viewer.displayName}</p><button onClick={() => { close(); navigate('settings'); }}><GearSixIcon />Settings</button><button onClick={() => { close(); navigate('server'); }}><UsersIcon />Server</button><button onClick={() => { close(); void portal.logout(); }}><SignOutIcon />Sign out on this device</button></>}</ActionPopover>
+      <div className="account"><ActionPopover label="Account options" className="account-popover" panelClassName="account-menu" triggerClassName="account-identity" trigger={<><Avatar url={viewer.avatarUrl} name={viewer.displayName} /><span><strong>{viewer.displayName}</strong><small>{viewer.maintainer ? 'Maintainer' : portal.target === 'local' ? 'Listening here' : snapshot?.session.canAdd ? 'In voice' : 'Signed in'}</small></span></>}>{close => <><p>{viewer.displayName}</p><button onClick={() => { close(); navigate('settings'); }}>Settings</button>{inviteUrl && <a href={inviteUrl} target="_blank" rel="noopener noreferrer" onClick={close}>Add Vybatron to a server</a>}<button onClick={() => { close(); void portal.logout(); }}>Sign out on this device</button></>}</ActionPopover><IconButton label="Open settings" onClick={() => navigate('settings')}><GearSixIcon size={23} weight="fill" /></IconButton></div>
     </aside>
     <div className="portal-main"><header className={`topbar ${expanded ? 'sleeve-topbar' : ''}`}><div className="page-title"><h1 hidden={expanded}>{heading}</h1></div><div className="topbar-actions"><button type="button" className="header-search" aria-label="Search music" disabled={noGuilds} onClick={openSearch}><MagnifyingGlassIcon size={21} /><span>{query || 'Search songs, artists, or paste a link...'}</span></button><button className={`button ${addBlocked ? 'secondary' : 'primary'}`} title={addBlocked ? portal.blockedReason : undefined} disabled={noGuilds} onClick={openSearch}><PlusIcon size={23} /><span>Add music</span></button></div></header>
       {!noGuilds && connection !== 'live' && <div className={`connection-banner ${connection === 'offline' ? 'offline' : ''}`} role="status">{connection === 'offline' ? <WifiSlashIcon size={21} /> : <span className="spinner" />}<div><strong>{connection === 'offline' ? 'Live updates paused' : 'Getting fresh state'}</strong><span>{connection === 'offline' ? portal.connectionError || 'Reconnect before making changes. Discord playback continues.' : 'Controls return once the current session is verified.'}</span></div>{connection === 'offline' && <button className="text-button" onClick={portal.reconnect}><ArrowClockwiseIcon size={18} />Reconnect</button>}</div>}
@@ -156,12 +166,14 @@ export function App() {
         {/* The sleeve hides the selected page without rebuilding its shelves when it closes. */}
         <Home portal={portal} active={surface === 'home'} onOpenPlayer={() => toggleExpanded(true)} />
         <LibraryView portal={portal} active={surface === 'music'} />
-        <ServerView portal={portal} active={surface === 'server'} ambient={ambient} setAmbient={setAmbient} skin={skin} setSkin={setSkin} performance={performance} setPerformance={setPerformance} installPrompt={installPrompt} install={install} />
+        {surface === 'search' && <Search portal={portal} page open onClose={() => navigate('home')} query={query} setQuery={setQuery} />}
+        <ServerView portal={portal} active={surface === 'server'} />
+        <SettingsView portal={portal} active={surface === 'settings'} ambient={ambient} setAmbient={setAmbient} skin={skin} setSkin={setSkin} performance={performance} setPerformance={setPerformance} installPrompt={installPrompt} install={install} />
       </>}</div>{!noGuilds && <Player portal={portal} expanded={expanded} setExpanded={toggleExpanded} onAdd={openSearch} accent={palette.accent} animate={!still} skin={skin} />}</main>
     </div>
     {shared && <ShareDialog portal={portal} link={shared.link} onClose={() => setShared(null)} />}
     <Search portal={portal} open={searchOpen} onClose={() => setSearchOpen(false)} query={query} setQuery={setQuery} />
-    {portal.notice && !searchOpen && !shared && <div className={`toast ${portal.notice.kind}`} role={portal.notice.kind === 'error' ? 'alert' : 'status'}><span>{portal.notice.message}</span><IconButton label="Dismiss notification" onClick={portal.dismissNotice}><XIcon size={19} /></IconButton></div>}
+    {portal.notice && !searchOpen && !(surface === 'search' && !expanded) && !shared && <div className={`toast ${portal.notice.kind}`} role={portal.notice.kind === 'error' ? 'alert' : 'status'}><span>{portal.notice.message}</span><IconButton label="Dismiss notification" onClick={portal.dismissNotice}><XIcon size={19} /></IconButton></div>}
     {update && <div className="update-notice"><span>A fresh version of Vybatron is ready.</span><button className="text-button" onClick={() => { navigator.serviceWorker.addEventListener('controllerchange', () => location.reload(), { once: true }); update.postMessage({ type: 'ACTIVATE' }); }}>Update app</button></div>}
   </div>;
 }

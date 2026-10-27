@@ -238,7 +238,21 @@ export async function landed(locator: Locator) {
 // Home is the landing view; queue-focused tests start from the Session view.
 export async function gotoSession(page: Page, path = '/') {
   await page.goto(path);
-  await page.getByRole('button', { name: 'Session', exact: true }).click();
+  await page.getByRole('button', { name: 'Queue', exact: true }).click();
   // Pointer input goes to the document root until the view transition settles.
   await page.waitForFunction(() => !document.documentElement.dataset.motion);
 }
+
+export async function openSettings(page: Page) {
+  const gear = page.getByRole('button', { name: 'Open settings', exact: true }).filter({ visible: true });
+  if (await gear.count()) await gear.click();
+  else { await page.getByRole('button', { name: 'Account options' }).filter({ visible: true }).click(); await page.getByRole('button', { name: 'Settings', exact: true }).filter({ visible: true }).click(); }
+  await page.getByLabel('Portal look').waitFor();
+}
+export async function openServer(page: Page) {
+  const nav = page.getByRole('button', { name: 'Server', exact: true }).filter({ visible: true });
+  if (await nav.count()) await nav.click();
+  else { await page.getByRole('button', { name: 'Account options' }).filter({ visible: true }).click(); await page.getByRole('button', { name: 'Server', exact: true }).filter({ visible: true }).click(); }
+  await page.getByRole('tablist', { name: 'Server sections' }).waitFor();
+}
+

@@ -34,7 +34,7 @@ test('advanced drafts survive navigation and expansion without recapturing selec
   await page.getByRole('tab', { name: 'Advanced controls' }).click();
   await page.getByLabel('Command', { exact: true }).selectOption('playnext');
   await page.getByLabel('query', { exact: false }).fill('keep my typed song');
-  await page.getByRole('button', { name: 'Session', exact: true }).click();
+  await page.getByRole('button', { name: 'Queue', exact: true }).click();
   await page.getByRole('button', { name: 'Server', exact: true }).click();
   await expect(page.getByLabel('query', { exact: false })).toHaveValue('keep my typed song');
   await page.getByLabel('Command', { exact: true }).selectOption('favorite');

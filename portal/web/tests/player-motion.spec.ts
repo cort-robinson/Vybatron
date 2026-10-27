@@ -34,15 +34,15 @@ for (const skin of ['classic', 'overdrive', 'fantastic']) {
   }
 }
 
-for (const surface of ['Home', 'Session', 'My Music', 'Server']) {
+for (const surface of ['Home', 'Queue', 'My Music', 'Search']) {
   test(`opening and closing the player preserves the ${surface} page`, async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     const fixture = await mockPortal(page);
-    if (surface === 'Session') fixture.state.snapshot.session.suggestions = suggestedTracks();
+    if (surface === 'Queue') fixture.state.snapshot.session.suggestions = suggestedTracks();
     await page.goto('/');
     if (surface !== 'Home') await page.getByRole('button', { name: surface, exact: true }).click();
     await expect(page.getByRole('button', { name: 'Pause playback' })).toBeEnabled();
-    const selector = surface === 'Home' ? '.home-view .shelf-card' : surface === 'Session' ? '.surface-stage .queue .track-row' : surface === 'Server' ? '.server-view .settings-list' : '.library-track-list > li';
+    const selector = surface === 'Home' ? '.home-view .shelf-card' : surface === 'Queue' ? '.surface-stage .queue .track-row' : surface === 'Search' ? '.search-page .search-form' : '.library-track-list > li';
     const content = page.locator(selector).first();
     await expect(content).toBeVisible();
     const original = await content.elementHandle();
@@ -52,7 +52,7 @@ for (const surface of ['Home', 'Session', 'My Music', 'Server']) {
       await page.getByRole('button', { name: 'Open player', exact: true }).click();
       await expect(page.locator('.surface-stage')).toBeHidden();
       expect(await original!.evaluate(el => el.isConnected)).toBe(true);
-      if (surface === 'Session') {
+      if (surface === 'Queue') {
         const headings = await page.locator('.suggested h3').evaluateAll(elements => elements.map(el => el.id));
         expect(headings).toHaveLength(2);
         expect(new Set(headings).size).toBe(2);

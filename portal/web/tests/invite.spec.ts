@@ -1,15 +1,15 @@
 import { test, expect } from './test';
-import { mockPortal, gotoSession, INVITE_URL } from './fixtures';
+import { mockPortal, gotoSession, INVITE_URL, openSettings } from './fixtures';
 
 const external = { target: '_blank', rel: 'noopener noreferrer' };
 
-test('account menu and server page offer the Discord add-to-server link in a new tab', async ({ page }) => {
+test('account menu and settings page offer the Discord add-to-server link in a new tab', async ({ page }) => {
   await mockPortal(page); await gotoSession(page);
   await page.getByRole('button', { name: 'Account options' }).click();
   const menuLink = page.getByRole('link', { name: 'Add Vybatron to a server' });
   for (const [name, value] of Object.entries({ href: INVITE_URL, ...external })) await expect(menuLink).toHaveAttribute(name, value);
   await page.keyboard.press('Escape');
-  await page.getByRole('button', { name: 'Server', exact: true }).click();
+  await openSettings(page);
   await expect(page.getByRole('link', { name: 'Add to server' })).toHaveAttribute('href', INVITE_URL);
 });
 
@@ -27,6 +27,6 @@ test('without an install link the portal hides every add-to-server entry', async
   await page.getByRole('button', { name: 'Account options' }).click();
   await expect(page.getByRole('link', { name: /Add .*server/ })).toHaveCount(0);
   await page.keyboard.press('Escape');
-  await page.getByRole('button', { name: 'Server', exact: true }).click();
+  await openSettings(page);
   await expect(page.getByRole('link', { name: /Add .*server/ })).toHaveCount(0);
 });

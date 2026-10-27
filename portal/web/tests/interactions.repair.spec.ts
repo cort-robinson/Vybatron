@@ -90,7 +90,7 @@ test('queue disclosure preserves outside control focus and uses the next logical
   await trigger.press('Enter');
   await page.getByRole('button', { name: 'Remove from queue', exact: true }).focus();
   await page.keyboard.press('Tab');
-  await expect(page.getByRole('button', { name: 'Save Slow Motion to favorites' })).toBeFocused();
+  await expect(page.getByRole('button', { name: 'Play Slow Motion next' })).toBeFocused();
   await expect(page.locator('.queue .menu-panel')).toHaveCount(0);
   await trigger.click();
   await page.getByRole('button', { name: 'Add music', exact: true }).first().click();

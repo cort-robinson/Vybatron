@@ -156,7 +156,7 @@ test('home lists queue on this device from the tracks the portal already shows',
   await page.getByRole('button', { name: 'Home', exact: true }).click();
   await page.getByRole('button', { name: 'Play all of On repeat' }).click();
   await expect(title(page)).toHaveText('Midnight City');
-  await page.getByRole('button', { name: 'Session', exact: true }).click();
+  await page.getByRole('button', { name: 'Queue', exact: true }).click();
   await expect(page.locator('.track-row')).toHaveCount(3);
   // Saving a song that isn't a favorite needs the Discord session.
   await expect(page.getByTestId('player').getByRole('button', { name: 'Save current song to favorites' })).toBeDisabled();

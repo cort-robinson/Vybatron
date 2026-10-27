@@ -1,6 +1,6 @@
 import { test, expect, type Page } from './test';
 import type { Command } from '../src/types';
-import { mockPortal, streamAction, gotoSession } from './fixtures';
+import { mockPortal, streamAction, gotoSession, openServer } from './fixtures';
 
 async function refreshLibrary(page: Page) {
   const response = page.waitForResponse(response => response.url().endsWith('/library') && response.status() === 200);
@@ -173,7 +173,7 @@ test('phone schema selection remains visible and removable outside voice without
   await page.setViewportSize({ width: 393, height: 852 });
   const fixture = await mockPortal(page, { outsideVoice: true }); const selected = fixture.state.library.favorites[0].id;
   const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
-  await page.goto('/'); await page.getByRole('button', { name: 'Server', exact: true }).click();
+  await page.goto('/'); await openServer(page);
   await page.getByRole('tab', { name: 'Advanced controls' }).click(); await page.getByLabel('Command', { exact: true }).selectOption('favorite');
   await page.getByRole('combobox', { name: 'Action', exact: true }).selectOption('remove'); await page.getByLabel('index').fill('1');
   await expect(page.getByText('Selected: Night Drive', { exact: true })).toBeVisible();

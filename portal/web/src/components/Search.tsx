@@ -16,12 +16,12 @@ const CACHE_TTL_MS = 60_000;
 const CACHE_LIMIT = 30;
 type Result = { tracks: Track[]; notice: string | null };
 
-function ResultRow({ track, detail, enabled, radioEnabled, blockedReason, onAdd, onRadio }: { track: Track; detail: string; enabled: boolean; radioEnabled: boolean | null; blockedReason: string; onAdd: (track: Track) => void; onRadio: (uri: string) => void }) {
+function ResultRow({ track, detail, enabled, nextEnabled, radioEnabled, blockedReason, onAdd, onNext, onRadio }: { track: Track; detail: string; enabled: boolean; nextEnabled: boolean; radioEnabled: boolean | null; blockedReason: string; onAdd: (track: Track) => void; onNext: (track: Track) => void; onRadio: (uri: string) => void }) {
   return <li><Artwork track={track} /><div className="track-text"><strong>{track.title}</strong><span>{track.author} · {detail}</span></div><span className="result-length">{track.isStream ? 'Live' : time(track.durationMs)}</span>
-    {radioEnabled !== null && <IconButton className="radio-start" label={radioLabel(track)} disabled={!radioEnabled || !track.uri} title={!track.uri ? 'This result has no public source reference' : !radioEnabled ? blockedReason : radioLabel(track)} onClick={() => { if (track.uri) onRadio(track.uri); }}><RadioIcon size={21} /></IconButton>}<button className="button secondary add-result" aria-label={`Add ${track.title} to queue`} disabled={!enabled || !track.uri} title={!track.uri ? 'This result has no public source reference' : !enabled ? blockedReason : undefined} onClick={() => { if (track.uri) onAdd(track); }}><PlusIcon size={19} /><span>Add</span></button></li>;
+    {radioEnabled !== null && <IconButton className="radio-start" label={radioLabel(track)} disabled={!radioEnabled || !track.uri} title={!track.uri ? 'This result has no public source reference' : !radioEnabled ? blockedReason : radioLabel(track)} onClick={() => { if (track.uri) onRadio(track.uri); }}><RadioIcon size={21} /></IconButton>}<IconButton className="next-result" label={`Play ${track.title} next`} disabled={!nextEnabled || !track.uri} title={!nextEnabled ? blockedReason : `Play ${track.title} next`} onClick={() => onNext(track)}><ArrowBendUpRightIcon size={21} /></IconButton><button className="button secondary add-result" aria-label={`Add ${track.title} to queue`} disabled={!enabled || !track.uri} title={!track.uri ? 'This result has no public source reference' : !enabled ? blockedReason : undefined} onClick={() => { if (track.uri) onAdd(track); }}><PlusIcon size={19} /><span>Add</span></button></li>;
 }
 
-export function Search({ portal, open, onClose, query, setQuery }: { portal: Portal; open: boolean; onClose: () => void; query: string; setQuery: (value: string) => void }) {
+export function Search({ portal, open, onClose, query, setQuery, page = false }: { portal: Portal; open: boolean; onClose: () => void; query: string; setQuery: (value: string) => void; page?: boolean }) {
   const [tracks, setTracks] = useState<Track[] | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState('');
@@ -87,10 +87,10 @@ export function Search({ portal, open, onClose, query, setQuery }: { portal: Por
   const enabled = portal.can('add') && !portal.pending.length;
   const controllable = portal.can('control') && !portal.pending.length;
   const radio = (uri: string) => portal.run({ command: 'radio', subcommand: 'on', options: { track: uri } }, 'control');
-  const row = (track: Track, detail: string, key: string) => <ResultRow key={key} track={track} detail={detail} enabled={enabled} radioEnabled={portal.target === 'local' ? null : controllable} blockedReason={portal.blockedReason} onAdd={track => void add(false, track.uri!, track)} onRadio={uri => void radio(uri)} />;
+  const row = (track: Track, detail: string, key: string) => <ResultRow key={key} track={track} detail={detail} enabled={enabled} radioEnabled={portal.target === 'local' ? null : controllable} blockedReason={portal.blockedReason} nextEnabled={controllable} onAdd={track => void add(false, track.uri!, track)} onNext={track => void add(true, track.uri!, track)} onRadio={uri => void radio(uri)} />;
   const stale = searching || (!!lastQuery && lastQuery !== typed);
   if (!open) return null;
-  return <Dialog title="Add music" onClose={onClose} className="search-dialog" initialFocusRef={input}>
+  const body = <>
     <form onSubmit={event => { event.preventDefault(); void search(); }} className="search-form" role="search"><label className="search-field"><MagnifyingGlassIcon size={22} /><span className="sr-only">Music search</span><input ref={input} type="search" aria-label="Music search" aria-describedby="search-hint" value={query} maxLength={maxLength} onChange={event => setQuery(event.target.value)} placeholder="Song, artist, or music link…" autoComplete="off" spellCheck={false} /></label>
       <button type="submit" className="button primary" disabled={searching || !typed || portal.connection !== 'live'}>{searching ? <span className="spinner" /> : <MagnifyingGlassIcon size={20} />}Search</button></form>
     <p id="search-hint" className="sr-only">Results update as you type. Links load when you choose Search or add them directly.</p>
@@ -111,5 +111,7 @@ export function Search({ portal, open, onClose, query, setQuery }: { portal: Por
         <ul className="result-list">{tracks.map((track, index) => row(track, track.source, `${track.id}:${index}`))}</ul>
       </div>}
     </>}
-  </Dialog>;
+  </>;
+  // On a phone, Search is a page in the bottom navigation; on desktop it opens over the current page.
+  return page ? <div className="search-page">{body}</div> : <Dialog title="Add music" onClose={onClose} className="search-dialog" initialFocusRef={input}>{body}</Dialog>;
 }

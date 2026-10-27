@@ -1,6 +1,7 @@
 import { test, expect, type Page } from './test';
 import type { Configuration } from '../src/types';
 import { startHttpFixture } from './http-fixture';
+import { openServer, openSettings } from './fixtures';
 
 type Fixture = Awaited<ReturnType<typeof startHttpFixture>>;
 const channelId = '323456789012345678';
@@ -12,8 +13,8 @@ async function connected(page: Page, server: Fixture) {
   await expect.poll(() => server.streams.size).toBe(1);
 }
 async function settings(page: Page) {
-  await page.getByRole('button', { name: 'Server', exact: true }).click();
-  await expect(page.getByRole('heading', { name: /Your listening space|Your preferences/ })).toBeVisible();
+  await openServer(page);
+  await expect(page.getByRole('heading', { name: 'Your listening space' })).toBeVisible();
 }
 async function loaded(page: Page) {
   await expect(page.getByRole('combobox', { name: 'Music text channel', exact: true })).toBeVisible();
@@ -40,7 +41,7 @@ test('configuration: one catalog GET per Settings visit despite fresh SSE frames
     expect(server.configurationReads).toHaveLength(1);
     await page.getByRole('tab', { name: 'Settings', exact: true }).click(); await loaded(page);
     expect(server.configurationReads).toHaveLength(2);
-    await page.getByRole('button', { name: 'Session', exact: true }).click();
+    await page.getByRole('button', { name: 'Queue', exact: true }).click();
     await page.getByRole('button', { name: 'My Music', exact: true }).click();
     server.state.snapshot.revision = 'configuration-hidden-server-frame'; server.broadcast();
     expect(server.configurationReads).toHaveLength(2);
@@ -63,7 +64,6 @@ test('configuration: phone drafts survive transient discovery failures, native r
     const channel = page.locator('#music-channel'); const role = page.locator('#dj-role'); const volume = page.getByLabel('Default volume', { exact: true });
     await channel.fill(channelId); await role.fill(roleId); await volume.fill('46');
     await expect(page.getByRole('button', { name: 'Pause playback' })).toBeEnabled();
-    await page.getByLabel('Ambient motion', { exact: true }).selectOption('off');
     server.state.snapshot.settings!.volume = 91;
     server.state.snapshot.settings!.musicTextChannelId = 'text'; server.state.snapshot.settings!.djRoleId = 'dj';
     server.state.snapshot.revision = 'configuration-remote-defaults'; server.broadcast();
@@ -125,11 +125,11 @@ test('configuration: admin revocation clears options and aborts an in-flight ref
     await expect.poll(() => server.heldConfigurations.size).toBe(1);
     server.state.snapshot.guild.admin = false; server.state.snapshot.settings = null;
     server.state.snapshot.revision = 'configuration-admin-revoked'; server.broadcast();
-    await expect(page.getByRole('tab', { name: 'Preferences', exact: true })).toBeVisible();
+    await expect(page.getByText('Server settings need Manage Server permission.')).toBeVisible();
     await expect(page.locator('#music-channel')).toHaveCount(0); await expect(page.locator('#dj-role')).toHaveCount(0);
     await expect.poll(() => server.configurationAborts).toEqual(['testing']);
     server.releaseConfigurationReads();
-    await page.getByLabel('Ambient motion', { exact: true }).selectOption('subtle');
+    await expect(page.getByRole('button', { name: 'Pause playback' })).toBeEnabled();
     await expect(page.getByRole('button', { name: 'Pause playback' })).toBeEnabled();
     expect(server.configurationReads).toHaveLength(2);
     server.state.configuration.channels = [{ id: 'restored-channel', name: 'restored-music', type: 'text' }];
@@ -206,8 +206,9 @@ test('configuration: basic members never discover catalogs while personal settin
   try {
     server.state.snapshot.guild.admin = false; server.state.snapshot.settings = null;
     server.state.snapshot.channels = []; server.state.snapshot.roles = [];
-    await connected(page, server); await settings(page);
-    await expect(page.getByRole('tab', { name: 'Preferences', exact: true })).toBeVisible();
+    await connected(page, server); await openServer(page);
+    await expect(page.getByText('Server settings need Manage Server permission.')).toBeVisible();
+    await openSettings(page);
     await page.getByLabel('Ambient motion', { exact: true }).selectOption('off'); server.broadcast();
     await expect(page.getByLabel('Ambient motion', { exact: true })).toHaveValue('off');
     expect(server.configurationReads).toHaveLength(0); expect(server.commands).toHaveLength(0);

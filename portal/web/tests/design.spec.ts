@@ -29,7 +29,7 @@ for (const { name, width, height, density } of viewports) {
     expect(accessibility.violations.map(v => ({ id: v.id, impact: v.impact, nodes: v.nodes.map(n => n.html) }))).toEqual([]);
     // Below 1024px the open player is full screen; the tabs return when it closes.
     if (name !== 'desktop') await page.getByRole('button', { name: 'Close player', exact: true }).first().click();
-    await page.getByRole('button', { name: 'Session', exact: true }).click();
+    await page.getByRole('button', { name: 'Queue', exact: true }).click();
     if (name === 'desktop') {
       await page.getByRole('button', { name: 'Add music', exact: true }).click(); await page.getByRole('searchbox', { name: 'Music search' }).fill('Midnight City'); await page.getByRole('button', { name: 'Search', exact: true }).click(); await expect(page.getByRole('dialog').getByText('Midnight City', { exact: true })).toBeVisible();
       await shot('search.png');

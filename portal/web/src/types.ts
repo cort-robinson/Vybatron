@@ -119,4 +119,4 @@ export interface ImportPreview {
 export interface CommandResult { ok: true; message: string; snapshot: GuildSnapshot; preview?: ImportPreview }
 export type Connection = 'connecting' | 'refreshing' | 'live' | 'offline';
 export type Capability = 'add' | 'control' | 'vote' | 'library' | 'admin' | 'resume';
-export type Surface = 'home' | 'session' | 'music' | 'server';
+export type Surface = 'home' | 'search' | 'session' | 'music' | 'server' | 'settings';

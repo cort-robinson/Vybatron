@@ -225,7 +225,7 @@ test('production PWA installs under real CSP, serves an offline shell, and never
         assert.equal(count('POST', '/api/guilds/100/commands'), plays + 1);
         await page.getByRole('button', { name: 'Pause playback' }).waitFor();
         // Home is the landing view; the queued songs' artwork renders in Session.
-        await page.getByRole('button', { name: 'Session', exact: true }).click();
+        await page.getByRole('button', { name: 'Queue', exact: true }).click();
         await page.locator('.queue .track-row').first().waitFor();
         await page.evaluate(() => Promise.allSettled([...document.images].map(image => image.decode())));
         assert.deepEqual([...artworkRequests].sort(), [...artworkUrls].sort());

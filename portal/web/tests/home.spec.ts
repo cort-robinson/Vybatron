@@ -217,7 +217,7 @@ test('Stop offers to save the session as a mix first', async ({ page }) => {
 test('the queue saves the session as a mix on its own', async ({ page }) => {
   const second = await mockPortal(page);
   await page.goto('/');
-  await page.getByRole('button', { name: 'Session', exact: true }).click();
+  await page.getByRole('button', { name: 'Queue', exact: true }).click();
   await page.getByRole('button', { name: 'Save session as mix' }).click();
   const dialog = page.getByRole('dialog', { name: 'Save this session as a mix' });
   await expect(dialog.getByLabel('Mix name')).toBeFocused();

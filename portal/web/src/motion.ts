@@ -136,6 +136,15 @@ const checkModal = () => {
   for (const listener of modalListeners) listener();
 };
 export const underModal = () => modalOpen;
+// Under a modal other than the one holding this element (a full-screen visualizer's own dialog
+// doesn't cover its canvas). It queries the page, so call it when onModal fires, not per frame.
+export function coveredByModal(element: Element) {
+  if (!modalOpen) return false;
+  let modals: Element[];
+  try { modals = [...document.querySelectorAll('dialog[open]:modal')]; } catch { modals = [...document.querySelectorAll('dialog[open]')]; }
+  const own = element.closest('dialog');
+  return modals.some(modal => modal !== own);
+}
 export function onModal(listener: () => void) {
   if (!modalWatch) {
     modalWatch = new MutationObserver(checkModal);

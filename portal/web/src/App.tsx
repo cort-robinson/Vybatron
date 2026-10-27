@@ -164,7 +164,7 @@ export function App() {
         {surface === 'search' && <Search portal={portal} page open onClose={() => navigate('home')} />}
         <Held held={surface !== 'server'}><ServerView portal={portal} active={surface === 'server'} /></Held>
         <Held held={surface !== 'settings'}><SettingsView portal={portal} active={surface === 'settings'} ambient={ambient} setAmbient={setAmbient} skin={skin} setSkin={setSkin} performance={performance} setPerformance={setPerformance} installPrompt={installPrompt} install={install} /></Held>
-      </>}</Held></div>{!noGuilds && <Player portal={portal} expanded={expanded} setExpanded={toggleExpanded} onAdd={openSearch} accent={palette.accent} animate={!still} skin={skin} />}</main>
+      </>}</Held></div>{!noGuilds && <Player portal={portal} expanded={expanded} setExpanded={toggleExpanded} onAdd={openSearch} palette={palette} animate={!still} skin={skin} />}</main>
     </div>
     {shared && <ShareDialog portal={portal} link={shared.link} onClose={() => setShared(null)} />}
     <Search portal={portal} open={searchOpen} onClose={closeSearch} />

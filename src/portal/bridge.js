@@ -20,14 +20,16 @@ import { publicTrackId } from './selections.js';
 import { measureDiscord, serverTiming, startRequestTiming } from './request-timing.js';
 
 const hash = value => createHash('sha256').update(value).digest();
-function json(response, status, body, maxBytes) {
+function json(response, status, body, maxBytes, headers = {}) {
   if (response.destroyed || response.writableEnded) return;
   let serialized = JSON.stringify(body);
-  if (Buffer.byteLength(serialized) > maxBytes) { status = 503; serialized = JSON.stringify({ error: { code: 'projection_limit', message: 'This server snapshot exceeds the safe response limit.' } }); }
+  if (Buffer.byteLength(serialized) > maxBytes) { status = 503; headers = {}; serialized = JSON.stringify({ error: { code: 'projection_limit', message: 'This server snapshot exceeds the safe response limit.' } }); }
   const timing = serverTiming(response);
-  response.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', ...(timing && { 'Server-Timing': timing }) });
+  response.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', ...headers, ...(timing && { 'Server-Timing': timing }) });
   response.end(serialized);
 }
+// The change-feed position a snapshot read or command reflects (portal only).
+const cursorHeader = cursor => cursor ? { 'X-Change-Cursor': `${cursor.instanceId}:${cursor.sequence}` } : {};
 async function readBody(request, maxBytes) {
   if (!/^application\/json(?:\s*;|$)/i.test(request.headers['content-type'] || '')) fail(400, 'invalid_json', 'Send a JSON command body.');
   if (Number(request.headers['content-length']) > maxBytes) fail(400, 'body_limit', 'The command body is too large.');
@@ -174,11 +176,15 @@ export function startPortalBridge(client, {
         const match = url.pathname.match(/^\/v1\/guilds\/(\d{1,22})(?:\/(library|search|commands|diagnostics|activity|configuration|stats|recap|lyrics))?$/);
         if (!match) fail(404, 'not_found', 'That bridge endpoint does not exist.');
         const [, guildId, resource] = match;
-        if (resource === 'commands' && request.method === 'POST') return json(response, 200, await timings.run(body?.command,
-          () => executePortalCommand(client, measuredPolicy, revisions, commandMap, guildId, body, { signal: expiry.signal })), maxResponseBytes);
+        if (resource === 'commands' && request.method === 'POST') {
+          const result = await timings.run(body?.command, () => executePortalCommand(client, measuredPolicy, revisions, commandMap, guildId, body, { signal: expiry.signal }));
+          return json(response, 200, result, maxResponseBytes, result?.ok === true ? cursorHeader(changes.touch(guildId, result.snapshot?.revision)) : {});
+        }
         if (request.method !== 'GET' || resource === 'commands') fail(400, 'invalid_method', 'That request method is unsupported.');
         const actorId = url.searchParams.get('actorId');
         const channelScope = ['library', 'stats', 'recap'].includes(resource) ? 'history' : resource === 'configuration' ? 'configuration' : ['activity', 'diagnostics'].includes(resource) ? 'none' : 'session';
+        // Taken before authorization: every change published by then is in this snapshot.
+        const cursor = resource ? null : changes.cursor();
         // Complete channel discovery keeps fresh identity and REST authority (ADR-0011).
         const context = await policy.guild(actorId, guildId, undefined, { channelScope, fresh: channelScope === 'configuration' });
         let result;
@@ -230,7 +236,7 @@ export function startPortalBridge(client, {
           rememberSearchResults(tracks, context.user.id);
           result = { tracks: tracks.map(track => trackProjection(track)), notice: found?.spotifyImport ? 'Spotify catalog results are matched to playable recordings.' : found?.tracks?.length ? null : 'No playable matches were found.' };
         }
-        return json(response, 200, result, maxResponseBytes);
+        return json(response, 200, result, maxResponseBytes, cursorHeader(cursor));
       } finally { inFlight--; if (admitted === 'stop') stopInFlight--; if (admitted === 'ordinary') ordinaryInFlight--; }
     };
     // Timeouts only bound the transport. An accepted command is never replayed
@@ -244,7 +250,11 @@ export function startPortalBridge(client, {
   });
   server.on('connection', socket => { sockets.add(socket); socket.once('close', () => sockets.delete(socket)); if (sockets.size > 48) socket.destroy(); });
   server.on('clientError', (_error, socket) => { socket.end('HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n'); });
-  server.requestTimeout = 5000; server.headersTimeout = 5000; server.keepAliveTimeout = 1000; server.maxRequestsPerSocket = 100;
+  server.requestTimeout = 5000; server.headersTimeout = 5000; server.maxRequestsPerSocket = 100;
+  // Node announces this as `Keep-Alive: timeout=5`, and the portal's agent then
+  // retires an idle socket a second earlier, so it never reuses one being closed.
+  // At one second the agent could not keep sockets at all: a new TCP connection per read.
+  server.keepAliveTimeout = 5000;
   const ready = new Promise((resolve, reject) => {
     server.once('listening', resolve); server.once('error', reject);
   });

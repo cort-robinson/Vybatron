@@ -90,7 +90,10 @@ rotation or expiry during an incomplete upload therefore prevents dispatch.
 An operation already dispatched before revocation may finish in the bot.
 
 SSE sends `event:snapshot`, heartbeat comments, and a safe `event:error` before
-closing after permission/session/bridge loss. On any disconnect/error, the UI
+closing after permission/session/bridge loss. Pages that ask for `?protocol=2`
+get `event:unchanged` (the fresh read's revision and ordering stamp only) when
+a read would show them nothing new, and every stream announces the end of its
+lifetime with `event:rotate`. See `docs/portal-instant-controls.md` (*Live updates*). On any disconnect/error, the UI
 must disable mutations, discard the live-state authority, and refresh before
 reenabling actions. A reconnect makes a fresh bridge request. The portal never
 retries or queues a mutation. A timed-out command may already have executed in
@@ -149,7 +152,9 @@ The compiled UI is served from `PORTAL_WEB_DIST` with no request-time compressio
   read; while it is healthy each stream also polls every ten seconds to observe
   Discord-side revocation, otherwise every three seconds after the previous
   poll/write finishes. No overlapping polls or snapshot replay buffers. Heartbeat every ten seconds; slow consumers close after five seconds
-  without drain; streams reconnect after a maximum thirty-minute lifetime.
+  without drain; streams rotate after a maximum thirty-minute lifetime. A wake
+  that the stream's last read already covers (bot change cursor) is skipped.
+  Streams and JSON replies except bootstrap are compressed when accepted.
 - 10-second request/body-read/ordinary-upstream deadline; commands have a bounded
   90-second upstream deadline for the bot's bounded imports. The command socket
   timeout also permits that deadline; body-read limits remain ten seconds.

@@ -48,6 +48,51 @@ which accounted for the 2-5 s outliers.
   bot instance or a recovered feed wakes every stream. When the feed fails,
   streams fall back to 3 s polling.
 
+## Live updates
+
+| Per open stream | Before | After |
+| --- | --- | --- |
+| Bridge reads (each a full authorization check; a Discord REST round before ADR-0011) after one portal command | 1-2 (command wake, then the feed wake) | 1 |
+| Idle traffic, 500-track queue, 10 s polls | a 170 KB snapshot per poll, about 61 MB an hour | a 160-byte `unchanged` event per poll, about 58 KB an hour |
+| A 170 KB snapshot over the wire when the browser accepts gzip | 170 KB | about 13 KB |
+| Bot revision scan, 500-track queue and a full library, every 250 ms | about 29 ms of CPU per guild | about 0.4 ms |
+| End of the 30-minute stream lifetime | "offline", controls disabled, a fresh GET | `event:rotate`, the next stream opens at once |
+
+- **Change cursors.** A snapshot read reports the change-feed position taken
+  before its authorization, and a command reports the entry it published. The
+  portal skips a wake its last read already covers, so the command's own wake
+  and the feed's wake for the same change cost one read. A wake that arrives
+  during a read schedules one follow-up only if its entry is newer than that
+  read. No cursor (old bot, feed without a consumer) means every wake reads.
+  There is no coalescing window: the cursor removes the duplicate exactly, and a
+  delay would only add latency.
+- **Quiet streams.** Pages send `?protocol=2`. After each fresh read the stream
+  compares what this viewer would see (everything but the ordering stamp and the
+  playback position, which is checked against elapsed time with a 2 s
+  tolerance) with the last snapshot it sent, and sends `event:unchanged` with the
+  read's revision and ordering stamp when they match. The poll and its Discord
+  authorization still run every 10 s, so revocation is seen as before. While a
+  session plays or is paused, the saved checkpoint's time and position (hidden
+  then, and rewritten every 30 s) don't count. The page renews its 25 s
+  freshness lease from `unchanged` only when it shows exactly that stream's last
+  snapshot; anything else gets a fresh read. Older pages keep full snapshots.
+- **Compression.** Streams use gzip with a flush after every event (about half a
+  megabyte per stream; brotli needs twice that). JSON replies use brotli or gzip
+  above 1 KB. Bootstrap, which carries the CSRF token, is never compressed. No
+  other reply carries a secret, and cross-site requests are refused, so there is
+  no BREACH-style oracle. The only attacker-chosen text in a body is shared
+  listening state every viewer of the session already sees.
+- **Revision scan.** The library digests its saved settings and mixes once per
+  write (stored guild objects are replaced, never mutated) and reads only
+  history IDs and the raw checkpoint; track IDs are cached per track object
+  while their identity fields are unchanged. `tests/portal-revisions.test.js`
+  proves the cheap revision changes exactly when the old full one does.
+- **Keep-alive.** The bot's bridge used a 1 s keep-alive, which Node's agent
+  reads as "do not reuse": every read opened a new connection. It now keeps
+  sockets 5 s and the portal retires idle ones after 4 s, so a request never
+  lands on a socket being closed. A read whose reused socket still resets
+  before any response is retried once; commands never are.
+
 ## Browser
 
 `portal/web/src/optimistic.ts` and `usePortal.ts`:

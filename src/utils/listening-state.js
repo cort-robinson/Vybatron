@@ -101,6 +101,7 @@ export class ListeningState {
     this.statements = {
       history: sql('SELECT item FROM history WHERE guild_id = ? AND played_at >= ? AND played_at <= ? ORDER BY played_at DESC, seq DESC LIMIT ?'),
       activity: sql('SELECT item FROM activity WHERE guild_id = ? AND at >= ? AND at <= ? ORDER BY at DESC, seq DESC LIMIT ?'),
+      historyIds: sql('SELECT id FROM history WHERE guild_id = ? AND played_at >= ? AND played_at <= ? ORDER BY played_at DESC, seq DESC LIMIT ?'),
       session: sql('SELECT session FROM sessions WHERE guild_id = ?'),
       insertHistory: sql('INSERT OR IGNORE INTO history (guild_id, id, played_at, item) VALUES (?, ?, ?, ?)'),
       insertActivity: sql('INSERT OR IGNORE INTO activity (guild_id, id, at, item) VALUES (?, ?, ?, ?)'),
@@ -139,6 +140,13 @@ export class ListeningState {
       activity: this.statements.activity.all(guildId, activity.oldest, activity.newest, activity.limit).map(row => JSON.parse(row.item)),
       session: session ? JSON.parse(session.session) : null,
     };
+  }
+
+  /** The history IDs read() would list, and the raw checkpoint, without parsing either. */
+  revisionInputs(guildId, now = Date.now()) {
+    const history = this.window('history', now);
+    return { historyIds: this.statements.historyIds.all(guildId, history.oldest, history.newest, history.limit).map(row => row.id),
+      session: this.statements.session.get(guildId)?.session ?? null };
   }
 
   guildIds() {

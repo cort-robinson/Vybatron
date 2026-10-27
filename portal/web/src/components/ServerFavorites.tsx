@@ -1,8 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowClockwiseIcon, PlayIcon, ShuffleIcon, SparkleIcon } from '../icons';
 import type { Portal } from '../usePortal';
 import type { Stats, StatEntry } from '../types';
-import { api, ApiError, errorMessage } from '../api';
+import { statsRead, useRead } from '../reads';
 import { Artwork, Empty, ErrorState, IconButton, Loading } from './ui';
 
 type ListId = 'on-repeat' | 'forgotten-gems';
@@ -16,34 +15,15 @@ const lists: { id: ListId; key: keyof Stats['serverFavorites']; title: string; d
 ];
 const lastPlayed = (at: number) => new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' }).format(at);
 
-// Fetched on demand when the tab opens; stats never ride the live snapshot.
+// Read on demand; stats never ride the live snapshot. Home reads the same past-month
+// stats, so whichever opens first supplies the other.
 export function ServerFavorites({ portal }: { portal: Portal }) {
-  const { guildId, run, can, pending, blockedReason } = portal;
-  const [stats, setStats] = useState<Stats | null>(null);
-  const [error, setError] = useState('');
-  const controller = useRef<AbortController | null>(null);
-  const addable = can('add') && !pending.length;
-
-  const refresh = useCallback(async () => {
-    controller.current?.abort();
-    const request = new AbortController(); controller.current = request;
-    setError('');
-    try {
-      const next = await api.stats(guildId, '30d', request.signal);
-      if (!request.signal.aborted) setStats(next);
-    } catch (failure) {
-      if (request.signal.aborted) return;
-      // Lost access clears protected lists rather than leaving a stale view.
-      if (failure instanceof ApiError && [401, 403, 404].includes(failure.status)) setStats(null);
-      setError(errorMessage(failure));
-    }
-  }, [guildId]);
-
-  useEffect(() => {
-    setStats(null);
-    if (guildId) void refresh();
-    return () => controller.current?.abort();
-  }, [guildId, refresh]);
+  const { guildId, run, can, blockedReason, bootstrap } = portal;
+  const read = bootstrap && guildId ? statsRead(bootstrap.viewer.id, guildId, '30d') : null;
+  const { value, error, reload } = useRead<Stats>(read?.key ?? null, () => read!.fetch());
+  const stats = value ?? null;
+  const refresh = reload;
+  const addable = can('add');
 
   const play = (list: ListId, shuffle: boolean) => run({ command: 'top', subcommand: 'play', options: { list, shuffle } }, 'add', stats?.serverFavorites[lists.find(item => item.id === list)!.key].map(entry => entry.track));
 

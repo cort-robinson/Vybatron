@@ -102,6 +102,9 @@ export async function startHttpFixture(options: { initialSnapshotFailures?: numb
       else json(response, { ok: true, message: 'Accepted by the loopback HTTP fixture.', snapshot }); return;
     }
     if (path.endsWith('/search')) { json(response, { tracks: [], notice: null }); return; }
+    // Listening stats are separate reads, never snapshot reads.
+    if (path.endsWith('/stats')) { json(response, state.stats); return; }
+    if (path.endsWith('/recap')) { json(response, state.recap); return; }
     if (path.startsWith('/api/guilds/')) {
       snapshotReads.push(Date.now());
       if (snapshotFailures-- > 0) {

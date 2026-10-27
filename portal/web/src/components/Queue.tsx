@@ -12,7 +12,7 @@ import { useEvent } from '../stable';
 import './queue.css';
 
 export function Queue({ portal, compact = false, onAdd }: { portal: Portal; compact?: boolean; onAdd: () => void }) {
-  const { snapshot, library, run, can, pending } = portal;
+  const { snapshot, library, run, can } = portal;
   const queue = snapshot?.session.queue || [];
   // Older bots omit suggestions; treat that as none.
   const suggested = snapshot?.session.suggestions || [];
@@ -23,8 +23,8 @@ export function Queue({ portal, compact = false, onAdd }: { portal: Portal; comp
   const lift = useRef<Lift | null>(null);
   const local = portal.target === 'local';
   const savingFavorite = useSavingFavorite();
-  const controllable = can('control') && !pending.length;
-  const editable = can('library') && !pending.length;
+  const controllable = can('control');
+  const editable = can('library');
   const duration = queue.reduce((sum, track) => sum + (track.isStream ? 0 : track.durationMs), 0);
   const pageSize = compact ? 15 : 50;
   const currentPage = Math.min(page, Math.max(0, Math.ceil(queue.length / pageSize) - 1));
@@ -48,11 +48,10 @@ export function Queue({ portal, compact = false, onAdd }: { portal: Portal; comp
   const change = async (command: string, options: Record<string, number>, revision = snapshot?.revision) => {
     await run({ command, options, expectedRevision: revision }, 'control');
   };
-  const favorite = async (track: Track, position: number) => {
-    const index = favoriteIndexes.get(track.id) ?? -1;
-    if (index >= 0) await run({ command: 'favorite', subcommand: 'remove', options: { index: index + 1 }, expectedTrackId: track.id }, 'library');
-    else if (local) await saveByLink(portal, track.uri);
-    else await run({ command: 'favorite', subcommand: 'add', options: { position }, expectedRevision: snapshot?.revision }, 'library');
+  // The heart flips at once; a save names the visible position and revision from this tap.
+  const favorite = (track: Track, position: number) => {
+    const revision = snapshot?.revision;
+    portal.favorite(track, local ? () => saveByLink(portal, track.uri) : () => run({ command: 'favorite', subcommand: 'add', options: { position }, expectedRevision: revision }, 'library'));
   };
   const moveTo = (from: { index: number; revision: string; guildId: string }, index: number) => {
     if (!snapshot || from.index === index || !controllable) return;
@@ -98,7 +97,7 @@ export function Queue({ portal, compact = false, onAdd }: { portal: Portal; comp
   const handle = useEvent((action: RowAction) => {
     switch (action.type) {
       case 'change': void change(action.command, action.options); break;
-      case 'favorite': void favorite(action.track, action.position); break;
+      case 'favorite': favorite(action.track, action.position); break;
       case 'radio': startRadio(action.track); break;
       case 'raise': raise(action.event, action.index); break;
       case 'follow': follow(action.event); break;
@@ -182,10 +181,10 @@ const QueueRow = memo(function QueueRow({ track, index, rowKey, last, compact, l
 
 // Autoplay picks wait outside the queue: they play only after every queued song.
 function Suggestions({ portal, tracks, compact, radioButton }: { portal: Portal; tracks: Track[]; compact: boolean; radioButton: (track: Track, close: () => void) => React.ReactNode }) {
-  const { run, can, pending } = portal;
+  const { run, can } = portal;
   const headingId = useId();
-  const addable = can('add') && !pending.length;
-  const controllable = can('control') && !pending.length;
+  const addable = can('add');
+  const controllable = can('control');
   const edit = (subcommand: 'promote' | 'remove' | 'less', track: Track, index: number) =>
     void run({ command: 'radio', subcommand, options: { position: index + 1 }, expectedTrackId: track.id }, subcommand === 'promote' ? 'add' : 'control');
   return <section className="suggested" aria-labelledby={headingId}>

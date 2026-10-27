@@ -7,6 +7,7 @@ import { Artwork, Confirm, Empty, ErrorState, IconButton, Loading } from './ui';
 import { Pagination } from './Pagination';
 import { ServerFavorites } from './ServerFavorites';
 import { PlaylistImport } from './PlaylistImport';
+import { fromList } from '../favorites';
 import { transition } from '../motion';
 import { radioLabel, startRadioCommand } from '../radio';
 import { useEvent } from '../stable';
@@ -44,9 +45,9 @@ export function LibraryView({ portal, active = true }: { portal: Portal; active?
   const searchRef = useRef<HTMLInputElement>(null);
   const mixSearchRef = useRef<HTMLInputElement>(null);
   const { library, libraryError, run, can, pending, snapshot } = portal;
-  const addable = can('add') && !pending.length;
-  const controllable = can('control') && !pending.length;
-  const editable = can('library') && !pending.length;
+  const addable = can('add');
+  const controllable = can('control');
+  const editable = can('library');
   const namedMix = library?.mixes.find(mix => mixKey(mix.name) === mixKey(mixName));
   const canSave = editable && !!snapshot?.session.current;
   const selectedMix = library?.mixes.find(mix => mix.id === selected);
@@ -84,6 +85,8 @@ export function LibraryView({ portal, active = true }: { portal: Portal; active?
 
   // Rows are memoized; the command they send keeps one identity.
   const act = useEvent((body: Command, capability: Capability) => void run(body, capability));
+  // The heart empties at once; the row leaves the shelf until the removal is refused.
+  const unfavorite = useEvent((track: Track) => portal.favorite(track, async () => false));
   const radio = portal.target === 'local' ? null : controllable;
 
   // A paused cache keeps drafts and filters, but mounts no heavy list or modal.
@@ -109,7 +112,7 @@ export function LibraryView({ portal, active = true }: { portal: Portal; active?
     </div></div>
     {tab === 'favorites' && <>
       {!library.favorites.length ? <Empty title="A place for your repeat favorites" description="Tap the heart on the current song to keep it here. Only you can see this shelf." icon={<HeartIcon size={30} />} /> : !favorites.length ? noMatches : <ul className="library-track-list" aria-label="Favorite songs">{favorites.slice(offset, offset + pageSize).map(({ track, index }) => <FavoriteRow key={`${track.id}:${index}`}
-        track={track} index={index} addable={addable} editable={editable} radio={radio} blockedReason={portal.blockedReason} act={act} />)}</ul>}
+        track={track} index={index} addable={addable} editable={editable} radio={radio} blockedReason={portal.blockedReason} act={act} unfavorite={unfavorite} />)}</ul>}
       <Pagination label="favorites" page={currentPage} total={favorites.length} pageSize={pageSize} onPageChange={page => setPages(previous => ({ ...previous, favorites: page }))} />
       <PlaylistImport portal={portal} target="favorites" />
       {library.favorites.length > 0 && <button type="button" className="text-button danger-text library-clear" disabled={!editable} onClick={() => setConfirm({ kind: 'favorites' })}>Clear favorites</button>}
@@ -149,7 +152,7 @@ export function LibraryView({ portal, active = true }: { portal: Portal; active?
   </section>}
   {confirm && <Confirm title={confirm.kind === 'favorites' ? 'Clear your favorites?' : confirm.kind === 'replace' ? `Replace “${confirm.name}”?` : `Delete “${confirm.name}”?`}
     detail={confirm.kind === 'favorites' ? 'Removes every song from your private shelf across all servers. Shared mixes and the queue stay in place.' : confirm.kind === 'replace' ? 'Replace the songs in this shared mix with the current song and queue. Only its creator or a server manager can replace it.' : 'Removes this shared mix from the server. The live queue stays in place.'}
-    action={confirm.kind === 'replace' ? 'Replace mix' : confirm.kind === 'favorites' ? 'Clear favorites' : 'Delete mix'} busy={!!pending.length || !editable || confirm.kind === 'replace' && !snapshot?.session.current}
+    action={confirm.kind === 'replace' ? 'Replace mix' : confirm.kind === 'favorites' ? 'Clear favorites' : 'Delete mix'} busy={pending.includes(confirm.kind === 'favorites' ? 'favorite:clear' : confirm.kind === 'replace' ? 'mix:save' : 'mix:delete') || !editable || confirm.kind === 'replace' && !snapshot?.session.current}
     onClose={() => setConfirm(null)} onConfirm={() => {
       if (confirm.kind === 'replace') void save(confirm.name, true, confirm.revision);
       else void run(confirm.kind === 'favorites' ? { command: 'favorite', subcommand: 'clear', options: { confirm: true } } : { command: 'mix', subcommand: 'delete', options: { name: confirm.name }, expectedMixVersion: confirm.version }, 'library').then(ok => { if (ok) setConfirm(null); });
@@ -159,12 +162,12 @@ export function LibraryView({ portal, active = true }: { portal: Portal; active?
 
 type Act = (body: Command, capability: Capability) => void;
 // Library rows render again when their song, place or permissions change, not on every live frame.
-const FavoriteRow = memo(function FavoriteRow({ track, index, addable, editable, radio, blockedReason, act }: { track: Track; index: number; addable: boolean; editable: boolean; radio: boolean | null; blockedReason: string; act: Act }) {
+const FavoriteRow = memo(function FavoriteRow({ track, index, addable, editable, radio, blockedReason, act, unfavorite }: { track: Track; index: number; addable: boolean; editable: boolean; radio: boolean | null; blockedReason: string; act: Act; unfavorite: (track: Track) => void }) {
   return <li>
     <Artwork track={track} /><div className="track-text"><strong dir="auto" title={track.title}>{track.title}</strong><span dir="auto">{track.author}<span className="track-source"> · {track.source}</span></span></div><span className="track-duration">{track.isStream ? 'Live' : time(track.durationMs)}</span>
-    <IconButton label={`Queue favorite ${track.title}`} disabled={!addable} title={!addable ? blockedReason : undefined} onClick={() => act({ command: 'favorite', subcommand: 'play', options: { index: index + 1 }, expectedTrackId: track.id }, 'add')}><PlusIcon size={23} /></IconButton>
+    <IconButton label={`Queue favorite ${track.title}`} disabled={!addable} title={!addable ? blockedReason : undefined} onClick={() => act(fromList({ command: 'favorite', subcommand: 'play', options: { index: index + 1 }, expectedTrackId: track.id }), 'add')}><PlusIcon size={23} /></IconButton>
     <RadioButton track={track} enabled={radio} blockedReason={blockedReason} act={act} />
-    <IconButton className="favorite active" label={`Remove favorite ${track.title}`} disabled={!editable} onClick={() => act({ command: 'favorite', subcommand: 'remove', options: { index: index + 1 }, expectedTrackId: track.id }, 'library')}><HeartIcon size={23} weight="fill" /></IconButton>
+    <IconButton className="favorite active" label={`Remove favorite ${track.title}`} disabled={!editable} onClick={() => unfavorite(track)}><HeartIcon size={23} weight="fill" /></IconButton>
   </li>;
 });
 // A replay binds to the session the listener saw, so the row also follows its revision.

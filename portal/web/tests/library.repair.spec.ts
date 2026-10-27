@@ -16,8 +16,9 @@ async function openLibrary(page: Page) {
   await expect(page.getByLabel('Search favorites', { exact: true })).toBeVisible();
 }
 async function refreshLibrary(page: Page) {
+  // A reconnect re-reads the library; a quick return to a fresh session doesn't.
   const response = page.waitForResponse(response => response.url().endsWith('/library') && response.status() === 200);
-  await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange'))); await response;
+  await streamAction(page, 'disconnect'); await streamAction(page, 'reconnect'); await response;
 }
 
 test('1,000 favorites mount at most 50 rows and filtering plus paging retains source positions', async ({ page }) => {

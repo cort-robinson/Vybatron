@@ -41,8 +41,8 @@ test('queue predictions chain, then stop applying once verified state moves on',
   expect(ids(applyIntents(changed, 0, [move, skip]).snapshot)).toEqual(ids(base));
 });
 
-test('skip is not predicted when repeat or an empty queue makes the next track a server decision', () => {
-  const repeat = verified(); repeat.session.repeat = 'queue';
+test('skip is not predicted when repeating one song or an empty queue makes the next track a server decision', () => {
+  const repeat = verified(); repeat.session.repeat = 'track';
   const skip = createIntent(1, { command: 'skip' }, repeat, repeat, 0, 0)!;
   expect(applyIntents(repeat, 0, [skip]).snapshot.session.current?.title).toBe('Evening Light');
   const empty = verified(); empty.session.queue = [];
@@ -57,4 +57,38 @@ test('a queued edit only targets the exact tracks the user acted on', () => {
   expect(stillTargets(remove, reordered)).toBe(false);
   const pause = createIntent(2, { command: 'pause' }, base, base, 0, 0)!;
   expect(stillTargets(pause, reordered)).toBe(true);
+});
+
+test('repeating the queue sends the skipped song to its end, and skip-to drops the songs passed over', () => {
+  const repeat = verified(); repeat.session.repeat = 'queue';
+  const skipped = applyIntents(repeat, 0, [createIntent(1, { command: 'skip' }, repeat, repeat, 0, 0)!]).snapshot;
+  expect(skipped.session.current?.title).toBe('Night Drive');
+  expect(ids(skipped)).toEqual(['Slow Motion', 'Golden Hour', 'Afterglow', 'Evening Light']);
+  const jumped = applyIntents(repeat, 0, [createIntent(2, { command: 'skipto', options: { position: 3 } }, repeat, repeat, 0, 0)!]).snapshot;
+  expect(jumped.session.current?.title).toBe('Golden Hour');
+  expect(ids(jumped)).toEqual(['Afterglow', 'Evening Light']);
+});
+
+test('Play next with a chosen song goes to the front and binds to the queue shown', () => {
+  const base = verified(); const song = { ...base.session.queue[0], id: 'chosen', title: 'Chosen' };
+  const next = createIntent(1, { command: 'playnext', options: { query: song.uri! } }, base, base, 0, 0, song)!;
+  expect(ids(applyIntents(base, 0, [next]).snapshot)[0]).toBe('Chosen');
+  expect(stillTargets(next, base)).toBe(true);
+  const changed = verified(); changed.session.queue.reverse();
+  expect(stillTargets(next, changed)).toBe(false);
+  // Unsent, it still shows over newer state; the bot's reply settles it.
+  expect(ids(applyIntents({ ...changed, revision: 'newer' }, 0, [next]).snapshot)[0]).toBe('Chosen');
+});
+
+test('suggestion edits find their pick by id and keep showing until sent', () => {
+  const base = verified(); base.session.suggestions = [{ ...base.session.queue[0], id: 'pick-1', title: 'Pick one' }, { ...base.session.queue[1], id: 'pick-2', title: 'Pick two' }];
+  const remove = createIntent(1, { command: 'radio', subcommand: 'remove', options: { position: 2 }, expectedTrackId: 'pick-2' }, base, base, 0, 0)!;
+  expect(remove.slot).toBeNull();
+  const promote = createIntent(2, { command: 'radio', subcommand: 'promote', options: { position: 1 }, expectedTrackId: 'pick-1' }, base, base, 0, 0)!;
+  const shown = applyIntents({ ...base, revision: 'newer' }, 0, [remove, promote]).snapshot;
+  expect(shown.session.suggestions).toEqual([]);
+  expect(ids(shown).at(-1)).toBe('Pick one');
+  // A pick that's already gone changes nothing.
+  const gone = verified(); gone.session.suggestions = [];
+  expect(applyIntents(gone, 0, [remove]).snapshot.session.suggestions).toEqual([]);
 });

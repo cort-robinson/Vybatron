@@ -238,7 +238,7 @@ Try again; the rest of My Music keeps working.
 
 ### Permission, connection, and recovery states
 
-API projections are authoritative: canAdd, canControl, canVote, saved-session canResume, guild admin, and mix canEdit drive availability. Current/queued favorite saves and visible-session mix saves use library access outside voice with a fresh source revision. Ordinary queue additions use canAdd; play-next and history replay require canControl and a fresh revision, including in supplemental forms. Administration never grants a visual bypass of same-voice/DJ rules. Pending mutations disable competing actions, while Stop retains its urgent path.
+API projections are authoritative: canAdd, canControl, canVote, saved-session canResume, guild admin, and mix canEdit drive availability. Current/queued favorite saves and visible-session mix saves use library access outside voice with a fresh source revision. Ordinary queue additions use canAdd; play-next and history replay require canControl and a fresh revision, including in supplemental forms. Administration never grants a visual bypass of same-voice/DJ rules. Pending mutations never disable other actions: later taps queue in order behind them (with “N queued” feedback), library-only changes travel beside playback, and Stop retains its urgent path.
 
 Settings preserve authorized channel and role dropdowns. When an admin catalog is absent, labeled Music text channel ID and DJ role ID fields show configured IDs and accept known digit-only Discord IDs, bounded to 20 characters. Leaving DJ role ID blank restores everyone-in-voice controls. Helper text explains missing names without requesting private metadata; the bot validates the referenced guild resources.
 

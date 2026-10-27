@@ -3,8 +3,9 @@ import type { Command } from '../src/types';
 import { mockPortal, streamAction, gotoSession, openServer } from './fixtures';
 
 async function refreshLibrary(page: Page) {
+  // A reconnect re-reads the library; a quick return to a fresh session doesn't.
   const response = page.waitForResponse(response => response.url().endsWith('/library') && response.status() === 200);
-  await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+  await streamAction(page, 'disconnect'); await streamAction(page, 'reconnect');
   await response;
 }
 
@@ -194,7 +195,7 @@ test('a library read started before 409 cannot overwrite the fresh conflict read
   await expect(button).toBeEnabled();
   const reads = fixture.requests.filter(path => path.endsWith('/library')).length;
   fixture.delayLibrary(700);
-  await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+  await streamAction(page, 'disconnect'); await streamAction(page, 'reconnect');
   await expect.poll(() => fixture.requests.filter(path => path.endsWith('/library')).length).toBeGreaterThan(reads);
   fixture.state.library.favorites.shift(); fixture.delayLibrary(0);
   await button.click();

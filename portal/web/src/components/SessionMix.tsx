@@ -13,7 +13,7 @@ function useSessionMix(portal: Portal) {
   const existing = library?.mixes.find(mix => mixKey(mix.name) === mixKey(name));
   const problem = !name.trim() ? '' : !validName(name) ? 'Use 1–40 letters, numbers, spaces, hyphens or underscores.'
     : existing ? existing.canEdit ? `“${existing.name}” already exists. Choose a new name, or replace it from My Music.` : `“${existing.name}” belongs to another listener. Choose a new name.` : '';
-  const ready = !!name.trim() && !problem && can('library') && !!snapshot?.session.current && !pending.length;
+  const ready = !!name.trim() && !problem && can('library') && !!snapshot?.session.current && !pending.includes('mix:save');
   const save = () => run({ command: 'mix', subcommand: 'save', options: { name: name.trim(), session: true }, expectedRevision: snapshot?.revision }, 'library');
   return { name, setName, problem, ready, save };
 }

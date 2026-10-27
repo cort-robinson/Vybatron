@@ -138,7 +138,7 @@ test('a delayed command snapshot cannot replace a later Discord state', async ({
   } finally { await page.close(); await server.close(); }
 });
 
-test('a slow GET started during a command is replaced by a read after completion', async ({ page }) => {
+test('a slow quiet check started during a command is discarded once the command lands', async ({ page }) => {
   const server = await startHttpFixture();
   try {
     await connected(page, server);
@@ -149,12 +149,15 @@ test('a slow GET started during a command is replaced by a read after completion
     await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
     await expect.poll(() => server.snapshotReads.length).toBe(reads + 1);
     expect([...server.capturedSnapshots.values()][0].session.status).toBe('playing');
-    server.releaseCommandExecution();
-    await expect.poll(() => server.snapshotReads.length).toBe(reads + 2);
-    // The confirming read is pending: the prediction stays, but controls wait for fresh state.
-    await expect(page.getByRole('button', { name: 'Resume playback' })).toBeDisabled();
-    server.releaseSnapshotReads(true);
+    // Returning to a fresh session doesn't lock anything while it checks.
     await expect(page.getByRole('button', { name: 'Resume playback' })).toBeEnabled();
+    server.releaseCommandExecution();
+    await expect(page.getByRole('button', { name: 'Resume playback' })).toBeEnabled();
+    // The check began before the pause landed, so its older answer can't undo it.
+    server.releaseSnapshotReads(true);
+    await page.waitForTimeout(300);
+    await expect(page.getByRole('button', { name: 'Resume playback' })).toBeEnabled();
+    expect(server.snapshotReads).toHaveLength(reads + 1);
     expect(server.commands).toHaveLength(1);
   } finally { await page.close(); await server.close(); }
 });

@@ -293,6 +293,7 @@ export class MusicLibrary {
     return { ...structuredClone(documentPart(this.document.guilds[guildId] || emptyGuild())), ...this.state.read(guildId) };
   }
   settings(guildId) { assertId(guildId); return { ...DEFAULT_SETTINGS, ...this.document.guilds[guildId]?.settings }; }
+  favoriteUserIds() { return Object.keys(this.document.favorites); }
   favorites(userId) { assertId(userId); return structuredClone(this.document.favorites[userId] || []); }
   favoriteOverflowCount(userId) { assertId(userId); return this.document.favoriteOverflow[userId]?.length || 0; }
   async writeDocument(draft) {

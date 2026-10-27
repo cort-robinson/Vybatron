@@ -9,6 +9,7 @@ import { initializeLibrary } from './utils/library.js';
 import { initializeStats } from './utils/play-stats.js';
 import { startPortalBridge } from './portal/index.js';
 import { startOperatorAlerts } from './operator-alerts.js';
+import { scheduleSavedSongUpgrade } from './utils/song-upgrade.js';
 
 assertConfig();
 
@@ -35,6 +36,7 @@ client.once('clientReady', () => {
     logEvent(console, 'info', 'discord_connected');
     stopPresence = startPresence(client);
     await client.lavalink.init({ id: client.user.id, username: client.user.username });
+    scheduleSavedSongUpgrade(client);
   })().catch((error) => runtime.fatal(error, 'audio_initialization_failed'));
 });
 

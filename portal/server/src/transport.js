@@ -1,6 +1,7 @@
 import http from 'node:http';
 import https from 'node:https';
 import { HttpError, busy, unavailable, unauthorized } from './security.js';
+import { bridgeTime } from './timing.js';
 
 const safeErrors = {
   400: ['invalid_input', 'The bot rejected this input. Refresh and check the command options.'],
@@ -118,7 +119,7 @@ export class Transport {
           try {
             const data = JSON.parse(Buffer.concat(chunks).toString('utf8'));
             if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error();
-            resolve({ status: response.statusCode, data });
+            resolve({ status: response.statusCode, data, timing: response.headers['server-timing'] });
           } catch { reject(new InvalidUpstreamResponse()); }
         });
       });
@@ -199,7 +200,7 @@ export class Transport {
       timeout: command ? this.limits.commandMs : this.limits.upstreamMs,
       stop: command?.command === 'stop',
     };
-    const result = shareRead && !command ? await this.sharedRead(url, options, signal) : await this.request(url, { ...options, signal });
+    const result = await bridgeTime(() => shareRead && !command ? this.sharedRead(url, options, signal) : this.request(url, { ...options, signal }));
     if (result.status !== 200) {
       // Only this exact private bridge code is a terminal projection failure.
       // All other upstream codes/messages remain ignored and sanitized by status.

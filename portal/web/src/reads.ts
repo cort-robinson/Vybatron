@@ -12,8 +12,10 @@ export interface Read<T> { value?: T; error: string; at: number }
 const reads = new Map<string, Read<unknown>>();
 const loading = new Map<string, Promise<void>>();
 const listeners = new Set<() => void>();
-// Bumped whenever reads are forgotten, so results already on their way are discarded.
-let generation = 0;
+// Bumped per key whenever its read is forgotten, so a result already on its way
+// for that key (and only that key) is discarded.
+const versions = new Map<string, number>();
+const version = (key: string) => versions.get(key) ?? 0;
 // Bumped only by a deliberate clear (Clear my request stats), which shown reads start again after.
 let resets = 0;
 let unauthorized: () => void = () => {};
@@ -22,17 +24,21 @@ export function onReadsUnauthorized(handler: () => void) { unauthorized = handle
 const publish = () => listeners.forEach(listener => listener());
 const subscribe = (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener); }; };
 
-function forget(prefix: string, guildId?: string) {
-  generation++;
-  const drop = (key: string) => key.startsWith(prefix) && (!guildId || key.split(':')[1] === guildId);
-  for (const key of [...reads.keys()]) if (drop(key)) reads.delete(key);
-  for (const key of [...loading.keys()]) if (drop(key)) loading.delete(key);
+// Forget matching reads; with `error`, keep each as that error instead, so every
+// surface showing one explains it and offers its own retry.
+function forget(match: (key: string) => boolean, error?: string) {
+  for (const key of new Set([...reads.keys(), ...loading.keys()])) {
+    if (!match(key)) continue;
+    versions.set(key, version(key) + 1); loading.delete(key);
+    if (error) reads.set(key, { error, at: 0 }); else reads.delete(key);
+  }
 }
+const guildOf = (key: string) => key.split(':')[1];
 // Forget reads whose key starts with `prefix` (all of them by default), or that
 // belong to `guildId`, including any still on their way. Reads still on screen
 // start again, except after lost access, which must not ask again by itself.
 export function clearReads(prefix = '', guildId?: string, { reload = true } = {}) {
-  forget(prefix, guildId);
+  forget(key => key.startsWith(prefix) && (!guildId || guildOf(key) === guildId));
   if (reload) resets++;
   publish();
 }
@@ -44,20 +50,21 @@ export function loadRead<T>(key: string, fetch: () => Promise<T>, force = false)
   const inflight = loading.get(key);
   if (inflight) return inflight;
   if (!force && held?.value !== undefined && Date.now() - held.at < freshMs) return Promise.resolve();
-  const started = generation;
+  const started = version(key);
   const request = fetch().then(value => {
-    if (started !== generation) return;
+    if (started !== version(key)) return;
     reads.set(key, { value, error: '', at: Date.now() });
   }, failure => {
-    if (started !== generation) return;
+    if (started !== version(key)) return;
     const status = failure instanceof ApiError ? failure.status : 0;
-    // Lost access clears everything held under that grant: every read for the server
-    // (or, signed out, all of them), including any still on their way.
-    if (status === 401) { forget(''); unauthorized(); return; }
-    if (status === 403 || status === 404) forget('', key.split(':')[1]);
+    // Signed out: nothing held stays, and the portal signs out.
+    if (status === 401) { forget(() => true); unauthorized(); return; }
+    // Lost access to a server replaces everything held for it (and anything still on
+    // its way) with the reason. Nothing asks again by itself; each surface's retry does.
+    if (status === 403 || status === 404) { forget(other => guildOf(other) === guildOf(key), errorMessage(failure)); return; }
     // A store that would refuse Play too clears its lists rather than leaving a stale
     // view. Anything else keeps what's shown.
-    const drop = [403, 404, 503].includes(status);
+    const drop = status === 503;
     reads.set(key, { value: drop ? undefined : reads.get(key)?.value, error: errorMessage(failure), at: reads.get(key)?.at ?? 0 });
   }).finally(() => {
     if (loading.get(key) === request) loading.delete(key);

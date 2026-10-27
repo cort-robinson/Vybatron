@@ -248,10 +248,16 @@ test('a queued save is not moved onto a song an earlier change brought in', asyn
   const current = fixture.state.snapshot.session.current!;
   fixture.state.library.favorites = fixture.state.library.favorites.filter(track => track.id !== current.id);
   Object.assign(fixture.state.snapshot.session, { hasPrevious: true, positionMs: 1000, status: 'paused' });
-  // Back brings in another song; the fixture models that before replying.
+  // Back brings in another song; the fixture models that before replying. Like the
+  // bot, it refuses a save bound to a session that has since changed.
   await page.route('**/api/guilds/testing/commands', async route => {
-    if (route.request().postDataJSON().command === 'back') {
+    const body = route.request().postDataJSON();
+    if (body.command === 'back') {
       const s = fixture.state.snapshot.session; s.queue.unshift(s.current!); s.current = fixture.state.library.history[0].track;
+    }
+    if (body.command === 'favorite' && body.subcommand === 'add' && body.expectedRevision !== fixture.state.snapshot.revision) {
+      fixture.commands.push(body);
+      await route.fulfill({ status: 409, json: { error: { code: 'stale_revision', message: 'The session changed.' } } }); return;
     }
     await route.fallback();
   });
@@ -266,6 +272,32 @@ test('a queued save is not moved onto a song an earlier change brought in', asyn
   // Bound to the session the listener saw, so the bot refuses it rather than saving the new song.
   expect(fixture.commands[0].expectedRevision).toBe('revision-1');
   expect(fixture.commands[1].expectedRevision).toBe('revision-1');
+  await expect(page.getByRole('alert')).toContainText('Review the refreshed state');
+  expect(fixture.state.library.favorites.map(track => track.id)).not.toContain(fixture.state.library.history[0].track.id);
+  expect(fixture.state.library.favorites.map(track => track.id)).not.toContain(current.id);
+  await expect(player(page).getByRole('button', { name: 'Save current song to favorites' })).toHaveAttribute('aria-pressed', 'false');
+});
+
+test('lost access to a server shows its reason on every held read, each with its own retry', async ({ page }) => {
+  const fixture = await mockPortal(page);
+  await page.goto('/');
+  await expect(page.locator('.recap-grid')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'On repeat in this server' })).toBeVisible();
+  // The past-week recap finds access gone; the stats on screen go with it.
+  await page.route('**/api/guilds/testing/recap*', route => route.fulfill({ status: 403, json: { error: { code: 'forbidden', message: 'You no longer have access to this listening space.' } } }));
+  await page.getByLabel('Recap range').selectOption('7d');
+  await expect(page.locator('.home-recap [role="alert"]')).toContainText('no longer have access');
+  await expect(page.locator('.home-unavailable').first()).toContainText('no longer have access');
+  await expect(page.getByRole('heading', { name: 'On repeat in this server' })).toHaveCount(0);
+  const stats = count(fixture.requests, '/stats');
+  await page.waitForTimeout(500);
+  expect(count(fixture.requests, '/stats')).toBe(stats);
+  // Access is back: each retry reads its own part again.
+  await page.unroute('**/api/guilds/testing/recap*');
+  await page.locator('.home-recap').getByRole('button', { name: 'Try again' }).click();
+  await expect(page.locator('.recap-grid')).toBeVisible();
+  await page.getByRole('button', { name: 'Try again' }).first().click();
+  await expect(page.getByRole('heading', { name: 'On repeat in this server' })).toBeVisible();
 });
 
 test('lost access to one stats range drops every range held for that server', async ({ page }) => {
@@ -276,9 +308,11 @@ test('lost access to one stats range drops every range held for that server', as
   expect(count(fixture.requests, '/stats')).toBe(1);
   const range = page.getByLabel('Time range for Your top tracks');
   await range.selectOption('7d');
-  await expect(page.locator('.home-unavailable')).toContainText('no longer have access');
+  await expect(page.locator('.home-unavailable').first()).toContainText('no longer have access');
   await page.unroute('**/api/guilds/testing/stats?window=7d');
-  await page.getByRole('button', { name: 'Try again' }).click();
+  // The recap held for that server shows the same reason with its own retry.
+  await expect(page.locator('.home-recap [role="alert"]')).toContainText('no longer have access');
+  await page.getByRole('button', { name: 'Try again' }).first().click();
   // The past-month read held from before was dropped with it, so it's read again.
   await expect(range).toBeVisible();
   const before = count(fixture.requests, '/stats');

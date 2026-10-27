@@ -256,17 +256,20 @@ test('a song from a source the import can\'t read explains instead of failing', 
 
 test('an addition on this device made while another is still looking up its song waits its turn', async ({ page }) => {
   const fixture = await portal(page, { inVoice: false });
-  // Lookups are slow, so the typed addition is still finding its song when the next tap lands.
+  // The typed addition's lookup is held, so it's still finding its song when the next tap lands.
+  let held: Promise<void> | undefined; let release = () => {};
   await page.route('**/api/guilds/*/search?*', async route => {
-    await new Promise(resolve => setTimeout(resolve, 600));
+    if (held) await held;
     await route.fulfill({ json: { tracks: [youtubeTrack('dX3k_QDnzHE', 'Midnight City'), youtubeTrack('Fk3RbKWbmtg', 'Wait')], notice: null } });
   });
   await page.getByRole('button', { name: 'Add music' }).first().click();
   await page.getByRole('searchbox', { name: 'Music search' }).fill('midnight');
   const wait = page.getByRole('button', { name: 'Add Wait to queue' });
   await expect(wait).toBeEnabled();
+  held = new Promise(resolve => { release = resolve; });
   await page.getByRole('button', { name: 'Add to queue', exact: true }).click();
   await wait.click();
+  release(); held = undefined;
   await page.keyboard.press('Escape');
   await expect(title(page)).toHaveText('Midnight City');
   await expect(page.locator('.queue:not(.queue-compact) .track-row strong')).toHaveText(['Wait']);

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api, ApiError, errorMessage } from './api';
 import type { Bootstrap, Capability, Command, Connection, GuildSnapshot, ImportPreview, Library, SnapshotOrdering, Track } from './types';
 import { orderingOf } from './ordering';
+import { interactive, sent, timed } from './perf';
 import { applyIntents, createIntent, isAddition, isOptimistic, needsRevision, sameTracks, slotOf, stillTargets, trackIdentities, type Intent } from './optimistic';
 import { clearReads, loadRead, onReadsUnauthorized, recapRead, statsRead } from './reads';
 import { fromList, isListed } from './favorites';
@@ -433,6 +434,7 @@ export function usePortal() {
       case 'resume': return s.savedSession.canResume;
     }
   }, [bootstrap, snapshot, connection]);
+  useEffect(() => { if (connection === 'live' && snapshot) interactive(); }, [connection, snapshot]);
   const blockedReason = connection !== 'live' ? 'Reconnect for fresh state before making changes.'
     : snapshot?.session.reason || 'Join the music voice channel. Playback controls may require the DJ role.';
 
@@ -515,6 +517,7 @@ export function usePortal() {
     const startedOrdering = orderingOf(current.current);
     const touchesLibrary = ['favorite', 'mix', 'replay', 'session', 'settings'].includes(body.command);
     try {
+      sent(body);
       const result = await api.command(id, bootstrap.csrfToken, command);
       if (!settled()) return false;
       entry.sentRevision = command.expectedRevision; entry.replyRevision = result.snapshot?.revision; entry.replyView = result.snapshot;
@@ -722,7 +725,7 @@ export function usePortal() {
   // pending lists changes waiting for the bot; none of them locks other controls.
   return { bootstrap, auth, authError, loadBootstrap, guildId, selectGuild, snapshot: view.snapshot, receivedAt: view.receivedAt, verified: snapshot,
     library: shownLibrary, libraryError, refreshLibrary: () => libraryRefreshRef.current(), connection, connectionError,
-    reconnect: () => reconnectRef.current(), pending, confirming, queued, syncing, can, blockedReason, run, favorite, previewImport, notice, notify,
+    reconnect: () => reconnectRef.current(), pending, confirming, queued, syncing, can, blockedReason, run: timed(run), favorite, previewImport, notice, notify,
     dismissNotice: () => setNotice(null), logout };
 }
 export type RemotePortal = ReturnType<typeof usePortal>;

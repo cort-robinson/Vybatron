@@ -145,3 +145,46 @@ permission-filtered history with an unchanged revision, replaced mix confirmatio
 captured schema selections across refresh/disconnect, held HTTP conflict reads,
 and stale library responses. Phone controls use normal pointer actions with no
 horizontal overflow.
+
+## Measuring latency
+
+Every `/api/**` response carries a `Server-Timing` header with fixed metric names and
+durations only (no IDs or content):
+
+| Metric | Meaning |
+|---|---|
+| `portal` | Portal API handling time, from request arrival to the status line. |
+| `bridge` | Time the portal waited on the bot bridge (summed if a route makes several calls). |
+| `bot` | The bot's own handling time for the bridge request. |
+| `discord` | Wall time the bot spent in Discord authorization reads (overlapping reads count once). |
+
+`bridge − bot` is the portal↔bot hop; `bot − discord` is the bot's own work (projection,
+the command's mutation lane and Lavalink). `bot` and `discord` are absent when the bot
+sent no timing; a route with no bridge call shows only `portal`. DevTools → Network →
+Timing shows them per request.
+
+In the browser, open the portal with `?perf` once, or set `localStorage.vybPerf = '1'`
+(remove it to stop). Off, nothing is measured. On, these User Timing measures appear on
+the DevTools Performance timeline and in the summary:
+
+| Measure | From → to |
+|---|---|
+| `vyb:tap→paint <command>` | The click event → the first painted frame after the optimistic state commits. |
+| `vyb:tap→confirmed <command>` | The click → the bot's reply and the snapshot that confirms it are applied. |
+| `vyb:tap→rejected <command>` | The click → a sent command that conflicted or failed settles. |
+| `vyb:boot→interactive` | Navigation start → first painted snapshot with controls enabled. |
+| `api <route> [metric]` | Each API request's total duration, and its `Server-Timing` metrics, by route (IDs replaced with `:id`). |
+
+A tap that sends nothing (already the state shown, replaced by a newer choice before
+sending, or blocked) records only its paint. Live-stream (`/events`) responses carry
+only `portal` and `bridge`: a stream can join a bot read already in flight.
+
+The console prints a table after boot and every 10 actions. `__vybPerf()` returns
+`{ metric, count, p50, p95, max }` rows (last 200 samples per metric) and
+`__vybPerf.reset()` clears them, so a before/after comparison is: reset, repeat the
+action 20 times, read p50/p95.
+
+Targets for a phone on a warm cache: **tap→paint < 50 ms**, **tap→confirmed < 300 ms**,
+**boot→interactive < 1.5 s**. When tap→confirmed is slow, the request rows say where:
+large `discord` is Discord authorization, `bot − discord` is bot work, `bridge − bot`
+is the hop, and `api … − portal` is the network to the phone.

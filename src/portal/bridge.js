@@ -17,13 +17,15 @@ import { createChangeFeed } from './changes.js';
 import { createAudioCache, sendAudio } from './audio.js';
 import { trackLyrics, videoLyrics } from '../utils/lyrics.js';
 import { publicTrackId } from './selections.js';
+import { measureDiscord, serverTiming, startRequestTiming } from './request-timing.js';
 
 const hash = value => createHash('sha256').update(value).digest();
 function json(response, status, body, maxBytes) {
   if (response.destroyed || response.writableEnded) return;
   let serialized = JSON.stringify(body);
   if (Buffer.byteLength(serialized) > maxBytes) { status = 503; serialized = JSON.stringify({ error: { code: 'projection_limit', message: 'This server snapshot exceeds the safe response limit.' } }); }
-  response.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
+  const timing = serverTiming(response);
+  response.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', ...(timing && { 'Server-Timing': timing }) });
   response.end(serialized);
 }
 async function readBody(request, maxBytes) {
@@ -54,7 +56,7 @@ export function startPortalBridge(client, {
     if (!Number.isInteger(value) || value < minimum || value > maximum) throw new Error('Invalid private bridge resource limit.');
   }
   const secret = hash(`Bearer ${token}`);
-  const policy = createPortalPolicy(client, { operatorIds });
+  const policy = measureDiscord(createPortalPolicy(client, { operatorIds }));
   const revisions = createRevisions(client);
   const timings = createCommandTimings();
   const changes = createChangeFeed(client, revisions);
@@ -71,6 +73,7 @@ export function startPortalBridge(client, {
     // handler. Body readers still observe request failures through iteration.
     request.on('error', () => {}); response.on('error', () => {});
     const expiry = new AbortController();
+    const timed = startRequestTiming(response);
     const run = async () => {
       if (typeof request.headers.authorization !== 'string' || request.headers.authorization.length > 1024 || !timingSafeEqual(secret, hash(request.headers.authorization))) fail(401, 'unauthenticated', 'Bridge authentication is required.');
       if (request.headers.origin !== undefined || request.headers['access-control-request-method'] !== undefined) fail(403, 'browser_forbidden', 'Direct browser access is unavailable.');
@@ -218,7 +221,7 @@ export function startPortalBridge(client, {
     // Timeouts only bound the transport. An accepted command is never replayed
     // or abandoned mid-write; hardened source deadlines/fences finish its work.
     // A command that has not started writing is cancelled with the reply.
-    const task = withTimeout(run(), 90_000).catch(error => {
+    const task = withTimeout(timed(run), 90_000).catch(error => {
       expiry.abort();
       const safe = safeError(error); json(response, safe.status, { error: { code: safe.code, message: safe.message } }, maxResponseBytes);
     });

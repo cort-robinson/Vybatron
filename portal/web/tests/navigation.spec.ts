@@ -69,3 +69,33 @@ test('the phone mini player favorites the current song without opening the playe
   expect(button.width).toBeGreaterThanOrEqual(44);
   expect(button.y).toBeGreaterThanOrEqual(deck.y);
 });
+
+test('an open search follows the layout across the breakpoint and keeps its query', async ({ page }) => {
+  await page.setViewportSize(phone);
+  await mockPortal(page); await page.goto('/');
+  await page.getByRole('navigation', { name: 'Main navigation' }).getByRole('button', { name: 'Search' }).click();
+  await page.getByRole('searchbox', { name: 'Music search' }).fill('Midnight');
+  await page.setViewportSize({ width: 1280, height: 900 });
+  const dialog = page.getByRole('dialog', { name: 'Add music' });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole('searchbox', { name: 'Music search' })).toHaveValue('Midnight');
+  await page.getByRole('button', { name: 'Close dialog' }).click();
+  await page.getByRole('button', { name: 'Queue', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Shared Queue', level: 1 })).toBeVisible();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Search music' }).click();
+  await expect(dialog).toBeVisible();
+  await page.setViewportSize(phone);
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(page.locator('.search-page').getByRole('searchbox', { name: 'Music search' })).toHaveValue('Midnight');
+});
+
+test('a playback error shows while the player covers the phone Search page', async ({ page }) => {
+  await page.setViewportSize(phone);
+  await mockPortal(page); await page.goto('/');
+  await page.getByRole('navigation', { name: 'Main navigation' }).getByRole('button', { name: 'Search' }).click();
+  await page.getByRole('button', { name: 'Open player', exact: true }).click();
+  await page.route('**/api/guilds/*/commands', route => route.fulfill({ status: 503, json: { error: { code: 'unavailable', message: 'Playback control is unavailable right now.' } } }));
+  await page.getByRole('button', { name: 'Skip current song' }).filter({ visible: true }).click();
+  await expect(page.locator('.toast').filter({ hasText: 'Playback control is unavailable right now.' })).toBeVisible();
+});

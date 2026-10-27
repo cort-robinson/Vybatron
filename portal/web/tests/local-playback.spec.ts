@@ -158,8 +158,8 @@ test('home lists queue on this device from the tracks the portal already shows',
   await expect(title(page)).toHaveText('Midnight City');
   await page.getByRole('button', { name: 'Queue', exact: true }).click();
   await expect(page.locator('.track-row')).toHaveCount(3);
-  // Saving a song that isn't a favorite needs the Discord session.
-  await expect(page.getByTestId('player').getByRole('button', { name: 'Save current song to favorites' })).toBeDisabled();
+  // A song on this device can be saved too; it goes through a one-song import.
+  await expect(page.getByTestId('player').getByRole('button', { name: 'Save current song to favorites' })).toBeEnabled();
 });
 
 test.describe('on a touch screen', () => {
@@ -184,4 +184,16 @@ test.describe('on a touch screen', () => {
     await expect(page.getByTestId('player')).toHaveClass(/collapsed/);
     expect(fixture.commands).toEqual([]);
   });
+});
+
+test('a song on this device saves to favorites through a one-song import', async ({ page }) => {
+  const fixture = await portal(page, { inVoice: false });
+  await addSongs(page);
+  await expect(title(page)).toHaveText('Midnight City');
+  const heart = page.getByTestId('player').getByRole('button', { name: 'Save current song to favorites' }).filter({ visible: true });
+  await expect(heart).toBeEnabled();
+  await heart.click();
+  await expect.poll(() => fixture.commands.filter(c => c.command === 'favorite').map(c => [c.subcommand, c.options?.link, !!c.expectedImportId]))
+    .toEqual([['import', 'https://www.youtube.com/watch?v=dX3k_QDnzHE', false], ['import', 'https://www.youtube.com/watch?v=dX3k_QDnzHE', true]]);
+  expect(fixture.commands.some(c => c.command === 'favorite' && c.subcommand === 'add')).toBe(false);
 });

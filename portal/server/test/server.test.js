@@ -516,6 +516,11 @@ test('API responses carry Server-Timing with only fixed metric names and duratio
     assert.equal(response.status, 200);
     assert.match(response.headers['server-timing'], new RegExp(`^${metric('portal')}, ${metric('bridge')}$`));
   }
+  // A live stream may join a read already in flight, so its bot numbers are not merged.
+  f.state.serverTiming = 'bot;dur=12.5, discord;dur=4';
+  const live = await stream(f.base, device.cookie); t.after(live.close);
+  assert.equal(live.res.statusCode, 200);
+  assert.match(live.res.headers['server-timing'], new RegExp(`^${metric('portal')}, ${metric('bridge')}$`));
   delete f.state.serverTiming;
   const failed = await f.request(`/api/guilds/${guildId}/nope`, { headers });
   assert.equal(failed.status, 404); assert.match(failed.headers['server-timing'], new RegExp(`^${metric('portal')}$`));

@@ -42,14 +42,16 @@ export function timeRequests(handler, clock = () => performance.now()) {
 }
 
 // Times one bridge round trip for the current API request, if any, and keeps
-// the bot's own breakdown from the reply's Server-Timing header.
-export async function bridgeTime(operation) {
+// the bot's own breakdown from the reply's Server-Timing header. A caller that
+// may have joined a read already in flight passes upstream = false: the bot's
+// numbers then describe a longer interval than this caller waited.
+export async function bridgeTime(operation, upstream = true) {
   const timing = current.getStore();
   if (!timing) return operation();
   const start = timing.clock(); let result;
   try { result = await operation(); return result; }
   finally {
     timing.bridgeCalls++; timing.bridgeMs += timing.clock() - start;
-    for (const [name, value] of Object.entries(parseUpstreamTiming(result?.timing))) timing.upstream[name] = (timing.upstream[name] || 0) + value;
+    if (upstream) for (const [name, value] of Object.entries(parseUpstreamTiming(result?.timing))) timing.upstream[name] = (timing.upstream[name] || 0) + value;
   }
 }

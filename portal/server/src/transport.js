@@ -200,7 +200,8 @@ export class Transport {
       timeout: command ? this.limits.commandMs : this.limits.upstreamMs,
       stop: command?.command === 'stop',
     };
-    const result = await bridgeTime(() => shareRead && !command ? this.sharedRead(url, options, signal) : this.request(url, { ...options, signal }));
+    const shared = shareRead && !command;
+    const result = await bridgeTime(() => shared ? this.sharedRead(url, options, signal) : this.request(url, { ...options, signal }), !shared);
     if (result.status !== 200) {
       // Only this exact private bridge code is a terminal projection failure.
       // All other upstream codes/messages remain ignored and sanitized by status.

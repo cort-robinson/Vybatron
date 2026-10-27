@@ -164,9 +164,13 @@ the DevTools Performance timeline and in the summary:
 |---|---|
 | `vyb:tap→paint <command>` | The click event → the first painted frame after the optimistic state commits. |
 | `vyb:tap→confirmed <command>` | The click → the bot's reply and the snapshot that confirms it are applied. |
-| `vyb:tap→rejected <command>` | The click → a blocked, conflicting or failed action settles. |
+| `vyb:tap→rejected <command>` | The click → a sent command that conflicted or failed settles. |
 | `vyb:boot→interactive` | Navigation start → first painted snapshot with controls enabled. |
 | `api <route> [metric]` | Each API request's total duration, and its `Server-Timing` metrics, by route (IDs replaced with `:id`). |
+
+A tap that sends nothing (already the state shown, replaced by a newer choice before
+sending, or blocked) records only its paint. Live-stream (`/events`) responses carry
+only `portal` and `bridge`: a stream can join a bot read already in flight.
 
 The console prints a table after boot and every 10 actions. `__vybPerf()` returns
 `{ metric, count, p50, p95, max }` rows (last 200 samples per metric) and

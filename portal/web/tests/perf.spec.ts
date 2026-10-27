@@ -31,3 +31,22 @@ test('?perf records boot, tap and per-request timings without identifiers', asyn
   // DevTools sees the same measures on the performance timeline.
   expect(await page.evaluate(() => performance.getEntriesByName('vyb:tap→paint').length)).toBe(1);
 });
+
+test('?perf confirms only taps whose command reached the bot', async ({ page }) => {
+  const fixture = await mockPortal(page);
+  await gotoSession(page, '/?perf');
+  const player = page.getByTestId('player');
+  const release = fixture.holdCommands();
+  // Pause is sent and held; resume queues behind it. A second pause replaces the
+  // unsent resume and is then a no-op over the first pause: neither is ever sent.
+  await player.getByRole('button', { name: 'Pause playback', exact: true }).click();
+  await player.getByRole('button', { name: 'Resume playback', exact: true }).click();
+  await player.getByRole('button', { name: 'Pause playback', exact: true }).click();
+  release();
+  await expect.poll(() => fixture.commands.map(command => command.command)).toEqual(['pause']);
+  const count = async (metric: string) => (await rows(page))?.find(row => row.metric === metric)?.count ?? 0;
+  await expect.poll(() => count('vyb:tap→confirmed pause')).toBe(1);
+  expect(await count('vyb:tap→confirmed resume')).toBe(0);
+  expect(await count('vyb:tap→paint pause')).toBe(2);
+  expect(await count('vyb:tap→paint resume')).toBe(1);
+});

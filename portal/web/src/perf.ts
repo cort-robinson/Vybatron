@@ -44,6 +44,10 @@ export function summary(): PerfRow[] {
 // The label is the command name only. Wrappers are cached so callers keep a
 // stable function identity for memoized children.
 const wrapped = new WeakMap<object, unknown>();
+// Commands that actually went to the bot. A no-op, a set-state choice replaced
+// before sending, or a blocked tap also settles, but confirms nothing.
+const sentBodies = new WeakSet<object>();
+export function sent(body: object) { if (enabled) sentBodies.add(body); }
 export function timed<A extends [{ command: string; subcommand?: string }, ...unknown[]]>(action: (...args: A) => Promise<boolean>) {
   if (!enabled) return action;
   const cached = wrapped.get(action) as typeof action | undefined;
@@ -56,6 +60,7 @@ export function timed<A extends [{ command: string; subcommand?: string }, ...un
     const result = action(...args);
     afterPaint(at => measure('vyb:tap→paint', start, at, label));
     void result.then(ok => {
+      if (!sentBodies.delete(args[0])) return;
       measure(ok ? 'vyb:tap→confirmed' : 'vyb:tap→rejected', start, performance.now(), label);
       if (++actions % LOG_EVERY === 0) console.table(summary());
     }, () => undefined);

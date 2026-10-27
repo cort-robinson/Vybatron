@@ -17,6 +17,14 @@ test('bridge timing counts overlapping Discord reads once and reports only fixed
     assert.equal(await measureDiscord({ guild: slow(4), identity: slow(1), close() {} }).guild('actor', 'guild'), 'context');
   });
   assert.equal(serverTiming(response), 'bot;dur=15.0, discord;dur=12.0');
+  // A channel read made later through the returned context counts as Discord time too.
+  const later = {}; const timedLater = startRequestTiming(later, () => now);
+  await timedLater(async () => {
+    const context = await measureDiscord({ guild: async () => ({ id: 'context', fetchChannel: slow(6) }) }).guild();
+    assert.equal(context.id, 'context');
+    now += 3; assert.equal(await context.fetchChannel('channel'), 'context');
+  });
+  assert.equal(serverTiming(later), 'bot;dur=9.0, discord;dur=6.0');
   // No request timing in scope: plain pass-through, nothing recorded anywhere.
   assert.equal(await discordTime(async () => 'outside'), 'outside');
   assert.equal(serverTiming({}), null);

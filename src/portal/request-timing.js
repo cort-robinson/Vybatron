@@ -23,9 +23,13 @@ export async function discordTime(operation) {
   finally { if (--timing.open === 0) timing.discordMs += timing.clock() - timing.openedAt; }
 }
 
+// A guild context can read a channel from Discord later (a command naming a
+// channel), so its fetchChannel is timed as well.
+const measureContext = context => typeof context?.fetchChannel === 'function'
+  ? { ...context, fetchChannel: id => discordTime(() => context.fetchChannel(id)) } : context;
 export function measureDiscord(policy) {
   return { ...policy, identity: (...args) => discordTime(() => policy.identity(...args)),
-    guild: (...args) => discordTime(() => policy.guild(...args)) };
+    guild: async (...args) => measureContext(await discordTime(() => policy.guild(...args))) };
 }
 
 export function serverTiming(response) {

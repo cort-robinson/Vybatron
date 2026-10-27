@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api, ApiError, errorMessage } from './api';
 import type { Bootstrap, Capability, Command, Connection, GuildSnapshot, ImportPreview, Library, SnapshotOrdering, Track } from './types';
 import { orderingOf } from './ordering';
-import { interactive, timed } from './perf';
+import { interactive, sent, timed } from './perf';
 import { applyIntents, createIntent, isAddition, isOptimistic, needsRevision, sameTracks, slotOf, stillTargets, trackIdentities, type Intent } from './optimistic';
 
 export interface Notice { id: number; kind: 'success' | 'error' | 'info'; message: string }
@@ -391,6 +391,7 @@ export function usePortal() {
     const startedLoss = lossVersion.current;
     const startedOrdering = orderingOf(current.current);
     try {
+      sent(body);
       const result = await api.command(id, bootstrap.csrfToken, command);
       if (!settled()) return false;
       await completeCommandRef.current(result.snapshot, startedVersion, startedLoss, startedOrdering);

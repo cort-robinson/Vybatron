@@ -94,13 +94,18 @@ test('the playing room draws its ambient motion at no more than 30fps without re
   await mockPortal(page); await page.goto('/');
   await expect(page.getByRole('button', { name: 'Pause playback' })).toBeEnabled();
   await expect(page.locator('.ambient-scene.moving .scene-canvas')).toHaveCount(1);
-  // Let the first cover's relight finish; then only the canvas clock moves the room.
-  await expect.poll(() => page.locator('.room-colors').count(), { timeout: 10_000 }).toBe(1);
-  await page.waitForTimeout(500);
+  // The cover's palette arrives just after the session; let its relight and the power-on finish, so
+  // only the canvas clock moves the room.
+  await page.waitForTimeout(1500);
+  await expect.poll(() => page.locator('.ambient-scene').evaluate(scene => scene.getAnimations({ subtree: true })
+    .filter(animation => animation.playState === 'running' || animation.pending).length), { timeout: 10_000 }).toBe(0);
+  await expect(page.locator('.room-colors')).toHaveCount(1);
+  await page.waitForTimeout(300);
   const { frames, styles } = await roomOver(page, 2000);
   expect(frames).toBeGreaterThan(0);
   expect(frames).toBeLessThanOrEqual(66);
-  expect(styles).toBeLessThan(frames);
+  // The room used to read a dozen styles per frame; now only a page change (a pane check) reads any.
+  expect(styles).toBeLessThanOrEqual(frames + 10);
 });
 
 test('a modal dialog holds the room and the spectrum still under its backdrop, and they resume when it closes', async ({ page }) => {

@@ -249,7 +249,16 @@ export function startScene(canvas: HTMLCanvasElement, scene: HTMLElement, fail: 
   const draw = (now: number) => {
     frame = 0;
     if (stopped) return;
-    const moving = !underModal() && scene.classList.contains('moving');
+    // Under a modal's backdrop the room draws once per change (a resize clears the canvas), never
+    // per frame; closing the modal wakes it to measure and animate again.
+    if (underModal()) {
+      last = 0;
+      if (!changed) return;
+      measured = measure(); watching = false;
+      if (measured) { placePanes(measured.performance); render(now, measured, false, false); }
+      return;
+    }
+    const moving = scene.classList.contains('moving');
     if (moving && last) clock += Math.min(now - last, 100) / 1000;
     last = moving ? now : 0;
     const since = drawn ? now - drawn : Infinity;

@@ -324,7 +324,7 @@ REVERT: everything here is scoped to :root[data-skin='overdrive']; Settings → 
 /* Under a modal's blurred backdrop the chrome's loops hold still; anything moving beneath it made the
    compositor blur the whole page again on every frame (motion.ts onModal stills the room and spectrum). */
 :root[data-skin='overdrive']:has(dialog[open]) {
-  .brand-glint, .brand-glint::before, .player-footer::after, .transport .play-button::before { animation-play-state: paused !important; }
+  .brand-glint, .brand-glint::before, .player-footer::after, .transport .play-button::before, .od-cover-scan::before, .od-cover-scan::after { animation-play-state: paused !important; }
 }
 
 @media (prefers-reduced-motion: reduce) {

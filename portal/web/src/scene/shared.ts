@@ -1,12 +1,18 @@
 // Shared pieces of the WebGL room (scene/index.ts): the GLSL every look builds on, color helpers,
-// and the per-frame context a look reads its DOM probes with.
+// and what a look measures its DOM probes with and draws each frame from.
 
 export const MAX_ROWS = 256;
 export type Program = { program: WebGLProgram; u: Record<string, WebGLUniformLocation | null> };
+// Measuring reads styles and boxes, so it runs only when the scene may have changed (scene/index.ts).
+export type Probe = {
+  top: HTMLElement; scene: HTMLElement; auth: boolean; performance: boolean;
+  width: number; height: number; opacity: (element: Element | null) => number;
+};
+// Each drawn frame: no DOM reads here, only the last measurement and the clock.
 export type Frame = {
   gl: WebGL2RenderingContext; u: Program['u'];
-  top: HTMLElement; scene: HTMLElement; clock: number; moving: boolean; auth: boolean; performance: boolean;
-  width: number; height: number; opacity: (element: Element | null) => number;
+  scene: HTMLElement; clock: number; moving: boolean; auth: boolean; performance: boolean;
+  width: number; height: number;
 };
 export type LookScene = {
   // GLSL defining `void scenery(inout vec3 col, vec2 p)`; it may use the shared uniforms below.
@@ -15,7 +21,7 @@ export type LookScene = {
   colors: (accent: string, ground: string, glow: string[]) => [string, number][];
   vignette: number;
   matches: (top: HTMLElement) => boolean;
-  create: (gl: WebGL2RenderingContext) => { feed: (frame: Frame) => void };
+  create: (gl: WebGL2RenderingContext) => { measure: (probe: Probe) => void; feed: (frame: Frame) => void };
 };
 
 export const head = (colors: number) => `#version 300 es

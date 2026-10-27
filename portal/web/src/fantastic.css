@@ -356,6 +356,9 @@ REVERT: everything here is scoped to :root[data-skin='fantastic']; Settings → 
 @keyframes ff-rise { from { translate: -50% 40%; opacity: 0; } }
 @keyframes ff-bloom { from { opacity: 0; transform: scale(.94); } }
 
+/* Under a modal's blurred backdrop the dial's Torch holds still (see overdrive.css). */
+:root[data-skin='fantastic']:has(dialog[open]) .transport .play-button::after { animation-play-state: paused !important; }
+
 @media (prefers-reduced-motion: reduce) {
   :root[data-skin='fantastic'] {
     .ff-scene, .ff-burst, .ff-window, .ff-void, .ff-train, .ff-glint::before, .transport .play-button::after { animation: none !important; }

@@ -171,13 +171,15 @@ function train(share: number) {
   return [ax + (bx - ax) * k, ay + (by - ay) * k, Math.atan2(by - ay, bx - ax)];
 }
 const segment = (from: number, to: number, k: number) => from + (to - from) * ease(k);
-function twinkle(clock: number, delay: number) {
-  if (clock < delay) return [1, 0, .85];
+// A starburst's scale, spin (degrees) and opacity at this moment.
+function twinkle(clock: number, delay: number, out: Float32Array) {
+  const set = (scale: number, spin: number, alpha: number) => { out[0] = scale; out[1] = spin; out[2] = alpha; };
+  if (clock < delay) return set(1, 0, .85);
   const t = ((clock - delay) / 6) % 1;
-  if (t < .7) return [1, 0, .85];
-  if (t < .8) { const k = (t - .7) / .1; return [segment(1, 1.5, k), segment(0, 22, k), segment(.85, 1, k)]; }
-  if (t < .9) { const k = (t - .8) / .1; return [segment(1.5, .7, k), segment(22, 0, k), segment(1, .5, k)]; }
-  const k = (t - .9) / .1; return [segment(.7, 1, k), 0, segment(.5, .85, k)];
+  if (t < .7) return set(1, 0, .85);
+  if (t < .8) { const k = (t - .7) / .1; return set(segment(1, 1.5, k), segment(0, 22, k), segment(.85, 1, k)); }
+  if (t < .9) { const k = (t - .8) / .1; return set(segment(1.5, .7, k), segment(22, 0, k), segment(1, .5, k)); }
+  const k = (t - .9) / .1; set(segment(.7, 1, k), 0, segment(.5, .85, k));
 }
 
 export const fantastic: LookScene = {
@@ -241,22 +243,40 @@ export const fantastic: LookScene = {
     const data = dataTexture(gl, [near.windows.map(w => [w.x, w.y, w.delay, 0]), voids]);
     const units: [number, WebGLTexture][] = [[2, lineT], [3, data], [4, markT], [5, rimT], [6, speckT]];
 
+    // The last measurement (boxes and fades of the unpainted .ff-* elements), and per-frame buffers.
+    const starsBox = new Float32Array(4); const krackleBox = new Float32Array(4); const planetBox = new Float32Array(4);
+    const lineBox = new Float32Array(4); const bayBox = new Float32Array(4);
+    let sceneA = 0; let krackleA = 0; let planetA = 0; let lineA = 0; let railA = 0; let trainA = 0; let bayA = 0;
+    const burst = new Float32Array(BURSTS * 4); const burstA = new Float32Array(BURSTS); const cluster = new Float32Array(CLUSTERS * 4); const spark = new Float32Array(3);
     return {
-      feed({ gl, u, top, clock, performance, width, height, opacity }) {
+      measure({ top, opacity }) {
+        const root = top.querySelector('.ff-scene')!;
+        sceneA = opacity(root);
+        const box = (selector: string) => root.querySelector(selector)!.getBoundingClientRect();
+        const s = box('.ff-stars'); const unit = Math.max(s.width / 1600, s.height / 600);
+        starsBox.set([s.left + s.width / 2 - 800 * unit, s.top, 1600 * unit, 600 * unit]);
+        const krackleEl = root.querySelector('.ff-krackle')!; const k = krackleEl.getBoundingClientRect();
+        krackleA = opacity(krackleEl); krackleBox.set([k.left, k.top, k.width, k.height]);
+        const planet = root.querySelector('.ff-planet')!; const pb = planet.getBoundingClientRect();
+        planetBox.set([pb.left + pb.width / 2, pb.top + pb.height / 2, pb.width / 200, 0]); planetA = opacity(planet);
+        const line = root.querySelector('.ff-skyline')!; const [lx, ly, lw, lh] = slice(line.getBoundingClientRect(), SKY_W, SKY_H);
+        // The masks carry 25% headroom above the viewBox for antennas and the emblem.
+        lineBox.set([lx, ly - lh * .25, lw, lh * 1.25]); lineA = opacity(line);
+        railA = opacity(root.querySelector('.ff-rail')); trainA = opacity(root.querySelector('.ff-train'));
+        const bay = root.querySelector('.ff-bay')!; const bb = bay.getBoundingClientRect();
+        bayBox.set([bb.left, bb.top, bb.width, bb.height]); bayA = opacity(bay);
+      },
+      feed({ gl, u, clock, performance, width, height }) {
         for (const [unit, t] of units) { gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_2D, t); }
         gl.uniform1i(u.uLineT, 2); gl.uniform1i(u.uData, 3); gl.uniform1i(u.uMarkT, 4); gl.uniform1i(u.uRimT, 5); gl.uniform1i(u.uSpeckT, 6);
-        const root = top.querySelector('.ff-scene')!;
-        const sceneA = opacity(root); gl.uniform1f(u.uSceneA, sceneA);
-        const box = (selector: string) => root.querySelector(selector)!.getBoundingClientRect();
-        const starsBox = box('.ff-stars'); const unit = Math.max(starsBox.width / 1600, starsBox.height / 600);
-        gl.uniform4f(u.uStars, starsBox.left + starsBox.width / 2 - 800 * unit, starsBox.top, 1600 * unit, 600 * unit);
-        const twinkles = sky.bursts.map(b => twinkle(clock, b.delay));
-        gl.uniform4fv(u.uBurst, new Float32Array(sky.bursts.flatMap((b, i) => [b.x, b.y, b.R * twinkles[i][0], twinkles[i][1] * Math.PI / 180])));
-        gl.uniform1fv(u.uBurstA, new Float32Array(twinkles.map(t => t[2])));
+        gl.uniform1f(u.uSceneA, sceneA);
+        gl.uniform4fv(u.uStars, starsBox);
+        sky.bursts.forEach((b, i) => { twinkle(clock, b.delay, spark); burst[i * 4] = b.x; burst[i * 4 + 1] = b.y; burst[i * 4 + 2] = b.R * spark[0]; burst[i * 4 + 3] = spark[1] * Math.PI / 180; burstA[i] = spark[2]; });
+        gl.uniform4fv(u.uBurst, burst); gl.uniform1fv(u.uBurstA, burstA);
 
-        const krackleEl = root.querySelector('.ff-krackle')!; const k = krackleEl.getBoundingClientRect();
-        gl.uniform1f(u.uKrackleA, opacity(krackleEl)); gl.uniform4f(u.uKrackle, k.left, k.top, k.width, k.height);
-        gl.uniform4fv(u.uCluster, new Float32Array(storm.flatMap((cluster, i) => [cluster.voids[0].x, cluster.voids[0].y, clock < cluster.delay ? 1 : .82 + .3 * alternate(clock - cluster.delay, 3.4), firsts[i]])));
+        gl.uniform1f(u.uKrackleA, krackleA); gl.uniform4fv(u.uKrackle, krackleBox);
+        storm.forEach((c, i) => { cluster[i * 4] = c.voids[0].x; cluster[i * 4 + 1] = c.voids[0].y; cluster[i * 4 + 2] = clock < c.delay ? 1 : .82 + .3 * alternate(clock - c.delay, 3.4); cluster[i * 4 + 3] = firsts[i]; });
+        gl.uniform4fv(u.uCluster, cluster);
         gl.uniform4fv(u.uClusterBox, boxes); gl.uniform1i(u.uVoidN, voids.length);
 
         // The herald crosses for 11% of a 23s cycle that starts 5s in; reduced effects omit him.
@@ -268,21 +288,16 @@ export const fantastic: LookScene = {
         const heraldW = Math.min(260, Math.max(140, width * .16));
         gl.uniform4f(u.uHerald, heraldW / 2 + travel * Math.cos(herald), height * .3 + 1 + travel * Math.sin(herald), heraldW, heraldA);
 
-        const planet = root.querySelector('.ff-planet')!; const pb = planet.getBoundingClientRect();
-        gl.uniform4f(u.uPlanet, pb.left + pb.width / 2, pb.top + pb.height / 2, pb.width / 200, 0); gl.uniform1f(u.uPlanetA, opacity(planet));
-
-        const line = root.querySelector('.ff-skyline')!; const [lx, ly, lw, lh] = slice(line.getBoundingClientRect(), SKY_W, SKY_H);
-        // The masks carry 25% headroom above the viewBox for antennas and the emblem.
-        gl.uniform4f(u.uLine, lx, ly - lh * .25, lw, lh * 1.25); gl.uniform1f(u.uLineA, opacity(line));
+        gl.uniform4fv(u.uPlanet, planetBox); gl.uniform1f(u.uPlanetA, planetA);
+        gl.uniform4fv(u.uLine, lineBox); gl.uniform1f(u.uLineA, lineA);
         gl.uniform1i(u.uWinN, near.windows.length);
         gl.uniform4f(u.uBlinkT, 11, .37, .44, .81); gl.uniform2f(u.uBlinkV, .2, .45);
-        const railA = opacity(root.querySelector('.ff-rail')); gl.uniform1f(u.uRailA, railA);
+        gl.uniform1f(u.uRailA, railA);
         // ff-monorail: 34% to the end of the rail over 66% of 26s, then round from the start.
         const ride = (clock / 26) % 1; const [tx, ty, ta] = train(ride < .66 ? .34 + ride : (ride - .66) / .34 * .34);
-        gl.uniform4f(u.uTrain, tx, ty, ta, opacity(root.querySelector('.ff-train')));
+        gl.uniform4f(u.uTrain, tx, ty, ta, trainA);
 
-        const bay = root.querySelector('.ff-bay')!; const bb = bay.getBoundingClientRect();
-        gl.uniform4f(u.uBay, bb.left, bb.top, bb.width, bb.height); gl.uniform1f(u.uBayA, opacity(bay));
+        gl.uniform4fv(u.uBay, bayBox); gl.uniform1f(u.uBayA, bayA);
         gl.uniform1f(u.uShimmer, (clock / 2.4 % 1) * 8); gl.uniform1f(u.uPerf, performance ? 1 : 0);
       },
     };

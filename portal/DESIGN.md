@@ -142,13 +142,17 @@ visible, ambient motion is on, and reduced motion is off. Pause or disconnect de
 one-segment baseline and stops drawing. Without motion it renders one still frame. The glow is
 the lit segments' canvas shadow, blurred once per canvas size into a strip of every column height;
 each draw stamps and tints those instead of blurring again (that blur was the costliest drawing on
-phones, and a canvas `filter` also re-resolves page styles on every draw). A new song reshapes the
-running spectrum instead of rebuilding its canvas.
+phones, and a canvas `filter` also re-resolves page styles on every draw). The glow is stamped at half
+the canvas's resolution and drawn up, since it is soft. A new song reshapes the running spectrum
+instead of rebuilding its canvas.
 
 ## Motion
 
 One authored moment: the room relighting on track change (a 2.2s dissolve). Light
-pools drift over 38-58s only while playing. The sleeve rises in once, and menus, dialogs, and
+pools drift over 38-58s only while playing. The WebGL room (`src/scene/`) draws that ambient motion at
+30fps and transitions at up to 60fps, and measures its DOM scenery only when the scene changes. While a
+modal dialog is open, the room, the spectrum and the looks' chrome loops hold still under its blurred
+backdrop (`onModal` in `src/motion.ts`). The sleeve rises in once, and menus, dialogs, and
 toasts use short ease-out entrances. Reduced motion removes drift, spatial entrances, and
 hover lifts while keeping color changes and the static pending mark.
 

@@ -104,23 +104,30 @@ export const overdrive: LookScene = {
     m.strokeStyle = '#00f'; m.lineJoin = 'bevel'; m.lineWidth = 1.6; m.stroke(polygonPath(near.path));
     const line = texture(gl, 2, mask, { mipmap: true });
     gl.activeTexture(gl.TEXTURE3); const data = dataTexture(gl, [near.windows.map(w => [w.x, w.y, w.delay, 0])]);
+    // The last measurement: the horizon's fade, the sun, skyline and floor boxes and their fades.
+    const sun = new Float32Array(4); const lineBox = new Float32Array(4); const floorBox = new Float32Array(4);
+    let horizonA = 0; let sunA = 0; let screen = 0; let lineA = 0; let floorA = 0;
     return {
-      feed({ gl, u, top, scene, clock, moving, auth, performance, opacity }) {
+      measure({ top, scene, auth, performance, opacity }) {
+        const horizon = top.querySelector('.od-horizon')!;
+        horizonA = opacity(horizon);
+        const sunEl = horizon.querySelector('.od-sun')!; const sky = horizon.querySelector('.od-skyline')!; const floor = horizon.querySelector('.od-floor')!;
+        const s = sunEl.getBoundingClientRect(); const f = floor.getBoundingClientRect();
+        sun.set([s.left + s.width / 2, s.top + s.height / 2, s.width / 2, s.height / 2]); sunA = opacity(sunEl);
+        // Away from the sleeve the sun screens into the sky, as its mix-blend-mode did.
+        screen = !scene.classList.contains('immersive') && !auth && !performance ? 1 : 0;
+        lineBox.set(slice(sky.getBoundingClientRect(), SKY_W, SKY_H)); lineA = opacity(sky);
+        floorBox.set([f.left, f.top, f.width, f.height]); floorA = opacity(floor);
+      },
+      feed({ gl, u, clock, moving, auth }) {
         gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, line);
         gl.activeTexture(gl.TEXTURE3); gl.bindTexture(gl.TEXTURE_2D, data);
         gl.uniform1i(u.uLineT, 2); gl.uniform1i(u.uData, 3);
-        const horizon = top.querySelector('.od-horizon')!;
-        gl.uniform1f(u.uHA, opacity(horizon));
-        const sun = horizon.querySelector('.od-sun')!; const sky = horizon.querySelector('.od-skyline')!; const floor = horizon.querySelector('.od-floor')!;
-        const sunBox = sun.getBoundingClientRect(); const floorBox = floor.getBoundingClientRect();
-        gl.uniform4f(u.uSun, sunBox.left + sunBox.width / 2, sunBox.top + sunBox.height / 2, sunBox.width / 2, sunBox.height / 2);
-        // Away from the sleeve the sun screens into the sky, as its mix-blend-mode did.
-        gl.uniform2f(u.uSunP, opacity(sun), !scene.classList.contains('immersive') && !auth && !performance ? 1 : 0);
-        gl.uniform4f(u.uLine, ...slice(sky.getBoundingClientRect(), SKY_W, SKY_H));
-        gl.uniform1f(u.uLineA, opacity(sky));
-        gl.uniform4f(u.uFloor, floorBox.left, floorBox.top, floorBox.width, floorBox.height);
-        gl.uniform1f(u.uFloorA, opacity(floor));
-        gl.uniform2f(u.uGrid, sunBox.left + sunBox.width / 2 - floorBox.left, (clock / (auth ? 4 : 2.6) % 1) * 72);
+        gl.uniform1f(u.uHA, horizonA);
+        gl.uniform4fv(u.uSun, sun); gl.uniform2f(u.uSunP, sunA, screen);
+        gl.uniform4fv(u.uLine, lineBox); gl.uniform1f(u.uLineA, lineA);
+        gl.uniform4fv(u.uFloor, floorBox); gl.uniform1f(u.uFloorA, floorA);
+        gl.uniform2f(u.uGrid, sun[0] - floorBox[0], (clock / (auth ? 4 : 2.6) % 1) * 72);
         gl.uniform1f(u.uSkyA, moving ? 1 - .28 * alternate(clock, 7) : 1);
         gl.uniform1i(u.uWinN, near.windows.length);
         gl.uniform4f(u.uBlinkT, 9, .41, .47, .78); gl.uniform2f(u.uBlinkV, .15, .4);

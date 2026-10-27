@@ -1,3 +1,5 @@
+import type { Command } from './types';
+import { fromList, isListed } from './favorites';
 // Opt-in latency measurement: `?perf` in the URL or localStorage.vybPerf = '1'.
 // Off, every export is a no-op (timed() hands back the same function) and no
 // observer, mark or timer exists. On, results stay on this device: DevTools
@@ -59,6 +61,8 @@ export function timed<A extends [{ command: string; subcommand?: string }, ...un
     const label = args[0].subcommand ? `${args[0].command}/${args[0].subcommand}` : args[0].command;
     // Each tap gets its own body, so overlapping taps reusing one object keep separate sent marks.
     const body = { ...args[0] };
+    // The copy keeps a list action's mark, so it still follows its song by id.
+    if (isListed(args[0] as Command)) fromList(body as Command);
     const result = action(...[body, ...args.slice(1)] as A);
     afterPaint(at => measure('vyb:tap→paint', start, at, label));
     void result.then(ok => {

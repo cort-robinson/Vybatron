@@ -14,7 +14,7 @@ const origin = 'https://portal.integration.test';
 const secret = 'integration-only-distinct-oauth-session-secret-12345';
 const cookieFrom = (response, name) => response.headers.getSetCookie().find(c => c.startsWith(name + '=')).split(';')[0];
 
-async function integrated(t) {
+async function integrated(t, extra = {}) {
   const bot = await portalFixture(t);
   let actor = '200';
   const discord = http.createServer(async (req, res) => {
@@ -29,7 +29,7 @@ async function integrated(t) {
     PORTAL_BOT_URL: bot.origin, PORTAL_BRIDGE_TOKEN: bot.token,
     DISCORD_CLIENT_SECRET: secret, DISCORD_CLIENT_ID: '123456789012345678',
     PORTAL_SESSION_SECRET: secret, PORTAL_DATA_DIR: path.join(bot.dir, 'auth'), PORTAL_WEB_DIST: webDist }), port: 0 };
-  const options = { discordOrigin: `http://127.0.0.1:${discord.address().port}`, limits: { pollMs: 30, heartbeatMs: 40 } };
+  const options = { discordOrigin: `http://127.0.0.1:${discord.address().port}`, limits: { pollMs: 30, heartbeatMs: 40, ...extra.limits }, ...(extra.changeFeed && { changeFeed: true }) };
   let app, base;
   async function start() { app = await createPortalServer(config, options); await app.listen(); base = `http://127.0.0.1:${app.server.address().port}`; }
   await start();
@@ -53,7 +53,7 @@ async function integrated(t) {
     return { ...device, csrf: boot.body.csrfToken, bootstrap: boot.body };
   }
   return { bot, login, request, command: (device, body) => request('/api/guilds/100/commands', device, body),
-    snapshot: device => request('/api/guilds/100', device), get base() { return base; },
+    snapshot: device => request('/api/guilds/100', device), get base() { return base; }, get app() { return app; },
     restart: async () => { await app.close(); await start(); } };
 }
 
@@ -161,4 +161,49 @@ test('real authenticated API and bot writer reject retargeted favorites, hidden 
   const accepted = await f.command(first, { command: 'mix', subcommand: 'delete', options: { name: 'night' }, expectedMixVersion: fresh.mixes[0].version });
   assert.equal(accepted.status, 200, JSON.stringify(accepted.body));
   assert.equal(f.bot.library.readGuild('100').mixes.night, undefined);
+});
+
+// Real bridge and portal, two signed-in listeners each with a quiet stream.
+async function listening(t, pollFeedMs) {
+  const f = await integrated(t, { changeFeed: true, limits: { pollMs: Math.min(pollFeedMs, 10_000), pollFeedMs, heartbeatMs: 10_000 } });
+  // lavalink-client moves the position while playing; the fixture's stands still.
+  let base = f.bot.player.position; let since = Date.now();
+  Object.defineProperty(f.bot.player, 'position', { get: () => (f.bot.player.playing ? base + Date.now() - since : base), set: value => { base = value; since = Date.now(); } });
+  const devices = [await f.login('200'), await f.login('201')];
+  const reads = [];
+  f.bot.bridge.server.on('request', req => {
+    const url = new URL(req.url, 'http://bridge.invalid');
+    if (req.method === 'GET' && url.pathname === '/v1/guilds/100') reads.push(url.searchParams.get('actorId'));
+  });
+  const streams = [];
+  for (const device of devices) {
+    const controller = new AbortController(); t.after(() => controller.abort());
+    const response = await fetch(f.base + '/api/guilds/100/events?protocol=2', { headers: { Cookie: device.cookie }, signal: controller.signal });
+    assert.equal(response.status, 200);
+    const live = { text: '' }; streams.push(live);
+    void (async () => { const decoder = new TextDecoder(); try { for await (const chunk of response.body) live.text += decoder.decode(chunk, { stream: true }); } catch { /* aborted */ } })();
+  }
+  const count = (live, name) => (live.text.match(new RegExp(`event:${name}\\n`, 'g')) || []).length;
+  const until = async predicate => { const deadline = Date.now() + 8000; while (!predicate()) { assert.ok(Date.now() < deadline, 'bounded wait'); await delay(10); } };
+  await until(() => f.app.resourceCounts().feedLive && streams.every(live => count(live, 'snapshot') === 1));
+  return { f, devices, reads, streams, count, until };
+}
+
+test('idle quiet streams renew freshness without resending the snapshot', { timeout: 20_000 }, async t => {
+  const { streams, count, until } = await listening(t, 150);
+  await until(() => streams.every(live => count(live, 'unchanged') >= 3));
+  assert.ok(streams.every(live => count(live, 'snapshot') === 1));
+});
+
+test('one portal command costs each open stream one fresh read and one frame', { timeout: 20_000 }, async t => {
+  const { f, devices, reads, streams, count, until } = await listening(t, 10_000);
+  await delay(400); const before = reads.length;
+  assert.equal((await f.command(devices[0], { command: 'pause' })).status, 200);
+  await until(() => streams.every(live => count(live, 'snapshot') === 2));
+  await delay(600); // longer than the bot's 250 ms change scan
+  const after = reads.slice(before);
+  t.diagnostic(`bridge reads for one command with 2 open streams: ${after.length}`);
+  assert.deepEqual(after.sort(), ['200', '201']);
+  assert.ok(streams.every(live => count(live, 'snapshot') === 2 && count(live, 'unchanged') === 0));
+  assert.ok(streams.every(live => JSON.parse(live.text.split('event:snapshot\ndata:').at(-1).split('\n\n')[0]).session.status === 'paused'));
 });

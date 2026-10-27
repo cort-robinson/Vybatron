@@ -1,5 +1,10 @@
 # Separate channel discovery from fresh authorization
 
+> Since [ADR-0011](adr/0011-portal-authorization-from-gateway-state.md), protected
+> reads and final disclosures take these inputs from Gateway state when it can
+> vouch. The fresh REST rules below still govern pre-write command stages, the
+> REST fallback and `configuration` discovery.
+
 The live 874b46b pilot retains the synchronization recovery fix, but root's
 read-only probe still fails the third queue command with bridge503. Actual
 Discord GET responses identify a server-wide channel-list bucket of ten reads

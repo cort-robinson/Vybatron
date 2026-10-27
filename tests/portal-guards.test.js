@@ -12,7 +12,7 @@ import { execute as queue } from '../src/commands/queue.js';
 import { execute as nowplaying } from '../src/commands/nowplaying.js';
 import { execute as history } from '../src/commands/history.js';
 import { withGuildMutation } from '../src/utils/requests.js';
-import { createPortalPolicy, READ_ADMISSIONS } from '../src/portal/policy.js';
+import { createPortalPolicy, IDENTITY_CACHE, READ_ADMISSIONS } from '../src/portal/policy.js';
 
 const slash = (f, command, action, values = {}) => ({
   client: f.client, guildId: '100', guild: f.guild, user: f.users.get('200'), member: f.members.get('200'), commandName: command,
@@ -158,7 +158,7 @@ test('mix source visibility is checked again at the actual durable write after a
   assert.match(interaction.replies[0].content, /not visible/); assert.equal(interaction.replies.length, 1);
 });
 
-test('four overlapping HTTP snapshots coalesce fresh individual Discord reads without retaining permission or owner results', async t => {
+test('four overlapping HTTP snapshots coalesce fresh individual Discord reads without retaining permission results', async t => {
   const f = await portalFixture(t); const counts = {};
   for (const [key, target, name] of [['user', f.client.users, 'fetch'], ['application', f.client.application, 'fetch'], ['guild', f.client.rest, 'get'], ['member', f.guild.members, 'fetch'], ['channels', f.guild.channels, 'fetch'], ['me', f.guild.members, 'fetchMe']]) {
     const original = target[name].bind(target);
@@ -172,7 +172,11 @@ test('four overlapping HTTP snapshots coalesce fresh individual Discord reads wi
   assert.equal((await f.request()).body.session.current, null);
   assert.equal(counts.channels, 4); assert.equal(counts.guild, 2);
   assert.equal((await f.request('/diagnostics', { actor: '900' })).status, 200);
+  // The application owner is remembered for five minutes (ADR-0011), then read again.
+  t.mock.timers.enable({ apis: ['Date'], now: Date.now() });
   f.client.application.fetch = async () => ({ owner: f.users.get('901') });
+  assert.equal((await f.request('/diagnostics', { actor: '900' })).status, 200);
+  t.mock.timers.tick(IDENTITY_CACHE.applicationMs + 1);
   assert.equal((await f.request('/diagnostics', { actor: '900' })).status, 404);
   f.members.delete('200'); assert.equal((await f.request()).status, 404);
 });
@@ -254,7 +258,9 @@ test('stalled Discord requests remain coalesced after individual deadlines inste
   await assert.rejects(policy.identity('200'), /too long|timed out/);
   const second = policy.identity('200'); await delay(20); assert.equal(calls, 1);
   release.resolve(f.users.get('200')); assert.equal((await second).user.id, '200');
-  await policy.identity('200'); assert.equal(calls, 2, 'settled identity is not cached'); policy.close();
+  // Only the validated answer is remembered, never the timeout.
+  await policy.identity('200'); assert.equal(calls, 1, 'a validated identity is remembered briefly');
+  await policy.identity('200', { fresh: true }); assert.equal(calls, 2, 'a fresh identity reads again'); policy.close();
 });
 
 test('underlying Discord read admission is bounded across snapshot and fresh command reads, with reserved urgent slots', async t => {

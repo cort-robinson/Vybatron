@@ -5,7 +5,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { handleMessageComponent, handleModalSubmit } from '../utils/components.js';
 import { errorPayload, SESSION_MIX_MODAL_ID } from '../utils/messages.js';
 import { MessageFlags } from 'discord.js';
-import { guardedMutation, commandMutationPolicy } from '../utils/requests.js';
+import { guardedMutation, commandMutationPolicy, componentMutationPolicy } from '../utils/requests.js';
 import { publicError } from '../runtime.js';
 import { handleAlertInteraction, isAlertInteraction } from '../operator-alerts.js';
 
@@ -116,7 +116,7 @@ export async function loadCommands(client) {
         const mutates = /^player:v1:(toggle|skip|shuffle|loop|stop-confirm)$/.test(id)
           || /^queue:v[12]:jump:/.test(id) || /^history:.*:replay:/.test(id)
           || /^player:v2:favorite:/.test(id) || /^import:v1:confirm:/.test(id);
-        if (mutates) await guardedMutation(interaction, handleMessageComponent, { playback: !id.includes('favorite') && !id.startsWith('import:'), urgent: id === 'player:v1:stop-confirm' });
+        if (mutates) await guardedMutation(interaction, handleMessageComponent, componentMutationPolicy(id));
         else await handleMessageComponent(interaction);
       } catch (error) {
         await reportInteractionError(interaction, error, 'player controls');

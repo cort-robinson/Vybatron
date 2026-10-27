@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import { ArrowClockwiseIcon, WarningCircleIcon } from '../icons';
 import type { Recap, RecapTotals, RecapWindow, Track } from '../types';
-import { api, errorMessage } from '../api';
+import { recapRead, useRead } from '../reads';
 import { totalTime } from '../format';
 import { Artwork, Loading } from './ui';
 
@@ -11,38 +11,19 @@ const windows: { id: RecapWindow; label: string }[] = [
 const count = (value: number, one: string, many: string) => `${value.toLocaleString()} ${value === 1 ? one : many}`;
 const ranked = 5;
 
-// Totals and top lists for one window, read on demand like the other stats. It
-// loads on its own so a slow or failed recap never holds up the shelves above.
+// Totals and top lists for one window, read like the other stats. It loads on its
+// own so a slow or failed recap never holds up the shelves above. Reads are held
+// per range, so coming back to Home shows the last recap at once; numbers from
+// another range or from before a clear never show under the new label.
 // Home owns the range so it survives switching tabs, like the top-tracks range.
-export function ListeningRecap({ guildId, version, range, onRange }: { guildId: string; version: number; range: RecapWindow; onRange: (range: RecapWindow) => void }) {
-  const [recap, setRecap] = useState<Recap | null>(null);
-  const [error, setError] = useState('');
-  const controller = useRef<AbortController | null>(null);
-
-  const refresh = useCallback(async (window: RecapWindow) => {
-    controller.current?.abort();
-    const request = new AbortController(); controller.current = request;
-    // Numbers from another range or from before a clear never show under the new label.
-    setRecap(null); setError('');
-    try {
-      const next = await api.recap(guildId, window, request.signal);
-      if (!request.signal.aborted) setRecap(next);
-    } catch (failure) {
-      if (request.signal.aborted) return;
-      setError(errorMessage(failure));
-    }
-  }, [guildId]);
-  useEffect(() => { setRecap(null); setError(''); }, [guildId]);
-  useEffect(() => {
-    if (!guildId) return;
-    void refresh(range);
-    return () => controller.current?.abort();
-  }, [guildId, range, version, refresh]);
+export function ListeningRecap({ viewer, guildId, range, onRange }: { viewer: string; guildId: string; range: RecapWindow; onRange: (range: RecapWindow) => void }) {
+  const read = recapRead(viewer, guildId, range);
+  const { value: recap, error, reload } = useRead<Recap>(read.key, read.fetch);
 
   const label = windows.find(item => item.id === range)!.label;
   const body = error && !recap
     ? <div className="home-unavailable" role="alert"><WarningCircleIcon size={24} aria-hidden="true" /><div><strong>Your listening recap can’t load right now</strong><p>{error}</p></div>
-      <button className="button secondary" onClick={() => void refresh(range)}><ArrowClockwiseIcon size={18} />Try again</button></div>
+      <button className="button secondary" onClick={() => void reload()}><ArrowClockwiseIcon size={18} />Try again</button></div>
     : !recap ? <Loading label="Loading your listening recap…" />
     : !recap.personal.plays && !recap.server.plays ? <p className="home-empty">Nothing played in voice channels you can see in the {label.toLowerCase()}. Try a longer range.</p>
     : <div className="recap-grid">

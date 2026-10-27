@@ -77,7 +77,8 @@ export function useListening(remote: RemotePortal): Portal {
   const [deck, setDeck] = useState(initialDeck);
   const [pending, setPending] = useState<string[]>([]);
   const deckRef = useRef(deck);
-  const pendingRef = useRef(false);
+  // Lookups for songs added on this device run one at a time, in the order tapped.
+  const line = useRef<{ tail: Promise<unknown>; keys: string[] }>({ tail: Promise.resolve(), keys: [] });
   const media = useRef<HTMLAudioElement | null>(null);
   // The YouTube video whose audio the element holds, if any.
   const loaded = useRef<string | null>(null);
@@ -294,14 +295,16 @@ export function useListening(remote: RemotePortal): Portal {
         // Library edits don't touch playback, so the bot still owns them.
         case 'favorite:remove': case 'favorite:clear': case 'mix:delete': case 'favorite:import': case 'mix:import': return latest.current.run(body, capability);
         case 'play:': case 'playnext:': case 'replay:': case 'favorite:play': case 'mix:load': case 'top:play': case 'mymix:play': {
-          if (pendingRef.current) return false;
-          pendingRef.current = true; setPending([key]);
-          try {
+          const queue = line.current;
+          queue.keys = [...queue.keys, key]; setPending(queue.keys);
+          const turn = queue.tail.then(async () => {
             const tracks = await tracksFor(body, hint);
             if (!tracks) { notify('That list changed. Refresh it and try again.', 'error'); return false; }
             return enqueue(tracks, key === 'playnext:' || key === 'replay:');
-          } catch (error) { notify(errorMessage(error), 'error'); return false; }
-          finally { pendingRef.current = false; setPending([]); }
+          });
+          queue.tail = turn.catch(() => undefined);
+          try { return await turn; } catch (error) { notify(errorMessage(error), 'error'); return false; }
+          finally { const at = queue.keys.indexOf(key); queue.keys = queue.keys.filter((_, index) => index !== at); setPending(queue.keys); }
         }
         default: notify(DISCORD_ONLY, 'info'); return false;
       }
@@ -412,6 +415,6 @@ export function useListening(remote: RemotePortal): Portal {
   const moves = { target, discord: local ? discord : shown?.session ?? null, moveToDiscord, moveHere };
   // One object for as long as nothing in it changes; a re-render elsewhere doesn't make a new portal.
   return useStableObject(!local ? { ...remote, ...events, ...moves, snapshot: shown }
-    : { ...remote, ...events, snapshot: shown, receivedAt: deck.at, can, pending, syncing: false, run: engine.run, ...moves,
+    : { ...remote, ...events, snapshot: shown, receivedAt: deck.at, can, pending, confirming: pending.length > 0, queued: 0, syncing: false, run: engine.run, ...moves,
       blockedReason: remote.snapshot ? remote.blockedReason : 'Connecting to your server. Search and your library load from Discord.' });
 }

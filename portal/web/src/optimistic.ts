@@ -8,7 +8,7 @@ export const OPTIMISTIC = new Set(['pause', 'resume', 'seek', 'volume', 'filter'
 // and keep applying until settled, whatever else changes meanwhile.
 const SLOTS: Record<string, string> = { pause: 'playback', resume: 'playback', volume: 'volume', filter: 'filter', loop: 'loop', radio: 'radio' };
 // Queue/position edits are only meaningful against the tracks the user saw.
-const STRUCTURAL = new Set(['seek', 'skip', 'skipto', 'remove', 'move', 'clear', 'shuffle']);
+const STRUCTURAL = new Set(['seek', 'skip', 'skipto', 'remove', 'move', 'clear', 'shuffle', 'playnext']);
 
 export interface Intent {
   id: number;
@@ -27,15 +27,22 @@ export interface Intent {
   track?: Track;
 }
 
+// Suggestion edits name their pick by id (the bot checks it), so they apply at
+// once whatever else changes and need no queue revision.
+const SUGGESTION_EDITS = new Set(['promote', 'remove', 'less']);
+const suggestionEdit = (command: Command) => command.command === 'radio' && SUGGESTION_EDITS.has(command.subcommand || '')
+  && !!command.expectedTrackId && command.options?.position !== undefined;
+
 // Only the plain autoplay toggle is a set-state control. Seeding from a chosen
 // song and editing suggestions are ordinary requests that wait for the bot.
 const radioToggle = (command: Command) => command.subcommand === 'off' || (command.subcommand === 'on' && !command.options?.track);
-export const isOptimistic = (command: Command) => OPTIMISTIC.has(command.command) && (command.command !== 'radio' || radioToggle(command));
-export const slotOf = (command: Command) => isOptimistic(command) ? SLOTS[command.command] || null : null;
+export const isOptimistic = (command: Command) => OPTIMISTIC.has(command.command) && (command.command !== 'radio' || radioToggle(command) || suggestionEdit(command));
+export const slotOf = (command: Command) => isOptimistic(command) && !suggestionEdit(command) ? SLOTS[command.command] || null : null;
 export const needsRevision = (command: Command) => STRUCTURAL.has(command.command);
 // Adding one chosen song doesn't depend on what the queue shows, so it doesn't
-// wait for earlier changes or lock the next addition.
-export const isAddition = (command: Command, tracks?: Track[]) => command.command === 'play' && !command.subcommand
+// wait for earlier changes or lock the next addition. Play next with a chosen
+// song is shown at the front at once, but still binds to the queue the user saw.
+export const isAddition = (command: Command, tracks?: Track[]) => ['play', 'playnext'].includes(command.command) && !command.subcommand
   && tracks?.length === 1 && !!tracks[0].uri && command.options?.query === tracks[0].uri;
 const identities = (snapshot: GuildSnapshot) => ({ current: snapshot.session.current?.id || null, queue: snapshot.session.queue.map(track => track.id) });
 const sameTracks = (a: { current: string | null; queue: string[] }, b: { current: string | null; queue: string[] }) =>
@@ -64,7 +71,7 @@ export function createIntent(id: number, body: Command, view: GuildSnapshot, ver
   if (command.command === 'volume' && session.volume === options.level) return null;
   if (command.command === 'filter' && session.filter === options.preset) return null;
   if (command.command === 'loop' && session.repeat === options.mode) return null;
-  if (command.command === 'radio' && session.radio === (command.subcommand === 'on')) return null;
+  if (command.command === 'radio' && !suggestionEdit(command) && session.radio === (command.subcommand === 'on')) return null;
   const position = displayedPosition(view, receivedAt, now);
   const target = command.command === 'seek' ? seconds(options.timestamp) : null;
   const anchor = command.command === 'pause' || command.command === 'resume' ? { positionMs: position, at: now, trackId: session.current?.id || null }
@@ -86,13 +93,15 @@ function predict(intent: Intent, snapshot: GuildSnapshot): GuildSnapshot | null 
     case 'volume': s.volume = Number(o.level); break;
     case 'filter': s.filter = String(o.preset); break;
     case 'loop': s.repeat = o.mode as typeof s.repeat; break;
-    case 'radio': s.radio = command.subcommand === 'on'; break;
     case 'seek': if (!s.current || !intent.anchor) return null; break;
     case 'skip': case 'skipto': {
-      // Repeat modes and an empty queue depend on server-side queue policy.
+      // Repeating one song and an empty queue depend on server-side policy.
       const index = command.command === 'skip' ? 1 : Number(o.position);
-      if (s.repeat !== 'off' || !s.current || index < 1 || index > s.queue.length) return null;
+      if (s.repeat === 'track' || !s.current || index < 1 || index > s.queue.length) return null;
+      const skipped = s.current;
       s.current = s.queue[index - 1]; s.queue = s.queue.slice(index);
+      // Repeating the queue sends the song that was playing to its end; skipped-over songs leave.
+      if (s.repeat === 'queue') s.queue.push(skipped);
       s.durationMs = s.current.durationMs;
       break;
     }
@@ -110,6 +119,20 @@ function predict(intent: Intent, snapshot: GuildSnapshot): GuildSnapshot | null 
     // An addition joins the end of the queue. A fair queue or an idle player
     // places it by server-side rules, so those wait for the bot.
     case 'play': if (!intent.track || !s.current || s.fairQueue) return null; s.queue.push(intent.track); break;
+    case 'playnext': if (!intent.track || !s.current || s.fairQueue) return null; s.queue.unshift(intent.track); break;
+    case 'radio': {
+      if (!suggestionEdit(command)) { s.radio = command.subcommand === 'on'; break; }
+      const suggestions = s.suggestions || [];
+      const index = suggestions.findIndex(track => track.id === command.expectedTrackId);
+      if (index < 0) return null;
+      if (command.subcommand === 'promote') {
+        // A promoted pick joins the end of the queue; a fair queue or an idle player places it by bot rules.
+        if (!s.current || s.fairQueue) return null;
+        s.queue.push(suggestions[index]);
+      }
+      s.suggestions = suggestions.filter((_, at) => at !== index);
+      break;
+    }
     default: return null; // Shuffle order is chosen by the bot.
   }
   return next;
@@ -120,10 +143,10 @@ function predict(intent: Intent, snapshot: GuildSnapshot): GuildSnapshot | null 
 export function applyIntents(verified: GuildSnapshot, receivedAt: number, intents: Intent[]) {
   let snapshot = verified; let anchor = receivedAt;
   for (const intent of intents) {
-    // An unsent addition can't be in newer verified state yet, so it still joins
-    // the end. Once sent, a newer snapshot may already hold it.
-    const unsentAddition = !!intent.track && !intent.sent;
-    if (!intent.slot && !unsentAddition && intent.baseRevision !== verified.revision) continue;
+    // An unsent addition or suggestion edit can't be in newer verified state yet,
+    // so it still applies. Once sent, a newer snapshot may already hold it.
+    const unsent = (!!intent.track || suggestionEdit(intent.command)) && !intent.sent;
+    if (!intent.slot && !unsent && intent.baseRevision !== verified.revision) continue;
     const next = predict(intent, snapshot);
     if (!next) continue;
     snapshot = next;

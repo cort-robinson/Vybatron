@@ -14,6 +14,13 @@ export function savable(uri: string | null | undefined) {
   } catch { return false; }
 }
 
+// Favorite play/remove commands made from a row this device shows. Their number may
+// have moved only because of this device's own edits, so they follow their song by
+// id. A number typed into a form is sent as typed.
+const listed = new WeakSet<Command>();
+export const fromList = <T extends Command>(command: T) => { listed.add(command); return command; };
+export const isListed = (command: Command) => listed.has(command);
+
 // One save at a time: the bot allows one import preview per listener, and a second tap would be refused.
 let saving = false;
 const listeners = new Set<() => void>();

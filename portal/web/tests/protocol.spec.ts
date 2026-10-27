@@ -14,7 +14,8 @@ test('HTTP 409 reads both snapshot and library before a deliberate selected-item
     await button.click();
     await expect.poll(() => server.requests.slice(reads).includes('/api/guilds/testing')).toBe(true);
     await expect.poll(() => server.requests.slice(reads).includes('/api/guilds/testing/library')).toBe(true);
-    await expect(button).toBeDisabled();
+    // The removal showed at once; it stays shown until the conflict's reads land.
+    await expect(button).toHaveCount(0);
     expect(server.commands).toEqual([{ command: 'favorite', subcommand: 'remove', options: { index: 2 }, expectedTrackId: selected }]);
     expect(server.state.library.favorites).toHaveLength(1);
     server.releaseLibraryReads();

@@ -1,8 +1,9 @@
-import { memo, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { memo, useEffect, useRef, useState, type ReactNode } from 'react';
 import { ArrowClockwiseIcon, ArrowCounterClockwiseIcon, CaretUpIcon, PlayIcon, PlusIcon, ShuffleIcon, WarningCircleIcon } from '../icons';
 import type { Portal } from '../usePortal';
 import type { AutoPlaylist, Capability, Command, GuildSnapshot, Library, RecapWindow, Stats, StatsWindow, Track } from '../types';
-import { api, ApiError, errorMessage } from '../api';
+import { api, errorMessage } from '../api';
+import { clearReads, loadRead, statsRead, useRead } from '../reads';
 import { date, totalTime } from '../format';
 import { Artwork, Confirm, IconButton, Loading } from './ui';
 import { dragScroll } from '../dragScroll';
@@ -28,47 +29,34 @@ function playlistCommand(list: AutoPlaylist, statsWindow: StatsWindow, shuffle: 
 }
 
 // The landing surface for music. The session and library come from the live
-// portal state; stats load separately once the first snapshot is in, so the
-// Home tab never holds up the player.
+// portal state; stats are read on their own (started with the server, shared with
+// Server favorites), so the Home tab never holds up the player and returning to it
+// shows what it had at once.
 export function Home({ portal, active, onOpenPlayer }: { portal: Portal; active: boolean; onOpenPlayer: () => void }) {
-  const { guildId, snapshot, library, run, can, pending, blockedReason, bootstrap, notify } = portal;
-  const [stats, setStats] = useState<Stats | null>(null);
-  const [error, setError] = useState('');
+  const { guildId, snapshot, library, run, can, blockedReason, bootstrap, notify } = portal;
   const [statsWindow, setWindow] = useState<StatsWindow>('30d');
   const [confirmClear, setConfirmClear] = useState(false);
   const [clearing, setClearing] = useState(false);
-  const [recapVersion, setRecapVersion] = useState(0);
   const [recapWindow, setRecapWindow] = useState<RecapWindow>('30d');
-  const controller = useRef<AbortController | null>(null);
+  const viewer = bootstrap?.viewer.id;
+  const read = viewer && guildId ? statsRead(viewer, guildId, statsWindow) : null;
+  const { value, error, reload } = useRead<Stats>(read?.key ?? null, () => read!.fetch());
+  // A new range or a re-read after a clear keeps the shelves it had until its own
+  // read arrives; a failed read never falls back to them.
+  const shown = useRef<{ guildId: string; stats: Stats } | null>(null);
+  if (value) shown.current = { guildId, stats: value };
+  const stats = value ?? (!error && shown.current?.guildId === guildId ? shown.current.stats : null);
   const ready = !!snapshot;
-  const addable = can('add') && !pending.length;
+  const addable = can('add');
 
-  const refresh = useCallback(async (range: StatsWindow) => {
-    controller.current?.abort();
-    const request = new AbortController(); controller.current = request;
-    setError('');
-    try {
-      const next = await api.stats(guildId, range, request.signal);
-      if (!request.signal.aborted) setStats(next);
-    } catch (failure) {
-      if (request.signal.aborted) return;
-      // Lost access clears protected lists rather than leaving a stale view; an
-      // unavailable store would refuse Play too, so it explains itself instead.
-      if (failure instanceof ApiError && [401, 403, 404, 503].includes(failure.status)) setStats(null);
-      setError(errorMessage(failure));
-    }
-  }, [guildId]);
-  useEffect(() => { setStats(null); setError(''); setWindow('30d'); setRecapWindow('30d'); }, [guildId]);
-  useEffect(() => {
-    if (!active || !ready || !guildId) return;
-    void refresh(statsWindow);
-    return () => controller.current?.abort();
-  }, [active, ready, guildId, statsWindow, refresh]);
+  useEffect(() => { setWindow('30d'); setRecapWindow('30d'); }, [guildId]);
+  // Opening Home re-reads stats only when they're old; what's held shows meanwhile.
+  useEffect(() => { if (active && read) void loadRead(read.key, read.fetch); }, [active, read?.key]);
 
   // The shelves are memoized; what they call keeps one identity and acts on the latest state.
   const act = useEvent((body: Command, capability: Capability, tracks?: Track[]) => void run(body, capability, tracks));
   const add = useEvent((track: Track) => { if (track.uri) void run({ command: 'play', options: { query: track.uri } }, 'add', [track]); });
-  const retry = useEvent(() => void refresh(statsWindow));
+  const retry = useEvent(() => void reload());
   const resume = useEvent(() => void run({ command: 'session', subcommand: 'resume', expectedRevision: snapshot?.revision }, 'resume'));
 
   if (!active) return <div className="home-view" hidden />;
@@ -79,10 +67,10 @@ export function Home({ portal, active, onOpenPlayer }: { portal: Portal; active:
     {/* Offline, the connection banner above already explains why controls wait. */}
     {ready && !can('add') && portal.connection === 'live' && <div className="permission-note"><WarningCircleIcon size={20} aria-hidden="true" /><span>{blockedReason} You can still browse; Play, Shuffle and Add unlock once you can add music.</span></div>}
     <ContinueListening current={session?.current || null} paused={session?.status === 'paused'} where={portal.target === 'local' ? ' on this device' : session?.voiceChannel ? ` in ${session.voiceChannel.name}` : ''}
-      upNext={session?.queue.length || 0} saved={snapshot?.savedSession} history={library?.history} canResume={can('resume')} busy={!!pending.length}
+      upNext={session?.queue.length || 0} saved={snapshot?.savedSession} history={library?.history} canResume={can('resume')} busy={portal.pending.includes('session:resume')}
       onResume={resume} onOpenPlayer={onOpenPlayer} add={add} disabled={!addable} title={disabledTitle} />
     <StatsShelves stats={stats} error={error} statsWindow={statsWindow} onWindow={setWindow} hasFavorites={!!library?.favorites.length} disabled={!addable} title={disabledTitle} run={act} add={add} retry={retry} />
-    {ready && <ListeningRecap guildId={guildId} version={recapVersion} range={recapWindow} onRange={setRecapWindow} />}
+    {ready && viewer && <ListeningRecap viewer={viewer} guildId={guildId} range={recapWindow} onRange={setRecapWindow} />}
     <section className="home-privacy" aria-labelledby="home-privacy-title">
       <div><h2 id="home-privacy-title">Your request stats</h2>
         <p>Your mixes, top tracks and Rediscover come from the songs you request. Clearing removes you from every request you’ve made, in every server. Server totals stay, anonymized, so On repeat and Forgotten gems keep their counts. Favorites, shared mixes and history aren’t touched. Vybatron never records who was listening, only who asked for a song.</p></div>
@@ -96,7 +84,8 @@ export function Home({ portal, active, onOpenPlayer }: { portal: Portal; active:
         void api.clearRequestStats(bootstrap.csrfToken).then(result => {
           setConfirmClear(false);
           notify(result.cleared ? `Cleared you from ${result.cleared.toLocaleString()} ${result.cleared === 1 ? 'request' : 'requests'}. Server totals stay, anonymized.` : 'There were no requests to clear.', 'success');
-          void refresh(statsWindow); setRecapVersion(value => value + 1);
+          // Clearing touches every server, so every held read starts over.
+          if (viewer) clearReads(`${viewer}:`);
         }).catch(failure => notify(errorMessage(failure), 'error')).finally(() => setClearing(false));
       }} />}
   </div>;

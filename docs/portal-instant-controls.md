@@ -111,12 +111,47 @@ which accounted for the 2-5 s outliers.
   outcomes still force a fresh read and are never retried automatically.
 - A song added from a search result appears at the end of the queue at once
   (unless fair queue picks its place) and doesn't block further additions; the
-  bot's reply then confirms its position.
+  bot's reply then confirms its position. Play next with a chosen result
+  appears at the front the same way, but like a queue edit it's sent only while
+  verified state still shows the queue the user acted on.
+- Suggestion promote, remove and Less like this leave the suggestion list at
+  once; they name their pick by id, which the bot checks. With repeat queue, Skip
+  shows the song that was playing moving to the end of the queue.
 - Permissions, revisions and freshness come only from verified snapshots.
-  Other actions (favorites, mixes, settings, typed queries) keep the
-  one-at-a-time lock. When they were clicked over this device's own still-settling
-  predictions and the verified tracks match what was shown, they use the
-  confirmed revision instead of failing with a self-inflicted 409.
+- Nothing waiting on the bot locks other controls. Changes that need the bot's
+  answer before the screen can show them (typed queries, Play next by text,
+  favorites, mixes, replay, Back, saved-session resume, vote skip) join the same
+  ordered queue as playback changes, so a tap made meanwhile is queued, shown
+  where it can be, and sent after them: "Waiting for confirmation · N queued".
+  A second identical tap while the first is on its way is recognized, not sent.
+  When a revision-checked change is confirmed and its result still shows the
+  songs a later queued change saw, that change is bound to the result instead of
+  failing with a self-made 409; if the songs moved (Back brought in another
+  song), it conflicts and asks for a deliberate retry. Changes clicked over this device's own still-settling
+  predictions still use the confirmed revision when the verified tracks match
+  what was shown. A rejected change that wasn't predicted leaves the taps behind
+  it queued; a rejected prediction still rolls back everything built on it.
+- Library-only changes (favorite remove, clear and import, mix delete and
+  import, server settings) never depend on the session on screen. They go in a
+  second ordered queue beside playback, so a pause is sent at once even while a
+  favorite is saving. Stop still cancels unsent playback changes, not these.
+- Hearts flip at once. Each song keeps the listener's latest choice and sends
+  what it takes to reach it, one change at a time, so rapid taps end where the
+  last one left the heart. A refusal puts the heart back and says why. The
+  library is patched with the confirmed change and re-read quietly behind it.
+  A favorite tapped from this device's own lists follows its song to where this
+  device's edits moved it; a number typed against older state still conflicts.
+- Returning to the app (or coming back online) with a live, fresh stream keeps
+  every control usable: no banner, only a quiet snapshot check. Its answer is
+  taken only when its ordering shows it's newer than what the stream delivered;
+  without comparable ordering, a different revision takes the ordinary fresh
+  read. A refresh, disconnect or lost freshness while it's out discards it. The
+  library is re-read on return only when it may be out of date (older than a
+  minute, or a song changed while the page was hidden). Stale state still takes
+  the ordinary fresh read with controls held until it lands.
+- A song change re-reads history quietly once rapid skips settle (1.5 s).
+- Songs added on this device while an earlier one is still being looked up wait
+  their turn instead of being dropped.
 - Controls stay usable while changes settle. "Syncing with Discord…" appears
   only when confirmation takes longer than 700 ms.
 

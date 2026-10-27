@@ -231,7 +231,8 @@ test('a second tap while a save is loading sends nothing more', async ({ page })
   await addSongs(page);
   const heart = page.getByTestId('player').getByRole('button', { name: 'Save current song to favorites' }).filter({ visible: true });
   await heart.click();
-  await expect(heart).toBeDisabled();
+  // The heart fills at once and waits, like every other heart, while the save loads.
+  await expect(page.getByTestId('player').getByRole('button', { name: 'Remove current song from favorites' }).filter({ visible: true })).toBeDisabled();
   await page.getByRole('button', { name: 'Queue', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Save Wait to favorites' })).toBeDisabled();
   release();
@@ -251,4 +252,26 @@ test('a song from a source the import can\'t read explains instead of failing', 
   await page.getByRole('button', { name: 'Save Bandcamp Song to favorites' }).click();
   await expect(page.getByRole('status').filter({ hasText: 'can’t be saved to favorites from this device' })).toBeVisible();
   expect(fixture.commands.some(c => c.command === 'favorite')).toBe(false);
+});
+
+test('an addition on this device made while another is still looking up its song waits its turn', async ({ page }) => {
+  const fixture = await portal(page, { inVoice: false });
+  // The typed addition's lookup is held, so it's still finding its song when the next tap lands.
+  let held: Promise<void> | undefined; let release = () => {};
+  await page.route('**/api/guilds/*/search?*', async route => {
+    if (held) await held;
+    await route.fulfill({ json: { tracks: [youtubeTrack('dX3k_QDnzHE', 'Midnight City'), youtubeTrack('Fk3RbKWbmtg', 'Wait')], notice: null } });
+  });
+  await page.getByRole('button', { name: 'Add music' }).first().click();
+  await page.getByRole('searchbox', { name: 'Music search' }).fill('midnight');
+  const wait = page.getByRole('button', { name: 'Add Wait to queue' });
+  await expect(wait).toBeEnabled();
+  held = new Promise(resolve => { release = resolve; });
+  await page.getByRole('button', { name: 'Add to queue', exact: true }).click();
+  await wait.click();
+  release(); held = undefined;
+  await page.keyboard.press('Escape');
+  await expect(title(page)).toHaveText('Midnight City');
+  await expect(page.locator('.queue:not(.queue-compact) .track-row strong')).toHaveText(['Wait']);
+  expect(fixture.commands).toEqual([]);
 });

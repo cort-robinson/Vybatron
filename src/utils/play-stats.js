@@ -411,7 +411,7 @@ export class PlayStats {
   youtubeSongs() {
     this.assertAvailable();
     this.flush();
-    return this.db.prepare("SELECT * FROM songs WHERE source_name = 'youtube'").all().map(row => ({ songKey: row.song_key, ref: reference(row) }));
+    return this.db.prepare("SELECT * FROM songs WHERE source_name = 'youtube'").all().map(row => ({ songKey: row.song_key, rank: row.rank, ref: reference(row) }));
   }
 
   // Points a song at another upload of the same song. Its key, and so its plays, stay.

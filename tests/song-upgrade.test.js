@@ -1,12 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { promises as fs } from 'node:fs';
+import { existsSync, promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { trackReference } from '../src/utils/library.js';
 import { PlayStats } from '../src/utils/play-stats.js';
 import { songKey } from '../src/utils/song-identity.js';
-import { upgradeList, upgradeSavedSongs, UPGRADE_MODE, UPGRADE_REPORT } from '../src/utils/song-upgrade.js';
+import { upgradeList, upgradeSavedSongs, UPGRADE_MODE, UPGRADE_REPORT, UPGRADE_UNDO } from '../src/utils/song-upgrade.js';
 import { openLibrary, closeLibraries } from './library-fixture.js';
 
 const info = (id, title, author, sourceName = 'youtube') => ({ info: { sourceName, identifier: id, uri: sourceName === 'youtube' ? `https://www.youtube.com/watch?v=${id}` : `https://soundcloud.com/artist/${id}`,
@@ -28,6 +28,8 @@ const results = {
   'Tame Impala - Topic Loser': [info('ccccccccccc', 'Loser', 'Tame Impala')],
   'The Killers Mr. Brightside (Live at Wembley)': [info('ggggggggggg', 'Mr. Brightside', 'The Killers')],
   'michaeljacksonVEVO Michael Jackson - Chicago (Official Audio)': [info('iiiiiiiiiii', 'Chicago', 'Michael Jackson')],
+  'Band Song': [info('kkkkkkkkkkk', 'Song', 'Band')],
+  'Band Song (Live)': [info('kkkkkkkkkkk', 'Song', 'Band')],
 };
 
 async function setup(t) {
@@ -121,6 +123,57 @@ test('shutdown during apply stops further writes and publishes no report', async
 
 test('upgradeList drops an upgraded entry when its song is already listed', () => {
   const list = [video, song, video];
-  assert.equal(upgradeList(list, new Map([[video.uri, song]])), 2);
+  assert.equal(upgradeList(list, new Map([[`${video.uri} ${songKey(video)}`, song]])), 2);
   assert.deepEqual(list, [song]);
+});
+
+test('the undo record holds every previous stats row and history item before anything changes', async t => {
+  const f = await setup(t);
+  // Shutdown right after the undo record is written, before the first change.
+  assert.equal(await f.run({ mode: 'apply', draining: () => existsSync(path.join(f.directory, UPGRADE_UNDO)) }), null);
+  const undo = JSON.parse(await fs.readFile(path.join(f.directory, UPGRADE_UNDO), 'utf8'));
+  const history = f.library.readGuild('100').history;
+  assert.deepEqual(undo.history, history.map(item => ({ guildId: '100', id: item.id, track: video })));
+  assert.deepEqual(undo.stats, [{ songKey: songKey(audioVideo), rank: 34, ...audioVideo }]);
+  if (process.platform !== 'win32') assert.equal((await fs.stat(path.join(f.directory, UPGRADE_UNDO))).mode & 0o777, 0o600);
+  // Nothing changed yet, and a rerun keeps the first record.
+  assert.equal(f.stats.youtubeSongs()[0].ref.uri, audioVideo.uri);
+  const report = await f.run({ mode: 'apply' });
+  assert.equal(report.applied.stats, 1);
+  assert.deepEqual(JSON.parse(await fs.readFile(path.join(f.directory, UPGRADE_UNDO), 'utf8')), undo);
+});
+
+test('a link saved under two song identities upgrades only the identity that matches', async t => {
+  const f = await setup(t);
+  const studio = { info: info('jjjjjjjjjjj', 'Song', 'Band').info };
+  const live = { info: { ...studio.info, title: 'Song (Live)' } };
+  for (const track of [studio, live]) {
+    f.stats.finish(f.stats.begin({ guildId: '100', voiceChannelId: '300', track, requesterKind: 'user', requesterId: '200' }), { playedMs: 200_000, completed: true });
+  }
+  await f.library.updateFavorites('202', list => list.push(trackReference(live), trackReference(studio)));
+  const report = await f.run({ mode: 'apply' });
+  const rows = f.stats.songs([songKey(studio.info), songKey(live.info)]);
+  assert.equal(rows.get(songKey(studio.info)).uri, 'https://www.youtube.com/watch?v=kkkkkkkkkkk');
+  assert.equal(rows.get(songKey(live.info)).uri, studio.info.uri);
+  assert.equal(rows.get(songKey(live.info)).title, 'Song (Live)');
+  assert.deepEqual(f.library.favorites('202').map(ref => ref.title), ['Song (Live)', 'Song']);
+  assert.equal(f.library.favorites('202')[1].uri, 'https://www.youtube.com/watch?v=kkkkkkkkkkk');
+  assert.ok(report.changes.every(change => change.from.title !== 'Song (Live)'));
+});
+
+test('a rerun that finds more matches adds them to the undo record and keeps the originals', async t => {
+  const f = await setup(t);
+  const undoFile = path.join(f.directory, UPGRADE_UNDO);
+  // The first attempt cannot reach the stats song's search, then shuts down before any change.
+  const search = f.node.search;
+  f.node.search = async query => { if (query.query.startsWith('michaeljacksonVEVO')) throw new Error('timeout'); return search(query); };
+  assert.equal(await f.run({ mode: 'apply', draining: () => existsSync(undoFile) }), null);
+  const first = JSON.parse(await fs.readFile(undoFile, 'utf8'));
+  assert.deepEqual([first.history.length, first.stats.length], [2, 0]);
+  f.node.search = search;
+  const report = await f.run({ mode: 'apply' });
+  assert.deepEqual(report.applied, { favorites: 2, mixes: 1, history: 2, stats: 1 });
+  const undo = JSON.parse(await fs.readFile(undoFile, 'utf8'));
+  assert.deepEqual(undo.history, first.history);
+  assert.deepEqual(undo.stats, [{ songKey: songKey(audioVideo), rank: 34, ...audioVideo }]);
 });

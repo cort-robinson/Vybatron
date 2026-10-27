@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { logEvent } from '../runtime.js';
@@ -12,7 +13,13 @@ import { referenceRank, songKey } from './song-identity.js';
 export const UPGRADE_MODE = 'apply';
 export const UPGRADE_REPORT = 'saved-song-upgrade-2.json';
 const BACKUP = '.pre-song-upgrade-2.bak';
+// Previous stats rows and history items, written before the first change, to undo run 2.
+export const UPGRADE_UNDO = 'saved-song-upgrade-2.undo.json';
 const CANDIDATES = 5;
+
+// A link can be saved under different song identities (its title can change), so each
+// pair is matched on its own.
+const entryId = ref => `${ref.uri} ${songKey(ref)}`;
 
 function* savedReferences(library, statsSongs) {
   for (const userId of library.favoriteUserIds()) yield* library.favorites(userId).map(ref => ['favorites', ref]);
@@ -43,7 +50,7 @@ export async function findSong(node, ref, { timeoutMs = 10_000 } = {}) {
 export function upgradeList(list, upgrades) {
   let changed = 0;
   for (let index = list.length - 1; index >= 0; index -= 1) {
-    const next = upgrades.get(list[index].uri);
+    const next = upgrades.get(entryId(list[index]));
     if (!next) continue;
     if (list.some(ref => ref.uri === next.uri)) list.splice(index, 1);
     else list[index] = next;
@@ -56,15 +63,50 @@ export function upgradeList(list, upgrades) {
 function upgradeHistory(history, upgrades) {
   let changed = 0;
   for (const item of history) {
-    const next = upgrades.get(item.track.uri);
+    const next = upgrades.get(entryId(item.track));
     if (next) { item.track = next; changed += 1; }
   }
   return changed;
 }
 
+// A stats row changes only to a song with its own key, so its plays stay that song's.
+function statsTarget(song, upgrades) {
+  const next = upgrades.get(entryId(song.ref));
+  return next && songKey(next) === song.songKey ? next : null;
+}
+
+// History lives in the listening-state store, not library.json, so its previous items
+// are recorded here with the previous stats rows.
+function undoRecord(library, statsSongs, upgrades) {
+  const history = [];
+  for (const guildId of library.guildIds()) {
+    for (const item of library.readGuild(guildId).history || []) if (upgrades.has(entryId(item.track))) history.push({ guildId, id: item.id, track: item.track });
+  }
+  const songs = statsSongs.filter(song => statsTarget(song, upgrades)).map(({ songKey: key, rank, ref }) => ({ songKey: key, rank, ...ref }));
+  return { version: 1, history, stats: songs };
+}
+
+// A rerun after an interruption can find more matches. It adds those records and keeps
+// every original already recorded, so the file can always restore the state before run 2.
+async function recordUndo(file, record) {
+  let previous = { version: 1, history: [], stats: [] };
+  try { previous = JSON.parse(await fs.readFile(file, 'utf8')); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+  const history = new Set(previous.history.map(item => `${item.guildId} ${item.id}`));
+  const songs = new Set(previous.stats.map(row => row.songKey));
+  const merged = { version: 1, history: [...previous.history, ...record.history.filter(item => !history.has(`${item.guildId} ${item.id}`))],
+    stats: [...previous.stats, ...record.stats.filter(row => !songs.has(row.songKey))] };
+  const temporary = `${file}.${randomUUID()}.tmp`;
+  try {
+    const handle = await fs.open(temporary, 'wx', 0o600);
+    try { await handle.writeFile(JSON.stringify(merged, null, 2)); await handle.sync(); } finally { await handle.close(); }
+    await fs.rename(temporary, file);
+  } finally { await fs.unlink(temporary).catch(() => {}); }
+}
+
 async function applyUpgrades(library, stats, statsSongs, upgrades, draining) {
-  const affected = list => list.some(ref => upgrades.has(ref.uri));
+  const affected = list => list.some(ref => upgrades.has(entryId(ref)));
   await library.publishBackup(`${library.filePath}${BACKUP}`, await fs.readFile(library.filePath, 'utf8'));
+  await recordUndo(path.join(path.dirname(library.filePath), UPGRADE_UNDO), undoRecord(library, statsSongs, upgrades));
   let favorites = 0, mixes = 0, history = 0, songs = 0;
   for (const userId of library.favoriteUserIds()) {
     // Shutdown can begin between writes; each write checks again before it changes anything.
@@ -79,9 +121,9 @@ async function applyUpgrades(library, stats, statsSongs, upgrades, draining) {
     });
     mixes += counts.mixes; history += counts.history;
   }
-  for (const { songKey: key, ref } of statsSongs) {
-    const next = upgrades.get(ref.uri);
-    if (next && !draining()) songs += stats.replaceSong(key, next, referenceRank(next, { youtubeMusic: true }));
+  for (const song of statsSongs) {
+    const next = statsTarget(song, upgrades);
+    if (next && !draining()) songs += stats.replaceSong(song.songKey, next, referenceRank(next, { youtubeMusic: true }));
   }
   return { favorites, mixes, history, stats: songs };
 }
@@ -99,8 +141,8 @@ export async function upgradeSavedSongs({ library, stats, node, mode = UPGRADE_M
   const saved = new Map(); const lists = new Map();
   for (const [list, ref] of savedReferences(library, statsSongs)) {
     if (ref.sourceName !== 'youtube' || ref.isStream) continue;
-    saved.set(ref.uri, ref);
-    lists.set(ref.uri, new Set([...(lists.get(ref.uri) || []), list]));
+    saved.set(entryId(ref), ref);
+    lists.set(entryId(ref), new Set([...(lists.get(entryId(ref)) || []), list]));
   }
   const upgrades = new Map(); const counts = { checked: 0, current: 0, unmatched: 0, failed: 0 };
   for (const ref of saved.values()) {
@@ -108,7 +150,7 @@ export async function upgradeSavedSongs({ library, stats, node, mode = UPGRADE_M
     counts.checked += 1;
     try {
       const song = await findSong(node, ref);
-      if (song) upgrades.set(ref.uri, song);
+      if (song) upgrades.set(entryId(ref), song);
       else counts[song === null ? 'current' : 'unmatched'] += 1;
     } catch { counts.failed += 1; }
     await wait(pauseMs);
@@ -117,8 +159,8 @@ export async function upgradeSavedSongs({ library, stats, node, mode = UPGRADE_M
   const applied = mode === 'apply' ? await applyUpgrades(library, stats, statsSongs, upgrades, draining) : null;
   if (draining()) return null;
   const report = { version: 1, mode, finishedAt: new Date(now()).toISOString(), ...counts, upgrades: upgrades.size, applied,
-    changes: [...upgrades].map(([uri, song]) => ({ lists: [...lists.get(uri)],
-      from: { title: saved.get(uri).title, author: saved.get(uri).author, uri }, to: { title: song.title, author: song.author, uri: song.uri } })) };
+    changes: [...upgrades].map(([id, song]) => ({ lists: [...lists.get(id)],
+      from: { title: saved.get(id).title, author: saved.get(id).author, uri: saved.get(id).uri }, to: { title: song.title, author: song.author, uri: song.uri } })) };
   const temporary = `${reportPath}.tmp`;
   await fs.writeFile(temporary, JSON.stringify(report, null, 2), { mode: 0o600 });
   await fs.rename(temporary, reportPath);

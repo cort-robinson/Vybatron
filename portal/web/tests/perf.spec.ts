@@ -47,6 +47,6 @@ test('?perf confirms only taps whose command reached the bot', async ({ page }) 
   const count = async (metric: string) => (await rows(page))?.find(row => row.metric === metric)?.count ?? 0;
   await expect.poll(() => count('vyb:tap→confirmed pause')).toBe(1);
   expect(await count('vyb:tap→confirmed resume')).toBe(0);
-  expect(await count('vyb:tap→paint pause')).toBe(2);
-  expect(await count('vyb:tap→paint resume')).toBe(1);
+  await expect.poll(() => count('vyb:tap→paint pause')).toBe(2);
+  await expect.poll(() => count('vyb:tap→paint resume')).toBe(1);
 });

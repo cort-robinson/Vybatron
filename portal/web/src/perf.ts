@@ -57,10 +57,12 @@ export function timed<A extends [{ command: string; subcommand?: string }, ...un
     const stamp = window.event?.timeStamp;
     const start = stamp && stamp > 0 && stamp <= now ? stamp : now;
     const label = args[0].subcommand ? `${args[0].command}/${args[0].subcommand}` : args[0].command;
-    const result = action(...args);
+    // Each tap gets its own body, so overlapping taps reusing one object keep separate sent marks.
+    const body = { ...args[0] };
+    const result = action(...[body, ...args.slice(1)] as A);
     afterPaint(at => measure('vyb:tap→paint', start, at, label));
     void result.then(ok => {
-      if (!sentBodies.delete(args[0])) return;
+      if (!sentBodies.delete(body)) return;
       measure(ok ? 'vyb:tap→confirmed' : 'vyb:tap→rejected', start, performance.now(), label);
       if (++actions % LOG_EVERY === 0) console.table(summary());
     }, () => undefined);

@@ -36,21 +36,26 @@ function attributes(text, start) {
   throw new Error('Unterminated JSX tag');
 }
 
-// The tag's own weight attribute, not one on an element passed in another attribute. A weight
-// written any other way than weight="x" or weight={…} is returned unparsed, never skipped.
+// The tag's own weight attribute, not one on an element passed in another attribute or text in a
+// quoted value. A weight written any other way than weight="x" or weight={…}, or any spread that
+// could carry one, is returned unparsed, never skipped.
 function ownWeight(tag) {
-  let depth = 0;
+  let depth = 0; let quote = null; let found = null;
   for (let index = 0; index < tag.length; index++) {
-    if (tag[index] === '{') {
-      if (depth === 0 && tag.startsWith('{...', index)) return { unparsed: true };
+    const char = tag[index];
+    if (quote) { if (char === quote) quote = null; continue; }
+    if (depth === 0 && (char === '"' || char === "'")) quote = char;
+    else if (char === '{') {
+      if (depth === 0 && /^\{\s*\.\.\./.test(tag.slice(index))) return { unparsed: true };
       depth++;
-    } else if (tag[index] === '}') depth--;
-    else if (depth === 0 && /^\sweight(?![\w-])/.test(tag.slice(index - 1, index + 7))) {
+    } else if (char === '}') depth--;
+    else if (depth === 0 && !found && /^\sweight(?![\w-])/.test(tag.slice(index - 1, index + 7))) {
       const match = /^weight\s*=\s*(?:["']([a-z]+)["']|\{)/.exec(tag.slice(index));
-      return match ? Object.assign(match, { index }) : { unparsed: true };
+      if (!match) return { unparsed: true };
+      found = Object.assign(match, { index });
     }
   }
-  return null;
+  return found;
 }
 
 // The {…} expression starting at `start`.

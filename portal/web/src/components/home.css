@@ -122,6 +122,14 @@
 
 /* Save session as mix, standalone or inside the Stop confirmation. */
 .session-mix-field { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; color: var(--text-soft); font-size: 14px; }
+/* Wide screens pair the session in progress with the recent shelf instead of stacking a banner over it. */
+@media (min-width: 1200px) {
+  .home-shelf:has(> .continue-feature) { display: grid; grid-template-columns: minmax(280px, 340px) minmax(0, 1fr); column-gap: 28px; align-items: start; }
+  .home-shelf:has(> .continue-feature) > .home-shelf-header { grid-column: 1 / -1; }
+  .home-shelf > .continue-feature { grid-template-columns: 88px minmax(0, 1fr); align-content: start; margin: 4px 0 0; padding: 18px; }
+  .home-shelf > .continue-feature .continue-text strong { white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+  .home-shelf > .continue-feature .button { grid-column: 1 / -1; justify-content: center; }
+}
 .session-mix-field input { font-size: 16px; }
 .field-hint { color: var(--muted); font-size: 14px; line-height: 1.55; }
 .field-hint.error-text { color: var(--error-text); }
@@ -144,6 +152,10 @@
   .continue-art { width: 64px; height: 64px; }
   .continue-text strong { font-size: 17px; white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow-wrap: anywhere; }
   .continue-feature .button { grid-column: 1 / -1; }
+  /* The mini player already names the song, so the phone card stays one row and opens the player from a caret. */
+  .continue-feature:has(.continue-open) { grid-template-columns: 64px minmax(0, 1fr) 44px; }
+  .continue-feature .continue-open { grid-column: auto; width: 44px; min-width: 44px; padding: 0; justify-content: center; }
+  .continue-open > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   .recap-grid { grid-template-columns: minmax(0, 1fr); gap: 32px; }
   .recap-range, .recap-range select { width: 100%; }
   .recap-tiles > div { padding: 10px 12px; }

@@ -138,7 +138,7 @@ function ContinueListening({ portal, onOpenPlayer, add, disabled, title }: { por
     <Artwork track={current} className="continue-art" />
     <div className="continue-text"><span className="continue-state">{snapshot?.session.status === 'paused' ? 'Paused' : 'Playing now'}{portal.target === 'local' ? ' on this device' : snapshot?.session.voiceChannel ? ` in ${snapshot.session.voiceChannel.name}` : ''}</span>
       <strong dir="auto" title={current.title}>{current.title}</strong><span dir="auto">{current.author}{snapshot?.session.queue.length ? ` · ${snapshot.session.queue.length} up next` : ''}</span></div>
-    <button type="button" className="button primary" onClick={onOpenPlayer}><CaretUpIcon size={18} weight="bold" />View now playing</button>
+    <button type="button" className="button primary continue-open" onClick={onOpenPlayer}><CaretUpIcon size={18} weight="bold" /><span>View now playing</span></button>
   </div> : resumable && saved ? <div className="continue-feature">
     <span className="continue-art continue-art-saved" aria-hidden="true"><ArrowCounterClockwiseIcon size={30} /></span>
     <div className="continue-text"><span className="continue-state">Saved session</span>
@@ -147,7 +147,7 @@ function ContinueListening({ portal, onOpenPlayer, add, disabled, title }: { por
       {!can('resume') && <span className="continue-hint">{saved.voiceChannel ? `Join ${saved.voiceChannel.name} to resume. ` : ''}Resuming needs playback controls; anyone can start fresh.</span>}</div>
     <button type="button" className="button primary" disabled={!can('resume') || !!pending.length} onClick={() => void run({ command: 'session', subcommand: 'resume', expectedRevision: snapshot?.revision }, 'resume')}><PlayIcon size={18} weight="fill" />Resume session</button>
   </div> : null;
-  return <Shelf id="continue" title="Continue listening" detail={recent.length ? 'The session in progress and songs played recently in voice channels you can see. Add puts a song at the end of the queue.' : 'The session in progress and songs played recently in voice channels you can see.'}
+  return <Shelf id="continue" title="Continue listening" detail="What’s playing now, and songs played recently in voice channels you can see."
     lead={feature}
     empty={!recent.length && !feature && (library ? 'Nothing to pick up yet. Songs played in voice channels you can see show up here, and a saved session appears when one is waiting.' : 'Loading your recent songs…')}>
     {recent.map(entry => <TrackCard key={entry.id} track={entry.track} meta={date(entry.playedAt).split(',')[0]} disabled={disabled || !entry.track.uri} title={title} onAdd={() => add(entry.track)} />)}

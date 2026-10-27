@@ -5,3 +5,5 @@ playwright-report/
 *.tsbuildinfo
 .env.local
 .impeccable/review/*.png
+.impeccable/score/
+.impeccable/report/

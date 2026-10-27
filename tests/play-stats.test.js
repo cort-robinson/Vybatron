@@ -279,3 +279,18 @@ test('initialization backfills from the library and closes to a single file', as
   stats.close();
   assert.deepEqual((await fs.readdir(directory)).sort(), ['stats.sqlite']);
 });
+
+test('playing the YouTube Music song replaces an official audio video as the song a server sees', async t => {
+  const { stats } = await store(t);
+  play(stats, { track: song('aaaaaaaaaaa', 'Michael Jackson - Chicago (Official Audio)', 'michaeljacksonVEVO') });
+  const music = song('bbbbbbbbbbb', 'Chicago', 'Michael Jackson');
+  music.info.artworkUrl = 'https://yt3.googleusercontent.com/AbC_dEf-GhIjKlMnOpQrStUv=w1000-h1000';
+  play(stats, { track: music, playedAt: NOW + 1 });
+  stats.flush();
+  const [entry] = stats.serverFavorites('100', { visibleChannelIds: ['300'] }).onRepeat;
+  assert.deepEqual([entry.track.uri, entry.track.title], ['https://www.youtube.com/watch?v=bbbbbbbbbbb', 'Chicago']);
+  // A later play of the video no longer takes the song back.
+  play(stats, { track: song('aaaaaaaaaaa', 'Michael Jackson - Chicago (Official Audio)', 'michaeljacksonVEVO'), playedAt: NOW + 2 });
+  stats.flush();
+  assert.equal(stats.serverFavorites('100', { visibleChannelIds: ['300'] }).onRepeat[0].track.title, 'Chicago');
+});

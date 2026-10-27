@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { referenceRank, songIdentity, songKey } from '../src/utils/song-identity.js';
+import { isYouTubeMusicSong, referenceRank, songIdentity, songKey } from '../src/utils/song-identity.js';
 
 const yt = (title, author, extra = {}) => ({ title, author, sourceName: 'youtube', identifier: 'abcdefghijk', uri: 'https://www.youtube.com/watch?v=abcdefghijk', ...extra });
 const sameSong = (references) => {
@@ -78,4 +78,14 @@ test('reference rank prefers topic uploads, then official audio, then videos, th
   const spotify = referenceRank(yt('Anti-Hero', 'Taylor Swift', { sourceName: 'spotify' }));
   assert.ok(topic > audio && audio > plain && plain > video && video > spotify, JSON.stringify({ topic, audio, plain, video, spotify }));
   assert.equal(referenceRank(yt('Live radio', 'Station', { isStream: true })), 0);
+});
+
+test('a YouTube Music song result ranks with topic uploads, above official audio videos', () => {
+  const music = { info: yt('Chicago', 'Michael Jackson', { artworkUrl: 'https://yt3.googleusercontent.com/AbC_dEf-GhIjKlMnOpQrStUv=w1000-h1000' }) };
+  assert.equal(isYouTubeMusicSong(music), true);
+  assert.equal(isYouTubeMusicSong({ info: { ...music.info, artworkUrl: 'https://i.ytimg.com/vi/abcdefghijk/mqdefault.jpg' } }), false);
+  assert.equal(isYouTubeMusicSong({ info: { ...music.info, sourceName: 'soundcloud' } }), false);
+  const song = referenceRank(music.info, { youtubeMusic: true });
+  assert.equal(song, referenceRank(yt('Chicago', 'Michael Jackson - Topic')));
+  assert.ok(song > referenceRank(yt('Michael Jackson - Chicago (Official Audio)', 'michaeljacksonVEVO')));
 });

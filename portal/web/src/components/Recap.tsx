@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import { ArrowClockwiseIcon, WarningCircleIcon } from '@phosphor-icons/react';
+import { ArrowClockwiseIcon, WarningCircleIcon } from '../icons';
 import type { Recap, RecapTotals, RecapWindow, Track } from '../types';
 import { api, errorMessage } from '../api';
 import { totalTime } from '../format';

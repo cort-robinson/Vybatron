@@ -122,7 +122,22 @@ creates source-left/browser-right comparisons.
   Tokens remain top-level command fields accepted only on their matching actions;
   playable references and all authority still come from the bot.
 - Serving static files must preserve root `/sw.js`, manifest, icons, and hashed assets.
-  Runtime rasters `public/assets/aurora.png` and `fallback-cover.png` are root-owned.
+  Runtime rasters in `src/assets/` (aurora and fallback-cover derivatives) are root-owned.
+  Components import images so they get hashed `/assets/` names; `public/` is only for files
+  that need a fixed URL (manifest, app icons).
+
+## Load performance
+
+- `npm run build` also writes `.br` and `.gz` copies of text files (`scripts/compress.mjs`);
+  the portal server picks one by `Accept-Encoding`. They are not extra precache URLs.
+- `index.html` shows a look-neutral loading line (`src/boot.css`) while the script loads, so
+  the page isn't blank, and preloads the latin Archivo font. The line sits outside `#root` and
+  hides as soon as a look applies.
+- The Server and Settings pages are a separate chunk (`src/views.tsx`), fetched when the
+  signed-in portal goes idle. If it can't load, the page shows an error that reloads the portal.
+- Import icons from `src/icons.tsx`, never from `@phosphor-icons/react`: each Phosphor module
+  ships all six weights. After using a new icon or weight, run
+  `node scripts/build-icon-set.mjs`; the build fails while the file is out of date.
 
 The root `npm run portal:integration` check passes through real browser OAuth,
 Vite, API, and bot bridge with deterministic fakes only at the external Discord
@@ -138,3 +153,46 @@ permission-filtered history with an unchanged revision, replaced mix confirmatio
 captured schema selections across refresh/disconnect, held HTTP conflict reads,
 and stale library responses. Phone controls use normal pointer actions with no
 horizontal overflow.
+
+## Measuring latency
+
+Every `/api/**` response carries a `Server-Timing` header with fixed metric names and
+durations only (no IDs or content):
+
+| Metric | Meaning |
+|---|---|
+| `portal` | Portal API handling time, from request arrival to the status line. |
+| `bridge` | Time the portal waited on the bot bridge (summed if a route makes several calls). |
+| `bot` | The bot's own handling time for the bridge request. |
+| `discord` | Wall time the bot spent in Discord authorization reads (overlapping reads count once). |
+
+`bridge − bot` is the portal↔bot hop; `bot − discord` is the bot's own work (projection,
+the command's mutation lane and Lavalink). `bot` and `discord` are absent when the bot
+sent no timing; a route with no bridge call shows only `portal`. DevTools → Network →
+Timing shows them per request.
+
+In the browser, open the portal with `?perf` once, or set `localStorage.vybPerf = '1'`
+(remove it to stop). Off, nothing is measured. On, these User Timing measures appear on
+the DevTools Performance timeline and in the summary:
+
+| Measure | From → to |
+|---|---|
+| `vyb:tap→paint <command>` | The click event → the first painted frame after the optimistic state commits. |
+| `vyb:tap→confirmed <command>` | The click → the bot's reply and the snapshot that confirms it are applied. |
+| `vyb:tap→rejected <command>` | The click → a sent command that conflicted or failed settles. |
+| `vyb:boot→interactive` | Navigation start → first painted snapshot with controls enabled. |
+| `api <route> [metric]` | Each API request's total duration, and its `Server-Timing` metrics, by route (IDs replaced with `:id`). |
+
+A tap that sends nothing (already the state shown, replaced by a newer choice before
+sending, or blocked) records only its paint. Live-stream (`/events`) responses carry
+only `portal` and `bridge`: a stream can join a bot read already in flight.
+
+The console prints a table after boot and every 10 actions. `__vybPerf()` returns
+`{ metric, count, p50, p95, max }` rows (last 200 samples per metric) and
+`__vybPerf.reset()` clears them, so a before/after comparison is: reset, repeat the
+action 20 times, read p50/p95.
+
+Targets for a phone on a warm cache: **tap→paint < 50 ms**, **tap→confirmed < 300 ms**,
+**boot→interactive < 1.5 s**. When tap→confirmed is slow, the request rows say where:
+large `discord` is Discord authorization, `bot − discord` is bot work, `bridge − bot`
+is the hop, and `api … − portal` is the network to the phone.

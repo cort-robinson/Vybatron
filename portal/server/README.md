@@ -111,6 +111,20 @@ contains a temporary code/state), headers, cookies, environment values, or
 upstream bodies in a reverse proxy. This service logs only a fixed startup line
 or a fixed startup-failure message.
 
+## Static delivery
+
+The compiled UI is served from `PORTAL_WEB_DIST` with no request-time compression:
+
+- Text files (`.html`, `.js`, `.css`, `.json`, `.webmanifest`, `.svg`) come from the
+  build's `.br`/`.gz` copies when `Accept-Encoding` allows (brotli first), with
+  `Content-Encoding` and `Vary: Accept-Encoding`. A copy older than its original is
+  ignored. The copies are never URLs of their own.
+- Every stored response carries a strong `ETag` from the file content (one per encoding),
+  and a matching `If-None-Match` gets an empty 304.
+- Vite-hashed files in `/assets/` are `public, max-age=31536000, immutable`. Everything
+  else revalidates (`no-cache`). The service worker script and `/share` are `no-store`.
+- Byte ranges are ignored for static files: the whole representation is sent.
+
 ## Resource and failure behavior
 
 - 128 inbound sockets, 32 ordinary request handlers, four isolated authenticated
@@ -156,6 +170,9 @@ or a fixed startup-failure message.
 - Static serving rejects dot segments, malformed/recursive encoding, hidden files,
   non-web extensions, directories, and resolved paths outside the build root.
   Missing extensionless UI routes get the SPA; `/api` and `/auth` never do.
+- `/api/**` responses carry `Server-Timing` (`portal`, `bridge`, and the bot's
+  `bot`/`discord`) with fixed names and durations only. A missing or malformed bot
+  timing header is dropped. See *Measuring latency* in `portal/web/README.md`.
 - `/health` exposes only readiness booleans, with 503 when bridge/static/auth
   readiness is missing. Upstream error details are replaced by safe fixed text;
   HTTP 400/401/403/404/409/429/503 meanings are preserved.

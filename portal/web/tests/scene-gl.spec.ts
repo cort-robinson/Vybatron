@@ -68,3 +68,60 @@ test('panes over the room take their frosted glass from the canvas, and keep bac
   await page.getByRole('button', { name: 'Open player', exact: true }).click();
   await expect(page.locator('.sleeve-queue')).toHaveCSS('backdrop-filter', /blur/);
 });
+
+// Counts the room's frames and every style read the page makes (the room used to read a dozen per frame).
+async function countRoom(page: import('./test').Page) {
+  await page.addInitScript(() => {
+    const record = window as unknown as { room: { frames: number; styles: number } }; record.room = { frames: 0, styles: 0 };
+    const draw = WebGL2RenderingContext.prototype.drawArrays;
+    WebGL2RenderingContext.prototype.drawArrays = function (this: WebGL2RenderingContext, ...args: Parameters<typeof draw>) {
+      if (!this.getParameter(this.FRAMEBUFFER_BINDING) && !this.isEnabled(this.SCISSOR_TEST)) record.room.frames++;
+      return draw.apply(this, args);
+    };
+    const style = window.getComputedStyle;
+    window.getComputedStyle = function (...args: Parameters<typeof style>) { record.room.styles++; return style.apply(window, args); };
+  });
+}
+const roomOver = (page: import('./test').Page, ms: number) => page.evaluate(async ms => {
+  const { room } = window as unknown as { room: { frames: number; styles: number } };
+  const start = { ...room }; await new Promise(resolve => setTimeout(resolve, ms));
+  return { frames: room.frames - start.frames, styles: room.styles - start.styles };
+}, ms);
+
+test('the playing room draws its ambient motion at no more than 30fps without reading styles each frame', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await countRoom(page);
+  await mockPortal(page); await page.goto('/');
+  await expect(page.getByRole('button', { name: 'Pause playback' })).toBeEnabled();
+  await expect(page.locator('.ambient-scene.moving .scene-canvas')).toHaveCount(1);
+  // Let the first cover's relight finish; then only the canvas clock moves the room.
+  await expect.poll(() => page.locator('.room-colors').count(), { timeout: 10_000 }).toBe(1);
+  await page.waitForTimeout(500);
+  const { frames, styles } = await roomOver(page, 2000);
+  expect(frames).toBeGreaterThan(0);
+  expect(frames).toBeLessThanOrEqual(66);
+  expect(styles).toBeLessThan(frames);
+});
+
+test('a modal dialog holds the room and the spectrum still under its backdrop, and they resume when it closes', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await countRoom(page);
+  await mockPortal(page); await page.goto('/');
+  await expect(page.getByRole('button', { name: 'Pause playback' })).toBeEnabled();
+  await expect(page.locator('.ambient-scene.moving .scene-canvas')).toHaveCount(1);
+  await expect.poll(async () => (await roomOver(page, 300)).frames).toBeGreaterThan(0);
+  const spectrum = page.locator('canvas.player-spectrum');
+  const spectrumImage = () => spectrum.evaluate(canvas => (canvas as HTMLCanvasElement).toDataURL());
+
+  await page.getByRole('button', { name: 'Add music', exact: true }).first().click();
+  await expect(page.getByRole('dialog')).toBeVisible();
+  await expect.poll(async () => (await roomOver(page, 400)).frames).toBe(0);
+  const held = await spectrumImage();
+  await page.waitForTimeout(300);
+  expect(await spectrumImage()).toBe(held);
+
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('dialog')).toBeHidden();
+  await expect.poll(async () => (await roomOver(page, 300)).frames).toBeGreaterThan(0);
+  await expect.poll(spectrumImage).not.toBe(held);
+});

@@ -121,3 +121,30 @@ export function pulse(elements: Iterable<Element>, keyframes: Keyframe[], durati
   if (prefersReducedMotion() || document.hidden) return;
   for (const element of elements) if (!travelling(element)) element.animate(keyframes, { duration, easing: 'cubic-bezier(.16, 1, .3, 1)' });
 }
+
+// A modal dialog's backdrop blurs the page beneath it, and the compositor blurs it again for every
+// frame in which anything beneath it moves. Decorative motion (the room, the spectrum, the chrome's
+// loops in the looks' stylesheets) holds still while one is open.
+let modalOpen = false;
+const modalListeners = new Set<() => void>();
+let modalWatch: MutationObserver | null = null;
+const checkModal = () => {
+  let open: boolean;
+  try { open = !!document.querySelector('dialog[open]:modal'); } catch { open = !!document.querySelector('dialog[open]'); }
+  if (open === modalOpen) return;
+  modalOpen = open;
+  for (const listener of modalListeners) listener();
+};
+export const underModal = () => modalOpen;
+export function onModal(listener: () => void) {
+  if (!modalWatch) {
+    modalWatch = new MutationObserver(checkModal);
+    modalWatch.observe(document.body, { subtree: true, attributes: true, attributeFilter: ['open'] });
+    checkModal();
+  }
+  modalListeners.add(listener);
+  return () => {
+    modalListeners.delete(listener);
+    if (!modalListeners.size) { modalWatch?.disconnect(); modalWatch = null; modalOpen = false; }
+  };
+}

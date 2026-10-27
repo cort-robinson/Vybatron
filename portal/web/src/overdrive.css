@@ -77,7 +77,8 @@ REVERT: everything here is scoped to :root[data-skin='overdrive']; Settings → 
   background-image: linear-gradient(to right, var(--grid-line) 0 2px, transparent 2px), linear-gradient(to bottom, var(--grid-line) 0 2px, transparent 2px);
   background-size: var(--cell) var(--cell); background-position: center bottom;
   -webkit-mask-image: linear-gradient(to bottom, transparent 8%, #000 60%); mask-image: linear-gradient(to bottom, transparent 8%, #000 60%);
-  animation: od-roll 2.6s linear infinite paused; will-change: transform;
+  /* Promoted only while it rolls; a still floor keeps no 3x-wide layer for it. */
+  animation: od-roll 2.6s linear infinite paused;
 }
 .ambient-scene.moving .od-plane, .ambient-scene.moving .od-window { animation-play-state: running; }
 .auth-page .ambient-scene.moving .od-plane { animation-duration: 4s; }
@@ -297,7 +298,6 @@ REVERT: everything here is scoped to :root[data-skin='overdrive']; Settings → 
 /* ── Performance mode: no CRT texture, glow filters, or blend layers; the scene is already still. */
 :root[data-skin='overdrive'][data-performance] {
   .od-horizon { --od-scanlines: none; }
-  .od-plane { will-change: auto; }
   .od-sun { mix-blend-mode: normal; }
   :is(.brand > span, .brand svg, .navigation button.selected svg, .empty-art svg, .od-hud i, .expand-button:hover svg) { filter: none; }
   .od-cover-scan::before { mix-blend-mode: normal; }
@@ -320,6 +320,12 @@ REVERT: everything here is scoped to :root[data-skin='overdrive']; Settings → 
 @keyframes od-spin { to { transform: rotate(360deg); } }
 @keyframes od-scan { to { translate: 0 310%; } }
 @keyframes od-sweep { 0% { translate: 0 -10px; opacity: 0; } 4% { opacity: .45; } 22% { translate: 0 calc(var(--cover) + 10px); opacity: .45; } 24%, 100% { translate: 0 calc(var(--cover) + 10px); opacity: 0; } }
+
+/* Under a modal's blurred backdrop the chrome's loops hold still; anything moving beneath it made the
+   compositor blur the whole page again on every frame (motion.ts onModal stills the room and spectrum). */
+:root[data-skin='overdrive']:has(dialog[open]) {
+  .brand-glint, .brand-glint::before, .player-footer::after, .transport .play-button::before { animation-play-state: paused !important; }
+}
 
 @media (prefers-reduced-motion: reduce) {
   :root[data-skin='overdrive'] {

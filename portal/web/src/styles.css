@@ -123,7 +123,9 @@ svg { flex-shrink: 0; }
 /* A replacement room is ready before its dissolve, and never repeats the initial power-on. */
 :root .room-prepared :is(.od-horizon, .ff-scene), :root[data-skin][data-boot] .room-prepared :is(.od-sun, .od-floor, .od-skyline, .ff-planet, .ff-bay, .ff-skyline, .ff-krackle) { animation: none; }
 @keyframes room-relight { from { opacity: 0; } to { opacity: 1; } }
-.light { position: absolute; border-radius: 50%; will-change: transform; background: radial-gradient(closest-side, var(--light-color), transparent); }
+/* No will-change: a drifting light is its own compositor layer while its animation runs, and a
+   still room keeps no viewport-size layers for them. */
+.light { position: absolute; border-radius: 50%; background: radial-gradient(closest-side, var(--light-color), transparent); }
 .light-1 { width: 78vmax; height: 62vmax; right: -22vmax; top: -30vmax; }
 .light-2 { width: 64vmax; height: 52vmax; left: -20vmax; bottom: -30vmax; }
 .light-3 { width: 46vmax; height: 36vmax; left: 30%; top: 38%; opacity: .7; }
@@ -158,7 +160,7 @@ svg { flex-shrink: 0; }
 .ambient-scene.gl-scene { background: none; }
 .scene-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 .gl-scene > .room-colors { visibility: hidden; }
-.gl-scene :is(.light, .artwork-field, .od-sky, .od-plane, .od-window, .ff-burst, .ff-window, .ff-void, .ff-herald, .ff-train), .gl-scene .ff-glint::before { animation: none !important; will-change: auto; }
+.gl-scene :is(.light, .artwork-field, .od-sky, .od-plane, .od-window, .ff-burst, .ff-window, .ff-void, .ff-herald, .ff-train), .gl-scene .ff-glint::before { animation: none !important; }
 .gl-scene .od-sun { mix-blend-mode: normal !important; }
 /* Glass panes ([data-glass]) that only ever sit over the room carry their blur in --glass; with the
    WebGL room the canvas draws that blur behind them instead of a backdrop-filter. */
@@ -1035,7 +1037,7 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
    light, and a still room. App.tsx also stills the spectrum; layout and controls are unchanged. */
 :root[data-performance] { --chrome-blur: none; --chrome: color-mix(in oklab, var(--ground) 94%, transparent); }
 :root[data-performance] .artwork-field { display: none; }
-:root[data-performance] .light { animation: none; will-change: auto; }
+:root[data-performance] .light { animation: none; }
 :root[data-performance] .sleeve-queue { background: color-mix(in oklab, var(--ground) 92%, transparent); }
 :root[data-performance] .dialog::backdrop { backdrop-filter: none; }
 /* A link shared to the installed app, shown in full before it is added. */

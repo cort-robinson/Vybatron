@@ -43,7 +43,7 @@ export function ServerView({ portal, active = true }: { active?: boolean; portal
   }, [settings, portal.guildId]);
   useEffect(() => { setReset(false); }, [portal.guildId]);
   useEffect(() => { if (!snapshot?.guild.admin && (tab === 'activity' || tab === 'diagnostics')) setTab('settings'); }, [snapshot?.guild.admin, tab]);
-  const editable = admin && can('admin') && !pending.length && !!settings;
+  const editable = admin && can('admin') && !pending.some(key => key.startsWith('settings:')) && !!settings;
   const textChannels = configuration.data?.channels.filter(c => c.type === 'text') || [];
   const roles = configuration.data?.roles || [];
   const validChannel = textChannels.some(c => c.id === channel) || isDiscordId(channel);
@@ -86,7 +86,7 @@ export function ServerView({ portal, active = true }: { active?: boolean; portal
       {active && tab === 'diagnostics' && snapshot?.guild.admin && <DiagnosticsView portal={portal} />}
       <SupplementalCommands portal={portal} active={active && tab === 'commands'} />
     </section>
-    {active && reset && <Confirm title="Reset this server’s defaults?" detail="Restores the bot’s default listening settings. This follows the same rules as the Discord settings command." action="Reset defaults" busy={!!pending.length} onClose={() => setReset(false)} onConfirm={() => { void save('reset', {}).then(ok => { if (ok) setReset(false); }); }} />}
+    {active && reset && <Confirm title="Reset this server’s defaults?" detail="Restores the bot’s default listening settings. This follows the same rules as the Discord settings command." action="Reset defaults" busy={pending.includes('settings:reset')} onClose={() => setReset(false)} onConfirm={() => { void save('reset', {}).then(ok => { if (ok) setReset(false); }); }} />}
   </div>;
 }
 
@@ -166,7 +166,7 @@ function SupplementalCommands({ portal, active }: { portal: Portal; active: bool
     return null;
   };
   const selectionReady = !selectionField || !!portal.library && !portal.libraryError && !!selection && selection.guildId === portal.guildId && selection.value === values[selectionField];
-  const allowed = portal.can(capability) && !portal.pending.length && !!name && !groups.length && selectionReady;
+  const allowed = portal.can(capability) && !!name && !groups.length && selectionReady;
   const submit = async () => {
     if (!allowed) return;
     const options: Record<string, string | number | boolean | null> = {};
@@ -188,7 +188,7 @@ function SupplementalCommands({ portal, active }: { portal: Portal; active: bool
       {name && !portal.can(capability) && <p className="permission-note">{capability === 'admin' ? 'Manage Server permission is required.' : portal.blockedReason}</p>}
       <button className="button primary" disabled={!allowed || !!subcommands.length && !subcommand}><GearSixIcon size={19} />Apply control</button>
     </form>}
-    {deleteIntent && <Confirm title={`Delete “${deleteIntent.options?.name}”?`} detail="Removes the selected saved version of this shared mix. The live queue stays in place." action="Delete mix" busy={!!portal.pending.length} onClose={() => setDeleteIntent(null)} onConfirm={() => { void portal.run(deleteIntent, 'library').then(ok => { if (ok) setDeleteIntent(null); }); }} />}
+    {deleteIntent && <Confirm title={`Delete “${deleteIntent.options?.name}”?`} detail="Removes the selected saved version of this shared mix. The live queue stays in place." action="Delete mix" busy={portal.pending.includes('mix:delete')} onClose={() => setDeleteIntent(null)} onConfirm={() => { void portal.run(deleteIntent, 'library').then(ok => { if (ok) setDeleteIntent(null); }); }} />}
   </>;
 }
 function CommandField({ field, value, setValue, portal }: { field: CommandOption; value: string; setValue: (value: string) => void; portal: Portal }) {

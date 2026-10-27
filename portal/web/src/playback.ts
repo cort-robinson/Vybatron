@@ -403,6 +403,6 @@ export function useListening(remote: RemotePortal): Portal {
   }, [local, remote.can, remote.snapshot]);
   const moves = { target, discord, moveToDiscord, moveHere };
   if (!local) return { ...remote, ...moves };
-  return { ...remote, snapshot, receivedAt: deck.at, can, pending, syncing: false, run: engine.run, ...moves,
+  return { ...remote, snapshot, receivedAt: deck.at, can, pending, confirming: pending.length > 0, queued: 0, syncing: false, run: engine.run, ...moves,
     blockedReason: remote.snapshot ? remote.blockedReason : 'Connecting to your server. Search and your library load from Discord.' };
 }

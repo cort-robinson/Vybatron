@@ -84,8 +84,8 @@ export function Search({ portal, open, onClose, query, setQuery, page = false }:
   // A chosen result travels with its query, so playing it here needs no second lookup.
   const add = (next: boolean, value: string, track?: Track) => portal.run({ command: next ? 'playnext' : 'play', options: { query: value } }, next ? 'control' : 'add', track && [track]);
   const explore = (artist: string) => { setQuery(artist); input.current?.focus(); void search(artist); };
-  const enabled = portal.can('add') && !portal.pending.length;
-  const controllable = portal.can('control') && !portal.pending.length;
+  const enabled = portal.can('add');
+  const controllable = portal.can('control');
   const radio = (uri: string) => portal.run({ command: 'radio', subcommand: 'on', options: { track: uri } }, 'control');
   const row = (track: Track, detail: string, key: string) => <ResultRow key={key} track={track} detail={detail} enabled={enabled} radioEnabled={portal.target === 'local' ? null : controllable} blockedReason={portal.blockedReason} nextEnabled={controllable} onAdd={track => void add(false, track.uri!, track)} onNext={track => void add(true, track.uri!, track)} onRadio={uri => void radio(uri)} />;
   const stale = searching || (!!lastQuery && lastQuery !== typed);

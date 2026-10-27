@@ -20,7 +20,8 @@ export function PlaylistImport({ portal, target }: { portal: Portal; target: 'fa
   const [loading, setLoading] = useState(false);
   const [preview, setPreview] = useState<{ value: ImportPreview; link: string; name: string } | null>(null);
   const { library, can, pending } = portal;
-  const editable = can('library') && !pending.length;
+  // The bot holds one import preview per listener at a time.
+  const editable = can('library') && !pending.some(key => key.endsWith(':import'));
   const existing = target === 'mix' ? library?.mixes.find(mix => mixKey(mix.name) === mixKey(name)) : undefined;
   const locked = !!existing && !existing.canEdit;
   const ready = editable && !loading && supported(link) && (target === 'favorites' || (!!name.trim() && !locked));

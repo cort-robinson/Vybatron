@@ -47,6 +47,6 @@ export function ShareDialog({ portal, link, onClose }: { portal: Portal; link: s
     {portal.notice?.kind === 'error' && <p className="notice-line warm-text" role="alert">{portal.notice.message}</p>}
     <div className="form-actions">{chosen && portal.connection === 'offline' && <button type="button" className="text-button" onClick={portal.reconnect}><ArrowClockwiseIcon size={18} />Reconnect</button>}
       <button type="button" className="button secondary" onClick={onClose}>Cancel</button>
-      <button type="button" className="button primary" disabled={!allowed || busy || !!portal.pending.length} onClick={() => void add()}>{busy ? <span className="spinner" /> : <PlusIcon size={19} />}Add to queue</button></div>
+      <button type="button" className="button primary" disabled={!allowed || busy} onClick={() => void add()}>{busy ? <span className="spinner" /> : <PlusIcon size={19} />}Add to queue</button></div>
   </Dialog>;
 }

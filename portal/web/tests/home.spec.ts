@@ -3,16 +3,19 @@ import { mockPortal } from './fixtures';
 
 const shelf = (page: Page, name: string) => page.getByRole('region', { name, exact: true });
 
-test('Home is the landing surface, with shelves in order and stats loaded after the session', async ({ page }) => {
+test('Home is the landing surface, with shelves in order and stats loaded beside the session', async ({ page }) => {
   const fixture = await mockPortal(page);
+  // Stats don't wait for the session snapshot: with a slow snapshot, they arrive first.
+  fixture.delaySnapshot(3000);
+  const answered: string[] = [];
+  page.on('response', response => { const path = new URL(response.url()).pathname; if (/\/api\/guilds\/testing(\/stats)?$/.test(path)) answered.push(path); });
   await page.goto('/');
+  await expect.poll(() => answered.length, { timeout: 10_000 }).toBeGreaterThanOrEqual(2);
+  expect(answered[0]).toBe('/api/guilds/testing/stats');
   await expect(page.getByRole('button', { name: 'Home', exact: true })).toHaveAttribute('aria-current', 'page');
   const headings = page.locator('.home-shelf h2');
   await expect(headings).toHaveText(['Continue listening', 'On repeat in this server', 'Your mixes', 'Rediscover', 'Forgotten gems', 'Listening recap']);
-  // The session snapshot is requested before stats, so Home never holds up the player.
-  const order = fixture.requests.filter(path => /\/api\/guilds\/testing(\/stats)?$/.test(path));
-  expect(order[0]).toBe('/api/guilds/testing');
-  expect(order).toContain('/api/guilds/testing/stats');
+  expect(fixture.requests).toContain('/api/guilds/testing');
 
   const continuing = shelf(page, 'Continue listening');
   await expect(continuing).toContainText('Playing now in General');
@@ -82,8 +85,8 @@ test('Home explains empty, partial, unavailable and no-permission states', async
   await expect(shelf(page, 'Forgotten gems')).toContainText('No forgotten gems yet');
 
   await page.route('**/api/guilds/*/stats*', route => route.fulfill({ status: 503, json: { error: { code: 'stats_unavailable', message: 'Listening stats are unavailable right now. Playback is unaffected.' } } }));
-  await page.getByRole('button', { name: 'My Music', exact: true }).click();
-  await page.getByRole('button', { name: 'Home', exact: true }).click();
+  // Stats read moments ago are kept in this tab, so a fresh page load meets the outage.
+  await page.reload();
   await expect(page.locator('.home-unavailable')).toContainText('Playback is unaffected');
   await expect(page.locator('.home-unavailable')).toContainText('Continue listening above still works');
   await expect(shelf(page, 'Continue listening')).toBeVisible();

@@ -148,15 +148,17 @@ test('an uncertain failure drops the prediction, reports it may have completed a
   } finally { await page.close(); await server.close(); }
 });
 
-test('confirmation covers a pending favorite while urgent Stop retains its deliberate exception', async ({ page }) => {
+test('a pending favorite locks nothing, and urgent Stop still goes straight through', async ({ page }) => {
   const server = await startHttpFixture({ orderedCommands: true });
   try {
     await connected(page, server);
     const favorite = player(page).getByRole('button', { name: 'Remove current song from favorites' });
     await expect(favorite).toBeEnabled(); server.holdCommandReplies();
     await favorite.click(); await expect.poll(() => server.heldCommands.size).toBe(1);
-    await expect(confirmation(page).getByText('Waiting for confirmation', { exact: true })).toBeVisible();
-    await expect(action(page, true)).toBeDisabled();
+    // The heart answers at once; a library change never holds up playback.
+    await expect(player(page).getByRole('button', { name: 'Save current song to favorites' })).toBeVisible();
+    await expect(confirmation(page)).toBeEmpty();
+    await expect(action(page, true)).toBeEnabled();
     await player(page).getByRole('button', { name: 'More playback controls' }).click();
     await player(page).getByRole('button', { name: 'Stop and discard session', exact: true }).click();
     await page.getByRole('button', { name: 'Stop and discard', exact: true }).click();
@@ -164,7 +166,6 @@ test('confirmation covers a pending favorite while urgent Stop retains its delib
     expect(server.commands.map(command => command.command)).toEqual(['favorite', 'stop']);
     stamp(server.state.snapshot, 4); server.broadcast();
     await expect(player(page).getByText('Evening Light', { exact: true })).toHaveCount(0);
-    await expect(confirmation(page).getByText('Waiting for confirmation', { exact: true })).toBeVisible();
     server.releaseCommandReplies(); await expect(confirmation(page)).toBeEmpty();
     expect(server.commands).toHaveLength(2);
   } finally { await page.close(); await server.close(); }

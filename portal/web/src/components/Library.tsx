@@ -43,9 +43,9 @@ export function LibraryView({ portal, active = true }: { portal: Portal; active?
   const searchRef = useRef<HTMLInputElement>(null);
   const mixSearchRef = useRef<HTMLInputElement>(null);
   const { library, libraryError, run, can, pending, snapshot } = portal;
-  const addable = can('add') && !pending.length;
-  const controllable = can('control') && !pending.length;
-  const editable = can('library') && !pending.length;
+  const addable = can('add');
+  const controllable = can('control');
+  const editable = can('library');
   const namedMix = library?.mixes.find(mix => mixKey(mix.name) === mixKey(mixName));
   const canSave = editable && !!snapshot?.session.current;
   const selectedMix = library?.mixes.find(mix => mix.id === selected);
@@ -107,7 +107,7 @@ export function LibraryView({ portal, active = true }: { portal: Portal; active?
         <Artwork track={track} /><div className="track-text"><strong dir="auto" title={track.title}>{track.title}</strong><span dir="auto">{track.author}<span className="track-source"> · {track.source}</span></span></div><span className="track-duration">{track.isStream ? 'Live' : time(track.durationMs)}</span>
         <IconButton label={`Queue favorite ${track.title}`} disabled={!addable} title={!addable ? portal.blockedReason : undefined} onClick={() => void run({ command: 'favorite', subcommand: 'play', options: { index: index + 1 }, expectedTrackId: track.id }, 'add')}><PlusIcon size={23} /></IconButton>
         <RadioButton portal={portal} track={track} />
-        <IconButton className="favorite active" label={`Remove favorite ${track.title}`} disabled={!editable} onClick={() => void run({ command: 'favorite', subcommand: 'remove', options: { index: index + 1 }, expectedTrackId: track.id }, 'library')}><HeartIcon size={23} weight="fill" /></IconButton>
+        <IconButton className="favorite active" label={`Remove favorite ${track.title}`} disabled={!editable} onClick={() => portal.favorite(track, async () => false)}><HeartIcon size={23} weight="fill" /></IconButton>
       </li>)}</ul>}
       <Pagination label="favorites" page={currentPage} total={favorites.length} pageSize={pageSize} onPageChange={page => setPages(previous => ({ ...previous, favorites: page }))} />
       <PlaylistImport portal={portal} target="favorites" />
@@ -151,7 +151,7 @@ export function LibraryView({ portal, active = true }: { portal: Portal; active?
   </section>}
   {confirm && <Confirm title={confirm.kind === 'favorites' ? 'Clear your favorites?' : confirm.kind === 'replace' ? `Replace “${confirm.name}”?` : `Delete “${confirm.name}”?`}
     detail={confirm.kind === 'favorites' ? 'Removes every song from your private shelf across all servers. Shared mixes and the queue stay in place.' : confirm.kind === 'replace' ? 'Replace the songs in this shared mix with the current song and queue. Only its creator or a server manager can replace it.' : 'Removes this shared mix from the server. The live queue stays in place.'}
-    action={confirm.kind === 'replace' ? 'Replace mix' : confirm.kind === 'favorites' ? 'Clear favorites' : 'Delete mix'} busy={!!pending.length || !editable || confirm.kind === 'replace' && !snapshot?.session.current}
+    action={confirm.kind === 'replace' ? 'Replace mix' : confirm.kind === 'favorites' ? 'Clear favorites' : 'Delete mix'} busy={pending.includes(confirm.kind === 'favorites' ? 'favorite:clear' : confirm.kind === 'replace' ? 'mix:save' : 'mix:delete') || !editable || confirm.kind === 'replace' && !snapshot?.session.current}
     onClose={() => setConfirm(null)} onConfirm={() => {
       if (confirm.kind === 'replace') void save(confirm.name, true, confirm.revision);
       else void run(confirm.kind === 'favorites' ? { command: 'favorite', subcommand: 'clear', options: { confirm: true } } : { command: 'mix', subcommand: 'delete', options: { name: confirm.name }, expectedMixVersion: confirm.version }, 'library').then(ok => { if (ok) setConfirm(null); });
@@ -163,7 +163,7 @@ export function LibraryView({ portal, active = true }: { portal: Portal; active?
 function RadioButton({ portal, track }: { portal: Portal; track: Track }) {
   if (portal.target === 'local') return null;
   const command = startRadioCommand(track);
-  const enabled = !!command && portal.can('control') && !portal.pending.length;
+  const enabled = !!command && portal.can('control');
   return <IconButton className="radio-start" label={radioLabel(track)} disabled={!enabled} title={!command ? 'This song has no public source reference' : !enabled ? portal.blockedReason : radioLabel(track)}
     onClick={() => { if (command) void portal.run(command, 'control'); }}><RadioIcon size={22} /></IconButton>;
 }

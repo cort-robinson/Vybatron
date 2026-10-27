@@ -3,20 +3,44 @@ import { api, ApiError, errorMessage } from './api';
 import type { Bootstrap, Capability, Command, Connection, GuildSnapshot, ImportPreview, Library, SnapshotOrdering, Track } from './types';
 import { orderingOf } from './ordering';
 import { applyIntents, createIntent, isAddition, isOptimistic, needsRevision, sameTracks, slotOf, stillTargets, trackIdentities, type Intent } from './optimistic';
+import { clearReads, loadRead, recapRead, statsRead } from './reads';
 
 export interface Notice { id: number; kind: 'success' | 'error' | 'info'; message: string }
 // Non-optimistic commands that still bind to the session the user saw.
 const conflicting = new Set(['playnext', 'session', 'replay', 'back']);
+const bindsToSession = (body: Command) => conflicting.has(body.command) || (body.command === 'mix' && body.subcommand === 'save') || (body.command === 'favorite' && body.subcommand === 'add');
+// Changes to the listener's own library or the server's settings never depend on
+// the session on screen, so they travel beside playback instead of behind it.
+const libraryOnly = (body: Command) => (body.command === 'favorite' && ['remove', 'clear', 'import'].includes(body.subcommand || ''))
+  || (body.command === 'mix' && ['delete', 'import'].includes(body.subcommand || '')) || body.command === 'settings';
 const freshnessMs = 25_000;
+// Returning to the app re-reads the library only when it may be out of date.
+const libraryStaleMs = 60_000;
+// Rapid song changes settle before history is re-read.
+const historySettleMs = 1500;
 // Show a quiet syncing hint only when the bot is noticeably slow to confirm.
 const syncingAfterMs = 700;
 const maxQueued = 8;
+type Lane = 'session' | 'library';
 interface Entry {
-  body: Command; capability: Capability; key: string; epoch: number; guildId: string;
+  body: Command; capability: Capability; key: string; lane: Lane; epoch: number; guildId: string;
   intent: Intent | null; resolve: (value: boolean) => void;
   // Verified state when clicked, and whether this device's own predictions were showing.
   clickRevision: string; clickView: GuildSnapshot; overPredictions: boolean;
+  // The session revision this change is bound to, if any. It moves forward only
+  // past this device's own revision-checked changes that were confirmed ahead of it.
+  expectedRevision?: string;
+  // What it was sent against and what the bot replied with, once confirmed.
+  sentRevision?: string; replyRevision?: string;
+  // A favorite chosen from what this device shows, whose number may have moved
+  // only because of this device's own edits.
+  followFavorite?: boolean;
 }
+// Favorite commands from this device's own hearts, which may follow their song to
+// where this device's own edits moved it.
+const ownFavorites = new WeakSet<Command>();
+// The listener's latest heart choice for one song, while it settles.
+interface Want { want: boolean; track: Track; add: () => Promise<boolean>; running: boolean }
 const retryDelay = (attempt: number, error?: unknown) => Math.max(Math.min(1000 * 2 ** Math.min(attempt, 5), 30_000), error instanceof ApiError ? error.retryAfterMs : 0);
 
 export function usePortal() {
@@ -27,6 +51,8 @@ export function usePortal() {
   const [snapshot, setSnapshot] = useState<GuildSnapshot | null>(null);
   const [receivedAt, setReceivedAt] = useState(Date.now());
   const [library, setLibrary] = useState<Library | null>(null);
+  // Favorite choices not yet confirmed, by track id, shown over the library.
+  const [wants, setWants] = useState<ReadonlyMap<string, Want>>(new Map());
   const [libraryError, setLibraryError] = useState('');
   const [connection, setConnection] = useState<Connection>('connecting');
   const [connectionError, setConnectionError] = useState('');
@@ -41,9 +67,19 @@ export function usePortal() {
   const current = useRef<GuildSnapshot | null>(null);
   const generation = useRef(0);
   const stateVersion = useRef(0);
-  const pendingRef = useRef(new Set<string>());
   const queueRef = useRef<Entry[]>([]);
   const sendingRef = useRef<Entry | null>(null);
+  // Library-only changes go in their own ordered lane beside the session's.
+  const libraryQueueRef = useRef<Entry[]>([]);
+  const librarySendingRef = useRef<Entry | null>(null);
+  const stoppingRef = useRef<Entry | null>(null);
+  const [queued, setQueued] = useState(0);
+  const [confirming, setConfirming] = useState(false);
+  // Server library as last read, plus this device's confirmed favorite edits.
+  const libraryRef = useRef<Library | null>(null);
+  const shownLibraryRef = useRef<Library | null>(null);
+  const wantsRef = useRef(new Map<string, Want>());
+  const notices = useRef(0);
   const intentId = useRef(0);
   const refreshRef = useRef<() => Promise<void>>(async () => {});
   const libraryRefreshRef = useRef<() => Promise<void>>(async () => {});
@@ -53,16 +89,22 @@ export function usePortal() {
   const bootstrapAttempt = useRef(0);
   const bootstrapRetryMs = useRef(0);
 
-  const notify = useCallback((message: string, kind: Notice['kind'] = 'info') => setNotice({ id: Date.now(), kind, message }), []);
+  const notify = useCallback((message: string, kind: Notice['kind'] = 'info') => {
+    notices.current++;
+    setNotice({ id: Date.now(), kind, message });
+  }, []);
+  const putLibrary = useCallback((next: Library | null) => { libraryRef.current = next; setLibrary(next); }, []);
+  const clearWants = useCallback(() => { wantsRef.current = new Map(); setWants(wantsRef.current); }, []);
   const expireAuth = useCallback(() => {
     bootstrapSequence.current++;
     generation.current++; lossVersion.current++;
     fresh.current = false;
     current.current = null;
     activeGuild.current = '';
-    setSnapshot(null); setLibrary(null); setBootstrap(null); setAuth('signed-out');
+    clearReads();
+    setSnapshot(null); putLibrary(null); clearWants(); setBootstrap(null); setAuth('signed-out');
     setGuildId(''); setNotice(null);
-  }, []);
+  }, [putLibrary, clearWants]);
 
   const loadBootstrap = useCallback(async () => {
     const seq = ++bootstrapSequence.current;
@@ -95,12 +137,20 @@ export function usePortal() {
     return () => { clearTimeout(timer); window.removeEventListener('online', online); };
   }, [auth, loadBootstrap]);
 
+  // Home's stats and recap need only the server, not its live session, so they
+  // start alongside it instead of after the first snapshot.
+  const viewerId = bootstrap?.viewer.id;
+  useEffect(() => {
+    if (!viewerId || !guildId || auth !== 'ready') return;
+    for (const read of [statsRead(viewerId, guildId, '30d'), recapRead(viewerId, guildId, '30d')]) void loadRead<unknown>(read.key, read.fetch);
+  }, [viewerId, guildId, auth]);
+
   useEffect(() => {
     const epoch = ++generation.current;
     activeGuild.current = guildId; fresh.current = false; current.current = null; lossVersion.current++;
-    setSnapshot(null); setLibrary(null); setLibraryError(''); setConnectionError('');
-    setConnection('connecting'); pendingRef.current.clear(); setPending([]);
-    for (const entry of queueRef.current.splice(0)) entry.resolve(false);
+    setSnapshot(null); putLibrary(null); clearWants(); setLibraryError(''); setConnectionError('');
+    setConnection('connecting'); setPending([]); setQueued(0); setConfirming(false);
+    for (const entry of [...queueRef.current.splice(0), ...libraryQueueRef.current.splice(0)]) entry.resolve(false);
     setIntents([]);
     if (!guildId || auth !== 'ready') return;
     try { localStorage.setItem('vybertron.guild', guildId); } catch { /* Preference only. */ }
@@ -114,6 +164,10 @@ export function usePortal() {
     let accessLost = false;
     let offline = !navigator.onLine;
     let libraryReady = false;
+    let libraryReadAt = 0;
+    let historyStale = false;
+    let historyTimer: ReturnType<typeof setTimeout> | undefined;
+    let revalidating: Promise<void> | undefined;
     let recoveryAttempt = 0;
     let retryNotBefore = 0;
     let recoveryTimer: ReturnType<typeof setTimeout> | undefined;
@@ -150,13 +204,14 @@ export function usePortal() {
       if (retired) {
         // An authorized empty/channel-changed projection must also retire older
         // protected library reads and history before asking for its new library.
-        libraryController?.abort(); libraryReady = false; setLibrary(null);
+        libraryController?.abort(); libraryReady = false; putLibrary(null);
         void refreshLibrary();
       } else if (before && before.session.current?.id !== next.session.current?.id) {
         // A new song in the same room only adds history. The library on screen stays
-        // authorized, so keep it while a fresh read (which supersedes older ones) arrives;
-        // clearing it blanked favorites and history on every song change.
-        void refreshLibrary();
+        // authorized, so keep it while a quiet read (which supersedes older ones) arrives;
+        // clearing it blanked favorites and history on every song change. Rapid skips
+        // settle first, and a hidden page reads it when it returns.
+        historyStale = true; settleHistory();
       }
     };
     const failure = (error: unknown) => {
@@ -166,7 +221,7 @@ export function usePortal() {
       // Protected data is cleared after access loss; connection failures retain read-only context.
       if (error instanceof ApiError && [403, 404].includes(error.status)) {
         accessLost = true; clearRecovery(); libraryController?.abort(); libraryReady = false;
-        current.current = null; setSnapshot(null); setLibrary(null);
+        current.current = null; setSnapshot(null); putLibrary(null); clearReads('', guildId);
       } else scheduleRecovery(error);
     };
     const refresh = (): Promise<void> => {
@@ -193,14 +248,50 @@ export function usePortal() {
       libraryController?.abort();
       const requestController = new AbortController(); libraryController = requestController;
       const signal = AbortSignal.any([abort.signal, requestController.signal]);
-      try { const next = await api.library(guildId, signal); if (valid() && !requestController.signal.aborted) { libraryReady = true; setLibrary(next); setLibraryError(''); } }
+      // A read that starts now includes every song played so far.
+      clearTimeout(historyTimer); historyStale = false;
+      try { const next = await api.library(guildId, signal); if (valid() && !requestController.signal.aborted) { libraryReady = true; libraryReadAt = Date.now(); putLibrary(next); setLibraryError(''); } }
       catch (error) {
         if (!valid() || requestController.signal.aborted) return;
-        libraryReady = false;
+        libraryReady = false; historyStale = true;
         if (error instanceof ApiError && [401, 403, 404].includes(error.status)) failure(error);
         else setLibraryError(errorMessage(error));
       } finally { if (libraryController === requestController) libraryController = undefined; }
     };
+    const settleHistory = () => {
+      clearTimeout(historyTimer);
+      if (!document.hidden) historyTimer = setTimeout(() => { if (historyStale) void refreshLibrary(); }, historySettleMs);
+    };
+    // Coming back to a fresh session re-reads the library quietly, and only when it may be out of date.
+    const reviseLibrary = () => {
+      if (!libraryReady || historyStale || Date.now() - libraryReadAt >= libraryStaleMs) void refreshLibrary();
+    };
+    // A quiet check of state the stream should already have delivered. Controls
+    // stay enabled; it changes what's shown only through the ordinary rules.
+    const revalidate = () => {
+      if (!valid() || offline || refreshing || revalidating) return;
+      const startedEpoch = readEpoch; const startedLoss = lossVersion.current;
+      const request = api.snapshot(guildId, abort.signal).then(next => {
+        // A refresh, disconnect or lost lease since it began owns recovery now.
+        if (!valid() || offline || startedEpoch !== readEpoch || startedLoss !== lossVersion.current || !fresh.current) return;
+        validate(next);
+        const incoming = orderingOf(next); const accepted = orderingOf(current.current);
+        if (incoming && accepted && incoming.instanceId === accepted.instanceId) {
+          if (incoming.sequence > accepted.sequence) accept(next);
+          return; // Older or equal: the stream is current.
+        }
+        // Without comparable ordering the read can't be placed among stream frames.
+        // The same revision means nothing was missed; anything else takes a fresh read.
+        if (next.revision !== current.current?.revision) void refresh();
+      }).catch(error => {
+        if (!valid() || startedEpoch !== readEpoch) return;
+        // Lost access still clears protected data; a transient failure leaves the
+        // stream and the freshness timer in charge.
+        if (error instanceof ApiError && [401, 403, 404].includes(error.status)) failure(error);
+      }).finally(() => { if (revalidating === request) revalidating = undefined; });
+      revalidating = request;
+    };
+    const liveAndFresh = () => !!stream && fresh.current && Date.now() - verifiedAt.current < freshnessMs;
     // A conflict or uncertain command needs a new read, not one already in flight.
     const freshRead = () => { closeStream(); invalidateRead(); return refresh(); };
     refreshRef.current = freshRead; libraryRefreshRef.current = refreshLibrary;
@@ -304,19 +395,29 @@ export function usePortal() {
       policyTimer = setTimeout(policyCheck, freshnessMs);
     };
     policyTimer = setTimeout(policyCheck, freshnessMs);
-    const visibility = () => { if (!document.hidden && valid()) { void refresh(); void refreshLibrary(); } };
+    // Returning with a healthy, fresh stream keeps everything usable: no banner,
+    // no disabled controls, at most a quiet check. Stale state takes a fresh read.
+    const visibility = () => {
+      if (document.hidden) { clearTimeout(historyTimer); return; }
+      if (!valid()) return;
+      if (liveAndFresh()) { revalidate(); reviseLibrary(); } else { void refresh(); void refreshLibrary(); }
+    };
     const wentOffline = () => { if (valid()) { offline = true; clearRecovery(); libraryController?.abort(); pauseConnection('You are offline. Discord playback continues; reconnect to control it.'); } };
-    const online = () => { if (valid()) { offline = false; void refresh(); void refreshLibrary(); } };
+    const online = () => {
+      if (!valid()) return;
+      const wasOffline = offline; offline = false;
+      if (!wasOffline && liveAndFresh()) { revalidate(); reviseLibrary(); } else { void refresh(); void refreshLibrary(); }
+    };
     document.addEventListener('visibilitychange', visibility);
     window.addEventListener('offline', wentOffline); window.addEventListener('online', online);
     return () => {
-      abort.abort(); refreshController?.abort(); libraryController?.abort(); closeStream(); clearRecovery(); clearTimeout(policyTimer); fresh.current = false;
+      abort.abort(); refreshController?.abort(); libraryController?.abort(); closeStream(); clearRecovery(); clearTimeout(policyTimer); clearTimeout(historyTimer); fresh.current = false;
       refreshRef.current = async () => {}; libraryRefreshRef.current = async () => {};
       reconnectRef.current = () => {}; completeCommandRef.current = async () => {};
       document.removeEventListener('visibilitychange', visibility);
       window.removeEventListener('offline', wentOffline); window.removeEventListener('online', online);
     };
-  }, [guildId, auth, expireAuth]);
+  }, [guildId, auth, expireAuth, putLibrary, clearWants]);
 
   const can = useCallback((capability: Capability) => {
     if (!fresh.current || Date.now() - verifiedAt.current >= freshnessMs || !current.current || !bootstrap) return false;
@@ -334,9 +435,22 @@ export function usePortal() {
     : snapshot?.session.reason || 'Join the music voice channel. Playback controls may require the DJ role.';
 
   const view = useMemo(() => snapshot ? applyIntents(snapshot, receivedAt, intents) : { snapshot, receivedAt }, [snapshot, receivedAt, intents]);
+  // Hearts show the listener's latest choice at once; the library confirms it.
+  const shownLibrary = useMemo(() => {
+    if (!library || !wants.size) return library;
+    const favorites = library.favorites.filter(track => wants.get(track.id)?.want !== false);
+    for (const [id, want] of wants) if (want.want && !favorites.some(track => track.id === id)) favorites.push(want.track);
+    return { ...library, favorites };
+  }, [library, wants]);
+  shownLibraryRef.current = shownLibrary;
   const syncQueue = useCallback(() => {
-    setIntents(queueRef.current.flatMap(entry => entry.intent ? [entry.intent] : []));
-    setPending([...pendingRef.current]);
+    const session = queueRef.current;
+    setIntents(session.flatMap(entry => entry.intent ? [entry.intent] : []));
+    setPending([stoppingRef.current, ...session, ...libraryQueueRef.current].flatMap(entry => entry && !entry.intent ? [entry.key] : []));
+    // Changes the screen can't show until the bot answers, and taps waiting behind them.
+    const first = session.findIndex(entry => !entry.intent);
+    setConfirming(first >= 0);
+    setQueued(first < 0 ? 0 : session.length - first - 1);
   }, []);
   useEffect(() => {
     if (!intents.length) { setSyncing(false); return; }
@@ -347,13 +461,13 @@ export function usePortal() {
     return () => clearTimeout(timer);
   }, [intents]);
 
-  // Settle unsent entries from `from` onward. They were built on predictions
+  // Settle unsent session entries from `from` onward. They were built on predictions
   // that no longer hold; nothing unsent is ever replayed later.
   const discard = useCallback((from: number, message?: string) => {
     const queue = queueRef.current;
     let start = Math.max(0, from);
     if (queue[start] && queue[start] === sendingRef.current) start++;
-    for (const entry of queue.splice(start)) { if (!entry.intent) pendingRef.current.delete(entry.key); entry.resolve(false); }
+    for (const entry of queue.splice(start)) entry.resolve(false);
     syncQueue();
     if (message) notify(message, 'error');
   }, [notify, syncQueue]);
@@ -363,11 +477,13 @@ export function usePortal() {
     const settled = () => epoch === generation.current && activeGuild.current === id;
     const verified = current.current;
     if (!settled()) return false;
+    // Only session changes are built on one another; a library change stands alone.
+    const session = entry.lane === 'session';
     const behind = () => queueRef.current.indexOf(entry) + 1;
+    const refuse = (message: string) => { if (session) discard(behind(), message); else notify(message, 'error'); return false; };
     if (!can(entry.capability) || !bootstrap || !verified) {
-      discard(behind(), fresh.current ? 'Your change was not sent because your playback access changed. Review the session and try again.'
+      return refuse(fresh.current ? 'Your change was not sent because your playback access changed. Review the session and try again.'
         : 'Reconnect for fresh state before making changes.');
-      return false;
     }
     const command = { ...body };
     if (intent) {
@@ -377,38 +493,50 @@ export function usePortal() {
       if (needsRevision(command)) command.expectedRevision = verified.revision;
       intent.sent = true;
     } else {
-      if (conflicting.has(body.command) || (body.command === 'mix' && body.subcommand === 'save') || (body.command === 'favorite' && body.subcommand === 'add')) {
-        command.expectedRevision = body.expectedRevision ?? entry.clickRevision;
-      }
+      delete command.expectedRevision;
+      if (entry.expectedRevision) command.expectedRevision = entry.expectedRevision;
       // Clicked while this device's own playback changes were still settling:
       // if they landed exactly as shown, the user's target is still current.
       if (entry.overPredictions && command.expectedRevision === entry.clickRevision && verified.revision !== entry.clickRevision
         && sameTracks(trackIdentities(entry.clickView), trackIdentities(verified))) command.expectedRevision = verified.revision;
+      // A favorite picked from what this device shows is named by its id; its number
+      // is wherever it sits now, after this device's own edits. The bot still checks
+      // the id there. A number typed against older state still conflicts.
+      const list = libraryRef.current?.favorites;
+      if (entry.followFavorite && list) {
+        const index = list.findIndex(track => track.id === body.expectedTrackId);
+        if (index < 0) { notify('That song is no longer in your favorites.', 'error'); return false; }
+        command.options = { ...command.options, index: index + 1 };
+      }
     }
     const startedVersion = stateVersion.current;
     const startedLoss = lossVersion.current;
     const startedOrdering = orderingOf(current.current);
+    const touchesLibrary = ['favorite', 'mix', 'replay', 'session', 'settings'].includes(body.command);
     try {
       const result = await api.command(id, bootstrap.csrfToken, command);
       if (!settled()) return false;
+      entry.sentRevision = command.expectedRevision; entry.replyRevision = result.snapshot?.revision;
       await completeCommandRef.current(result.snapshot, startedVersion, startedLoss, startedOrdering);
       if (!settled()) return false;
       if (!fresh.current || !current.current) {
-        discard(behind());
+        if (session) discard(behind());
+        if (touchesLibrary) void libraryRefreshRef.current();
         notify('The action completed. Reconnect for fresh state before making another change.', 'info');
         return false; // Keep the form draft while the confirmed result cannot be reconciled.
       }
       // A playback change is already on screen; other actions, and an addition's
       // queue position, confirm.
       if (!intent || intent.track) notify(result.message || 'Done.', 'success');
-      if (['favorite', 'mix', 'replay', 'session', 'settings'].includes(body.command)) void libraryRefreshRef.current();
+      // The reply carries no library, so it's re-read quietly behind what's already shown.
+      if (touchesLibrary) void libraryRefreshRef.current();
       return true;
     } catch (error) {
       if (!settled()) return false;
-      // Roll back this rejected change at once, with everything queued on top
-      // of it, rather than after the recovery read below.
-      entry.intent = null;
-      discard(behind());
+      // Roll back a rejected prediction at once, with everything queued on top of
+      // it, rather than after the recovery read below. Changes that weren't
+      // predicted left nothing for later taps to build on.
+      if (intent) { entry.intent = null; discard(behind()); }
       if (error instanceof ApiError && error.status === 401) expireAuth();
       else if (error instanceof ApiError && error.status === 409) {
         await Promise.all([refreshRef.current(), libraryRefreshRef.current()]);
@@ -426,27 +554,38 @@ export function usePortal() {
     }
   }, [bootstrap, can, discard, notify, expireAuth]);
 
-  // One command reaches the bot at a time, in the order the user made them.
-  const pump = useCallback(async () => {
-    if (sendingRef.current) return;
-    const entry = queueRef.current[0];
+  // Each lane sends one change at a time, in the order the user made them.
+  const pump = useCallback(async (lane: Lane) => {
+    const queue = lane === 'session' ? queueRef : libraryQueueRef;
+    const sending = lane === 'session' ? sendingRef : librarySendingRef;
+    if (sending.current) return;
+    const entry = queue.current[0];
     if (!entry) return;
-    sendingRef.current = entry;
+    sending.current = entry;
     let ok = false;
     try { ok = await send(entry); }
     finally {
-      sendingRef.current = null;
+      sending.current = null;
       if (entry.epoch === generation.current) {
-        const index = queueRef.current.indexOf(entry);
-        if (index >= 0) queueRef.current.splice(index, 1);
-        if (!entry.intent) pendingRef.current.delete(entry.key);
-        // Predictions queued behind a confirmed change were built on its result.
-        const revision = current.current?.revision;
-        if (ok && revision) for (const next of queueRef.current) if (next.intent) next.intent.baseRevision = revision;
+        const index = queue.current.indexOf(entry);
+        if (index >= 0) queue.current.splice(index, 1);
+        if (ok && lane === 'session') {
+          // Predictions queued behind a confirmed change were built on its result.
+          const revision = current.current?.revision;
+          if (revision) for (const next of queueRef.current) if (next.intent) next.intent.baseRevision = revision;
+          // A revision-checked change applied exactly on top of what a later tap was
+          // bound to, so that tap is bound to its result instead of a self-made conflict.
+          const { sentRevision, replyRevision } = entry;
+          if (sentRevision && replyRevision) for (const next of queueRef.current) {
+            if (next.intent || next.expectedRevision !== sentRevision) continue;
+            next.expectedRevision = replyRevision;
+            if (next.clickRevision === sentRevision) next.clickRevision = replyRevision;
+          }
+        }
         syncQueue();
       }
       entry.resolve(ok);
-      void pump();
+      void pump(lane);
     }
   }, [send, syncQueue]);
 
@@ -455,20 +594,33 @@ export function usePortal() {
     if (!can(capability) || !bootstrap || !current.current) { notify(blockedReason, 'error'); return false; }
     const id = activeGuild.current; const epoch = generation.current; const verified = current.current;
     const key = `${body.command}:${body.subcommand || ''}`;
-    // Ordinary actions still hold one at a time; Stop keeps its urgent exception.
-    if (pendingRef.current.has(key) || (pendingRef.current.size && body.command !== 'stop')) return false;
+    const optimistic = isOptimistic(body); const addition = isAddition(body, tracks);
+    const lane: Lane = libraryOnly(body) ? 'library' : 'session';
+    // A second identical tap while the first is still on its way is the same change.
+    if (!optimistic && !addition) {
+      const signature = JSON.stringify(body);
+      const waiting = [stoppingRef.current, sendingRef.current, librarySendingRef.current, ...queueRef.current, ...libraryQueueRef.current];
+      if (waiting.some(other => other && !other.intent && JSON.stringify(other.body) === signature)) {
+        if (body.command !== 'stop') notify('That change is already on its way.', 'info');
+        return false;
+      }
+    }
     const predictions = () => queueRef.current.flatMap(entry => entry.intent ? [entry.intent] : []);
     const shown = applyIntents(verified, receivedAt, predictions());
-    const entry: Entry = { body, capability, key, epoch, guildId: id, intent: null, resolve: () => {},
-      clickRevision: verified.revision, clickView: shown.snapshot, overPredictions: predictions().length > 0 };
+    const entry: Entry = { body, capability, key, lane, epoch, guildId: id, intent: null, resolve: () => {},
+      clickRevision: verified.revision, clickView: shown.snapshot, overPredictions: predictions().length > 0,
+      expectedRevision: bindsToSession(body) ? body.expectedRevision ?? verified.revision : body.expectedRevision,
+      followFavorite: body.command === 'favorite' && ['play', 'remove'].includes(body.subcommand || '') && !!body.expectedTrackId
+        && (ownFavorites.has(body) || shownLibraryRef.current?.favorites[Number(body.options?.index) - 1]?.id === body.expectedTrackId) };
     if (body.command === 'stop') {
-      // Stop cancels queued work on the bot too; never send it afterwards.
+      // Stop cancels queued session work on the bot too; never send it afterwards.
+      // Library changes don't depend on the session, so they carry on.
       discard(0);
-      pendingRef.current.add(key); setPending([...pendingRef.current]);
+      stoppingRef.current = entry; syncQueue();
       try { return await send(entry); }
-      finally { if (epoch === generation.current) { pendingRef.current.delete(key); setPending([...pendingRef.current]); } }
+      finally { if (epoch === generation.current) { stoppingRef.current = null; syncQueue(); } }
     }
-    if (isOptimistic(body)) {
+    if (optimistic) {
       // The newest choice for a set-state control replaces an unsent older one.
       const slot = slotOf(body);
       const replaced = slot ? queueRef.current.find(queued => queued.intent?.slot === slot && !queued.intent.sent) : undefined;
@@ -477,19 +629,68 @@ export function usePortal() {
       entry.intent = createIntent(++intentId.current, body, base.snapshot, verified, base.receivedAt, Date.now());
       if (!entry.intent) { syncQueue(); return true; } // Already the state the user asked for.
       if (queueRef.current.length >= maxQueued) { syncQueue(); notify('Give Discord a moment to catch up before making more changes.', 'info'); return false; }
-    } else if (isAddition(body, tracks)) {
+    } else if (addition) {
       if (queueRef.current.length >= maxQueued) { notify('Give Discord a moment to catch up before adding more songs.', 'info'); return false; }
       const base = applyIntents(verified, receivedAt, predictions());
       entry.intent = createIntent(++intentId.current, body, base.snapshot, verified, base.receivedAt, Date.now(), tracks![0]);
-      notify(`Adding “${tracks![0].title}”…`, 'info');
+      notify(body.command === 'playnext' ? `Playing “${tracks![0].title}” next…` : `Adding “${tracks![0].title}”…`, 'info');
+    } else {
+      const queue = lane === 'session' ? queueRef.current : libraryQueueRef.current;
+      if (queue.length >= maxQueued) { notify('Give Discord a moment to catch up before making more changes.', 'info'); return false; }
+      // Waiting behind a change the screen can't show yet: say it's queued, not lost.
+      // A heart already shows its own answer.
+      if (lane === 'session' && key !== 'favorite:add' && queue.some(other => !other.intent)) notify('Queued. It’s sent once your earlier change is confirmed.', 'info');
     }
     return await new Promise<boolean>(resolve => {
       entry.resolve = resolve;
-      queueRef.current.push(entry);
-      if (!entry.intent) pendingRef.current.add(key);
-      syncQueue(); void pump();
+      (lane === 'session' ? queueRef : libraryQueueRef).current.push(entry);
+      syncQueue(); void pump(lane);
     });
   }, [bootstrap, can, notify, blockedReason, receivedAt, discard, send, pump, syncQueue]);
+
+  // Edits the confirmed library this device holds, between server reads.
+  const patchFavorites = useCallback((track: Track, saved: boolean) => {
+    const list = libraryRef.current;
+    if (!list || list.favorites.some(favorite => favorite.id === track.id) === saved) return;
+    putLibrary({ ...list, favorites: saved ? [...list.favorites, track] : list.favorites.filter(favorite => favorite.id !== track.id) });
+  }, [putLibrary]);
+  // Sends what it takes to reach the listener's latest choice for one song, one
+  // change at a time, so rapid taps end where the last one left the heart.
+  const settleFavorite = useCallback(async (id: string, want: Want) => {
+    const epoch = generation.current;
+    want.running = true;
+    try {
+      for (;;) {
+        if (epoch !== generation.current || wantsRef.current.get(id) !== want) return;
+        const saved = !!libraryRef.current?.favorites.some(track => track.id === id);
+        if (want.want === saved) return;
+        const adding = want.want; const said = notices.current;
+        const remove: Command = { command: 'favorite', subcommand: 'remove', options: { index: (libraryRef.current?.favorites.findIndex(track => track.id === id) ?? 0) + 1 }, expectedTrackId: id };
+        ownFavorites.add(remove);
+        const ok = adding ? await want.add() : await run(remove, 'library');
+        if (epoch !== generation.current) return;
+        if (!ok) {
+          // The heart goes back to what's saved; say why if nothing else has.
+          if (said === notices.current) notify(adding ? 'This song wasn’t saved to your favorites. Try again.' : 'This song is still in your favorites. Try again.', 'error');
+          return;
+        }
+        patchFavorites(want.track, adding);
+      }
+    } finally {
+      want.running = false;
+      if (wantsRef.current.get(id) === want) { wantsRef.current = new Map(wantsRef.current); wantsRef.current.delete(id); setWants(wantsRef.current); }
+    }
+  }, [run, notify, patchFavorites]);
+  // Toggle a song's heart. `add` saves it the way its surface needs (the current
+  // song, a queue position, or a link from this device), captured at this tap.
+  const favorite = useCallback((track: Track, add: () => Promise<boolean>) => {
+    const existing = wantsRef.current.get(track.id);
+    const shown = existing ? existing.want : !!libraryRef.current?.favorites.some(saved => saved.id === track.id);
+    const want: Want = existing || { want: shown, track, add, running: false };
+    want.want = !shown; want.add = add;
+    wantsRef.current = new Map(wantsRef.current).set(track.id, want); setWants(wantsRef.current);
+    if (!want.running) void settleFavorite(track.id, want);
+  }, [settleFavorite]);
 
   // An import preview only reads, so it skips the ordered command queue. Its
   // confirmation goes through run() with the preview's id.
@@ -516,9 +717,10 @@ export function usePortal() {
   const selectGuild = (id: string) => { if (id === activeGuild.current) return; fresh.current = false; activeGuild.current = id; setGuildId(id); };
   // snapshot/receivedAt include this device's unconfirmed playback predictions;
   // verified is the last authorized bot state and the only permission source.
+  // pending lists changes waiting for the bot; none of them locks other controls.
   return { bootstrap, auth, authError, loadBootstrap, guildId, selectGuild, snapshot: view.snapshot, receivedAt: view.receivedAt, verified: snapshot,
-    library, libraryError, refreshLibrary: () => libraryRefreshRef.current(), connection, connectionError,
-    reconnect: () => reconnectRef.current(), pending, syncing, can, blockedReason, run, previewImport, notice, notify,
+    library: shownLibrary, libraryError, refreshLibrary: () => libraryRefreshRef.current(), connection, connectionError,
+    reconnect: () => reconnectRef.current(), pending, confirming, queued, syncing, can, blockedReason, run, favorite, previewImport, notice, notify,
     dismissNotice: () => setNotice(null), logout };
 }
 export type RemotePortal = ReturnType<typeof usePortal>;

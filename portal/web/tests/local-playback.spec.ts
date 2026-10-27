@@ -231,7 +231,8 @@ test('a second tap while a save is loading sends nothing more', async ({ page })
   await addSongs(page);
   const heart = page.getByTestId('player').getByRole('button', { name: 'Save current song to favorites' }).filter({ visible: true });
   await heart.click();
-  await expect(heart).toBeDisabled();
+  // The heart fills at once and waits, like every other heart, while the save loads.
+  await expect(page.getByTestId('player').getByRole('button', { name: 'Remove current song from favorites' }).filter({ visible: true })).toBeDisabled();
   await page.getByRole('button', { name: 'Queue', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Save Wait to favorites' })).toBeDisabled();
   release();

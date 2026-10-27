@@ -190,24 +190,28 @@ test('an ordered live frame after loss requires a fresh read rather than reopeni
   } finally { await page.close(); await server.close(); }
 });
 
-test('visibility refresh during an ordered command retires the captured GET and starts a post-reply read', async ({ page }) => {
+test('a quiet return check captured before an ordered command can never roll back its result', async ({ page }) => {
   const server = await startHttpFixture();
   try {
     await connected(page, server); const reads = server.snapshotReads.length;
     server.holdCommandExecution(); server.holdSnapshotReads();
     await pause(page).click(); await expect.poll(() => server.commands.length).toBe(1);
+    // Returning to a fresh session only checks quietly; it doesn't close the stream or lock controls.
     await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
     await expect.poll(() => server.capturedSnapshots.size).toBe(1);
     expect([...server.capturedSnapshots.values()][0].session.status).toBe('playing');
     stamp(server.state.snapshot, 3); server.releaseCommandExecution();
-    await expect.poll(() => server.snapshotReads.length).toBe(reads + 2);
-    await expect.poll(() => [...server.capturedSnapshots.values()].every(snapshot => snapshot.session.status === 'paused')).toBe(true);
-    await expect(resume(page)).toBeDisabled(); server.releaseSnapshotReads(true); await expect(resume(page)).toBeEnabled();
-    expect(server.commands).toHaveLength(1);
+    // The ordered reply is newer than anything shown, so it confirms without another read.
+    await expect(resume(page)).toBeEnabled();
+    // The check that started before the pause lands late and older: it's discarded.
+    server.releaseSnapshotReads(true);
+    await page.waitForTimeout(300);
+    await expect(resume(page)).toBeEnabled();
+    expect(server.snapshotReads).toHaveLength(reads + 1); expect(server.commands).toHaveLength(1);
   } finally { await page.close(); await server.close(); }
 });
 
-test('a completed visibility read cannot erase the loss fence of an outstanding ordered command', async ({ page }) => {
+test('a newer quiet return check wins over an older ordered command reply', async ({ page }) => {
   const server = await startHttpFixture();
   try {
     await connected(page, server); const reads = server.snapshotReads.length;
@@ -218,10 +222,11 @@ test('a completed visibility read cannot erase the loss fence of an outstanding 
     await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
     await expect(playerTitle(page, 'State verified by visibility GET')).toBeVisible();
     await expect.poll(() => server.snapshotReads.length).toBe(reads + 1);
-    server.holdSnapshotReads(); server.releaseCommandReplies();
-    await expect.poll(() => server.capturedSnapshots.size).toBe(1); await expect(resume(page)).toBeDisabled();
-    server.releaseSnapshotReads(); await expect(pause(page)).toBeEnabled();
-    await expect.poll(() => server.snapshotReads.length).toBe(reads + 2); expect(server.commands).toHaveLength(1);
+    server.releaseCommandReplies();
+    // The reply (sequence 3) is older than what's verified (sequence 4), so the newer state stays.
+    await expect(pause(page)).toBeEnabled();
+    await expect(playerTitle(page, 'State verified by visibility GET')).toBeVisible();
+    expect(server.snapshotReads).toHaveLength(reads + 1); expect(server.commands).toHaveLength(1);
   } finally { await page.close(); await server.close(); }
 });
 

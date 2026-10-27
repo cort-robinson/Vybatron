@@ -39,8 +39,8 @@ test('server favorites respect add permission and explain empty and failed state
   await expect(page.getByRole('heading', { name: 'Your server’s favorites start here' })).toBeVisible();
 
   await page.route('**/api/guilds/*/stats*', route => route.fulfill({ status: 503, json: { error: { code: 'stats_unavailable', message: 'Listening stats are unavailable right now. Playback is unaffected.' } } }));
-  await page.getByRole('tab', { name: 'History' }).click();
-  await page.getByRole('tab', { name: 'Server favorites' }).click();
+  // Recent stats are kept in this tab; Refresh reads again and meets the outage.
+  await page.getByRole('button', { name: 'Refresh server favorites' }).click();
   await expect(page.getByRole('alert')).toContainText('Playback is unaffected');
   await expect(page.getByRole('button', { name: 'Try again' })).toBeVisible();
 });

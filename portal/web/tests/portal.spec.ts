@@ -135,7 +135,10 @@ test('a public import may exceed a short read deadline without aborting or repla
   await expect.poll(() => fixture.commands.length).toBe(1);
   // Outlast the 20 s read deadline while the import is still running.
   await page.clock.fastForward(22_000);
-  await expect(page.getByRole('button', { name: 'Add to queue', exact: true })).toBeDisabled();
+  // Nothing else is locked meanwhile, and a repeated tap is recognized instead of sent again.
+  await page.getByRole('button', { name: 'Add to queue', exact: true }).click();
+  await expect(page.getByText('That change is already on its way.')).toBeVisible();
+  expect(fixture.commands).toHaveLength(1);
   release();
   await expect(page.getByRole('status').last()).toContainText('Your listening space is updated.');
   await expect(page.getByRole('button', { name: 'Add to queue', exact: true })).toBeEnabled();

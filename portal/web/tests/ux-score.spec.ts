@@ -8,7 +8,6 @@ import { mockPortal } from './fixtures';
 // UX hill-climb scorer. Not part of CI: run with `UX_LABEL=<name> npx playwright test ux-score`.
 // Each screen and scroll position is measured on the rendered page and scored out of 100; every
 // finding is boxed on an annotated screenshot in .impeccable/score/<label>/.
-test.skip(!process.env.UX_LABEL, 'UX scoring runs on demand.');
 
 const viewports = [{ name: 'desktop', width: 1488, height: 1056, density: 1, target: 24 }, { name: 'phone', width: 393, height: 852, density: 2, target: 44 }];
 const screens = ['home', 'session', 'music', 'server', 'player'] as const;
@@ -66,7 +65,10 @@ function inspect([minTarget, final]: [number, boolean]) {
     covered.push(r);
     // WCAG 2.5.8: an undersized target passes if a 24px circle on its centre clears every other target.
     const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
-    const spacing = controls.every(other => { if (other === el || other.contains(el) || el.contains(other)) return true; const o = other.getBoundingClientRect(); const dx = Math.max(o.left - cx, 0, cx - o.right), dy = Math.max(o.top - cy, 0, cy - o.bottom); return Math.hypot(dx, dy) >= minTarget / 2; });
+    // WCAG 2.5.8 spacing: a 24px circle on an undersized target's centre may not touch another
+    // target, nor another undersized target's own circle.
+    const small = (r: DOMRect) => r.width < minTarget - .5 || r.height < minTarget - .5;
+    const spacing = controls.every(other => { if (other === el || other.contains(el) || el.contains(other)) return true; const o = other.getBoundingClientRect(); const dx = Math.max(o.left - cx, 0, cx - o.right), dy = Math.max(o.top - cy, 0, cy - o.bottom); if (Math.hypot(dx, dy) < minTarget / 2) return false; return !small(o) || Math.hypot(o.left + o.width / 2 - cx, o.top + o.height / 2 - cy) >= minTarget; });
     if ((r.width < minTarget - .5 || r.height < minTarget - .5) && !(minTarget === 24 && spacing) && el.tagName !== 'A') out.findings.push({ kind: 'target', box: box(r), note: `${Math.round(r.width)}×${Math.round(r.height)} ${name(el)}` });
     const faded = (() => { for (let node = el.parentElement; node; node = node.parentElement) { const s = getComputedStyle(node); if ((s.overflowX === 'auto' || s.overflowX === 'scroll') && s.maskImage !== 'none') return true; } return false; })();
     if ((r.left < -1 || r.right > vw + 1) && !faded) out.findings.push({ kind: 'clipped', box: box(r), note: `off screen: ${name(el)}` });
@@ -135,8 +137,18 @@ async function annotate(png: Buffer, findings: Finding[], density: number, file:
 
 async function scrollable(page: Page) { return page.evaluate(() => { const s = document.scrollingElement!; return s.scrollHeight > s.clientHeight + 40; }); }
 
+test('spacing counts the circles around undersized targets, whatever their order', async ({ page }) => {
+  const shape = (gap: number) => `<main><button style="position:absolute;left:100px;top:100px;width:16px;height:16px;padding:0">a</button><button style="position:absolute;left:${116 + gap}px;top:100px;width:16px;height:16px;padding:0">b</button></main>`;
+  const targets = async (gap: number) => { await page.setContent(shape(gap)); return (await page.evaluate(inspect, [24, true] as [number, boolean])).findings.filter(f => f.kind === 'target').length; };
+  // Centres 22px apart: the 24px circles overlap even though each clears the other button's edge.
+  expect(await targets(6)).toBe(2);
+  // Centres 24px apart: the circles just meet, which WCAG allows.
+  expect(await targets(8)).toBe(0);
+});
+
 for (const { name, width, height, density, target } of viewports) {
   test(`score ${name}`, async ({ browser }) => {
+    test.skip(!process.env.UX_LABEL, 'UX scoring runs on demand.');
     test.setTimeout(120_000);
     const directory = fileURLToPath(new URL(`../.impeccable/score/${process.env.UX_LABEL}/`, import.meta.url)); await mkdir(directory, { recursive: true });
     const context = await browser.newContext({ viewport: { width, height }, deviceScaleFactor: density, reducedMotion: 'reduce', serviceWorkers: 'block' });

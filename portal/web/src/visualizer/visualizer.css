@@ -35,6 +35,12 @@
 .visualizer-presets label:hover span { background: rgb(0 0 0 / .55); color: var(--text); }
 .visualizer-presets input:checked + span { color: var(--primary-ink); background: var(--accent); box-shadow: none; }
 .visualizer-presets input:focus-visible + span { outline: 2px solid var(--text); outline-offset: 2px; }
+/* MilkDrop's own row above them: on to the next preset, and quietly, the one showing. */
+.visualizer-milkdrop { display: flex; align-items: center; gap: 12px; flex-basis: 100%; min-width: 0; }
+.visualizer-next { display: inline-flex; flex: none; align-items: center; gap: 8px; min-height: 40px; padding: 10px 16px; border-radius: 999px; font-size: 14px; font-weight: 700; line-height: 20px; color: var(--text); background: rgb(0 0 0 / .38); box-shadow: inset 0 0 0 1px rgb(255 255 255 / .16); transition: background-color 160ms; }
+.visualizer-next:hover { background: rgb(0 0 0 / .55); }
+.visualizer-next:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+.visualizer-preset-name { min-width: 0; font-size: 13px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-shadow: 0 1px 8px rgb(0 0 0 / .6); }
 .visualizer-source { padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); box-shadow: inset 0 0 0 1px rgb(255 255 255 / .18); background: rgb(0 0 0 / .3); }
 
 @media (max-width: 599px) {
@@ -42,7 +48,7 @@
   .visualizer-controls { gap: 12px; padding-inline: max(12px, env(safe-area-inset-left, 0px)) max(12px, env(safe-area-inset-right, 0px)); }
   /* Four pills don't fit one phone row; two even rows read better than one left over. */
   .visualizer-presets { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; width: 100%; }
-  .visualizer-presets span { padding: 10px 12px; font-size: 13px; text-align: center; }
+  .visualizer-presets span, .visualizer-next { padding: 10px 12px; font-size: 13px; text-align: center; }
 }
 
 /* The looks dress the title as they dress their headings. */

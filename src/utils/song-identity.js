@@ -124,8 +124,11 @@ const UPLOAD_WORD = new RegExp(`^(?:${[
 ].join('|')})$`, 'i');
 const UPLOAD_ANCHOR = /official|officiel|oficial|video|clip|audio|lyric|letra|paroles|visuali[sz]er|\bhd\b|\bhq\b|uhd|4k|1080p|720p|\bmv\b|m\/v|explicit|uncensored|premiere/i;
 const UPLOAD_TRAILING_ANCHOR = /official|video|lyric|audio|visuali[sz]er/i;
-// A dash part that names a version ("Song - Remastered 2011", "Song - Live at X").
-const VERSION = /\b(?:remaster(?:ed)?|live|remix|mix|edit|version|acoustic|demo|instrumental|clean|mono|stereo|sped|slowed|reverb|re-?recorded|taylor'?s|unplugged|session|cover|karaoke|extended|radio)\b/i;
+// A dash part that is only a version ("Song - Remastered 2011", "Song - Live at X"),
+// never a title that starts with a version word ("Artist - Live Forever").
+const VERSION_ONLY = /^(?:(?:\d{4}\s+)?remaster(?:ed)?(?:\s+\d{4})?(?:\s+(?:version|edition))?|live(?:\s+(?:at|from|in|on)\s.+|\s+version|\s+\d{4})?|(?:radio|single|album|extended|edit)(?:\s+(?:edit|version|mix))?|acoustic(?:\s+version)?|instrumental|clean|mono|stereo|demo|unplugged|sped\s+up|slowed(?:\s+(?:\+|and|&)\s+reverb)?|.+\s+(?:remix|mix|version|edit))$/i;
+// ADR-0017's normalization: NFKC, lower case, everything but letters and digits as spaces.
+const recordingText = value => String(value || '').normalize('NFKC').toLocaleLowerCase('en-US').replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
 
 const isUpload = (content, anchor = UPLOAD_ANCHOR) => {
   const text = fold(content).replace(/[|:,–—()[\]-]/g, ' ').replace(/\s+/g, ' ').trim();
@@ -151,12 +154,15 @@ function recordingParts(reference = {}) {
   const rawAuthor = String(reference.author || '');
   let artist = creditedArtist(rawAuthor);
   let title = rawTitle;
-  if (!TOPIC.test(rawAuthor)) {
+  // Topic uploads and catalog entries are "Title" by "Artist"; in their titles a
+  // dash part is a version. Other uploads are often "Artist - Title".
+  if (!TOPIC.test(rawAuthor) && reference.sourceName !== 'spotify') {
     const [left, ...rest] = rawTitle.split(DASH);
     const right = rest.join(' - ');
-    if (rest.length && isUpload(right)) title = left;
+    if (rest.length && compact(primaryArtist(left)) === compact(primaryArtist(artist))) title = right;
+    else if (rest.length && isUpload(right)) title = left;
     else if (rest.length && compact(primaryArtist(right)) === compact(artist)) title = left;
-    else if (rest.length && VERSION.test(fold(right))) title = rawTitle;
+    else if (rest.length && VERSION_ONLY.test(recordingText(recordingTitle(right)))) title = rawTitle;
     else if (rest.length) { artist = creditedArtist(left); title = right; }
   }
   return { artist, title: recordingTitle(title) };
@@ -170,8 +176,8 @@ function recordingParts(reference = {}) {
  */
 export function recordingKey(reference) {
   const { artist, title } = recordingParts(reference);
-  const artistKey = compact(primaryArtist(artist)).slice(0, 120);
-  const titleKey = compact(title);
+  const artistKey = recordingText(primaryArtist(artist)).slice(0, 120);
+  const titleKey = recordingText(title);
   return artistKey && titleKey ? `${artistKey}|${titleKey}`.slice(0, 200) : null;
 }
 

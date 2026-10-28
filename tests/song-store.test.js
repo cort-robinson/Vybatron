@@ -37,6 +37,16 @@ test('a recording key ignores how a song was uploaded and keeps which version it
   // Catalogs write versions after a dash; uploads put them in brackets.
   assert.ok(same({ title: 'Song - Remastered 2011', author: 'A' }, { title: 'Song (Remastered 2011)', author: 'A - Topic' }));
   assert.equal(recordingKey({ title: '(Official Video)', author: 'A' }), null);
+  // An artist prefix goes first, even when the title starts with a version word.
+  const oasis = { title: 'Live Forever', author: 'Oasis', sourceName: 'spotify' };
+  assert.ok(same({ title: 'Oasis - Live Forever (Official Video)', author: 'Oasis' }, oasis));
+  assert.ok(same({ title: 'Oasis - Live Forever (Official Video)', author: 'Some Channel' }, oasis));
+  assert.ok(same({ title: 'Live Forever - Oasis', author: 'OasisVEVO' }, oasis));
+  assert.ok(!same({ title: 'Oasis - Live Forever (Live at Knebworth)', author: 'Oasis' }, oasis));
+  assert.ok(same({ title: 'Oasis - Live Forever - Live at Knebworth', author: 'Oasis' }, { title: 'Live Forever - Live at Knebworth', author: 'Oasis', sourceName: 'spotify' }));
+  // Word boundaries count: these are different titles.
+  assert.ok(!same({ title: 'Re-Creation', author: 'A' }, { title: 'Recreation', author: 'A' }));
+  assert.equal(recordingKey({ title: "Taylor's Song", author: 'A' }), 'a|taylor s song');
 });
 
 test('the length rule allows 3 seconds or 2% of the shorter, whichever is smaller', () => {

@@ -234,6 +234,10 @@ export function initLavalink(client) {
 
   const recovery = createPlaybackRecovery({
     manager: lavalink,
+    // A failed song tries its other verified sources (ADR-0017); the store never throws.
+    alternates: track => client.songs?.playbackSources?.(track?.info?.uri) || [],
+    hasAlternates: track => (client.songs?.sourceCount?.(track?.info?.uri) || 0) > 1,
+    onSourceResult: (track, played) => client.songs?.sourceResult?.(track?.info?.uri, played),
     onRecovering: (player, _track, details) => {
       clearQueueIdleTimer(player);
       clearTrackPresence(client, player);

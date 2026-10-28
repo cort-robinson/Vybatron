@@ -8,6 +8,9 @@ import com.sedmelluq.discord.lavaplayer.tools.FriendlyException;
 import com.sedmelluq.discord.lavaplayer.track.AudioPlaylist;
 import com.sedmelluq.discord.lavaplayer.track.AudioTrack;
 import com.sedmelluq.discord.lavaplayer.track.AudioTrackEndReason;
+import com.sedmelluq.discord.lavaplayer.track.AudioTrackState;
+import com.sedmelluq.discord.lavaplayer.track.InternalAudioTrack;
+import com.sedmelluq.discord.lavaplayer.track.playback.AudioTrackExecutor;
 import com.sedmelluq.discord.lavaplayer.track.playback.AudioFrame;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -57,9 +60,19 @@ public class AudioController {
             if (track == null) return ResponseEntity.notFound().build();
             if (track.getInfo().isStream || track.getDuration() > MAX_DURATION_MS) return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE).build();
             AudioPlayer player = manager.createPlayer();
+            Export export = new Export(player, track);
+            // Success is promised only once audio arrives: a song YouTube refuses
+            // fails here, so the bot tries its other sources and says why.
+            AudioFrame first;
+            try {
+                first = export.first();
+            } catch (IOException failed) {
+                player.destroy();
+                return ResponseEntity.status(HttpStatus.BAD_GATEWAY).build();
+            }
             handedOff = true;
             StreamingResponseBody body = out -> {
-                try { export(player, track, out); }
+                try { export.write(first, out); }
                 finally { player.destroy(); exports.release(); }
             };
             return ResponseEntity.ok().contentType(MediaType.parseMediaType("audio/ogg")).body(body);
@@ -86,33 +99,70 @@ public class AudioController {
         }
     }
 
-    private void export(AudioPlayer player, AudioTrack track, OutputStream out) throws IOException {
-        CountDownLatch ended = new CountDownLatch(1);
-        player.addListener(new AudioEventAdapter() {
-            @Override public void onTrackEnd(AudioPlayer p, AudioTrack t, AudioTrackEndReason reason) { ended.countDown(); }
-            @Override public void onTrackStuck(AudioPlayer p, AudioTrack t, long thresholdMs) { ended.countDown(); }
-        });
-        OggOpusWriter ogg = new OggOpusWriter(out);
-        player.playTrack(track);
-        long deadline = System.nanoTime() + EXPORT_LIMIT_NANOS;
-        try {
-            while (System.nanoTime() < deadline) {
-                AudioFrame frame;
-                // No frame within the window yet; the checks below decide.
-                try { frame = player.provide(250, TimeUnit.MILLISECONDS); } catch (TimeoutException waiting) { frame = null; }
-                if (frame != null) {
-                    if (frame.isTerminator()) break;
-                    if (!"OPUS".equals(frame.getFormat().codecName())) throw new IOException("Lavalink is not producing Opus frames.");
-                    ogg.packet(frame.getData());
-                    continue;
+    /** One song on a private player: its first frame, then the rest as Ogg Opus. */
+    private static final class Export {
+        private final AudioPlayer player;
+        // Held from the start: once the player stops the track, the track forgets it.
+        private final AudioTrackExecutor executor;
+        private final CountDownLatch ended = new CountDownLatch(1);
+        // Set when the source fails, so a cut-off song never ends like a whole one.
+        private volatile boolean failed;
+        // Decoding runs far faster than real time; a stalled source still ends.
+        private final long deadline = System.nanoTime() + EXPORT_LIMIT_NANOS;
+
+        Export(AudioPlayer player, AudioTrack track) {
+            this.player = player;
+            player.addListener(new AudioEventAdapter() {
+                @Override public void onTrackException(AudioPlayer p, AudioTrack t, FriendlyException exception) { failed = true; }
+                @Override public void onTrackEnd(AudioPlayer p, AudioTrack t, AudioTrackEndReason reason) {
+                    if (reason == AudioTrackEndReason.LOAD_FAILED) failed = true;
+                    ended.countDown();
                 }
-                // Buffered frames are drained before the end counts.
-                if (ended.getCount() == 0 || player.getPlayingTrack() == null) break;
-            }
-        } catch (InterruptedException interrupted) {
-            Thread.currentThread().interrupt();
-            throw new IOException("Export interrupted.", interrupted);
+                @Override public void onTrackStuck(AudioPlayer p, AudioTrack t, long thresholdMs) { failed = true; ended.countDown(); }
+            });
+            player.playTrack(track);
+            executor = ((InternalAudioTrack) track).getActiveExecutor();
         }
-        ogg.finish();
+
+        AudioFrame first() throws IOException {
+            AudioFrame frame = next();
+            if (frame == null) throw new IOException("The song produced no audio.");
+            return frame;
+        }
+
+        // A failed song ends without Ogg's end-of-stream page, which is how the bot
+        // tells it from a whole one: a servlet response can't be aborted once sent.
+        void write(AudioFrame first, OutputStream out) throws IOException {
+            OggOpusWriter ogg = new OggOpusWriter(out);
+            for (AudioFrame frame = first; frame != null; frame = next()) ogg.packet(frame.getData());
+            ogg.finish();
+        }
+
+        // The next Opus frame, or null once the song has ended whole.
+        private AudioFrame next() throws IOException {
+            try {
+                while (System.nanoTime() < deadline) {
+                    AudioFrame frame;
+                    // No frame within the window yet; the checks below decide.
+                    try { frame = player.provide(250, TimeUnit.MILLISECONDS); } catch (TimeoutException waiting) { frame = null; }
+                    if (frame != null) {
+                        if (frame.isTerminator()) break;
+                        if (!"OPUS".equals(frame.getFormat().codecName())) throw new IOException("Lavalink is not producing Opus frames.");
+                        return frame;
+                    }
+                    // Buffered frames are drained before the end counts.
+                    if (ended.getCount() == 0 || player.getPlayingTrack() == null) break;
+                }
+                // Lavaplayer ends the buffer before it reports a failure; the track
+                // finishes only after, so `failed` is final once it has.
+                while (!failed && executor.getState() != AudioTrackState.FINISHED && System.nanoTime() < deadline) Thread.sleep(10);
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                throw new IOException("Export interrupted.", interrupted);
+            }
+            if (failed) throw new IOException("The song's source failed.");
+            if (System.nanoTime() >= deadline) throw new IOException("The song took too long to decode.");
+            return null;
+        }
     }
 }

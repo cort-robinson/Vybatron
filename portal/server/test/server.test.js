@@ -1664,6 +1664,11 @@ test('device audio passes byte ranges through and nothing but audio', { timeout:
   f.state.bridgeResponse = res => reply(res, 404, { error: { code: 'not_found', message: 'SECRET detail' } });
   const gone = await f.request(route, { headers });
   assert.equal(JSON.parse(gone.text).error.code, 'not_found'); assert.doesNotMatch(gone.text, /SECRET/);
+  // An odd code, or a body past 4 KB, gets the generic answer and never fails the portal.
+  f.state.bridgeResponse = res => reply(res, 404, { error: { code: { toString: null } } });
+  assert.equal(JSON.parse((await f.request(route, { headers })).text).error.code, 'not_found');
+  f.state.bridgeResponse = res => reply(res, 404, { error: { code: 'audio_unavailable' }, padding: 'x'.repeat(5000) });
+  assert.equal(JSON.parse((await f.request(route, { headers })).text).error.code, 'not_found');
 
   assert.equal((await f.request(route, { headers: { ...headers, Range: 'bytes=0-1,4-5' } })).status, 400);
   assert.equal((await f.request(`/api/guilds/${guildId}/audio/short`, { headers })).status, 404);

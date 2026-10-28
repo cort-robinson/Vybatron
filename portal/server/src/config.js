@@ -17,7 +17,10 @@ export const LIMITS = Object.freeze({
   // streams are woken on change and only poll for revocation every pollFeedMs.
   pollMs: 3000, pollFeedMs: 10_000, changesMs: 25_000, changesRetryMaxMs: 30_000,
   pollRetryMaxMs: 30_000, heartbeatMs: 10_000, drainMs: 5000,
-  streams: 32, streamsPerSession: 2, streamLifetimeMs: 30 * 60_000,
+  // A page holds its server stream and its listener stream (/api/me/events,
+  // ADR-0018); the third per session covers a reconnect overlap or a second
+  // page. 48 gzip streams at about half a megabyte each stay well inside memory.
+  streams: 48, streamsPerSession: 3, streamLifetimeMs: 30 * 60_000,
   // A quiet stream resends the snapshot once the playback position strays this
   // far from where the page's clock puts it (a stall or a Lavalink correction).
   positionDriftMs: 2000,

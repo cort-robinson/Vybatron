@@ -50,7 +50,7 @@ export async function sendJson(req, res, status, body, recheck = () => {}) {
 
 // The event stream's writer: gzip with a sync flush after every event, so each
 // event reaches the browser at once. Gzip keeps per-stream memory near half a
-// megabyte (brotli needs about twice that), which bounds 32 streams well inside
+// megabyte (brotli needs about twice that), which bounds 48 streams well inside
 // the portal's memory limit. `write` returns false when the caller must wait
 // for `onceDrained`, which fires only once the encoder and the socket have both
 // caught up, so a slow reader still meets the drain deadline.

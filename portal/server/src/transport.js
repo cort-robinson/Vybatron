@@ -13,6 +13,16 @@ const safeErrors = {
   429: ['busy', 'The bot is busy. Please try again shortly.'],
   503: ['unavailable', 'The bot or audio service is unavailable. Refresh before making another change.'],
 };
+// Shared-player refusals a device acts on (ADR-0018), in the portal's own words.
+const playerErrors = {
+  stale: [409, 'Your queue changed. Try again.'], replaced: [409, 'Another device is playing now.'],
+  queue_full: [400, 'Your queue is full.'], unknown_entry: [400, 'That song is no longer in your queue.'],
+  unknown_device: [404, 'That device is no longer signed in.'], membership_required: [403, 'Join this server to listen to its music.'],
+};
+// A refused player change; a conflict carries the player as it now is.
+export class PlayerRefusal extends HttpError {
+  constructor(status, code, message, player) { super(status, code, message); this.player = player; }
+}
 // The one bot audio error named in the portal's own words; the bot's text never passes.
 const AUDIO_UNAVAILABLE = 'This song can’t be streamed right now. Try another version.';
 const AUDIO_ERROR_BYTES = 4096;
@@ -258,6 +268,22 @@ export class Transport {
       throw new HttpError(safeErrors[result.status] ? result.status : 503, code, message);
     }
     return result.data;
+  }
+
+  // One listener's player or devices, as the session's actor: GET to read, a body to change.
+  async player(actorId, resource, body, signal) {
+    const url = new URL(`/v1/users/${actorId}/${resource}`, this.config.botUrl);
+    const options = { method: body ? 'POST' : 'GET', headers: { Authorization: `Bearer ${this.config.bridgeToken}`, ...(body && { 'Content-Type': 'application/json' }) },
+      body: body ? JSON.stringify(body) : undefined, signal };
+    const result = await bridgeTime(() => this.request(url, options));
+    if (result.status === 200) return result.data;
+    const code = result.data.error?.code; const known = Object.hasOwn(playerErrors, code) && playerErrors[code];
+    if (known && known[0] === result.status) {
+      const player = result.status === 409 && result.data.player && typeof result.data.player === 'object' && !Array.isArray(result.data.player) ? result.data.player : undefined;
+      throw new PlayerRefusal(known[0], code, known[1], player);
+    }
+    const [safeCode, message] = safeErrors[result.status] || safeErrors[503];
+    throw new HttpError(safeErrors[result.status] ? result.status : 503, safeCode, message);
   }
 
   async discordIdentity(code, signal) {

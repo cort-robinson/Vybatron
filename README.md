@@ -125,6 +125,9 @@ Home is the landing view: Continue listening (the live or saved session and rece
 Artwork colors and subtle aurora motion set the atmosphere; motion can be reduced
 or disabled. The installable PWA supports desktop and phone, retains typed search
 input when disconnected, and waits for fresh state before enabling controls.
+Each listener's player is being made shareable across their signed-in devices
+([ADR-0018](docs/adr/0018-your-player-follows-you-across-devices.md)): the bot stores it
+and the portal API serves it (`/api/me/*`); pages don't use it yet.
 
 Read the [portal operations runbook](docs/portal-operations.md) for private
 provisioning, free HTTPS hosting, exact-source deployment and rollback. The
@@ -160,7 +163,7 @@ bash tests/warp-supervisor.test.sh
 
 CI also builds the container, verifies non-root persistence on a read-only filesystem, and validates Compose. Recovery tests exercise the pinned client's real event and player behavior, including late events, voice event ordering, pause/seek, and resumed sessions.
 
-Code map: `src/commands` defines the slash commands and `deploy-commands.js` validates and registers the same catalog. `src/playback-recovery.js` adapts the pinned lavalink-client SDK and `src/playback-watchdog.js` checks progress. `src/utils/library.js` persists favorites and mixes, `src/utils/listening-state.js` stores history, activity and checkpoints, `src/utils/sessions.js` takes session checkpoints, `src/utils/play-stats.js` play statistics (with `play-tracking`, `song-identity`, `stats-scoring` and `auto-playlists` alongside), and `src/utils/song-store.js` songs and their sources (with `fingerprint` and `song-jobs`). `src/portal` is the private portal bridge. `portal/android` is the Android app, a WebView over the live portal (ADR-0014, ADR-0016). `ops/recovery.py` probes sources and performs bounded repairs; `ops/deploy.py` owns release transactions and rollback.
+Code map: `src/commands` defines the slash commands and `deploy-commands.js` validates and registers the same catalog. `src/playback-recovery.js` adapts the pinned lavalink-client SDK and `src/playback-watchdog.js` checks progress. `src/utils/library.js` persists favorites and mixes, `src/utils/listening-state.js` stores history, activity and checkpoints, and `src/utils/players.js` each listener's shared player and devices (ADR-0018), `src/utils/sessions.js` takes session checkpoints, `src/utils/play-stats.js` play statistics (with `play-tracking`, `song-identity`, `stats-scoring` and `auto-playlists` alongside), and `src/utils/song-store.js` songs and their sources (with `fingerprint` and `song-jobs`). `src/portal` is the private portal bridge. `portal/android` is the Android app, a WebView over the live portal (ADR-0014, ADR-0016). `ops/recovery.py` probes sources and performs bounded repairs; `ops/deploy.py` owns release transactions and rollback.
 
 Design decisions and terms are in [docs/adr](docs/adr) and [docs/GLOSSARY.md](docs/GLOSSARY.md). The manual listening check before a release is in the [operations runbook](ops/README.md#manual-listening-check).
 

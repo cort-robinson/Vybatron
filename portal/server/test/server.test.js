@@ -100,6 +100,7 @@ async function fixture(t, { limits = {}, now, dataDir, production = false, botOr
     if (state.serverTiming !== undefined) res.setHeader('Server-Timing', state.serverTiming);
     if (state.delayMs) await delay(state.delayMs);
     if (res.destroyed) return;
+    if (state.players && url.pathname.startsWith('/v1/users/')) { state.players(res, call); return; }
     if (state.bridgeResponse) { state.bridgeResponse(res, call); return; }
     if (state.raw !== null) { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(state.raw); return; }
     if (!state.authorized || state.status) { reply(res, state.status || 403, { error: { code: 'private_failure', message: 'SECRET upstream stack / sensitive path' } }); return; }
@@ -2001,4 +2002,177 @@ test('Server-Timing merges the real bot bridge timing into portal API responses'
     assert.ok(metrics.portal >= metrics.bridge && metrics.bridge >= metrics.bot && metrics.bot >= metrics.discord, `${label}: ${timing}`);
     t.diagnostic(`${label}: Server-Timing: ${timing}`);
   }
+});
+
+// The listener's shared player (ADR-0018). The bot's store is faked per actor:
+// the portal only relays, coordinates streams and checks what passes.
+const phoneId = 'phonephonephonephone01'; const laptopId = 'laptoplaptoplaptoplapt';
+function fakePlayers(f) {
+  const entries = new Map();
+  const entry = actor => {
+    if (!entries.has(actor)) entries.set(actor, { player: { guildId: null, revision: 0, generation: 0, generationAt: 0, activeDeviceId: null, playbackVersion: 0,
+      current: null, queue: [], history: [], playhead: { positionMs: 0, at: 0, playing: false }, volume: 100, repeat: 'off', updatedAt: 0 }, devices: [] });
+    return entries.get(actor);
+  };
+  f.state.players = (res, call) => {
+    const [, actor, resource] = /^\/v1\/users\/(\d+)\/(player|devices)$/.exec(call.path);
+    const own = entry(actor); const body = call.body; const player = own.player;
+    if (!body) { reply(res, 200, own); return; }
+    assert.equal(resource, ['register', 'rename', 'forget', 'forgetSession'].includes(body.op) ? 'devices' : 'player');
+    if (body.op === 'register') own.devices = [...own.devices.filter(device => device.deviceId !== body.deviceId), { deviceId: body.deviceId, name: body.name, kind: body.kind, lastSeen: 1, sessionRef: body.sessionRef }];
+    if (body.op === 'forgetSession') own.devices = own.devices.filter(device => device.sessionRef !== body.sessionRef);
+    if (body.op === 'activate') own.player = { ...player, activeDeviceId: body.deviceId, generation: player.generation + 1 };
+    if (body.op === 'control' && body.action === 'volume') own.player = { ...player, volume: body.value };
+    if (body.op === 'clear') {
+      if (body.expectedRevision !== player.revision) { reply(res, 409, { error: { code: 'stale', message: 'SECRET bot wording' }, player }); return; }
+      own.player = { ...player, revision: player.revision + 1, queue: [] };
+    }
+    if (body.op === 'add') { reply(res, 400, { error: { code: 'queue_full', message: 'SECRET bot wording' } }); return; }
+    own.player = { ...own.player, updatedAt: player.updatedAt + 1 };
+    reply(res, 200, { player: own.player, devices: own.devices, ...(body.op === 'adopt' && { dropped: 3 }) });
+  };
+  return entries;
+}
+async function listenerStream(f, device, { deviceId = phoneId, kind = 'browser', name = 'Firefox on Linux' } = {}) {
+  return await new Promise((resolve, reject) => {
+    const query = new URLSearchParams({ device: deviceId, kind, name, protocol: '1' });
+    const req = http.get(`${f.base}/api/me/events?${query}`, { headers: { Cookie: device.cookie }, agent: false }, res => {
+      const handle = { req, res, status: res.statusCode, text: '', ended: false, close: () => { res.destroy(); req.destroy(); } };
+      res.setEncoding('utf8'); res.on('data', data => { handle.text += data; });
+      res.on('end', () => { handle.ended = true; }); res.on('close', () => { handle.ended = true; });
+      res.on('error', () => {}); resolve(handle);
+    });
+    req.once('error', reject);
+  });
+}
+const playerEvents = live => [...live.text.matchAll(/event:player\ndata:(.*)\n\n/g)].map(match => JSON.parse(match[1]));
+const commandEvents = live => [...live.text.matchAll(/event:command\ndata:(.*)\n\n/g)].map(match => JSON.parse(match[1]));
+const postPlayer = (f, device, body, headers = {}) => f.request('/api/me/player', { method: 'POST',
+  headers: { Cookie: device.cookie, Origin: origin, 'X-CSRF-Token': device.csrf, 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(body) });
+const userCalls = f => f.state.calls.filter(call => call.path.startsWith('/v1/users/'));
+
+test('Shared player routes need a session, and writes need the origin and CSRF token', { timeout: 5000 }, async t => {
+  const f = await fixture(t); fakePlayers(f); const device = await f.login();
+  assert.equal((await f.request('/api/me/time')).status, 401);
+  const time = await f.request('/api/me/time', { headers: { Cookie: device.cookie } });
+  assert.equal(time.status, 200); assert.ok(Math.abs(time.json().now - Date.now()) < 5000);
+  assert.equal((await f.request('/api/me/time?x=1', { headers: { Cookie: device.cookie } })).status, 400);
+  const body = JSON.stringify({ op: 'control', action: 'pause' });
+  assert.equal((await f.request('/api/me/player', { method: 'POST', headers: { Origin: origin, 'X-CSRF-Token': device.csrf, 'Content-Type': 'application/json' }, body })).status, 401);
+  assert.equal((await postPlayer(f, device, { op: 'control', action: 'pause' }, { Origin: 'https://evil.example' })).status, 403);
+  assert.equal((await postPlayer(f, device, { op: 'control', action: 'pause' }, { 'X-CSRF-Token': 'wrong' })).status, 403);
+  for (const bad of [{ op: 'dance' }, { op: 'control', action: 'volume', value: 101 }, { op: 'control', action: 'pause', value: 1 }, { op: 'clear' },
+    { op: 'report', deviceId: 'short', generation: 1, volume: 5 }, { op: 'rename', deviceId: phoneId, name: 'a\nb' }, { op: 'add', expectedRevision: 0, tracks: [], position: 'end' }]) {
+    assert.equal((await postPlayer(f, device, bad)).status, 400, JSON.stringify(bad));
+  }
+  assert.equal(userCalls(f).length, 0, 'nothing invalid reaches the bot');
+  const unsigned = await listenerStream(f, { cookie: '' }); assert.equal(unsigned.status, 401); unsigned.close();
+  for (const options of [{ deviceId: 'short' }, { kind: 'fridge' }, { name: '' }]) {
+    const live = await listenerStream(f, device, options); assert.equal(live.status, 400); live.close();
+  }
+});
+
+test('A listener stream registers its device without the session key and pushes every change to that listener only', { timeout: 5000 }, async t => {
+  const f = await fixture(t); const entries = fakePlayers(f); const listener = await f.login();
+  const otherActor = '456789012345678901'; f.state.identity = otherActor; const other = await f.login();
+  const phone = await listenerStream(f, listener); t.after(() => phone.close());
+  assert.equal(phone.status, 200);
+  await until(() => playerEvents(phone).length === 1);
+  assert.deepEqual(playerEvents(phone)[0].devices, [{ deviceId: phoneId, name: 'Firefox on Linux', kind: 'browser', lastSeen: 1, connected: true, active: false }]);
+  const register = userCalls(f)[0];
+  assert.equal(register.path, `/v1/users/${actorId}/devices`); assert.equal(register.body.op, 'register');
+  assert.match(register.body.sessionRef, /^[\w-]{43}$/);
+  assert.equal(JSON.stringify(f.state.calls).includes(listener.cookie.split('=')[1]), false, 'the session token never reaches the bot');
+
+  const otherPhone = await listenerStream(f, other, { deviceId: laptopId }); t.after(() => otherPhone.close());
+  await until(() => playerEvents(otherPhone).length === 1);
+  assert.deepEqual(playerEvents(otherPhone)[0].devices.map(device => device.deviceId), [laptopId]);
+
+  // Another listener's changes go to their own player, and never to this stream.
+  const before = phone.text.length;
+  const changed = await postPlayer(f, other, { op: 'control', action: 'volume', value: 20 });
+  assert.equal(changed.status, 200); assert.equal(changed.json().relayed, false); assert.equal(changed.json().player.volume, 20);
+  assert.equal(entries.get(actorId).player.volume, 100);
+  await until(() => playerEvents(otherPhone).length === 2);
+  assert.equal(phone.text.slice(before).includes('event:player'), false);
+  // Activating a device of another listener reaches only the caller's own player.
+  await postPlayer(f, other, { op: 'activate', deviceId: phoneId });
+  assert.equal(entries.get(actorId).player.activeDeviceId, null);
+
+  const result = await postPlayer(f, listener, { op: 'adopt', tracks: [{ id: 'abc', title: 'Song', author: 'Artist', uri: 'https://www.youtube.com/watch?v=abcdefghijk', source: 'youtube', durationMs: 1, artworkUrl: null, isStream: false, requestedBy: null }] });
+  assert.equal(result.status, 200); assert.equal(result.json().dropped, 3);
+  assert.equal(Object.hasOwn(userCalls(f).at(-1).body.tracks[0], 'requestedBy'), false);
+  await until(() => playerEvents(phone).length === 2);
+  assert.equal(playerEvents(phone)[1].player.updatedAt, entries.get(actorId).player.updatedAt);
+
+  // Refusals in the portal's own words; a conflict carries the current player.
+  const stale = await postPlayer(f, listener, { op: 'clear', expectedRevision: 7 });
+  assert.equal(stale.status, 409); assert.equal(stale.json().error.code, 'stale'); assert.equal(stale.json().player.revision, 0);
+  assert.equal(stale.text.includes('SECRET'), false);
+  const full = await postPlayer(f, listener, { op: 'add', expectedRevision: 0, tracks: [{ id: 'abc', title: 'Song', author: 'Artist', uri: 'https://www.youtube.com/watch?v=abcdefghijk' }], position: 'end' });
+  assert.equal(full.status, 400); assert.deepEqual(full.json().error, { code: 'queue_full', message: 'Your queue is full.' });
+});
+
+test('Controls go to the active device while it is connected and to the stored player otherwise', { timeout: 5000 }, async t => {
+  const f = await fixture(t); const entries = fakePlayers(f); const listener = await f.login(); const remote = await f.login();
+  const phone = await listenerStream(f, listener);
+  await until(() => playerEvents(phone).length === 1);
+  const activated = await postPlayer(f, listener, { op: 'activate', deviceId: phoneId });
+  assert.equal(activated.json().devices[0].active, true); assert.equal(activated.json().devices[0].connected, true);
+  await until(() => playerEvents(phone).length === 2);
+
+  const relayed = await postPlayer(f, remote, { op: 'control', action: 'volume', value: 30 });
+  assert.deepEqual(relayed.json(), { ok: true, relayed: true });
+  await until(() => commandEvents(phone).length === 1);
+  assert.deepEqual(commandEvents(phone)[0], { action: 'volume', value: 30, generation: 1 });
+  assert.equal(entries.get(actorId).player.volume, 100, 'the device carries it out and reports it');
+  assert.equal(userCalls(f).some(call => call.body?.op === 'control'), false);
+
+  // The playing device's stream closes: nobody connected can carry a control out.
+  phone.close();
+  const laptop = await listenerStream(f, remote, { deviceId: laptopId, name: 'Laptop' }); t.after(() => laptop.close());
+  await until(() => playerEvents(laptop).length >= 1);
+  const devices = playerEvents(laptop).at(-1).devices;
+  assert.deepEqual(devices.map(device => [device.deviceId, device.connected, device.active]), [[phoneId, false, true], [laptopId, true, false]]);
+  const applied = await postPlayer(f, remote, { op: 'control', action: 'volume', value: 40 });
+  assert.equal(applied.json().relayed, false); assert.equal(entries.get(actorId).player.volume, 40);
+  await until(() => playerEvents(laptop).at(-1).player.volume === 40);
+});
+
+test('Listener streams count toward the stream limits, rotate, and close with sign-out, which forgets the session devices', { timeout: 5000 }, async t => {
+  const f = await fixture(t, { limits: { streamLifetimeMs: 300 } }); const entries = fakePlayers(f); const listener = await f.login();
+  const open = [];
+  for (const deviceId of [phoneId, laptopId, 'tablettablettablettabl']) open.push(await listenerStream(f, listener, { deviceId }));
+  t.after(() => { for (const live of open) live.close(); });
+  assert.deepEqual(open.map(live => live.status), [200, 200, 200]);
+  const fourth = await listenerStream(f, listener, { deviceId: 'fourthfourthfourthfour' }); assert.equal(fourth.status, 429); fourth.close();
+  assert.equal(f.app.resourceCounts().streams, 3);
+  await until(() => open.every(live => live.ended), 2000);
+  assert.ok(open.every(live => live.text.includes('event:rotate')));
+  assert.equal(f.app.resourceCounts().streams, 0);
+
+  const live = await listenerStream(f, listener); t.after(() => live.close());
+  await until(() => playerEvents(live).length === 1);
+  const sessionRef = userCalls(f).at(-1).body.sessionRef;
+  const logout = await f.request('/auth/logout', { method: 'POST', headers: { Cookie: listener.cookie, Origin: origin, 'X-CSRF-Token': listener.csrf } });
+  assert.equal(logout.status, 200);
+  await until(() => live.ended);
+  await until(() => userCalls(f).some(call => call.body?.op === 'forgetSession'));
+  const forget = userCalls(f).find(call => call.body?.op === 'forgetSession');
+  assert.equal(forget.path, `/v1/users/${actorId}/devices`); assert.equal(forget.body.sessionRef, sessionRef);
+  assert.deepEqual(entries.get(actorId).devices, []);
+  assert.equal((await postPlayer(f, listener, { op: 'control', action: 'pause' })).status, 401);
+});
+
+test('Signing in over a session closes its listener streams and forgets its devices', { timeout: 5000 }, async t => {
+  const f = await fixture(t); fakePlayers(f); const first = await f.login();
+  const live = await listenerStream(f, first); t.after(() => live.close());
+  await until(() => playerEvents(live).length === 1);
+  const sessionRef = userCalls(f).at(-1).body.sessionRef;
+  const otherActor = '456789012345678901'; f.state.identity = otherActor;
+  await f.login(first.cookie);
+  await until(() => live.ended);
+  await until(() => userCalls(f).some(call => call.body?.op === 'forgetSession'));
+  const forget = userCalls(f).find(call => call.body?.op === 'forgetSession');
+  assert.equal(forget.path, `/v1/users/${actorId}/devices`, 'the previous session’s own listener'); assert.equal(forget.body.sessionRef, sessionRef);
 });

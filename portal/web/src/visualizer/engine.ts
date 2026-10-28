@@ -3,6 +3,7 @@ import { random } from '../random';
 import { coveredByModal, onModal } from '../motion';
 import type { Palette } from '../art';
 import { signalFor, type Features, type Signal, type Source } from './signal';
+import { analysisFor } from './analysis';
 import { shaders } from './shaders';
 import type { PresetId } from './presets';
 
@@ -13,6 +14,9 @@ import type { PresetId } from './presets';
 // or idle song has eased into standby; reduced motion and a stilled sleeve get one composed frame.
 export type View = {
   preset: PresetId; seed: string; playing: boolean; positionMs: number; at: number; palette: Palette;
+  // The song's energy map, when it has one: its server and YouTube video. lagMs: how far what is
+  // heard trails the reported position; rate: how fast the song's own time runs (a speed preset).
+  guildId: string | null; video: string | null; lagMs: number; rate: number;
   // animate: a loop at all; full: the full-screen takeover; lite: performance mode's lower resolution.
   animate: boolean; full: boolean; lite: boolean;
 };
@@ -60,6 +64,8 @@ export function startVisualizer(canvas: HTMLCanvasElement, fail: () => void, sou
   };
 
   let view: View | null = null; let signal: Signal | null = null; let seed = 0;
+  // The map being fetched for this song (its key, and how to stop asking), and the last moment drawn.
+  let mapKey: string | null = null; let loading: AbortController | null = null; let shown: Features | undefined;
   const colors = new Float32Array(15); let palette: Palette | null = null;
   let time = 0; let drive = 0; let speed = 0;
   const common = ({ u }: Program, width: number, height: number, f: Features) => {
@@ -100,7 +106,7 @@ export function startVisualizer(canvas: HTMLCanvasElement, fail: () => void, sou
   let width = 0; let height = 0; let intersecting = true; let covered = false; let lost = false; let drawn = false;
   let frame = 0; let last = 0; let dirty = true;
   const visible = () => !!view && width > 0 && height > 0 && intersecting && !covered && !lost && !document.hidden;
-  const position = () => view!.playing ? view!.positionMs + Math.max(0, Date.now() - view!.at) : view!.positionMs;
+  const position = () => (view!.playing ? view!.positionMs + Math.max(0, Date.now() - view!.at) * view!.rate : view!.positionMs) - view!.lagMs;
   const halt = () => { cancelAnimationFrame(frame); frame = 0; last = 0; };
   const schedule = () => { if (!frame) frame = requestAnimationFrame(tick); };
   const tick = (now: number) => {
@@ -108,7 +114,7 @@ export function startVisualizer(canvas: HTMLCanvasElement, fail: () => void, sou
     if (!visible()) { last = 0; return; }
     if (last && now - last < FRAME) { schedule(); return; }
     const dt = last ? Math.min(.1, (now - last) / 1000) : 1 / 30; last = now;
-    const f = signal!.features(position(), dt, view!.playing);
+    const f = shown = signal!.features(position(), dt, view!.playing);
     // The scene slows to a stop as playback pauses, and picks up again as it resumes.
     speed += ((view!.playing ? 1 : 0) - speed) * (1 - Math.exp(-dt * 2.2));
     time += dt * speed; drive += dt * speed * (.6 + 1.4 * f.bass + .8 * f.beat);
@@ -117,7 +123,7 @@ export function startVisualizer(canvas: HTMLCanvasElement, fail: () => void, sou
   };
   // A composed still: the song's shape at its position, and a scene placed by that position.
   const still = () => {
-    const ms = position(); const f = signal!.still(ms, view!.playing);
+    const ms = position(); const f = shown = signal!.still(ms, view!.playing);
     time = ms / 1000; drive = time * 1.1; speed = 0;
     render(f, 1 / 30, view!.playing ? 1 : .3, WARM);
   };
@@ -153,7 +159,20 @@ export function startVisualizer(canvas: HTMLCanvasElement, fail: () => void, sou
 
   return {
     update(next) {
-      if (next.seed !== view?.seed) { signal = signalFor(next.seed); seed = random(next.seed)(); sourced(signal.source); }
+      const key = next.guildId && next.video ? `${next.guildId}/${next.video}` : null;
+      if (next.seed !== view?.seed || key !== mapKey) {
+        // Each song starts on its generated motion and moves to its measured energy once that arrives.
+        signal = signalFor(next.seed); seed = random(next.seed)(); sourced(signal.source);
+        loading?.abort(); loading = null; mapKey = key;
+        if (key) {
+          const request = loading = new AbortController(); const trackSeed = next.seed;
+          analysisFor(next.guildId!, next.video!, request.signal).then(map => {
+            if (loading !== request || !map) return;
+            signal = signalFor(trackSeed, map, shown); sourced(signal.source);
+            dirty = true; wake();
+          }, () => {});
+        }
+      }
       if (next.preset !== view?.preset) { fresh = true; if (next.preset !== 'neon') dropFeed(); }
       if (next.palette !== palette) {
         palette = next.palette;
@@ -164,6 +183,7 @@ export function startVisualizer(canvas: HTMLCanvasElement, fail: () => void, sou
       dirty = true; wake();
     },
     stop() {
+      loading?.abort(); loading = null;
       halt(); resized.disconnect(); intersection.disconnect(); unmodal(); document.removeEventListener('visibilitychange', wake);
       coarse.removeEventListener('change', refit); canvas.removeEventListener('webglcontextlost', contextLost);
       dropFeed(); for (const compiled of programs.values()) for (const { program } of compiled || []) gl.deleteProgram(program);

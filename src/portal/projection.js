@@ -58,6 +58,12 @@ export function trackProjection(track, suggested) {
 }
 export function suggestionProjection(player) { return suggestions(player).map(track => trackProjection(track, true)); }
 export function guildProjection(context) { return { id: context.guild.id, name: plainText(context.guild.name, { maxLength: 100 }), iconUrl: safeImage(context.guild.iconURL?.()), admin: context.admin }; }
+// lavalink-client advances a playing position at 1x between Lavalink's updates; a speed preset
+// (Nightcore, Slow) plays the song's own time faster or slower than the clock.
+function playingPosition(player) {
+  const timescale = player.filterManager?.data?.timescale; const speed = (Number(timescale?.speed) || 1) * (Number(timescale?.rate) || 1);
+  return player.lastPositionChange && Number.isFinite(player.lastPosition) ? player.lastPosition + (Date.now() - player.lastPositionChange) * speed : player.position;
+}
 export const FILTERS = Object.entries(AUDIO_PRESETS).map(([id, preset]) => ({ id, label: preset.label, description: preset.description }));
 
 // A session revision changes exactly when shared session state does. It runs
@@ -150,7 +156,7 @@ export function snapshotProjection(client, context, revision, ordering) {
       suggestions: allowed && player ? suggestionProjection(player) : [],
       // Back returns to an earlier track of this session when one exists.
       hasPrevious: Boolean(allowed && player?.queue?.previous?.length),
-      positionMs: current ? boundedNumber(status === 'playing' ? player.position : player.lastPosition ?? player.position, 0, boundedNumber(current.info?.duration) || Number.MAX_SAFE_INTEGER) : 0,
+      positionMs: current ? boundedNumber(status === 'playing' ? playingPosition(player) : player.lastPosition ?? player.position, 0, boundedNumber(current.info?.duration) || Number.MAX_SAFE_INTEGER) : 0,
       durationMs: current ? boundedNumber(current.info?.duration) : 0, volume: allowed ? boundedNumber(player?.volume, settings.volume, 100) : 100,
       filter: allowed ? FILTERS.find(filter => filter.label === preset.label)?.id || 'custom' : 'off', repeat: allowed && ['off', 'track', 'queue'].includes(player?.repeatMode) ? player.repeatMode : 'off',
       radio: allowed && Boolean(player && autoplayActive(client, player)), autoplay: autoplayMode(client, id), fairQueue: allowed && settings.fairQueue, listeners,

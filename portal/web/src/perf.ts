@@ -84,7 +84,7 @@ export function interactive() {
 }
 
 // API routes without IDs, so samples aggregate and logs stay free of them.
-const route = (path: string) => path.replace(/^\/api\//, '').replace(/^guilds\/[^/]+/, 'guilds/:id').replace(/\/(audio|lyrics)\/[\w-]+$/, '/$1/:video');
+const route = (path: string) => path.replace(/^\/api\//, '').replace(/^guilds\/[^/]+/, 'guilds/:id').replace(/\/(audio|lyrics|analysis)\/[\w-]+$/, '/$1/:video');
 
 if (enabled && typeof PerformanceObserver === 'function') {
   try {

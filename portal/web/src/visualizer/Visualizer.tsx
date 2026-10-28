@@ -10,12 +10,23 @@ import { IconButton } from '../components/ui';
 import { startVisualizer, type View, type Visualizer } from './engine';
 import { PRESETS, choosePreset, usePreset } from './presets';
 import type { Source } from './signal';
+import { youtubeId } from '../youtube';
 
-type Scene = { clock: Clock; palette: Palette; skin: Skin };
+// local: the song plays on this device rather than in Discord.
+type Scene = { clock: Clock; palette: Palette; skin: Skin; guildId: string | null; local: boolean };
+// How far the Discord audio someone hears trails the position Lavalink reports: Discord's own
+// network and playout buffering, less the snapshot's trip to this page, which already makes the
+// page's clock run a little behind. A best estimate, tunable; this device's own player reports
+// the position it is playing, so it needs none.
+export const DISCORD_LAG_MS = 120;
+// The speed presets (src/utils/filters.js) run a song's own time faster or slower than the clock.
+// This device's player plays songs as they are.
+const RATES: Record<string, number> = { nightcore: 1.12, slow: .85 };
 // Where the song is, as the engine needs it: it advances the position itself between snapshots.
-function useView({ clock, palette, skin }: Scene, animate: boolean, full: boolean, lite: boolean): View {
+function useView({ clock, palette, skin, guildId, local }: Scene, animate: boolean, full: boolean, lite: boolean): View {
   const { session, receivedAt, live } = clock; const track = session?.current;
-  return { preset: usePreset(skin), seed: track?.id || 'idle', playing: !!track && session?.status === 'playing' && live, positionMs: track ? session?.positionMs || 0 : 0, at: receivedAt, palette, animate, full, lite };
+  return { preset: usePreset(skin), seed: track?.id || 'idle', playing: !!track && session?.status === 'playing' && live, positionMs: track ? session?.positionMs || 0 : 0, at: receivedAt, palette, animate, full, lite,
+    guildId, video: track && !track.isStream ? youtubeId(track.uri) : null, lagMs: local ? 0 : DISCORD_LAG_MS, rate: local ? 1 : RATES[session?.filter || ''] || 1 };
 }
 
 // The canvas is made here rather than rendered, so every mount (React's development double mount
@@ -28,8 +39,8 @@ function Stage({ view, className, onFail, onSource, onDoubleClick }: { view: Vie
     engine.current = startVisualizer(canvas, () => fail.current(), source => sourced.current?.(source));
     return () => { engine.current?.stop(); engine.current = null; canvas.remove(); };
   }, []);
-  const { preset, seed, playing, positionMs, at, palette, animate, full, lite } = view;
-  useEffect(() => { engine.current?.update({ preset, seed, playing, positionMs, at, palette, animate, full, lite }); }, [preset, seed, playing, positionMs, at, palette, animate, full, lite]);
+  const { preset, seed, playing, positionMs, at, palette, animate, full, lite, guildId, video, lagMs, rate } = view;
+  useEffect(() => { engine.current?.update({ preset, seed, playing, positionMs, at, palette, animate, full, lite, guildId, video, lagMs, rate }); }, [preset, seed, playing, positionMs, at, palette, animate, full, lite, guildId, video, lagMs, rate]);
   return <div ref={host} className={className} aria-hidden="true" onDoubleClick={onDoubleClick} />;
 }
 
@@ -78,7 +89,7 @@ export function FullscreenVisualizer({ onClose, fallback, ...scene }: Scene & { 
       <footer className="visualizer-controls">
         <fieldset className="visualizer-presets"><legend className="sr-only">Visualizer</legend>
           {PRESETS.map(item => <label key={item.id}><input type="radio" name={name} value={item.id} checked={preset === item.id} onChange={() => choosePreset(item.id)} /><span>{item.name}</span></label>)}</fieldset>
-        {/* Motion follows a pattern made for this song, never the audio itself; say so plainly. */}
+        {/* Live: the song's measured energy. Ambient: a pattern made for the song, not its audio. Say which plainly. */}
         <span className="visualizer-source">{source === 'live' ? 'Live' : 'Ambient'}<span className="sr-only">{source === 'live' ? ': moving with this song’s measured energy' : ': motion made for this song, not taken from its audio'}</span></span>
       </footer>
     </div>

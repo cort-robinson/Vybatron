@@ -39,6 +39,22 @@ function parseUrl(raw, config, limits) {
   return { url, pathname };
 }
 
+// A song's energy map for the visualizers (docs/portal-contract.md), checked
+// before it reaches a browser: version 1, 16 bands, at most 20 minutes at 30fps.
+const ANALYSIS_FRAMES = 20 * 60 * 30;
+const markers = value => Array.isArray(value) && value.length <= ANALYSIS_FRAMES && value.every(ms => Number.isSafeInteger(ms) && ms >= 0);
+function analysisData(data) {
+  if (data?.version !== 1) throw unavailable();
+  if (data.status === 'pending') return { version: 1, status: 'pending', retryMs: Number.isSafeInteger(data.retryMs) ? Math.min(30_000, Math.max(500, data.retryMs)) : 2000 };
+  const { frameRate, frameCount, bandCount, bandHz, durationMs, tempo, levels, onsets, beats } = data;
+  if (data.status !== 'ready' || frameRate !== 30 || bandCount !== 16 || !Number.isSafeInteger(frameCount) || frameCount < 1 || frameCount > ANALYSIS_FRAMES
+    || !Array.isArray(bandHz) || bandHz.length !== 17 || !bandHz.every(hz => Number.isSafeInteger(hz) && hz > 0 && hz <= 24_000)
+    || !Number.isSafeInteger(durationMs) || (tempo !== null && !(typeof tempo === 'number' && tempo >= 30 && tempo <= 300))
+    || typeof levels !== 'string' || levels.length !== Math.ceil(frameCount * 16 / 3) * 4 || !/^[A-Za-z0-9+/]*={0,2}$/.test(levels)
+    || !markers(onsets) || !markers(beats)) throw unavailable();
+  return { version: 1, status: 'ready', frameRate, frameCount, bandCount, bandHz, durationMs, tempo, levels, onsets, beats };
+}
+
 function validSnapshot(snapshot, guildId) {
   if (snapshot?.guild?.id !== guildId || typeof snapshot.revision !== 'string' || !snapshot.session) throw unavailable();
 }
@@ -557,6 +573,17 @@ export async function createPortalServer(config, testOptions = {}) {
           const data = await transport.bridge(`/v1/guilds/${videoLyrics[1]}/lyrics/${videoLyrics[2]}`, session.actorId, { signal: controller.signal });
           if (!store.get(token)) throw unauthorized();
           await sendJson(req, res, 200, JSON.stringify(data), live); return;
+        }
+        const analysis = /^\/api\/guilds\/(\d{1,20})\/analysis\/([\w-]{11})$/.exec(pathname);
+        if (analysis && req.method === 'GET') {
+          // A song's energy map for the visualizers. It never changes for a video, so this browser keeps
+          // it privately; a pending answer is asked again shortly and never kept.
+          queryOnly(url, []);
+          const data = analysisData(await transport.bridge(`/v1/guilds/${analysis[1]}/analysis/${analysis[2]}`, session.actorId, { signal: controller.signal }));
+          if (!store.get(token)) throw unauthorized();
+          // Set only once the reply is certain, so an error in between is never kept.
+          const keep = () => { live(); if (data.status === 'ready') { res.setHeader('Cache-Control', 'private, max-age=604800, immutable'); res.removeHeader('Pragma'); } };
+          await sendJson(req, res, 200, JSON.stringify(data), keep); return;
         }
         const match = /^\/api\/guilds\/(\d{1,20})(?:\/(configuration|library|search|commands|diagnostics|activity|events|stats|recap|lyrics))?$/.exec(pathname);
         if (!match) throw notFound();

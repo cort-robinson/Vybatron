@@ -39,6 +39,26 @@ music storage is not shared with bot music JSON. Auth cookies/tokens remain serv
   lyrics: { source: string, provider: string|null, synced: boolean,
   lines: {startMs: number|null, text: string}[] }|null }`
 
+`SongAnalysis = { version: 1, status: 'ready', frameRate: 30, frameCount: number,
+  bandCount: 16, bandHz: number[17], durationMs: number, tempo: number|null,
+  levels: string, onsets: number[], beats: number[] } | { version: 1, status: 'pending', retryMs: number }`
+
+A song's energy map for the portal's visualizers, measured once by the bot from the
+same Ogg Opus as this device's player and looked up in the browser by playback
+position, for Discord playback and this device alike. The browser never analyses
+audio itself. `levels` is base64 of `frameCount × 16` bytes, frame-major: byte
+`i * 16 + b` is band `b`'s level (0–255) in the Hann window centred on `i / 30` s.
+Bands are log-spaced between the edges in `bandHz` (40 Hz to 16 kHz), in decibels
+with half of each band's typical level removed and mapped per song from about its
+quiet floor to its loudest 0.5%, so quiet songs move as much as loud ones.
+`onsets` are spectral-flux onsets and `beats` bass-weighted ones, both in ms,
+ascending; `tempo` is beats per minute from the bass envelope's repetition (60–200,
+null when it has none). At most 20 minutes (36,000 frames). `pending`: the bot is
+still measuring the song; ask again after `retryMs`. JSON with base64 levels keeps it
+on the existing JSON bridge and its checks; base64 adds a third, and the portal
+compresses replies. A four-minute song is about 160 KB, 7200 frames.
+`version` changes with any incompatible change to the fields or their meaning.
+
 Lyrics belong to the session's current song (`trackId` is its public Track id, null
 with `idle` when nothing visible is playing). Synced lyrics carry each line's start
 in track milliseconds; plain lyrics have `startMs: null`. Empty `text` is a verse
@@ -214,6 +234,14 @@ Unavailable stats return 503 `stats_unavailable`.
   Session channel visibility, like the snapshot. Fetched on demand, never in snapshots.
 - GET `/api/guilds/:guildId/lyrics/:videoId` (11-character YouTube id) -> LyricsResponse
   for a song playing on this device. No query. Membership only, like its audio.
+- GET `/api/guilds/:guildId/analysis/:videoId` (11-character YouTube id) -> SongAnalysis.
+  No query. Membership only, like its audio. A `ready` reply never changes for its
+  video and is sent `Cache-Control: private, max-age=604800, immutable`; `pending` and
+  errors are `no-store`. The portal checks the shape and forwards only the fields above
+  (`retryMs` bounded to 0.5–30 s). 404: the song can't be analysed (the YouTube stream
+  fallback's `audio/mp4` or `audio/webm`, an unreadable song or one over 20 minutes);
+  429: the bot is busy. Pages fetch it only while a visualizer is open, and stay on
+  generated motion when it fails.
 - GET `/api/guilds/:guildId/recap?window=7d|30d|90d|365d` -> Recap. Only `window` is
   accepted; omitted means `30d`.
 - POST `/api/stats/requests/clear` -> `{ok:true,cleared:number}`. Same-origin + CSRF, no body.
@@ -372,6 +400,12 @@ browser access or CORS. Portal sets the trusted session's actorId itself.
   in-memory LRU (40 MiB per track, two downloads at a time), streams it from the start
   while it arrives, and serves ranges from it once complete. Authority comes from the
   Gateway cache when it can vouch, else a fresh REST round.
+- GET `/v1/guilds/:guildId/analysis/:videoId?actorId=...` -> SongAnalysis. Membership only
+  (fresh policy, channel scope none, like the video lyrics route). The bot gets the song
+  through the audio route's cache (no second download path), analyses `audio/ogg` only
+  (404 `analysis_unavailable` otherwise, remembered for 10 minutes), one song at a time
+  (429 `busy` while another runs), in a worker thread ended after each song, and keeps 24
+  results in an in-memory LRU. A request waits up to 5 s, then answers `pending`.
 - GET `/health` (still authenticated) -> `{ready:boolean}`.
 - GET `/v1/changes?instance=...&after=...` -> `{instanceId:string,sequence:number,reset:boolean,guildIds:string[],sequences:number[]}`.
   Private wake-up long poll (held up to 20 s). Carries guild IDs only, never

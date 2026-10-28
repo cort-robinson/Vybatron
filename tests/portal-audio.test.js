@@ -119,3 +119,16 @@ test('sendAudio answers whole and partial requests the way media elements expect
   await sendAudio({ headers: { range: 'bytes=0-1' } }, response, { complete: true, data: song, type: 'audio/ogg', done: Promise.resolve() });
   assert.equal(sent[0].status, 206); assert.equal(sent[0].headers['Content-Length'], 2); assert.equal(sent[1], 2);
 });
+
+test('a background fetch shares cached songs but never takes a download slot from playback', async () => {
+  const client = { lavalink: { nodeManager: { leastUsedNodes: () => [{ connected: true, options: { host: 'lavalink', port: 2333, authorization: 'x' } }] } } };
+  const cache = createAudioCache(client, { limits: { trackBytes: 50, cacheBytes: 100, downloads: 2, timeoutMs: 1000 }, fetchImpl: () => new Promise(() => {}) });
+  void cache.get('aaaaaaaaaaa').catch(() => {});
+  assert.throws(() => cache.get('bbbbbbbbbbb', { background: true }), error => error.status === 429);
+  // A listener's next song still gets the second slot.
+  void cache.get('ccccccccccc').catch(() => {});
+  assert.throws(() => cache.get('ddddddddddd'), error => error.status === 429);
+  const idle = createAudioCache(client, { limits: { trackBytes: 50, cacheBytes: 100, downloads: 2, timeoutMs: 1000 }, fetchImpl: async () => new Response(Buffer.alloc(10)) });
+  const entry = await idle.get('aaaaaaaaaaa', { background: true }); await entry.done;
+  assert.equal(entry.bytes, 10);
+});

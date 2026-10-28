@@ -119,6 +119,9 @@ services:
       - LAVALINK_HOST=lavalink
       - LAVALINK_PORT=2333
       - LAVALINK_PASSWORD=${LAVALINK_PASSWORD:?LAVALINK_PASSWORD is required}
+      - TORBOX_API_KEY=${TORBOX_API_KEY:-}
+      - TORZNAB_URL=${TORZNAB_URL:-}
+      - TORZNAB_API_KEY=${TORZNAB_API_KEY:-}
     volumes:
       - bot-data:/app/data
     networks:

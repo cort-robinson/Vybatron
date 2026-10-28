@@ -21,6 +21,8 @@ import { createPlaybackWatchdog } from './playback-watchdog.js';
 import { retirePresentationPlayer } from './utils/presentation-updates.js';
 import { LIBRARY_LIMITS } from './utils/library.js';
 import { cancelSleepTimer } from './utils/sleep-timer.js';
+import { createTorbox } from './utils/torbox.js';
+import { createTorznab } from './utils/torznab.js';
 
 export const IDLE_MS = 5 * 60 * 1000;
 // A short grace covers a listener's reconnect blip without holding an empty room open.
@@ -232,6 +234,9 @@ export function initLavalink(client) {
 
   const recovery = createPlaybackRecovery({
     manager: lavalink,
+    alternativeStream: config.torbox.apiKey && config.torznab.url
+      ? createTorbox({ apiKey: config.torbox.apiKey, search: createTorznab(config.torznab).search }).findStream
+      : null,
     onRecovering: (player, _track, details) => {
       clearQueueIdleTimer(player);
       clearTrackPresence(client, player);

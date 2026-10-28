@@ -254,6 +254,9 @@ export function createPlaybackRecovery({
   onRecovering = () => {},
   onFailed = () => {},
   onResumed = () => {},
+  // Finds a direct link to another copy of a track (TorBox), or null.
+  alternativeStream = null,
+  alternativeTimeoutMs = 30_000,
   logger = console,
   retryDelays = [1500, 4000],
   requestTimeoutMs = 12_000,
@@ -267,14 +270,14 @@ export function createPlaybackRecovery({
   const disconnected = new Map();
   const idleDisconnected = new Map();
   const finalizedPlayers = new WeakSet();
-  const counters = { retries: 0, recovered: 0, skipped: 0, circuitTrips: 0, staleEvents: 0, voiceReconnects: 0 };
+  const counters = { retries: 0, recovered: 0, skipped: 0, circuitTrips: 0, staleEvents: 0, voiceReconnects: 0, alternatives: 0 };
 
   function stateFor(player) {
     let state = states.get(player);
     if (!state) {
       state = { epoch: 0, original: null, attempts: 0, token: null, encoded: null,
         endedTokens: new Set(), failedTokens: new Set(), recovering: false,
-        task: null, abort: null, pendingFailure: null, paused: false,
+        task: null, abort: null, pendingFailure: null, paused: false, alternativeTried: false,
         voiceRefresh: null, voiceEpoch: 0, passiveVoiceEpoch: null,
         voiceFailures: [], voiceTask: false, requestedPaused: false };
       states.set(player, state);
@@ -347,6 +350,7 @@ export function createPlaybackRecovery({
     if (newTrack) {
       state.original = null;
       state.attempts = 0;
+      state.alternativeTried = false;
       state.failedTokens.clear();
       state.voiceFailures = [];
     } else if (retryCurrent) {
@@ -431,6 +435,27 @@ export function createPlaybackRecovery({
     return null;
   }
 
+  // Another provider's copy, played under the original's identity so history,
+  // stats and a later exact retry still name the requested recording. It must
+  // be the same length, or it is a different version of the song.
+  async function alternativeFor(player, original, signal) {
+    const length = duration(original);
+    if (!alternativeStream || original.info?.isStream || !(length > 0)) return null;
+    const lookup = async () => {
+      const stream = await alternativeStream(original, signal);
+      if (!stream?.url) return null;
+      const result = await search(player, { query: stream.url }, original.requester);
+      const candidate = result?.tracks?.[0];
+      if (!candidate?.encoded || candidate.info?.isStream
+        || Math.abs(duration(candidate) - length) > Math.max(3000, length * 0.02)) return null;
+      return { ...candidate, info: { ...candidate.info, title: original.info.title, author: original.info.author,
+        identifier: original.info.identifier, uri: original.info.uri, sourceName: original.info.sourceName,
+        artworkUrl: original.info.artworkUrl, isrc: original.info.isrc },
+      pluginInfo: { ...candidate.pluginInfo, alternativeSource: 'torbox' } };
+    };
+    return within(lookup(), alternativeTimeoutMs, signal, timers);
+  }
+
   function recoveryPosition(player, candidate, reportedPosition = player.lastPosition) {
     if (candidate.info?.isStream || candidate.info?.isSeekable === false) return 0;
     const position = Math.max(0, Number(reportedPosition) || 0);
@@ -498,6 +523,29 @@ export function createPlaybackRecovery({
     const failurePosition = Number.isSafeInteger(eventPosition) && eventPosition >= 0
       && Number.isFinite(length) && length > 0 && eventPosition <= length
       ? eventPosition : player.lastPosition;
+    // Plays a replacement in place of the failed attempt. False lets the
+    // caller try something else; null means recovery is over either way.
+    const replace = async (candidate) => {
+      const replacement = replacementTrack(original, candidate);
+      const guard = () => valid(player, state, epoch, failedTrack);
+      state.paused = player.paused;
+      counters.retries += 1;
+      try {
+        await player.play({ clientTrack: replacement, noReplace: false,
+          position: recoveryPosition(player, replacement, failurePosition), paused: state.paused,
+          [RECOVERY_PLAY]: guard });
+        return null;
+      } catch (error) {
+        if (signal.aborted || error.name === 'AbortError') return null;
+        // play() switches queue.current before sending its request. Keep the
+        // replacement as the active failed attempt if that request failed.
+        if (state.epoch === epoch && player.queue.current === replacement) {
+          state.pendingFailure = { track: replacement, payload: { type: 'PlaybackRequestError' } };
+          return null;
+        }
+        return false;
+      }
+    };
     const circuit = circuitFor(player, original);
     if (!isPermanentFailure(payload) && circuit.until <= now()) {
       while (state.attempts < retryDelays.length && valid(player, state, epoch, failedTrack)) {
@@ -513,24 +561,24 @@ export function createPlaybackRecovery({
         }
         if (!valid(player, state, epoch, failedTrack)) return;
         if (!candidate) continue;
-        const replacement = replacementTrack(original, candidate);
-        const guard = () => valid(player, state, epoch, failedTrack);
-        state.paused = player.paused;
-        counters.retries += 1;
-        try {
-          await player.play({ clientTrack: replacement, noReplace: false,
-            position: recoveryPosition(player, replacement, failurePosition), paused: state.paused,
-            [RECOVERY_PLAY]: guard });
-          return;
-        } catch (error) {
-          if (signal.aborted || error.name === 'AbortError') return;
-          // play() switches queue.current before sending its request. Keep the
-          // replacement as the active failed attempt if that request failed.
-          if (state.epoch === epoch && player.queue.current === replacement) {
-            state.pendingFailure = { track: replacement, payload: { type: 'PlaybackRequestError' } };
-            return;
-          }
-        }
+        if (await replace(candidate) === null) return;
+      }
+    }
+    // Last resort before skipping, once per track: a removed, blocked or
+    // failing recording may still have a copy elsewhere.
+    if (alternativeStream && !state.alternativeTried && valid(player, state, epoch, failedTrack)) {
+      state.alternativeTried = true;
+      let candidate = null;
+      try {
+        candidate = await alternativeFor(player, original, signal);
+      } catch (error) {
+        if (signal.aborted || error.name === 'AbortError') return;
+        logger.error('[Lavalink] alternative stream lookup failed.');
+      }
+      if (!valid(player, state, epoch, failedTrack)) return;
+      if (candidate) {
+        counters.alternatives += 1;
+        if (await replace(candidate) === null) return;
       }
     }
     if (valid(player, state, epoch, failedTrack)) await terminal(player, failedTrack, state, epoch, payload);

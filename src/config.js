@@ -29,6 +29,10 @@ export function readConfig(environment = process.env) {
       port: integer(environment.PORTAL_BRIDGE_PORT, 3010),
       operatorIds: (environment.PORTAL_OPERATOR_IDS || '').split(',').map(id => id.trim()).filter(Boolean),
     },
+    // Optional, together: a Torznab indexer finds another copy of a song
+    // YouTube can't play, and TorBox streams it when it has it cached.
+    torbox: { apiKey: environment.TORBOX_API_KEY || null },
+    torznab: { url: environment.TORZNAB_URL || null, apiKey: environment.TORZNAB_API_KEY || null },
     lavalink: {
       host: environment.LAVALINK_HOST ?? 'localhost',
       port: integer(environment.LAVALINK_PORT, 2333),
@@ -55,6 +59,18 @@ function isPortalOrigin(value) {
   }
 }
 
+// The indexer usually runs beside the bot, so plain HTTP is allowed. The key
+// has its own setting and never rides in the URL.
+function isIndexerUrl(value) {
+  try {
+    const url = new URL(value);
+    return ['http:', 'https:'].includes(url.protocol) && !url.username && !url.password
+      && !url.hash && !url.searchParams.has('apikey');
+  } catch {
+    return false;
+  }
+}
+
 function boundedInteger(value, name, min, max) {
   if (!Number.isSafeInteger(value) || value < min || value > max) throw new Error(`Invalid ${name} in environment`);
 }
@@ -76,6 +92,9 @@ export function assertConfig(cfg = config) {
   if (cfg.dataDir !== undefined && (typeof cfg.dataDir !== 'string' || !isAbsolute(cfg.dataDir) || /[\r\n\u0000]/.test(cfg.dataDir))) {
     throw new Error('Invalid VYBERTRON_DATA_DIR in environment');
   }
+  if (cfg.torbox?.apiKey && !/^[A-Za-z0-9-]{16,128}$/.test(cfg.torbox.apiKey)) throw new Error('Invalid TORBOX_API_KEY in environment');
+  if (cfg.torznab?.url && !isIndexerUrl(cfg.torznab.url)) throw new Error('Invalid TORZNAB_URL in environment');
+  if (cfg.torznab?.apiKey && !/^[A-Za-z0-9_-]{1,128}$/.test(cfg.torznab.apiKey)) throw new Error('Invalid TORZNAB_API_KEY in environment');
   if (cfg.portalOrigin && !isPortalOrigin(cfg.portalOrigin)) throw new Error('Invalid PORTAL_ORIGIN in environment');
   if (cfg.portalBridge?.token) {
     if (!/^[^\s\u0000]{32,512}$/.test(cfg.portalBridge.token)) throw new Error('Invalid PORTAL_BRIDGE_TOKEN in environment');

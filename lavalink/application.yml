@@ -32,7 +32,9 @@ lavalink:
       bandcamp: true
       twitch: false
       vimeo: false
-      http: false
+      # Plays TorBox links when YouTube fails. Listener queries can't reach it:
+      # validatePlaybackQuery admits only public catalog links.
+      http: true
       local: false
     bufferDurationMs: 400
     frameBufferDurationMs: 5000

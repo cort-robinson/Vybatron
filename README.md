@@ -77,9 +77,16 @@ LAVALINK_PASSWORD=choose-a-strong-password
 GUILD_ID=your-test-server-id
 # Optional: authenticated YouTube playback
 YOUTUBE_REFRESH_TOKEN=your-refresh-token
+# Optional, together: when YouTube can't play a song, search a Torznab
+# indexer (Prowlarr or Jackett) and play a copy TorBox has cached
+TORBOX_API_KEY=your-torbox-api-key
+TORZNAB_URL=http://prowlarr:9696/1/api
+TORZNAB_API_KEY=your-indexer-api-key
 ```
 
 The bot uses the Guilds, GuildVoiceStates and privileged GuildMembers intents. Enable **Server Members Intent** for the application in the Discord Developer Portal before starting it, or login fails. Keep `.env` private and out of Git. Spotify public embed imports require no Spotify account or credential.
+
+When YouTube can't play a song (removed, blocked, or still failing after its retries), the bot can play another copy before skipping it. Set `TORBOX_API_KEY` and `TORZNAB_URL` (plus `TORZNAB_API_KEY` if your indexer needs one). The bot searches the indexer's Audio category for the artist and song, then for the artist alone, because songs usually sit inside album torrents. It then asks TorBox which results are already cached and streams a cached file whose name matches the title and whose length matches the YouTube track within 2% (at least 3 seconds). It checks this once per song and adds the torrent to your TorBox account. Uncached torrents are never downloaded. The copy keeps the YouTube song's title, link and history, and it doesn't feed the portal's on-device audio or visualizer analysis. The Lavalink HTTP source is on for these links; listener queries still accept only public catalog links.
 
 ```bash
 docker compose up -d --build

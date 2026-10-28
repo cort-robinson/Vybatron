@@ -241,3 +241,23 @@ test('a device song whose stream fails partway gives up its source for the next 
   assert.equal((await playable.get('firstSong01')).video, 'otherSong01');
   assert.deepEqual(asked, ['firstSong01', 'otherSong01']);
 });
+
+test('a stream that fails partway releases every upload pinned to it', async t => {
+  let clock = 1_800_000_000_000;
+  const songs = new SongStore(':memory:', { logger: { log() {}, error() {} }, now: () => clock }); await songs.open(); t.after(() => songs.close());
+  const upload = id => ({ info: { identifier: id, uri: `https://www.youtube.com/watch?v=${id}`, sourceName: 'youtube', title: 'Song', author: 'Artist', duration: 160_000, isStream: false } });
+  const id = songs.record(upload('uploadAAAAA'));
+  songs.addVerifiedSource(id, upload('uploadBBBBB'), .99);
+  let cut; const shared = new Promise((_, reject) => { cut = reject; }); shared.catch(() => {});
+  // Like the audio cache, every request for A gets the one cached entry.
+  const entryA = { done: shared, video: 'uploadAAAAA' };
+  const audio = { get: async video => (video === 'uploadAAAAA' ? entryA : { done: Promise.resolve(), video }) };
+  const playable = playableAudio(audio, songs);
+  // Both uploads of the song are asked for and both get the cached stream of A.
+  assert.equal((await playable.get('uploadAAAAA')).video, 'uploadAAAAA');
+  assert.equal((await playable.get('uploadBBBBB')).video, 'uploadAAAAA');
+  cut(new Error('cut off')); await new Promise(resolve => setImmediate(resolve));
+  clock += 1000;
+  assert.equal((await playable.get('uploadBBBBB')).video, 'uploadBBBBB');
+  assert.equal((await playable.get('uploadAAAAA')).video, 'uploadBBBBB');
+});

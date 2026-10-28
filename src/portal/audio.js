@@ -146,7 +146,9 @@ export function playableAudio(audio, songs, { pinMs = 30 * 60_000, now = Date.no
       const known = Boolean(songs?.songOf?.(watchUrl(id)));
       let order = (songs?.playbackSources?.(watchUrl(id)) || [])
         .filter(source => source.sourceName === 'youtube' && validVideoId(source.identifier)).map(source => source.identifier);
-      if (pinned.has(id)) order = [pinned.get(id).source, ...order.filter(source => source !== pinned.get(id).source)];
+      // A pin holds only while its source is still eligible: one that failed, through any request, lets go.
+      const held = pinned.get(id)?.source;
+      if (held && order.includes(held)) order = [held, ...order.filter(source => source !== held)];
       // A known song whose every source failed recently waits out the cooldown; an unknown one plays as asked.
       if (!order.length && known) fail(404, 'audio_unavailable', 'This song can’t be streamed right now. Try another version.');
       if (!order.length) order.push(id);
@@ -163,11 +165,7 @@ export function playableAudio(audio, songs, { pinMs = 30 * 60_000, now = Date.no
         while (pinned.size > 500) pinned.delete(pinned.keys().next().value);
         if (!reported.has(entry)) {
           reported.add(entry);
-          entry.done.then(() => songs?.sourceResult?.(watchUrl(source), true), () => {
-            // A stream that fails partway gives up its pin, so the next request chooses again.
-            if (pinned.get(id)?.source === source) pinned.delete(id);
-            songs?.sourceResult?.(watchUrl(source), false);
-          });
+          entry.done.then(() => songs?.sourceResult?.(watchUrl(source), true), () => songs?.sourceResult?.(watchUrl(source), false));
         }
         return entry;
       }

@@ -48,4 +48,24 @@ so set `ANDROID_SERIAL` to the emulator's serial first:
 ANDROID_SERIAL=emulator-5554 ./gradlew connectedDebugAndroidTest -Pvybatron.portalOrigin=https://<portal host>
 ```
 
-Signed release builds and their publication come with the release workflow (ADR-0014, step 1).
+## Releases
+
+Android releases are versioned apart from the bot, as `android-vX.Y.Z` tags, and need the owner's
+approval like any release (`promote`).
+
+1. A `chore(android): release X.Y.Z` PR raises `versionName` to `X.Y.Z` and `versionCode` by one in
+   `app/build.gradle.kts`.
+2. After it merges, the tag `android-vX.Y.Z` on its merge commit starts the Android release workflow
+   (`.github/workflows/android-release.yml`). It builds from that commit, checks the APK is signed
+   with the release key (certificate SHA-256 `3dd2d55f…32cb`), and publishes
+   `vybatron-X.Y.Z.apk` and its checksum as a GitHub Release that isn't marked latest.
+
+The workflow signs with the secrets `ANDROID_KEYSTORE_BASE64` and `ANDROID_KEYSTORE_PASSWORD` (key
+alias `vybatron`) and builds for the variable `VYBATRON_PORTAL_ORIGIN`. The keystore's owner keeps
+an offline backup: Android only installs an update signed with the same key.
+
+### Installing with Obtainium
+
+Add the app from this repository's GitHub URL, with **Filter release titles by regular expression**
+set to `^Vybatron for Android` so the bot's releases are ignored. Obtainium then offers each new
+Android release as an update.

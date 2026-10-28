@@ -1,0 +1,93 @@
+name: Android release
+
+on:
+  push:
+    tags: ['android-v*']
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    # Builds the Android app from a tagged main commit, signs it with the release key,
+    # checks the signature is that key's, and publishes it as a GitHub Release
+    # (portal/android/README.md). Needs the secrets ANDROID_KEYSTORE_BASE64 and
+    # ANDROID_KEYSTORE_PASSWORD (key alias "vybatron", same password) and the variable
+    # VYBATRON_PORTAL_ORIGIN.
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    concurrency:
+      group: android-release
+      cancel-in-progress: false
+    env:
+      TAG: ${{ github.ref_name }}
+      # The release key's certificate. A build signed by anything else would make every
+      # installed copy refuse the update, so it is never published.
+      CERTIFICATE_SHA256: 3dd2d55fc9fd1927f3d8e5b05588411ac3a2ad451e43feddd73e8511e93032cb
+    defaults:
+      run:
+        working-directory: portal/android
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Check the tag names a main commit and the app's version
+        run: |
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main \
+            || { echo "::error::$TAG is not on main."; exit 1; }
+          VERSION=$(sed -n 's/^ *versionName = "\([^"]*\)"$/\1/p' app/build.gradle.kts)
+          [ "$TAG" = "android-v$VERSION" ] \
+            || { echo "::error::$TAG doesn't match versionName $VERSION in app/build.gradle.kts."; exit 1; }
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
+
+      - name: Test and build the signed APK
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          VYBATRON_PORTAL_ORIGIN: ${{ vars.VYBATRON_PORTAL_ORIGIN }}
+        run: |
+          [ -n "$KEYSTORE_BASE64" ] && [ -n "$KEYSTORE_PASSWORD" ] && [ -n "$VYBATRON_PORTAL_ORIGIN" ] \
+            || { echo "::error::The release secrets or the portal origin variable aren't set."; exit 1; }
+          KEYSTORE="$RUNNER_TEMP/release.jks"
+          trap 'rm -f "$KEYSTORE"' EXIT
+          printf '%s' "$KEYSTORE_BASE64" | base64 -d > "$KEYSTORE"
+          ./gradlew --no-daemon testDebugUnitTest assembleRelease \
+            -Pandroid.injected.signing.store.file="$KEYSTORE" \
+            -Pandroid.injected.signing.store.password="$KEYSTORE_PASSWORD" \
+            -Pandroid.injected.signing.key.alias=vybatron \
+            -Pandroid.injected.signing.key.password="$KEYSTORE_PASSWORD"
+
+      - name: Check the APK is signed with the release key
+        run: |
+          APKSIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner | sort -V | tail -1)
+          "$APKSIGNER" verify --print-certs app/build/outputs/apk/release/app-release.apk > signers.txt
+          grep -q "certificate SHA-256 digest: $CERTIFICATE_SHA256" signers.txt \
+            || { cat signers.txt; echo "::error::The APK isn't signed with the release key."; exit 1; }
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # The tag must still name the commit that was built; a moved tag would label another commit's APK.
+          # (Annotated tags list their commit as the ^{} line, which sorts last.)
+          TAGGED=$(git ls-remote origin "refs/tags/$TAG" "refs/tags/$TAG^{}" | tail -1 | cut -f1)
+          [ "$TAGGED" = "$GITHUB_SHA" ] \
+            || { echo "::error::$TAG now points at ${TAGGED:-nothing}, not the built commit $GITHUB_SHA."; exit 1; }
+          APK="vybatron-$VERSION.apk"
+          cp app/build/outputs/apk/release/app-release.apk "$APK"
+          sha256sum "$APK" > "$APK.sha256"
+          # Not marked latest: the repository's latest release stays the bot's.
+          gh release create "$TAG" "$APK" "$APK.sha256" --verify-tag --latest=false \
+            --title "Vybatron for Android $VERSION" \
+            --notes "Install or update with Obtainium (see portal/android/README.md), or download $APK. Signed with the release key; certificate SHA-256 $CERTIFICATE_SHA256."

@@ -203,6 +203,8 @@ export class SongStore {
       if (!ref || ref.isStream || !(ref.duration > 0)) return null;
       return this.transaction(() => {
         const known = this.db.prepare('SELECT s.id, s.catalog_status, s.next_lookup_at FROM refs r JOIN songs s ON s.id = r.song_id WHERE r.uri = ?').get(ref.uri);
+        // A track that starts is a source that plays.
+        this.db.prepare('UPDATE sources SET last_played_at = ? WHERE uri = ?').run(now, ref.uri);
         if (known) {
           this.db.prepare('UPDATE sources SET music = MAX(music, ?) WHERE uri = ?').run(musicSong(track), ref.uri);
           // An exhausted lookup gets one more try each time the song plays.
@@ -217,8 +219,8 @@ export class SongStore {
         if (catalog) this.linkRow(id, catalog, now);
         this.db.prepare('INSERT INTO refs (uri, song_id, added_at) VALUES (?, ?, ?)').run(ref.uri, id, now);
         if (!CATALOGS.has(ref.sourceName)) {
-          this.db.prepare(`INSERT INTO sources (uri, song_id, source_name, identifier, title, author, duration, verification, music, added_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 'first', ?, ?)`).run(ref.uri, id, ref.sourceName, ref.identifier, ref.title, ref.author, ref.duration, musicSong(track), now);
+          this.db.prepare(`INSERT INTO sources (uri, song_id, source_name, identifier, title, author, duration, verification, music, added_at, last_played_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'first', ?, ?, ?)`).run(ref.uri, id, ref.sourceName, ref.identifier, ref.title, ref.author, ref.duration, musicSong(track), now, now);
         }
         return id;
       });
@@ -399,6 +401,13 @@ export class SongStore {
         ORDER BY last_played_at IS NULL, last_played_at DESC, music DESC, added_at, uri`)
         .all(uri, now - SOURCE_COOLDOWN_MS).map(row => ({ uri: row.uri, sourceName: row.source_name, identifier: row.identifier }));
     } catch (error) { this.failure('songs_read_failed', error); return []; }
+  }
+
+  /** How many sources a reference's song has, cooling down or not. Never throws. */
+  sourceCount(uri) {
+    if (!this.available) return 0;
+    try { return this.db.prepare('SELECT COUNT(*) AS n FROM sources WHERE song_id = (SELECT song_id FROM refs WHERE uri = ?)').get(uri).n; }
+    catch (error) { this.failure('songs_read_failed', error); return 0; }
   }
 
   /** Records whether a source played. Never throws. */

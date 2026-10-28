@@ -125,3 +125,51 @@ export async function sendAudio(request, response, entry) {
     ...(range !== undefined && { 'Content-Range': `bytes ${start}-${end}/${size}` }) });
   response.end(data.subarray(start, end + 1));
 }
+
+const watchUrl = id => `https://www.youtube.com/watch?v=${id}`;
+
+/**
+ * A device asks for one upload's audio. When the song store knows its song,
+ * the song's verified sources are tried best first, and a source that can't
+ * stream moves on to the next (ADR-0017). Unknown songs play as asked.
+ */
+export function playableAudio(audio, songs, { pinMs = 30 * 60_000, now = Date.now } = {}) {
+  const reported = new WeakSet();
+  // The source chosen for an upload stays its source across range requests, so
+  // one URL never serves bytes from two different uploads.
+  const pinned = new Map();
+  return {
+    async get(id, options) {
+      if (!validVideoId(id)) return audio.get(id, options);
+      const pin = pinned.get(id);
+      if (pin && pin.until <= now()) pinned.delete(id);
+      const known = Boolean(songs?.songOf?.(watchUrl(id)));
+      let order = (songs?.playbackSources?.(watchUrl(id)) || [])
+        .filter(source => source.sourceName === 'youtube' && validVideoId(source.identifier)).map(source => source.identifier);
+      // A pin holds only while its source is still eligible: one that failed, through any request, lets go.
+      const held = pinned.get(id)?.source;
+      if (held && order.includes(held)) order = [held, ...order.filter(source => source !== held)];
+      // A known song whose every source failed recently waits out the cooldown; an unknown one plays as asked.
+      if (!order.length && known) fail(404, 'audio_unavailable', 'This song can’t be streamed right now. Try another version.');
+      if (!order.length) order.push(id);
+      let failure;
+      for (const source of order) {
+        let entry;
+        try { entry = await audio.get(source, options); }
+        catch (error) {
+          if (error?.status !== 404) throw error;
+          if (pinned.get(id)?.source === source) pinned.delete(id);
+          songs?.sourceResult?.(watchUrl(source), false); failure = error; continue;
+        }
+        pinned.delete(id); pinned.set(id, { source, until: now() + pinMs });
+        while (pinned.size > 500) pinned.delete(pinned.keys().next().value);
+        if (!reported.has(entry)) {
+          reported.add(entry);
+          entry.done.then(() => songs?.sourceResult?.(watchUrl(source), true), () => songs?.sourceResult?.(watchUrl(source), false));
+        }
+        return entry;
+      }
+      throw failure;
+    },
+  };
+}

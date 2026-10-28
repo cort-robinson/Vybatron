@@ -18,6 +18,7 @@ On Windows use `npm.cmd` if `npm.ps1` is blocked.
 | `ops/`, `tests/*_test.py` | `python -m unittest discover -s tests -p '*_test.py'` |
 | `portal/server` | `npm run portal:test` |
 | `portal/web` | `npm --prefix portal/web run typecheck`, `npm run portal:build`, then `npx playwright test <spec>` in `portal/web` (build before HTTP specs) |
+| `portal/android` | in `portal/android` with JDK 21 and the Android SDK: `./gradlew testDebugUnitTest lintDebug assembleDebug`; on a device or emulator, `connectedDebugAndroidTest -Pvybatron.portalOrigin=<origin>` (set `ANDROID_SERIAL` so it never reaches a real phone) |
 | portal end-to-end | `npm run portal:integration` (rejects `data:` URLs in built CSS; production CSP) |
 | workflows, shell, lint | CI `lint` job: `actionlint`, `shellcheck warp/*.sh tests/*.sh`, `ruff check ops tests` (`pip install -r .github/lint/requirements.txt`) |
 

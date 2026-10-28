@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Vybatron</string>
+    <string name="webview_too_old">Vybatron needs a newer Android System WebView. Update it from the Play Store, then open Vybatron again.</string>
+    <string name="not_configured">This build of Vybatron doesn\'t know which portal to open.</string>
+    <string name="unreachable">Can\'t reach Vybatron right now. Check your connection and try again.</string>
+    <string name="retry">Try again</string>
+</resources>

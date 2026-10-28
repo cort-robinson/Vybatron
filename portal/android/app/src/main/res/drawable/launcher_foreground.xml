@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The portal's maskable icon keeps its art in the middle 80%; an adaptive
+     icon's safe zone is the middle 61%, so the art is inset to fit. -->
+<inset xmlns:android="http://schemas.android.com/apk/res/android"
+    android:drawable="@drawable/launcher_art"
+    android:inset="12%" />

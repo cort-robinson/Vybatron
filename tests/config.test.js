@@ -24,6 +24,14 @@ test('configuration rejects malformed endpoints, IDs, secrets, and resource limi
     { ...valid, shutdownTimeoutMs: 30_000 },
     { ...valid, dataDir: '../private-input' },
     { ...valid, nodeEnv: 'private-input' },
+    { ...valid, torbox: { apiKey: 'private-input key' } },
+    { ...valid, torznab: { url: 'ftp://private-input' } },
+    { ...valid, torznab: { url: 'http://user:private-input@prowlarr:9696/1/api' } },
+    { ...valid, torznab: { url: 'http://prowlarr:9696/1/api?apikey=private-input' } },
+    { ...valid, torznab: { url: 'http://prowlarr:9696/1/api', apiKey: 'private input' } },
+    { ...valid, relay: { host: 'private-input', port: 3020 } },
+    { ...valid, relay: { host: '0.0.0.0', port: 0 } },
+    { ...valid, relay: { host: '::1', port: 3020 } },
   ];
   for (const cfg of invalid) {
     assert.throws(() => assertConfig(cfg), (error) => !error.message.includes('private-input'));

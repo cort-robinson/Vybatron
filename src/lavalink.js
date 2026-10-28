@@ -21,6 +21,9 @@ import { createPlaybackWatchdog } from './playback-watchdog.js';
 import { retirePresentationPlayer } from './utils/presentation-updates.js';
 import { LIBRARY_LIMITS } from './utils/library.js';
 import { cancelSleepTimer } from './utils/sleep-timer.js';
+import { createTorbox } from './utils/torbox.js';
+import { createTorznab } from './utils/torznab.js';
+import { addressToward, createStreamRelay } from './utils/stream-relay.js';
 
 export const IDLE_MS = 5 * 60 * 1000;
 // A short grace covers a listener's reconnect blip without holding an empty room open.
@@ -194,6 +197,23 @@ export function handlePlayerDestroy(client, player) {
   requestControllerEnd(client, player, 'Playback session ended.');
 }
 
+// Off unless both are configured. Lavalink only ever sees the relay's link.
+function torboxStreams() {
+  if (!config.torbox.apiKey || !config.torznab.url) return null;
+  const torbox = createTorbox({ apiKey: config.torbox.apiKey, search: createTorznab(config.torznab).search });
+  const relay = createStreamRelay({ ...config.relay,
+    advertise: config.relay.host === '0.0.0.0'
+      ? () => addressToward(config.lavalink.host, config.lavalink.port)
+      : async () => config.relay.host });
+  return async (track, signal) => {
+    // Nothing is looked up (or added to TorBox) while the relay can't serve it.
+    if (!await relay.ready()) return null;
+    const stream = await torbox.findStream(track, signal);
+    const url = stream && await relay.register(stream.url);
+    return url ? { ...stream, url } : null;
+  };
+}
+
 export function initLavalink(client) {
   const lavalink = new LavalinkManager({
     nodes: [
@@ -232,6 +252,7 @@ export function initLavalink(client) {
 
   const recovery = createPlaybackRecovery({
     manager: lavalink,
+    alternativeStream: torboxStreams(),
     onRecovering: (player, _track, details) => {
       clearQueueIdleTimer(player);
       clearTrackPresence(client, player);

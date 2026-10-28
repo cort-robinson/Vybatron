@@ -32,7 +32,9 @@ lavalink:
       bandcamp: true
       twitch: false
       vimeo: false
-      http: false
+      # Plays TorBox audio through the bot's relay when YouTube fails. Listener
+      # queries can't reach it: validatePlaybackQuery admits only catalog links.
+      http: true
       local: false
     bufferDurationMs: 400
     frameBufferDurationMs: 5000

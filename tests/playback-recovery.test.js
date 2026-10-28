@@ -1561,3 +1561,110 @@ test('exact refresh strips playlists from a video request and rejects unsupporte
   'https://www.youtube.com/watch?v=dQw4w9WgXcQ');
   assert.equal(exactTrackQuery({ info: { uri: 'file:///etc/passwd' } }), null);
 });
+
+function torboxTrack(length = 200_500) {
+  return { encoded: 'encoded-http', info: { identifier: 'https://cdn.example/song.flac', title: 'Unknown title', author: 'Unknown artist',
+    uri: 'https://cdn.example/song.flac', sourceName: 'http', length, duration: length, isSeekable: true, isStream: false },
+  pluginInfo: {}, userData: {} };
+}
+
+test('a removed recording plays a same-length alternative copy under its original identity', async () => {
+  const lookups = [];
+  const f = fixture({
+    alternativeStream: async (track) => { lookups.push(track.info.identifier); return { url: 'https://cdn.example/song.flac' }; },
+    search: async (_player, query) => (query.query === 'https://cdn.example/song.flac' ? { tracks: [torboxTrack()] } : { tracks: [] }),
+  });
+  await f.start();
+  f.player.lastPosition = 30_000;
+  await f.error({ exception: { message: 'This video has been removed by the uploader' } });
+  assert.deepEqual(lookups, ['dQw4w9WgXcQ']);
+  const current = f.player.queue.current;
+  assert.equal(current.encoded, 'encoded-http');
+  assert.equal(current.info.identifier, 'dQw4w9WgXcQ');
+  assert.equal(current.info.uri, 'https://www.youtube.com/watch?v=dQw4w9WgXcQ');
+  assert.equal(current.info.sourceName, 'youtube');
+  assert.equal(current.info.title, 'Song');
+  assert.equal(current.pluginInfo.alternativeSource, 'torbox');
+  assert.equal(current.requester.id, 'requester-1');
+  assert.equal(f.writes.filter((write) => write.track?.encoded).at(-1).position, 30_000);
+  assert.equal(f.failed.length, 0);
+  assert.equal(f.recovery.summary().alternatives, 1);
+});
+
+test('a transient failure tries the alternative only after the exact retries are spent', async () => {
+  const order = [];
+  const f = fixture({
+    alternativeStream: async () => { order.push('torbox'); return { url: 'https://cdn.example/song.flac' }; },
+    search: async (_player, query) => {
+      order.push(query.source || query.query);
+      return query.query === 'https://cdn.example/song.flac' ? { tracks: [torboxTrack()] } : { tracks: [] };
+    },
+  });
+  await f.start();
+  await f.error();
+  // A YouTube video has no other catalog mirror, so its second attempt is empty.
+  assert.deepEqual(order, ['https://www.youtube.com/watch?v=dQw4w9WgXcQ', 'torbox', 'https://cdn.example/song.flac']);
+  assert.equal(f.player.queue.current.encoded, 'encoded-http');
+});
+
+test('a different-length alternative is a different version and the track is skipped', async () => {
+  const f = fixture({
+    alternativeStream: async () => ({ url: 'https://cdn.example/live.flac' }),
+    search: async (_player, query) => (query.query?.startsWith('https://cdn') ? { tracks: [torboxTrack(260_000)] } : { tracks: [] }),
+  });
+  await f.start();
+  await f.error({ exception: { message: 'This is a private video.' } });
+  assert.equal(f.player.queue.current.info.identifier, 'Zi_XLOBDo_Y');
+  assert.equal(f.failed.length, 1);
+});
+
+test('an alternative is tried once per track: its own failure skips without another lookup', async () => {
+  let lookups = 0;
+  const f = fixture({
+    alternativeStream: async () => { lookups += 1; return { url: 'https://cdn.example/song.flac' }; },
+    search: async (_player, query) => (query.query === 'https://cdn.example/song.flac' ? { tracks: [torboxTrack()] } : { tracks: [] }),
+  });
+  await f.start();
+  await f.error({ exception: { message: 'This is a private video.' } });
+  await f.node.handleEvent({ type: 'TrackStartEvent', guildId: 'g1', track: f.wire() });
+  await f.error({ exception: { message: 'This is a private video.' } });
+  assert.equal(lookups, 1);
+  assert.equal(f.failed.length, 1);
+  assert.equal(f.player.queue.current.info.identifier, 'Zi_XLOBDo_Y');
+});
+
+test('a failed or hung alternative lookup still skips within its deadline', async () => {
+  const failing = fixture({ alternativeStream: async () => { throw new Error('TorBox request failed: 500'); } });
+  await failing.start();
+  await failing.error({ exception: { message: 'This is a private video.' } });
+  assert.equal(failing.failed.length, 1);
+  assert.equal(failing.player.queue.current.info.identifier, 'Zi_XLOBDo_Y');
+
+  const hung = fixture({ alternativeStream: () => new Promise(() => {}), alternativeTimeoutMs: 5 });
+  await hung.start();
+  await hung.node.handleEvent({ type: 'TrackExceptionEvent', guildId: 'g1', track: hung.wire(),
+    exception: { message: 'This is a private video.' } });
+  await hung.tasks.at(-1);
+  assert.equal(hung.failed.length, 1);
+  assert.equal(hung.player.queue.current.info.identifier, 'Zi_XLOBDo_Y');
+});
+
+test('an alternative lookup past its deadline is aborted and never loads its late link', async () => {
+  let lookupSignal;
+  const late = deferred();
+  const loads = [];
+  const f = fixture({
+    alternativeStream: (_track, signal) => { lookupSignal = signal; return late.promise; },
+    alternativeTimeoutMs: 5,
+    search: async (_player, query) => { loads.push(query.query); return { tracks: [] }; },
+  });
+  await f.start(f.track(), []);
+  await f.node.handleEvent({ type: 'TrackExceptionEvent', guildId: 'g1', track: f.wire(),
+    exception: { message: 'This is a private video.' } });
+  await f.tasks.at(-1);
+  assert.equal(f.player.queue.current, null);
+  assert.equal(lookupSignal.aborted, true);
+  late.resolve({ url: 'https://cdn.example/late.flac' });
+  await settle();
+  assert.deepEqual(loads, []);
+});

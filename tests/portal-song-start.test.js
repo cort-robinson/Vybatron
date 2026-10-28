@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { setTimeout as delay } from 'node:timers/promises';
 import { portalFixture } from './portal-fixtures.js';
 import { track } from './fixtures.js';
+import { ATTEMPT_KEY } from '../src/playback-recovery.js';
 
 // Lavalink reports where a song is; the fixture's node answers like a song still loading until `moving`.
 function loadingNode(f) {
@@ -59,4 +60,24 @@ test('a song already playing when the portal first sees it keeps its running pos
   const session = (await f.request('', { actor: '202' })).body.session;
   assert.equal(session.starting, false);
   assert.ok(Math.abs(session.positionMs - 12_000) < 150, `positionMs ${session.positionMs}`);
+});
+
+test('a copy from another source starts by its attempt token, though Lavalink names it by its URL', async t => {
+  const f = await portalFixture(t, { owner: { id: '202' } });
+  let position = 0; let calls = 0;
+  f.node.fetchPlayer = async () => {
+    calls += 1; position += 300;
+    const current = f.player.queue.current;
+    return { track: { info: { identifier: 'https://cdn.example/song.flac' }, userData: { [ATTEMPT_KEY]: current?.userData?.[ATTEMPT_KEY] } },
+      state: { position } };
+  };
+  f.player.lastPosition = 0; f.player.lastPositionChange = Date.now();
+  const copy = track('lmnopqrstuv');
+  copy.userData = { ...copy.userData, [ATTEMPT_KEY]: 'attempt-1' };
+  await f.player.play({ clientTrack: copy });
+  await delay(900);
+  const session = (await f.request('', { actor: '202' })).body.session;
+  assert.equal(session.starting, false);
+  const settled = calls; await delay(600);
+  assert.equal(calls, settled, 'polling stops once the copy moves');
 });

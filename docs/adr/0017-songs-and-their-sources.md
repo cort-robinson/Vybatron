@@ -1,4 +1,4 @@
-# ADR-0015: Songs are recordings, and audio sources sit underneath them
+# ADR-0017: Songs are recordings, and audio sources sit underneath them
 
 - Status: Proposed
 - Date: 2026-10-28

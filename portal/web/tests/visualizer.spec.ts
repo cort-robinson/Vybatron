@@ -363,6 +363,19 @@ const timeline = (page: Page) => page.addInitScript(() => {
     if (changes.some(change => (change.target as Element).classList?.contains('visualizer-preset-name') || [...change.addedNodes].some(node => (node as Element).classList?.contains('visualizer-preset-name')))) record.named = performance.now();
   }).observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['title'] }));
 });
+// Whether Butterchurn's renderer last called its blend finished. It keeps the flag on itself, out of
+// reach of the page, so this watches writes to a `blending` property instead: the first write gives
+// the object its own enumerable property (copies keep it) that reports each later write.
+const watchBlend = (page: Page) => page.addInitScript(() => {
+  let last: boolean | undefined;
+  const own = (target: object, value: boolean) => {
+    let current = value; last = value;
+    Object.defineProperty(target, 'blending', { configurable: true, enumerable: true, get: () => current, set(next) { current = next; last = next; } });
+  };
+  Object.defineProperty(Object.prototype, 'blending', { configurable: true, get: () => undefined, set(value) { own(this, value); } });
+  Object.defineProperty(window, 'blendDone', { value: () => last === false });
+});
+const blendDone = (page: Page) => page.evaluate(() => (window as unknown as { blendDone: () => boolean }).blendDone());
 // How long the full screen went on drawing after its last preset change, once it has stopped.
 async function drawnAfterChange(page: Page) {
   await expect.poll(async () => (await framesOver(page, 600)).full, slowly).toBe(0);
@@ -382,7 +395,7 @@ const gate = (page: Page, action: 'hold' | 'release') => page.evaluate(action =>
 test('pausing as a blend begins lets it finish rather than freezing part way', async ({ page }) => {
   test.slow();
   await page.setViewportSize({ width: 960, height: 600 });
-  await countFrames(page); await timeline(page); await holdCompiles(page); await stored(page, 'milkdrop');
+  await countFrames(page); await timeline(page); await holdCompiles(page); await watchBlend(page); await stored(page, 'milkdrop');
   const fixture = await mockPortal(page);
   await openPlayer(page);
   await openMilkdrop(page);
@@ -397,13 +410,41 @@ test('pausing as a blend begins lets it finish rather than freezing part way', a
   await page.waitForTimeout(400);
   await gate(page, 'release');
   await expect(fullName(page)).not.toHaveAttribute('title', first!, slowly);
-  expect(await drawnAfterChange(page)).toBeGreaterThanOrEqual(2.7);
+  // Butterchurn times the blend on its own clock, so the page's only bounds it loosely; its end is
+  // what counts.
+  expect(await drawnAfterChange(page)).toBeGreaterThanOrEqual(1.3);
+  expect(await blendDone(page)).toBe(true);
+});
+
+test('a blend that slows down as the song pauses still runs to its end', async ({ page }) => {
+  test.slow();
+  await page.setViewportSize({ width: 960, height: 600 });
+  await countFrames(page); await timeline(page); await holdCompiles(page); await watchBlend(page); await stored(page, 'milkdrop');
+  const fixture = await mockPortal(page);
+  await openPlayer(page);
+  await openMilkdrop(page);
+  const first = await fullName(page).getAttribute('title');
+  await gate(page, 'hold');
+  const state = fixture.state.snapshot; state.session.positionMs = 180_000; state.revision = 'seek';
+  await emit(page, state);
+  await page.waitForTimeout(250);
+  state.session.status = 'paused'; state.revision = 'paused'; await emit(page, state);
+  await page.waitForTimeout(400);
+  // Frames come slower just as the blend begins, so Butterchurn's clock, which runs on its estimate
+  // of the frame rate, falls behind the page's.
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send('Emulation.setCPUThrottlingRate', { rate: 4 });
+  await gate(page, 'release');
+  await expect(fullName(page)).not.toHaveAttribute('title', first!, slowly);
+  await expect.poll(async () => (await framesOver(page, 600)).full, slowly).toBe(0);
+  await cdp.send('Emulation.setCPUThrottlingRate', { rate: 1 });
+  expect(await blendDone(page)).toBe(true);
 });
 
 test('pausing while the next preset compiles still sees its blend through', async ({ page }) => {
   test.slow();
   await page.setViewportSize({ width: 960, height: 600 });
-  await countFrames(page); await timeline(page); await holdCompiles(page); await stored(page, 'milkdrop');
+  await countFrames(page); await timeline(page); await holdCompiles(page); await watchBlend(page); await stored(page, 'milkdrop');
   const fixture = await mockPortal(page);
   await openPlayer(page);
   await openMilkdrop(page);
@@ -415,7 +456,8 @@ test('pausing while the next preset compiles still sees its blend through', asyn
   await page.waitForTimeout(3500);
   await gate(page, 'release');
   await expect(fullName(page)).not.toHaveAttribute('title', first!, slowly);
-  expect(await drawnAfterChange(page)).toBeGreaterThanOrEqual(1.2);
+  expect(await drawnAfterChange(page)).toBeGreaterThanOrEqual(.6);
+  expect(await blendDone(page)).toBe(true);
 });
 
 test('resizing the full screen during a blend keeps MilkDrop’s mesh whole', async ({ page }) => {

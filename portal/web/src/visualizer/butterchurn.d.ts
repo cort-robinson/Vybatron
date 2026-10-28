@@ -5,6 +5,8 @@ declare module 'butterchurn' {
   export type AudioLevels = { timeByteArray: Uint8Array; timeByteArrayL: Uint8Array; timeByteArrayR: Uint8Array };
   export type Visualizer = {
     gl: WebGL2RenderingContext;
+    // Only its blend state is read: true from a blended load until the blend has run its course.
+    renderer: { readonly blending: boolean };
     loadPreset(preset: Preset, blendTime?: number): Promise<void>;
     setRendererSize(width: number, height: number, options?: { meshWidth?: number; meshHeight?: number; pixelRatio?: number; textureRatio?: number }): void;
     render(options: { audioLevels: AudioLevels; elapsedTime?: number }): void;

@@ -4,8 +4,8 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { FINGERPRINT, fingerprintOf, sameAudio, similarity } from '../src/utils/fingerprint.js';
-import { alternateCandidates, measureWith, startSongJobs } from '../src/utils/song-jobs.js';
-import { MIGRATIONS, SOURCE_COOLDOWN_MS, SongStore } from '../src/utils/song-store.js';
+import { agreeingGroup, alternateCandidates, measureWith, startSongJobs } from '../src/utils/song-jobs.js';
+import { MIGRATIONS, SONG_SCHEMA_VERSION, SOURCE_COOLDOWN_MS, SongStore } from '../src/utils/song-store.js';
 
 const HOUR = 60 * 60_000;
 const quiet = { log() {}, error() {}, warn() {} };
@@ -60,7 +60,7 @@ test('a version 1 store gains fingerprints, verified sources and aliases', async
   old.close();
   const songs = new SongStore(file, { logger: quiet });
   await songs.open(); t.after(() => songs.close());
-  assert.equal(songs.db.prepare('PRAGMA user_version').get().user_version, 2);
+  assert.equal(songs.db.prepare('PRAGMA user_version').get().user_version, SONG_SCHEMA_VERSION);
   assert.deepEqual(songs.songOf('https://www.youtube.com/watch?v=aaaaaaaaaaa').sources, [{ uri: 'https://www.youtube.com/watch?v=aaaaaaaaaaa', sourceName: 'youtube', verification: 'first' }]);
   assert.deepEqual(songs.fingerprintDue(), { id: 'song:old', identifier: 'aaaaaaaaaaa' });
 });
@@ -270,4 +270,73 @@ test('an upload first seen plainly is recognised as a Music song when it shows u
   songs.db.exec('UPDATE sources SET last_played_at = NULL');
   songs.addVerifiedSource('song:1', music, .98);
   assert.deepEqual(songs.playbackSources(lyrics.info.uri).map(source => source.identifier), ['musicSong01', 'lyricSong01']);
+});
+
+// ADR-0017: a song whose own upload was refused before it was ever measured.
+async function refusedSong(t, { music = true } = {}) {
+  const ctx = await store(t);
+  const topic = upload('Kf5pXDhx5Vc', 'End of Beginning', music ? 'Djo - Topic' : 'Djo', 159_000);
+  ctx.songs.record(topic);
+  ctx.songs.setFingerprint('song:1', null);
+  return { ...ctx, topic };
+}
+const djoUploads = {
+  xy3AcmW0lrQ: upload('xy3AcmW0lrQ', 'Djo - End Of Beginning (Official Audio)', 'Djo Music', 160_000),
+  oXSw8DGjf5E: upload('oXSw8DGjf5E', 'Djo - End of Beginning (Official Visualiser)', 'Djo Music', 160_000),
+  B3Z4XGAxJB0: upload('B3Z4XGAxJB0', 'Djo - End Of Beginning (Lyrics)', 'Dan Music', 160_000),
+  VfPdynN2FXw: upload('VfPdynN2FXw', 'Djo - End Of Beginning', 'Djo Music', 160_000),
+};
+const jobsFor = (t, songs, ids, prints = id => print(id)) => {
+  const jobs = startSongJobs({ songs }, { measure: async id => prints(id), search: async () => ({ loadType: 'search', tracks: ids.map(id => djoUploads[id]) }), intervalMs: 3_600_000, logger: quiet });
+  t.after(() => jobs.stop());
+  return jobs;
+};
+
+test('uploads that agree with each other stand in for a refused YouTube Music song', async t => {
+  const { songs, topic } = await refusedSong(t);
+  const jobs = jobsFor(t, songs, ['xy3AcmW0lrQ', 'oXSw8DGjf5E', 'B3Z4XGAxJB0']);
+  await jobs.tick(); await jobs.tick(); await jobs.tick();
+  const song = songs.songOf(topic.info.uri);
+  assert.deepEqual(song.sources.map(source => [source.uri.slice(-11), source.verification]).sort(),
+    [['B3Z4XGAxJB0', 'agreement'], ['Kf5pXDhx5Vc', 'first'], ['oXSw8DGjf5E', 'agreement'], ['xy3AcmW0lrQ', 'agreement']]);
+  assert.ok(songs.db.prepare('SELECT fingerprint FROM songs').get().fingerprint);
+  // The refused upload is cooling down; playback goes to the agreeing uploads.
+  songs.sourceResult(topic.info.uri, false);
+  assert.deepEqual(songs.playbackSources(topic.info.uri).map(source => source.identifier).sort(), ['B3Z4XGAxJB0', 'oXSw8DGjf5E', 'xy3AcmW0lrQ']);
+  assert.equal(songs.agreementDue(), null);
+});
+
+test('one measurable upload, or two that disagree, add nothing', async t => {
+  const { songs, topic } = await refusedSong(t);
+  // VfPdynN2FXw carries the demo's audio under the album title.
+  const jobs = jobsFor(t, songs, ['xy3AcmW0lrQ', 'VfPdynN2FXw'], id => (id === 'VfPdynN2FXw' ? print('VfPdynN2FXw') : print(id)));
+  await jobs.tick(); await jobs.tick(); await jobs.tick();
+  assert.equal(songs.songOf(topic.info.uri).sources.length, 1);
+  assert.equal(songs.db.prepare('SELECT fingerprint FROM songs').get().fingerprint, null);
+  assert.deepEqual(agreeingGroup([{ fingerprint: print('xy3AcmW0lrQ') }]), []);
+});
+
+test('without catalog evidence, a refused song gets no stand-ins', async t => {
+  const { songs } = await refusedSong(t, { music: false });
+  assert.equal(songs.agreementDue(), null);
+  songs.resolveLookup('song:1', [{ info: { identifier: 'sp1', uri: 'https://open.spotify.com/track/sp1', sourceName: 'spotify', title: 'End of Beginning', author: 'Djo', duration: 159_500 }, pluginInfo: {} }]);
+  assert.equal(songs.agreementDue().id, 'song:1');
+});
+
+test('a version 2 store keeps its sources on the way to version 3', async t => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'vybatron-songs-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const file = path.join(dir, 'songs.sqlite');
+  const { DatabaseSync } = await import('node:sqlite');
+  const old = new DatabaseSync(file);
+  old.exec(MIGRATIONS[0]); old.exec(MIGRATIONS[1]); old.exec('PRAGMA user_version = 2');
+  const at = Date.now();
+  old.prepare(`INSERT INTO songs (id, title, artist, duration, created_at, used_at, catalog_status) VALUES ('song:x', 'Song', 'A', 200000, ?, ?, 'pending')`).run(at, at);
+  old.prepare(`INSERT INTO refs VALUES ('https://www.youtube.com/watch?v=aaaaaaaaaaa', 'song:x', ?)`).run(at);
+  old.prepare(`INSERT INTO sources (uri, song_id, source_name, identifier, title, author, duration, verification, music, similarity, added_at, last_played_at)
+    VALUES ('https://www.youtube.com/watch?v=aaaaaaaaaaa', 'song:x', 'youtube', 'aaaaaaaaaaa', 'Song', 'A', 200000, 'audio', 1, .97, ?, ?)`).run(at, at);
+  old.close();
+  const songs = new SongStore(file, { logger: quiet }); await songs.open(); t.after(() => songs.close());
+  assert.equal(songs.db.prepare('PRAGMA user_version').get().user_version, 3);
+  assert.deepEqual({ ...songs.db.prepare('SELECT verification, music, similarity, last_played_at FROM sources').get() }, { verification: 'audio', music: 1, similarity: .97, last_played_at: at });
 });

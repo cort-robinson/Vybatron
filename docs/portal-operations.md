@@ -25,6 +25,10 @@ candidate-only files. `listening-state.sqlite` (history, activity, checkpoints,
 capped at 8 MiB) works the same way: the bot copies its contents into
 `library.json` at shutdown, so an older release keeps them after a rollback, and
 the next release adopts anything the older one changed (ADR-0009).
+`songs.sqlite` (songs and their sources, capped at 32 MiB, ADR-0017) is a cache
+of what played and its catalog links: rolling back quarantines it like stats, and
+losing it only loses links the bot rebuilds as songs play again. With every store
+at its cap the volume is about 61 MiB, inside the snapshot limit.
 Build images on the workstation or CI, then transfer the tested images. Avoid
 frontend builds on the production host while music and recovery probes are running.
 

@@ -79,6 +79,8 @@ export async function handleTrackStart(client, player, track) {
   void client.library?.recordHistory?.(player, track || player.queue?.current)?.catch(() => console.error('[Library] Could not save playback history.'));
   // Play statistics are batched and self-contained; they cannot throw here.
   client.playTracker?.started(player, track || player.queue?.current, { recovering: isPlaybackRecovering(player) });
+  // Songs and their sources (ADR-0017). Recorded only; it never throws.
+  client.songs?.record(track || player.queue?.current);
   client.lavalink?.playbackRecovery?.started(player);
   client.lavalink?.playbackWatchdog?.trackStarted(player);
   playbackFailures.delete(player);

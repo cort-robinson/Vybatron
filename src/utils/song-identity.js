@@ -113,3 +113,87 @@ export function referenceRank(reference = {}, { youtubeMusic = false } = {}) {
   if (/\b(?:video|lyrics?|visuali[sz]er)\b/.test(title)) rank -= 4;
   return rank;
 }
+
+// Recording identity (ADR-0017) is stricter than the song key: it removes only
+// what says how a recording was uploaded. Remasters, edits, clean versions and
+// mixes are other recordings, so their descriptors stay part of the title.
+const UPLOAD_WORD = new RegExp(`^(?:${[
+  'official', 'officiel', 'oficial', 'music', 'video', 'videoclip', 'clip', 'audio', 'lyrics?', 'letra', 'paroles',
+  'visuali[sz]er', 'hd', 'hq', 'uhd', '4k', '1080p', '720p', 'mv', 'm/v', 'explicit', 'uncensored',
+  'with', 'w/', 'on', 'screen', 'color', 'coded', 'full', 'premiere', 'new', 'and', '&', 'by', 'vevo', 'only', 'quality', 'high',
+].join('|')})$`, 'i');
+const UPLOAD_ANCHOR = /official|officiel|oficial|video|clip|audio|lyric|letra|paroles|visuali[sz]er|\bhd\b|\bhq\b|uhd|4k|1080p|720p|\bmv\b|m\/v|explicit|uncensored|premiere/i;
+const UPLOAD_TRAILING_ANCHOR = /official|video|lyric|audio|visuali[sz]er/i;
+// A dash part that is only a version ("Song - Remastered 2011", "Song - Live at X"),
+// never a title that starts with a version word ("Artist - Live Forever").
+// Matched against normalized text, so "Slowed + Reverb" reads "slowed reverb".
+const VERSION_ONLY = /^(?:(?:\d{4} )?remaster(?:ed)?(?: \d{4})?(?: (?:version|edition))?|live(?: (?:at|from|in|on) .+| version| \d{4})?|(?:radio|single|album|extended|edit)(?: (?:edit|version|mix))?|acoustic(?: version)?|instrumental|clean|mono|stereo|demo|unplugged|sped up|slowed(?: (?:and )?reverb)?|re ?recorded|.+ (?:remix|mix|version|edit))$/;
+// ADR-0017's normalization: NFKC, lower case, everything but letters and digits as spaces.
+const recordingText = value => String(value || '').normalize('NFKC').toLocaleLowerCase('en-US').replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+
+const isUpload = (content, anchor = UPLOAD_ANCHOR) => {
+  const text = fold(content).replace(/[|:,–—()[\]-]/g, ' ').replace(/\s+/g, ' ').trim();
+  return Boolean(text) && anchor.test(text) && text.split(' ').every(word => UPLOAD_WORD.test(word.replace(/[.!]+$/, '')));
+};
+
+// Like fold(), but accents stay: "Café" and "Cafe" are different titles.
+const lower = value => String(value || '').normalize('NFKC').toLocaleLowerCase('en-US')
+  .replace(/[’‘`´]/g, "'").replace(/[“”«»„]/g, '"').replace(/\s+/g, ' ').trim();
+
+function recordingTitle(value) {
+  let title = lower(value).split(/\s+\|\s+|\s+\/\/\s+/)[0];
+  title = title.replace(BRACKETS, (whole, ...groups) => {
+    const content = groups.slice(0, 4).find(group => group !== undefined) || '';
+    return isUpload(content) || FEATURE.test(fold(content)) ? ' ' : whole;
+  }).replace(TRAILING_FEATURE, '').replace(/\s+/g, ' ').trim();
+  const words = title.split(' ');
+  for (let start = 1; start < words.length; start++) {
+    if (isUpload(words.slice(start).join(' '), UPLOAD_TRAILING_ANCHOR)) { title = words.slice(0, start).join(' '); break; }
+  }
+  return title.replace(/^["']+|["']+$/g, '').trim();
+}
+
+// The credited artist and the title without upload descriptors.
+function recordingParts(reference = {}) {
+  const rawTitle = String(reference.title || '');
+  const rawAuthor = String(reference.author || '');
+  let artist = creditedArtist(rawAuthor);
+  let title = rawTitle;
+  // Topic uploads and catalog entries are "Title" by "Artist"; in their titles a
+  // dash part is a version. Other uploads are often "Artist - Title".
+  if (!TOPIC.test(rawAuthor) && reference.sourceName !== 'spotify') {
+    const [left, ...rest] = rawTitle.split(DASH);
+    const right = rest.join(' - ');
+    if (rest.length && compact(primaryArtist(left)) === compact(primaryArtist(artist))) title = right;
+    else if (rest.length && isUpload(right)) title = left;
+    else if (rest.length && compact(primaryArtist(right)) === compact(artist)) title = left;
+    else if (rest.length && VERSION_ONLY.test(recordingText(recordingTitle(right)))) title = rawTitle;
+    else if (rest.length) { artist = creditedArtist(left); title = right; }
+  }
+  return { artist, title: recordingTitle(title) };
+}
+
+/**
+ * The recording a reference names, by artist and title only. Equal keys are a
+ * candidate for the same recording, never proof: ADR-0017 also needs matching
+ * lengths, and an audio match before two sources become one song.
+ * @returns {string|null} null when the title has nothing left to compare
+ */
+export function recordingKey(reference) {
+  const { artist, title } = recordingParts(reference);
+  const artistKey = recordingText(primaryArtist(artist)).slice(0, 120);
+  const titleKey = recordingText(title);
+  return artistKey && titleKey ? `${artistKey}|${titleKey}`.slice(0, 200) : null;
+}
+
+/** A catalog search for the recording: "artist title", without upload descriptors. */
+export function recordingQuery(reference) {
+  const { artist, title } = recordingParts(reference);
+  return `${primaryArtist(artist)} ${title}`.replace(/\s+/g, ' ').trim().slice(0, 200);
+}
+
+/** ADR-0017's length rule: within 3 seconds or 2% of the shorter, whichever is smaller. */
+export function sameLength(a, b) {
+  if (!(a > 0) || !(b > 0)) return false;
+  return Math.abs(a - b) <= Math.min(3000, Math.min(a, b) * 0.02);
+}

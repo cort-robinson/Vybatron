@@ -99,3 +99,17 @@ test('the advertised address is the local end of a connection to Lavalink', asyn
   const unreachable = await relayFor(t, { advertise: async () => { throw new Error('Lavalink unreachable'); } });
   assert.equal(await unreachable.register('https://cdn.example/song'), null);
 });
+
+test('a closed or failed relay stops handing out links', async t => {
+  const errors = [];
+  const relay = await relayFor(t, { logger: { error: (message) => errors.push(message) } });
+  relay.server.emit('error', new Error('later failure'));
+  relay.server.emit('error', new Error('another failure'));
+  assert.equal(await relay.ready(), false);
+  assert.equal(await relay.register('https://cdn.example/song'), null);
+  assert.equal(errors.length, 1);
+  const closed = await relayFor(t);
+  closed.close();
+  assert.equal(await closed.ready(), false);
+  assert.equal(await closed.register('https://cdn.example/song'), null);
+});

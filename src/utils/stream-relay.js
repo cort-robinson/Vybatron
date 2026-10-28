@@ -66,19 +66,21 @@ export function createStreamRelay({ host = '127.0.0.1', port = 3020, fetch = glo
   server.headersTimeout = 5000;
   // Links are handed out only while the relay is listening. A taken port
   // turns the fallback off rather than sending Lavalink to another server.
+  let serving = true;
   const listening = new Promise((resolve) => {
     server.once('listening', () => resolve(true));
-    server.once('error', () => {
-      logger.error('[Relay] stream relay failed to listen; the TorBox fallback is off.');
+    server.on('error', () => {
+      if (serving) logger.error('[Relay] stream relay failed; the TorBox fallback is off.');
+      serving = false;
       resolve(false);
     });
-  });
+  }).then(ok => ok && serving);
   server.listen(port, host);
   server.unref();
 
   // The relay link for a real one, or null while the relay can't serve it.
   async function register(url) {
-    if (!await listening) return null;
+    if (!await listening || !serving) return null;
     const address = await advertise().catch(() => null);
     if (!address) return null;
     prune();
@@ -87,5 +89,6 @@ export function createStreamRelay({ host = '127.0.0.1', port = 3020, fetch = glo
     return `http://${address}:${server.address().port}/relay/${id}`;
   }
 
-  return { register, ready: () => listening, close: () => server.close(), server };
+  return { register, ready: async () => await listening && serving,
+    close: () => { serving = false; server.close(); }, server };
 }

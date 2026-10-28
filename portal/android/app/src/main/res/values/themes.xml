@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.Vybatron" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/portal_background</item>
+        <item name="android:colorBackground">@color/portal_background</item>
+    </style>
+</resources>

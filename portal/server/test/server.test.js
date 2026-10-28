@@ -715,7 +715,7 @@ test('Static serving blocks encoded/double-encoded traversal, hidden files, syml
   await fs.symlink(outsideDir, path.join(f.config.webDist, 'outside'), process.platform === 'win32' ? 'junction' : 'dir');
   assert.equal((await f.request('/outside/secret.js')).status, 404);
   const secured = await f.request('/');
-  assert.match(secured.headers['content-security-policy'], /media-src 'self'/); assert.match(secured.headers['content-security-policy'], /script-src 'self'; style-src/); assert.doesNotMatch(secured.headers['content-security-policy'], /youtube|frame-src/); assert.equal(secured.headers['x-frame-options'], 'DENY');
+  assert.match(secured.headers['content-security-policy'], /media-src 'self'/); assert.match(secured.headers['content-security-policy'], /script-src 'self' 'wasm-unsafe-eval'; style-src/); assert.doesNotMatch(secured.headers['content-security-policy'], /'unsafe-eval'/); assert.doesNotMatch(secured.headers['content-security-policy'], /youtube|frame-src/); assert.equal(secured.headers['x-frame-options'], 'DENY');
   assert.equal(secured.headers['access-control-allow-origin'], undefined);
 });
 

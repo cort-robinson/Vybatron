@@ -2014,10 +2014,11 @@ function fakePlayers(f) {
       current: null, queue: [], history: [], playhead: { positionMs: 0, at: 0, playing: false }, volume: 100, repeat: 'off', updatedAt: 0 }, devices: [] });
     return entries.get(actor);
   };
-  f.state.players = (res, call) => {
+  f.state.players = async (res, call) => {
     const [, actor, resource] = /^\/v1\/users\/(\d+)\/(player|devices)$/.exec(call.path);
     const own = entry(actor); const body = call.body; const player = own.player;
     if (!body) { reply(res, 200, own); return; }
+    if (body.op === 'forgetSession' && f.state.forgetFailures > 0) { f.state.forgetFailures--; reply(res, 503, { error: { code: 'unavailable' } }); return; }
     assert.equal(resource, ['register', 'rename', 'forget', 'forgetSession'].includes(body.op) ? 'devices' : 'player');
     if (body.op === 'register') own.devices = [...own.devices.filter(device => device.deviceId !== body.deviceId), { deviceId: body.deviceId, name: body.name, kind: body.kind, lastSeen: 1, sessionRef: body.sessionRef }];
     if (body.op === 'forgetSession') own.devices = own.devices.filter(device => device.sessionRef !== body.sessionRef);
@@ -2029,7 +2030,10 @@ function fakePlayers(f) {
     }
     if (body.op === 'add') { reply(res, 400, { error: { code: 'queue_full', message: 'SECRET bot wording' } }); return; }
     own.player = { ...own.player, updatedAt: player.updatedAt + 1 };
-    reply(res, 200, { player: own.player, devices: own.devices, ...(body.op === 'adopt' && { dropped: 3 }) });
+    // Answered as the store saw it, after any hold a test puts on it.
+    const answer = { player: own.player, devices: [...own.devices], ...(body.op === 'adopt' && { dropped: 3 }) };
+    await f.state.holdPlayers?.(call);
+    reply(res, 200, answer);
   };
   return entries;
 }
@@ -2175,4 +2179,34 @@ test('Signing in over a session closes its listener streams and forgets its devi
   await until(() => userCalls(f).some(call => call.body?.op === 'forgetSession'));
   const forget = userCalls(f).find(call => call.body?.op === 'forgetSession');
   assert.equal(forget.path, `/v1/users/${actorId}/devices`, 'the previous session’s own listener'); assert.equal(forget.body.sessionRef, sessionRef);
+});
+
+test('A device list answered after a newer one never replaces it', { timeout: 5000 }, async t => {
+  const f = await fixture(t); fakePlayers(f); const listener = await f.login(); const second = await f.login();
+  let release; const held = new Promise(resolve => { release = resolve; });
+  f.state.holdPlayers = call => call.body?.deviceId === phoneId ? held : null;
+  const phonePending = listenerStream(f, listener);
+  await until(() => userCalls(f).some(call => call.body?.deviceId === phoneId));
+  const laptop = await listenerStream(f, second, { deviceId: laptopId }); t.after(() => laptop.close());
+  await until(() => playerEvents(laptop).length === 1);
+  assert.deepEqual(playerEvents(laptop)[0].devices.map(device => device.deviceId), [phoneId, laptopId]);
+  release();
+  const phone = await phonePending; t.after(() => phone.close());
+  await until(() => playerEvents(laptop).length === 2 && playerEvents(phone).length === 1);
+  for (const live of [laptop, phone]) {
+    assert.deepEqual(playerEvents(live).at(-1).devices.map(device => [device.deviceId, device.connected]), [[phoneId, true], [laptopId, true]]);
+  }
+});
+
+test('Sign-out device cleanup is retried while the bot is unavailable', { timeout: 5000 }, async t => {
+  const f = await fixture(t, { limits: { forgetRetryMs: 20 } }); const entries = fakePlayers(f); const listener = await f.login();
+  const live = await listenerStream(f, listener); t.after(() => live.close());
+  await until(() => playerEvents(live).length === 1);
+  f.state.forgetFailures = 2;
+  const logout = await f.request('/auth/logout', { method: 'POST', headers: { Cookie: listener.cookie, Origin: origin, 'X-CSRF-Token': listener.csrf } });
+  assert.equal(logout.status, 200);
+  await until(() => userCalls(f).filter(call => call.body?.op === 'forgetSession').length === 3);
+  await until(() => entries.get(actorId).devices.length === 0);
+  const refs = new Set(userCalls(f).filter(call => call.body?.op === 'forgetSession').map(call => call.body.sessionRef));
+  assert.equal(refs.size, 1);
 });

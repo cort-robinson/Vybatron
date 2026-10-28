@@ -32,13 +32,13 @@ test('the bridge serves each listener their own player and devices', async t => 
   const other = await f.read('201');
   assert.equal(other.body.player.current, null); assert.deepEqual(other.body.devices, []);
   assert.equal((await f.player({ op: 'activate', deviceId: phone }, '201')).body.error.code, 'unknown_device');
-  assert.equal((await f.player({ op: 'report', deviceId: phone, generation: 1, volume: 5 }, '201')).body.error.code, 'replaced');
+  assert.equal((await f.player({ op: 'report', deviceId: phone, generation: 1, seq: 1, volume: 5 }, '201')).body.error.code, 'replaced');
   assert.equal((await f.read()).body.player.volume, 100);
 
   // Refusals carry the current player.
   const stale = await f.player({ op: 'clear', expectedRevision: 0 });
   assert.equal(stale.status, 409); assert.equal(stale.body.error.code, 'stale'); assert.equal(stale.body.player.revision, 1);
-  const replaced = await f.player({ op: 'report', deviceId: phone, generation: 0, volume: 5 });
+  const replaced = await f.player({ op: 'report', deviceId: phone, generation: 0, seq: 1, volume: 5 });
   assert.equal(replaced.status, 409); assert.equal(replaced.body.error.code, 'replaced'); assert.equal(replaced.body.player.generation, 1);
   assert.equal((await f.player({ op: 'dance' })).status, 400);
   assert.equal((await f.devices({ op: 'activate', deviceId: phone })).status, 400, 'device operations and player operations are separate');

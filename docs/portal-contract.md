@@ -291,7 +291,8 @@ device the player is paused. `updatedAt` strictly increases with every change.
   name: string<=40, kind: 'browser'|'android'|'tv', lastSeen: number, connected: boolean,
   active: boolean }`: at most 10 per listener, the least recently seen forgotten first, and
 any unseen for 30 days. `connected` means the device has a listener stream open to this portal.
-`PlayerView = { player: Player, devices: Device[] }`.
+Every change to the player or the device list advances `updatedAt`, which versions the
+whole PlayerView. `PlayerView = { player: Player, devices: Device[] }`.
 
 - GET `/api/me/time` -> `{now:number}`, the portal's clock in ms for round-trip clock sync.
   No query.
@@ -314,11 +315,14 @@ any unseen for 30 days. `connected` means the device has a listener stream open 
     {expectedRevision}`, `play {expectedRevision, tracks: PlayerTrack[1-50], startIndex,
     guildId?}` (the list replaces the queue from `startIndex`; send the rest with `add`),
     `skipTo {expectedRevision, entryId}` (the songs before it are skipped).
-  - From the active device: `report {deviceId, generation, advance?: {from: entryId|null,
-    to: entryId|null, track?: PlayerTrack}, playhead?: {positionMs, at, playing}, volume?,
-    repeat?}`. `at` is server time. An advance moves `from` to history and makes `to` current
-    wherever it is; one already applied is a no-op, so offline advances are sent in order on
-    reconnecting. A `to` no longer in the queue needs `track`. Report every song change, play,
+  - From the active device: `report {deviceId, generation, seq, advance?: {from: entryId|null,
+    to: entryId|null, track?: PlayerTrack}, playhead?: {entryId: entryId|null, positionMs, at,
+    playing}, volume?, repeat?}`. `seq` numbers the device's reports from 1 in each generation; a
+    report at or below the last one applied changes nothing, so offline reports are sent again in
+    order on reconnecting. `at` is server time; a playhead naming a song that isn't current (after
+    the report's advance) is ignored. An advance makes `to` current wherever it is: from the queue
+    (`from` goes to history) or from history (going back: `from` waits at the front of the
+    queue). A `to` in neither needs `track`. Report every song change, play,
     pause and seek, and the position every 15 s while playing.
     `deactivate {deviceId, generation}` pauses and leaves no active device.
   - `activate {deviceId, guildId?}`: a registered device becomes the active one, generation + 1
@@ -486,8 +490,10 @@ browser access or CORS. Portal sets the trusted session's actorId itself.
   (the audio route's check). `sessionRef` is a hash the portal derives from the session key; it
   never leaves the store. Each change is one transaction in the library's write queue, in the
   listening-state store's `players` and `devices` tables (not mirrored into `library.json`;
-  players together are capped at 2 MiB, least recently updated shed first, and deleted after
-  90 days unused). Refusals answer `{error, player?}` with the codes above.
+  players and devices together are capped at 2 MiB, least recently updated players shed first,
+  devices at 2,000 overall, least recently seen forgotten first, and players are deleted after
+  90 days unused). Forgetting or pruning a device releases the player it played.
+  Sign-out cleanup the bot can't take yet is retried by the portal with backoff. Refusals answer `{error, player?}` with the codes above.
 - GET `/health` (still authenticated) -> `{ready:boolean}`.
 - GET `/v1/changes?instance=...&after=...` -> `{instanceId:string,sequence:number,reset:boolean,guildIds:string[],sequences:number[]}`.
   Private wake-up long poll (held up to 20 s). Carries guild IDs only, never

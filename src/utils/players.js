@@ -1,11 +1,12 @@
 import { randomBytes, randomInt } from 'node:crypto';
+import { DEVICE_RETENTION_MS } from './listening-state.js';
 
 // Each listener's one player, shared by their devices (ADR-0018). The store
 // owns the queue by entry and checks every edit against the player's revision;
 // the active device owns the playhead, and its reports are fenced by the
 // generation it plays under. Every change is one transaction in the library's
 // write queue. Players live in the listening-state store, not library.json.
-export const PLAYER_LIMITS = Object.freeze({ queue: 500, history: 50, bytes: 256 * 1024, totalBytes: 2 * 1024 * 1024, batch: 50, devices: 10 });
+export const PLAYER_LIMITS = Object.freeze({ queue: 500, history: 50, bytes: 256 * 1024, totalBytes: 2 * 1024 * 1024, batch: 50, devices: 10, allDevices: 2000 });
 export const DEVICE_KINDS = Object.freeze(['browser', 'android', 'tv']);
 export const REPEAT_MODES = Object.freeze(['off', 'track', 'queue']);
 export const EDIT_OPS = Object.freeze(['add', 'remove', 'move', 'clear', 'shuffle', 'play', 'skipTo']);
@@ -63,7 +64,7 @@ function playerTracks(value, min = 1) {
 
 export function emptyPlayer() {
   return { guildId: null, revision: 0, generation: 0, generationAt: 0, activeDeviceId: null, playbackVersion: 0,
-    current: null, queue: [], history: [], playhead: { positionMs: 0, at: 0, playing: false }, volume: 100, repeat: 'off', updatedAt: 0 };
+    current: null, queue: [], history: [], playhead: { positionMs: 0, at: 0, playing: false }, volume: 100, repeat: 'off', reportSeq: 0, updatedAt: 0 };
 }
 
 /** Where the playhead is at server time `now`. */
@@ -196,11 +197,12 @@ export class SharedPlayers {
   /**
    * What the active device did: a song change, its playhead, volume or repeat.
    * Refused with `replaced` unless it comes from the active device under the
-   * current generation. An advance already applied is a no-op, so a device
-   * that played on while offline can send its advances again in order.
+   * current generation. `seq` numbers the device's reports within a generation:
+   * a report at or below the last one applied is a retry and changes nothing,
+   * so a device that played on while offline can send its reports again in order.
    */
-  async report(actorId, { deviceId, generation, advance, playhead, volume, repeat } = {}) {
-    if (!validDeviceId(deviceId) || !integer(generation, 0, Number.MAX_SAFE_INTEGER)
+  async report(actorId, { deviceId, generation, seq, advance, playhead, volume, repeat } = {}) {
+    if (!validDeviceId(deviceId) || !integer(generation, 0, Number.MAX_SAFE_INTEGER) || !integer(seq, 1, Number.MAX_SAFE_INTEGER)
       || (advance === undefined && playhead === undefined && volume === undefined && repeat === undefined)) throw invalid();
     let to = null, track = null;
     if (advance !== undefined) {
@@ -208,34 +210,38 @@ export class SharedPlayers {
       to = advance.to;
       if (advance.track !== undefined && !(track = playerTrack(advance.track))) throw invalid();
     }
-    if (playhead !== undefined && (!playhead || !integer(playhead.positionMs, 0, MAX_POSITION_MS) || !Number.isSafeInteger(playhead.at)
-      || Math.abs(playhead.at - this.now()) > CLOCK_SKEW_MS || typeof playhead.playing !== 'boolean')) throw invalid();
+    if (playhead !== undefined && (!playhead || !(playhead.entryId === null || validEntryId(playhead.entryId)) || !integer(playhead.positionMs, 0, MAX_POSITION_MS)
+      || !Number.isSafeInteger(playhead.at) || Math.abs(playhead.at - this.now()) > CLOCK_SKEW_MS || typeof playhead.playing !== 'boolean')) throw invalid();
     if ((volume !== undefined && !integer(volume, 0, 100)) || (repeat !== undefined && !REPEAT_MODES.includes(repeat))) throw invalid();
     return this.update(actorId, (player, now, stored) => {
       if (generation !== player.generation || deviceId !== player.activeDeviceId) throw new PlayerError(409, 'replaced', 'Another device is playing now.', stored);
-      const applied = to === null ? !player.current : player.current?.entryId === to || indexOf(player.history, to) >= 0;
-      if (advance !== undefined && !applied) {
-        let next = null;
+      if (seq <= (player.reportSeq ?? 0)) return;
+      player.reportSeq = seq;
+      if (advance !== undefined && to !== (player.current?.entryId ?? null)) {
+        let next = null, back = false;
         if (to !== null) {
-          const at = indexOf(player.queue, to);
-          // A song removed meanwhile still becomes current: it is what's playing.
+          let at = indexOf(player.queue, to);
           if (at >= 0) [next] = player.queue.splice(at, 1);
+          // Previous: a played song comes back from history.
+          else if ((at = indexOf(player.history, to)) >= 0) { [next] = player.history.splice(at, 1); back = true; }
+          // A song removed meanwhile still becomes current: it is what's playing.
           else if (track) next = { entryId: to, track };
           else throw unknownEntry();
         }
         const done = player.current;
-        if (done?.entryId === advance.from) {
+        if (done && !back && done.entryId === advance.from) {
           retire(player, done);
           if (player.repeat === 'queue' && player.queue.length < PLAYER_LIMITS.queue) player.queue.push({ entryId: newEntryId(), track: done.track });
         } else if (done) {
-          // An edit put a song in place that this device never played: it waits next.
+          // Going back, or an edit put a song in place that this device never played: it waits next.
           player.queue.unshift(done);
           player.queue.length = Math.min(player.queue.length, PLAYER_LIMITS.queue);
         }
         setCurrent(player, next, now, true);
         player.revision++;
       }
-      if (playhead) {
+      // A playhead names its song, so one about a song no longer current changes nothing.
+      if (playhead && playhead.entryId === (player.current?.entryId ?? null)) {
         // Play, pause and seek change the playback version; a periodic report doesn't.
         if (playhead.playing !== player.playhead.playing || Math.abs(playhead.positionMs - playheadPosition(player, playhead.at)) > SEEK_MS) player.playbackVersion++;
         player.playhead = { positionMs: playhead.positionMs, at: playhead.at, playing: playhead.playing && Boolean(player.current) };
@@ -252,7 +258,7 @@ export class SharedPlayers {
       if (!this.state.devices(actorId).some(device => device.deviceId === deviceId)) throw unknownDevice();
       if (guildId) player.guildId = guildId;
       player.playhead = { positionMs: playheadPosition(player, now), at: now, playing: player.playhead.playing };
-      player.generation++; player.generationAt = now; player.activeDeviceId = deviceId;
+      player.generation++; player.generationAt = now; player.activeDeviceId = deviceId; player.reportSeq = 0;
       player.playbackVersion++;
     });
   }
@@ -326,16 +332,29 @@ export class SharedPlayers {
     });
   }
 
-  // Device changes, in one transaction with pausing a player whose active device was forgotten.
+  // Pauses, with no active device, every player whose active device is gone.
+  releaseOrphans() {
+    for (const actorId of this.state.orphanedPlayers()) this.apply(actorId, (player, now) => { pause(player, now); player.activeDeviceId = null; });
+  }
+
+  // Device changes, in one transaction with releasing players whose active
+  // device went. The listener's player is saved too: its `updatedAt` versions
+  // the whole player-and-devices snapshot the portal keeps.
   devices(actorId, work) {
     if (!validActor(actorId)) return Promise.reject(invalid());
     return this.library.transact(() => this.state.transaction(() => {
       work(this.now());
-      const active = this.state.readPlayer(actorId)?.activeDeviceId;
-      if (active && !this.state.devices(actorId).some(device => device.deviceId === active)) {
-        this.apply(actorId, (player, now) => { pause(player, now); player.activeDeviceId = null; });
-      }
+      this.releaseOrphans();
+      this.apply(actorId, () => {});
       return this.read(actorId);
+    }));
+  }
+
+  /** Forget devices unseen for 30 days, releasing the players they played. */
+  prune() {
+    return this.library.transact(() => this.state.transaction(() => {
+      this.state.pruneDevices(this.now() - DEVICE_RETENTION_MS);
+      this.releaseOrphans();
     }));
   }
 
@@ -343,7 +362,7 @@ export class SharedPlayers {
   async register(actorId, { deviceId, name, kind, sessionRef } = {}) {
     const label = deviceName(name);
     if (!validDeviceId(deviceId) || !label || !DEVICE_KINDS.includes(kind) || typeof sessionRef !== 'string' || !/^[\w-]{1,64}$/.test(sessionRef)) throw invalid();
-    return this.devices(actorId, now => this.state.saveDevice(actorId, { deviceId, name: label, kind, sessionRef, lastSeen: now }, PLAYER_LIMITS.devices));
+    return this.devices(actorId, now => this.state.saveDevice(actorId, { deviceId, name: label, kind, sessionRef, lastSeen: now }, PLAYER_LIMITS.devices, PLAYER_LIMITS.allDevices));
   }
 
   async rename(actorId, { deviceId, name } = {}) {

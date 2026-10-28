@@ -108,7 +108,7 @@ test('a queue past 500 songs or 256 KiB is full', async t => {
   assert.ok(players.get(other).player.queue.length < 500);
 });
 
-test('advances move the song to history, are idempotent, and still make a removed song current', async t => {
+test('advances move the song to history, retries change nothing, and a removed song still becomes current', async t => {
   const { players, clock } = await fixture(t);
   await register(players);
   await players.edit(actor, { op: 'add', expectedRevision: 0, tracks: songs(4), position: 'end' });
@@ -117,25 +117,62 @@ test('advances move the song to history, are idempotent, and still make a remove
   const [a, b, c, d] = [player.current, ...player.queue].map(entry => entry.entryId);
   const report = body => players.report(actor, { deviceId: phone, generation, ...body });
 
-  ({ player } = await report({ advance: { from: a, to: b }, playhead: { positionMs: 0, at: clock.now, playing: true } }));
+  ({ player } = await report({ seq: 1, advance: { from: a, to: b }, playhead: { entryId: b, positionMs: 0, at: clock.now, playing: true } }));
   assert.equal(player.current.entryId, b); assert.deepEqual(player.history.map(entry => entry.entryId), [a]);
   assert.deepEqual(player.queue.map(entry => entry.entryId), [c, d]);
   const revision = player.revision; const version = player.playbackVersion;
-  ({ player } = await report({ advance: { from: a, to: b } }));
-  assert.equal(player.revision, revision, 'the same advance again changes nothing');
+  ({ player } = await report({ seq: 1, advance: { from: a, to: b } }));
+  assert.equal(player.revision, revision, 'the same report again changes nothing');
   assert.equal(player.playbackVersion, version);
+  await rejects(report({ advance: { from: a, to: b } }), 400, 'invalid_input');
 
   // A remote removed D while the device, offline, played C and then D.
   await players.edit(actor, { op: 'remove', expectedRevision: revision, entryId: d });
-  await report({ advance: { from: b, to: c } });
-  await rejects(report({ advance: { from: c, to: d } }), 400, 'unknown_entry');
-  ({ player } = await report({ advance: { from: c, to: d, track: song(3) } }));
+  await report({ seq: 2, advance: { from: b, to: c } });
+  await rejects(report({ seq: 3, advance: { from: c, to: d } }), 400, 'unknown_entry');
+  ({ player } = await report({ seq: 3, advance: { from: c, to: d, track: song(3) } }));
   assert.equal(player.current.entryId, d); assert.equal(player.current.track.id, 'song3');
   assert.deepEqual(player.history.map(entry => entry.entryId), [c, b, a]);
   // Re-sent after reconnecting: all already applied.
-  for (const [from, to] of [[a, b], [b, c], [c, d]]) assert.equal((await report({ advance: { from, to } })).player.current.entryId, d);
-  ({ player } = await report({ advance: { from: d, to: null } }));
+  for (const [seq, from, to] of [[1, a, b], [2, b, c], [3, c, d]]) assert.equal((await report({ seq, advance: { from, to } })).player.current.entryId, d);
+  ({ player } = await report({ seq: 4, advance: { from: d, to: null } }));
   assert.equal(player.current, null); assert.equal(player.playhead.playing, false);
+});
+
+test('going back to a played song brings it back from history and puts the current one next', async t => {
+  const { players, clock } = await fixture(t);
+  await register(players);
+  await players.edit(actor, { op: 'add', expectedRevision: 0, tracks: songs(3), position: 'end' });
+  let { player } = await players.activate(actor, { deviceId: phone });
+  const [a, b, c] = [player.current, ...player.queue].map(entry => entry.entryId);
+  const report = body => players.report(actor, { deviceId: phone, generation: player.generation, ...body });
+  await report({ seq: 1, advance: { from: a, to: b } });
+  ({ player } = await report({ seq: 2, advance: { from: b, to: a }, playhead: { entryId: a, positionMs: 0, at: clock.now, playing: true } }));
+  assert.equal(player.current.entryId, a);
+  assert.deepEqual(player.queue.map(entry => entry.entryId), [b, c]);
+  assert.deepEqual(player.history, []);
+  // And forward again.
+  ({ player } = await report({ seq: 3, advance: { from: a, to: b } }));
+  assert.equal(player.current.entryId, b); assert.deepEqual(player.history.map(entry => entry.entryId), [a]);
+});
+
+test('a retried or out-of-date report never touches a later song', async t => {
+  const { players, clock } = await fixture(t);
+  await register(players);
+  await players.edit(actor, { op: 'add', expectedRevision: 0, tracks: songs(3), position: 'end' });
+  let { player } = await players.activate(actor, { deviceId: phone });
+  const [a, b, c] = [player.current, ...player.queue].map(entry => entry.entryId);
+  const report = body => players.report(actor, { deviceId: phone, generation: player.generation, ...body });
+  await report({ seq: 1, advance: { from: a, to: b }, playhead: { entryId: b, positionMs: 0, at: clock.now, playing: true } });
+  clock.now += 1000;
+  ({ player } = await report({ seq: 2, advance: { from: b, to: c }, playhead: { entryId: c, positionMs: 0, at: clock.now, playing: false } }));
+  const settled = structuredClone(player.playhead);
+  // The first report again, with its old playhead: C keeps its own.
+  ({ player } = await report({ seq: 1, advance: { from: a, to: b }, playhead: { entryId: b, positionMs: 150_000, at: clock.now, playing: true } }));
+  assert.equal(player.current.entryId, c); assert.deepEqual(player.playhead, settled);
+  // A new report about a song no longer current changes no playhead either.
+  ({ player } = await report({ seq: 3, playhead: { entryId: b, positionMs: 150_000, at: clock.now, playing: true }, volume: 30 }));
+  assert.deepEqual(player.playhead, settled); assert.equal(player.volume, 30);
 });
 
 test('playhead reports change the playback version only on play, pause and seek', async t => {
@@ -143,7 +180,8 @@ test('playhead reports change the playback version only on play, pause and seek'
   await register(players);
   await players.edit(actor, { op: 'add', expectedRevision: 0, tracks: songs(2), position: 'end' });
   let { player } = await players.activate(actor, { deviceId: phone });
-  const report = playhead => players.report(actor, { deviceId: phone, generation: player.generation, playhead });
+  const entryId = player.current.entryId; let seq = 0;
+  const report = playhead => players.report(actor, { deviceId: phone, generation: player.generation, seq: ++seq, playhead: { entryId, ...playhead } });
   ({ player } = await report({ positionMs: 0, at: clock.now, playing: true }));
   const playing = player.playbackVersion;
   clock.now += 15_000;
@@ -153,7 +191,7 @@ test('playhead reports change the playback version only on play, pause and seek'
   assert.equal(player.playbackVersion, playing + 1, 'a seek');
   ({ player } = await report({ positionMs: 90_000, at: clock.now, playing: false }));
   assert.equal(player.playbackVersion, playing + 2, 'a pause');
-  ({ player } = await players.report(actor, { deviceId: phone, generation: player.generation, volume: 40, repeat: 'queue' }));
+  ({ player } = await players.report(actor, { deviceId: phone, generation: player.generation, seq: ++seq, volume: 40, repeat: 'queue' }));
   assert.equal(player.volume, 40); assert.equal(player.repeat, 'queue');
   await rejects(report({ positionMs: 0, at: clock.now - 3_600_000, playing: true }), 400, 'invalid_input');
 });
@@ -163,22 +201,24 @@ test('a newer generation fences reports from the device it replaced', async t =>
   await register(players); await register(players, laptop);
   await players.edit(actor, { op: 'add', expectedRevision: 0, tracks: songs(3), position: 'end' });
   let { player } = await players.activate(actor, { deviceId: phone });
-  const old = player.generation;
-  await players.report(actor, { deviceId: phone, generation: old, playhead: { positionMs: 10_000, at: clock.now, playing: true } });
+  const old = player.generation; const entryId = player.current.entryId;
+  await players.report(actor, { deviceId: phone, generation: old, seq: 5, playhead: { entryId, positionMs: 10_000, at: clock.now, playing: true } });
   clock.now += 5000;
   ({ player } = await players.activate(actor, { deviceId: laptop }));
   assert.equal(player.generation, old + 1); assert.equal(player.generationAt, clock.now); assert.equal(player.activeDeviceId, laptop);
   assert.deepEqual(player.playhead, { positionMs: 15_000, at: clock.now, playing: true }, 'the playhead carries on where it was');
-  await assert.rejects(players.report(actor, { deviceId: phone, generation: old, playhead: { positionMs: 20_000, at: clock.now, playing: true } }),
+  await assert.rejects(players.report(actor, { deviceId: phone, generation: old, seq: 6, playhead: { entryId, positionMs: 20_000, at: clock.now, playing: true } }),
     error => error.status === 409 && error.code === 'replaced' && error.player.activeDeviceId === laptop);
-  await rejects(players.report(actor, { deviceId: phone, generation: old + 1, volume: 10 }), 409, 'replaced');
+  await rejects(players.report(actor, { deviceId: phone, generation: old + 1, seq: 1, volume: 10 }), 409, 'replaced');
+  // The new generation's reports count from 1 again.
+  assert.equal((await players.report(actor, { deviceId: laptop, generation: old + 1, seq: 1, volume: 10 })).player.volume, 10);
   await rejects(players.deactivate(actor, { deviceId: phone, generation: old }), 409, 'replaced');
   await rejects(players.activate(actor, { deviceId: 'unregisteredunregister' }), 404, 'unknown_device');
 
   clock.now += 1000;
   ({ player } = await players.deactivate(actor, { deviceId: laptop, generation: old + 1 }));
   assert.equal(player.activeDeviceId, null); assert.deepEqual(player.playhead, { positionMs: 16_000, at: clock.now, playing: false });
-  await rejects(players.report(actor, { deviceId: laptop, generation: old + 1, volume: 10 }), 409, 'replaced');
+  await rejects(players.report(actor, { deviceId: laptop, generation: old + 1, seq: 2, volume: 10 }), 409, 'replaced');
 });
 
 test('controls apply to the stored player, which only plays with an active device', async t => {
@@ -251,8 +291,33 @@ test('devices: validated, at most ten, renamed, forgotten by ID or session, paus
   ({ player, devices } = await players.forget(actor, { deviceId: active }));
   assert.equal(devices.length, 9); assert.equal(player.activeDeviceId, null); assert.equal(player.playhead.playing, false);
   await register(players, laptop, actor, 'session-c');
-  ({ devices } = await players.forgetSession(actor, { sessionRef: 'session-b' }));
+  await players.activate(actor, { deviceId: devices[0].deviceId });
+  ({ player } = await players.control(actor, { action: 'play' }));
+  assert.equal(player.playhead.playing, true);
+  ({ player, devices } = await players.forgetSession(actor, { sessionRef: 'session-b' }));
   assert.deepEqual(devices.map(device => device.deviceId), [laptop]);
+  assert.equal(player.activeDeviceId, null, 'signing out the playing device releases the player');
+  assert.equal(player.playhead.playing, false);
+});
+
+test('devices are capped overall, and with players stay inside their 2 MiB budget', async t => {
+  const { players, library, clock } = await fixture(t);
+  const id = n => `d${String(n).padStart(21, '0')}`;
+  // The device the first listener plays on is the overall least recently seen.
+  await register(players, id(0), '1000', 'session-x');
+  await players.adopt('1000', { tracks: [song(1)] });
+  await players.activate('1000', { deviceId: id(0) });
+  await players.control('1000', { action: 'play' });
+  for (let n = 1; n <= PLAYER_LIMITS.allDevices; n++) {
+    clock.now += 1;
+    await players.register(String(1000 + Math.floor(n / 10)), { deviceId: id(n), name: 'n'.repeat(40), kind: 'browser', sessionRef: 's'.repeat(64) });
+  }
+  assert.equal(library.state.db.prepare('SELECT COUNT(*) AS devices FROM devices').get().devices, PLAYER_LIMITS.allDevices);
+  const { player, devices } = players.get('1000');
+  assert.equal(devices.some(device => device.deviceId === id(0)), false);
+  assert.equal(player.activeDeviceId, null, 'an evicted active device releases its player');
+  assert.equal(player.playhead.playing, false);
+  assert.ok(library.state.playerBytes() <= PLAYER_LIMITS.totalBytes);
 });
 
 test('players past 2 MiB shed the least recently updated, and prune forgets old players and devices', async t => {
@@ -270,13 +335,21 @@ test('players past 2 MiB shed the least recently updated, and prune forgets old 
   assert.equal(players.get(listeners[0]).player.revision, 0, 'the oldest player went first');
   assert.ok(players.get(listeners.at(-1)).player.queue.length > 0);
 
+  assert.ok(library.state.playerBytes() <= PLAYER_LIMITS.totalBytes);
+
   await register(players, phone, actor);
   await players.adopt(actor, { tracks: [song(1)] });
+  await players.activate(actor, { deviceId: phone });
+  assert.equal((await players.control(actor, { action: 'play' })).player.playhead.playing, true);
   clock.now += DEVICE_RETENTION_MS + 1;
   library.state.prune(clock.now);
+  assert.equal(players.get(actor).devices.length, 1, 'devices are pruned by the players, not the store');
+  await players.prune();
   assert.deepEqual(players.get(actor).devices, []);
+  assert.equal(players.get(actor).player.activeDeviceId, null, 'pruning the playing device releases its player');
+  assert.equal(players.get(actor).player.playhead.playing, false);
   assert.equal(players.get(actor).player.queue.length + Number(Boolean(players.get(actor).player.current)), 1, 'the player is kept');
-  clock.now += PLAYER_RETENTION_MS;
+  clock.now += PLAYER_RETENTION_MS + 1;
   library.state.prune(clock.now);
   assert.equal(players.get(actor).player.current, null);
 });

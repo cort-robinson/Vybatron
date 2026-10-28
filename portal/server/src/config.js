@@ -21,6 +21,8 @@ export const LIMITS = Object.freeze({
   // ADR-0018); the third per session covers a reconnect overlap or a second
   // page. 48 gzip streams at about half a megabyte each stay well inside memory.
   streams: 48, streamsPerSession: 3, streamLifetimeMs: 30 * 60_000,
+  // Sign-out device cleanups waiting for the bot: retried from 1 s, doubling.
+  forgetPending: 256, forgetAttempts: 8, forgetRetryMs: 1000,
   // A quiet stream resends the snapshot once the playback position strays this
   // far from where the page's clock puts it (a stall or a Lavalink correction).
   positionDriftMs: 2000,

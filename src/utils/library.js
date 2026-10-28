@@ -227,6 +227,7 @@ export class MusicLibrary {
     this.state.adopt(Object.entries(this.document.guilds).map(([id, guild]) => [id, mirrorOf(guild)]));
     if (this.state.durable && !this.state.meta('adopted')) this.state.meta('adopted', Date.now());
     this.state.prune();
+    await this.players.prune();
     this.measure();
     this.fitMirror();
   }
@@ -461,6 +462,7 @@ export class MusicLibrary {
   }
   maintain() {
     try { this.state.prune(); this.measure(); this.fitMirror(); } catch (error) { logEvent(this.logger, 'error', 'listening_state_prune_failed', error); }
+    void this.players.prune().catch(error => logEvent(this.logger, 'error', 'listening_state_prune_failed', error));
     // A store running from memory has only library.json to survive a restart.
     if (!this.state.durable) void this.mirror().catch(error => logEvent(this.logger, 'error', 'listening_state_mirror_failed', error));
   }

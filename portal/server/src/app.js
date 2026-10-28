@@ -382,18 +382,28 @@ export async function createPortalServer(config, testOptions = {}) {
   function publish(actorId, data) {
     if (!listenerStreams(actorId).length) { players.delete(actorId); return null; }
     const known = players.get(actorId);
-    if (data && known) players.set(actorId, { player: data.player.updatedAt >= known.player.updatedAt ? data.player : known.player, devices: data.devices ?? known.devices });
-    else if (data?.devices) players.set(actorId, data);
+    // The store's updatedAt versions the player and devices together, so a
+    // snapshot answered after a newer one changes neither.
+    if (data && (known ? data.player.updatedAt > known.player.updatedAt : data.devices)) players.set(actorId, { player: data.player, devices: data.devices ?? known.devices });
     if (!players.has(actorId)) return null;
     const view = playerView(actorId);
     const frame = `event:player\ndata:${JSON.stringify(view)}\n\n`;
     for (const stream of listenerStreams(actorId)) stream.send(frame, 'player');
     return view;
   }
-  // Signing out, or signing in again over a session, forgets that session's devices.
-  function forgetDevices(session) {
-    void transport.player(session.actorId, 'devices', { op: 'forgetSession', sessionRef: deviceSessionRef(session.key) })
-      .then(data => publish(session.actorId, playerData(data, limits.snapshotBytes))).catch(() => {});
+  // Signing out, or signing in again over a session, forgets that session's
+  // devices. While the bot is busy or away it is retried with backoff, for a
+  // bounded number of sessions and attempts; the bot releases a player one of them played.
+  const forgetting = new Map();
+  function forgetDevices(session) { forgetSessionDevices(session.actorId, deviceSessionRef(session.key), 0); }
+  function forgetSessionDevices(actorId, sessionRef, attempt) {
+    forgetting.delete(sessionRef);
+    void transport.player(actorId, 'devices', { op: 'forgetSession', sessionRef })
+      .then(data => publish(actorId, playerData(data, limits.snapshotBytes)), error => {
+        if (closing || !isRetryableReadError(error) || attempt + 1 >= limits.forgetAttempts || forgetting.size >= limits.forgetPending) return;
+        const timer = setTimeout(() => forgetSessionDevices(actorId, sessionRef, attempt + 1), Math.min(60_000, limits.forgetRetryMs * 2 ** attempt)); timer.unref();
+        forgetting.set(sessionRef, timer);
+      }).catch(() => {});
   }
 
   // The signed-in listener's own stream (ADR-0018): their player and devices,
@@ -803,6 +813,8 @@ export async function createPortalServer(config, testOptions = {}) {
     }),
     async close() {
       closing = true; feedController.abort(); for (const stream of streams) stream.close();
+      for (const timer of forgetting.values()) clearTimeout(timer);
+      forgetting.clear();
       transport.close();
       const stopped = new Promise(resolve => server.close(resolve)); server.closeAllConnections();
       await stopped; await following; await store.close(); pendingOAuth.clear();

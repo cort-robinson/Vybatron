@@ -142,6 +142,10 @@ export class ListeningState {
       deleteDevice: sql('DELETE FROM devices WHERE actor_id = ? AND device_id = ?'),
       sessionDevices: sql('SELECT device_id FROM devices WHERE actor_id = ? AND session_ref = ?'),
       evictDevices: sql('DELETE FROM devices WHERE actor_id = :actorId AND device_id IN (SELECT device_id FROM devices WHERE actor_id = :actorId ORDER BY last_seen DESC, device_id LIMIT -1 OFFSET :limit)'),
+      evictAllDevices: sql('DELETE FROM devices WHERE rowid IN (SELECT rowid FROM devices ORDER BY last_seen DESC, actor_id, device_id LIMIT -1 OFFSET ?)'),
+      deviceBytes: sql('SELECT COALESCE(SUM(length(CAST(actor_id AS BLOB)) + length(CAST(device_id AS BLOB)) + length(CAST(name AS BLOB)) + length(CAST(kind AS BLOB)) + length(CAST(session_ref AS BLOB)) + 8), 0) AS bytes FROM devices'),
+      orphanedPlayers: sql(`SELECT actor_id FROM players WHERE json_extract(player, '$.activeDeviceId') IS NOT NULL AND NOT EXISTS (
+        SELECT 1 FROM devices WHERE devices.actor_id = players.actor_id AND devices.device_id = json_extract(players.player, '$.activeDeviceId'))`),
     };
   }
 
@@ -250,20 +254,25 @@ export class ListeningState {
     return row ? JSON.parse(row.player) : null;
   }
 
-  // Players share a total budget: the least recently updated other players go first.
+  // Players and devices share one budget, so they never push history out of the
+  // store's size guard: the least recently updated other players go first.
   writePlayer(actorId, serialized, updatedAt, totalBytes) {
     this.statements.setPlayer.run(actorId, updatedAt, Buffer.byteLength(serialized), serialized);
-    while (this.statements.playerBytes.get().bytes > totalBytes && this.statements.shedPlayer.run(actorId).changes) { /* shed */ }
+    while (this.statements.playerBytes.get().bytes + this.statements.deviceBytes.get().bytes > totalBytes && this.statements.shedPlayer.run(actorId).changes) { /* shed */ }
   }
+  playerBytes() { return this.statements.playerBytes.get().bytes + this.statements.deviceBytes.get().bytes; }
+  orphanedPlayers() { return this.statements.orphanedPlayers.all().map(row => row.actor_id); }
+  pruneDevices(oldest) { this.db.prepare('DELETE FROM devices WHERE last_seen < ?').run(oldest); }
 
   devices(actorId) {
     return this.statements.devices.all(actorId).map(row => ({ deviceId: row.device_id, name: row.name, kind: row.kind, lastSeen: row.last_seen }));
   }
 
-  // Registering past the limit forgets the least recently seen.
-  saveDevice(actorId, { deviceId, name, kind, sessionRef, lastSeen }, limit) {
+  // Registering past either limit, per listener or overall, forgets the least recently seen.
+  saveDevice(actorId, { deviceId, name, kind, sessionRef, lastSeen }, limit, total) {
     this.statements.setDevice.run(actorId, deviceId, name, kind, sessionRef, lastSeen);
     this.statements.evictDevices.run({ actorId, limit });
+    this.statements.evictAllDevices.run(total);
   }
 
   renameDevice(actorId, deviceId, name) { return this.statements.renameDevice.run(name, actorId, deviceId).changes > 0; }
@@ -282,8 +291,8 @@ export class ListeningState {
         this.statements.trimHistory.run({ guildId, ...this.window('history', now) });
         this.statements.trimActivity.run({ guildId, ...this.window('activity', now) });
       }
+      // Devices are pruned by the players (SharedPlayers.prune), which releases what they played.
       this.db.prepare('DELETE FROM players WHERE updated_at < ?').run(now - PLAYER_RETENTION_MS);
-      this.db.prepare('DELETE FROM devices WHERE last_seen < ?').run(now - DEVICE_RETENTION_MS);
     });
     if (!this.durable) return;
     this.db.exec('PRAGMA incremental_vacuum');

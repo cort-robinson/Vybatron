@@ -6,14 +6,15 @@ import { signalFor, type Features, type Signal, type Source } from './signal';
 import { analysisFor } from './analysis';
 import { shaders, type ShaderId } from './shaders';
 import type { PresetId } from './presets';
+import { frameInterval } from './frameRate';
 
-// One visualizer on one canvas. Like the room (scene/index.ts) it draws at 30fps, at a fraction of
-// the canvas's CSS pixels, with no DOM reads between frames: the canvas size comes from a
-// ResizeObserver, the position from the last snapshot and the clock. It stops drawing altogether
-// when it can't be seen (offscreen, a hidden tab, under another modal) and once a paused or idle
-// song has eased into standby; reduced motion and a stilled sleeve get one composed frame. What
-// draws is a painter: the shader presets below, in a WebGL2 context of the canvas's own, or MilkDrop
-// (milkdrop.ts), whose code loads only once someone chooses it.
+// One visualizer on one canvas. It draws at the frame rate chosen in Settings (frameRate.ts, 30fps
+// unless changed), at a fraction of the canvas's CSS pixels, with no DOM reads between frames: the
+// canvas size comes from a ResizeObserver, the position from the last snapshot and the clock. It
+// stops drawing altogether when it can't be seen (offscreen, a hidden tab, under another modal) and
+// once a paused or idle song has eased into standby; reduced motion and a stilled sleeve get one
+// composed frame. What draws is a painter: the shader presets below, in a WebGL2 context of the
+// canvas's own, or MilkDrop (milkdrop.ts), whose code loads only once someone chooses it.
 export type View = {
   preset: PresetId; seed: string; playing: boolean; positionMs: number; at: number; palette: Palette;
   // The song's energy map, when it has one: its server and YouTube video. lagMs: how far what is
@@ -36,7 +37,8 @@ export type Moment = { f: Features; dt: number; time: number; drive: number; ms:
 // asks the engine for a frame when something it waited for arrives; lose gives up on the context.
 export type Painter = { resize: (width: number, height: number) => void; update: (view: View) => void; draw: (moment: Moment) => boolean; busy: () => boolean; next: () => void; stop: () => void };
 
-const FRAME = 1000 / 31;
+// A frame may land this early and still count: display refreshes jitter by a millisecond or two.
+const EARLY = 2;
 
 export function startVisualizer(canvas: HTMLCanvasElement, milkdrop: boolean, { fail, sourced, named }: Events): Visualizer | null {
   let painter: Painter | null = null; let stopped = false;
@@ -66,7 +68,10 @@ export function startVisualizer(canvas: HTMLCanvasElement, milkdrop: boolean, { 
   };
 
   let width = 0; let height = 0; let intersecting = true; let covered = false; let lost = false; let drawn = false; let sized = false;
-  let frame = 0; let last = 0; let dirty = true;
+  // due: when the next frame is wanted. It steps by the chosen interval rather than from each frame
+  // drawn, so a rate between the display's whole divisions (45 on a 60Hz screen) alternates frames
+  // and still averages out.
+  let frame = 0; let last = 0; let due = 0; let dirty = true;
   const visible = () => !!view && !!painter && width > 0 && height > 0 && intersecting && !covered && !lost && !document.hidden;
   const position = () => (view!.playing ? view!.positionMs + Math.max(0, Date.now() - view!.at) * view!.rate : view!.positionMs) - view!.lagMs;
   const halt = () => { cancelAnimationFrame(frame); frame = 0; last = 0; };
@@ -74,7 +79,10 @@ export function startVisualizer(canvas: HTMLCanvasElement, milkdrop: boolean, { 
   const tick = (now: number) => {
     frame = 0;
     if (!visible()) { last = 0; return; }
-    if (last && now - last < FRAME) { schedule(); return; }
+    const interval = frameInterval();
+    if (last && interval && now < due - EARLY) { schedule(); return; }
+    // Fallen a whole frame behind (a slow frame, a busy main thread): start the count again from now.
+    due = interval && last && now - due < interval ? due + interval : now + interval;
     const dt = last ? Math.min(.1, (now - last) / 1000) : 1 / 30; last = now;
     const ms = position(); const f = shown = signal!.features(ms, dt, view!.playing);
     // The scene slows to a stop as playback pauses, and picks up again as it resumes.

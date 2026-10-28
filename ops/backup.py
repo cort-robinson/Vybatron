@@ -26,7 +26,7 @@ from deploy import DeploymentError, LOCK, read, run, write
 
 LIBRARY, MANIFEST = 'library.json', '.backup-manifest.json'
 # Every durable file the bot keeps in bot-data (src/utils, src/operator-alerts.js).
-DATABASES = ('stats.sqlite', 'listening-state.sqlite')
+DATABASES = ('stats.sqlite', 'listening-state.sqlite', 'songs.sqlite')
 COPIED = (LIBRARY, 'operator-alerts.json', 'library.json.pre-listening-state.bak')
 LEGACY = re.compile(r'^library\.json\.v1\.[0-9a-f-]{36}\.bak$')
 NAME = re.compile(r'^bot-data-\d{8}T\d{6}Z$')

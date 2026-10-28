@@ -23,7 +23,7 @@ import { LIBRARY_LIMITS } from './utils/library.js';
 import { cancelSleepTimer } from './utils/sleep-timer.js';
 import { createTorbox } from './utils/torbox.js';
 import { createTorznab } from './utils/torznab.js';
-import { createStreamRelay } from './utils/stream-relay.js';
+import { addressToward, createStreamRelay } from './utils/stream-relay.js';
 
 export const IDLE_MS = 5 * 60 * 1000;
 // A short grace covers a listener's reconnect blip without holding an empty room open.
@@ -201,10 +201,16 @@ export function handlePlayerDestroy(client, player) {
 function torboxStreams() {
   if (!config.torbox.apiKey || !config.torznab.url) return null;
   const torbox = createTorbox({ apiKey: config.torbox.apiKey, search: createTorznab(config.torznab).search });
-  const relay = createStreamRelay(config.relay);
+  const relay = createStreamRelay({ ...config.relay,
+    advertise: config.relay.host === '0.0.0.0'
+      ? () => addressToward(config.lavalink.host, config.lavalink.port)
+      : async () => config.relay.host });
   return async (track, signal) => {
+    // Nothing is looked up (or added to TorBox) while the relay can't serve it.
+    if (!await relay.ready()) return null;
     const stream = await torbox.findStream(track, signal);
-    return stream && { ...stream, url: relay.register(stream.url) };
+    const url = stream && await relay.register(stream.url);
+    return url ? { ...stream, url } : null;
   };
 }
 

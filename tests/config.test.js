@@ -31,6 +31,7 @@ test('configuration rejects malformed endpoints, IDs, secrets, and resource limi
     { ...valid, torznab: { url: 'http://prowlarr:9696/1/api', apiKey: 'private input' } },
     { ...valid, relay: { host: 'private-input', port: 3020 } },
     { ...valid, relay: { host: '0.0.0.0', port: 0 } },
+    { ...valid, relay: { host: '::1', port: 3020 } },
   ];
   for (const cfg of invalid) {
     assert.throws(() => assertConfig(cfg), (error) => !error.message.includes('private-input'));

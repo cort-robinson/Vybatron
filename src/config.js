@@ -98,7 +98,8 @@ export function assertConfig(cfg = config) {
   if (cfg.torznab?.url && !isIndexerUrl(cfg.torznab.url)) throw new Error('Invalid TORZNAB_URL in environment');
   if (cfg.torznab?.apiKey && !/^[A-Za-z0-9_-]{1,128}$/.test(cfg.torznab.apiKey)) throw new Error('Invalid TORZNAB_API_KEY in environment');
   if (cfg.relay) {
-    if (!isIP(cfg.relay.host)) throw new Error('Invalid VYBERTRON_RELAY_HOST in environment');
+    // IPv4: the address goes into the link Lavalink fetches.
+    if (isIP(cfg.relay.host) !== 4) throw new Error('Invalid VYBERTRON_RELAY_HOST in environment');
     boundedInteger(cfg.relay.port, 'VYBERTRON_RELAY_PORT', 1, 65535);
   }
   if (cfg.portalOrigin && !isPortalOrigin(cfg.portalOrigin)) throw new Error('Invalid PORTAL_ORIGIN in environment');

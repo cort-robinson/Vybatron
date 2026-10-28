@@ -23,6 +23,7 @@ import { LIBRARY_LIMITS } from './utils/library.js';
 import { cancelSleepTimer } from './utils/sleep-timer.js';
 import { createTorbox } from './utils/torbox.js';
 import { createTorznab } from './utils/torznab.js';
+import { createStreamRelay } from './utils/stream-relay.js';
 
 export const IDLE_MS = 5 * 60 * 1000;
 // A short grace covers a listener's reconnect blip without holding an empty room open.
@@ -196,6 +197,17 @@ export function handlePlayerDestroy(client, player) {
   requestControllerEnd(client, player, 'Playback session ended.');
 }
 
+// Off unless both are configured. Lavalink only ever sees the relay's link.
+function torboxStreams() {
+  if (!config.torbox.apiKey || !config.torznab.url) return null;
+  const torbox = createTorbox({ apiKey: config.torbox.apiKey, search: createTorznab(config.torznab).search });
+  const relay = createStreamRelay(config.relay);
+  return async (track, signal) => {
+    const stream = await torbox.findStream(track, signal);
+    return stream && { ...stream, url: relay.register(stream.url) };
+  };
+}
+
 export function initLavalink(client) {
   const lavalink = new LavalinkManager({
     nodes: [
@@ -234,9 +246,7 @@ export function initLavalink(client) {
 
   const recovery = createPlaybackRecovery({
     manager: lavalink,
-    alternativeStream: config.torbox.apiKey && config.torznab.url
-      ? createTorbox({ apiKey: config.torbox.apiKey, search: createTorznab(config.torznab).search }).findStream
-      : null,
+    alternativeStream: torboxStreams(),
     onRecovering: (player, _track, details) => {
       clearQueueIdleTimer(player);
       clearTrackPresence(client, player);

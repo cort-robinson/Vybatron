@@ -32,8 +32,8 @@ lavalink:
       bandcamp: true
       twitch: false
       vimeo: false
-      # Plays TorBox links when YouTube fails. Listener queries can't reach it:
-      # validatePlaybackQuery admits only public catalog links.
+      # Plays TorBox audio through the bot's relay when YouTube fails. Listener
+      # queries can't reach it: validatePlaybackQuery admits only catalog links.
       http: true
       local: false
     bufferDurationMs: 400
@@ -99,12 +99,6 @@ plugins:
       albumLoadLimit: 6
 
 logging:
-  # Track URLs stay out of the logs: TorBox links are signed, and loads and
-  # player updates carry them in query strings, payloads and encoded tracks.
-  request:
-    includeQueryString: false
-    includePayload: false
   level:
     root: INFO
     lavalink: INFO
-    lavalink.server.player.AudioLoaderRestHandler: WARN

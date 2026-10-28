@@ -122,6 +122,8 @@ services:
       - TORBOX_API_KEY=${TORBOX_API_KEY:-}
       - TORZNAB_URL=${TORZNAB_URL:-}
       - TORZNAB_API_KEY=${TORZNAB_API_KEY:-}
+      # Lavalink fetches TorBox audio through the bot, so its key stays here.
+      - VYBERTRON_RELAY_HOST=0.0.0.0
     volumes:
       - bot-data:/app/data
     networks:

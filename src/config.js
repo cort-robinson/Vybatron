@@ -33,6 +33,8 @@ export function readConfig(environment = process.env) {
     // YouTube can't play, and TorBox streams it when it has it cached.
     torbox: { apiKey: environment.TORBOX_API_KEY || null },
     torznab: { url: environment.TORZNAB_URL || null, apiKey: environment.TORZNAB_API_KEY || null },
+    // Where Lavalink fetches TorBox audio through the bot (Compose: 0.0.0.0).
+    relay: { host: environment.VYBERTRON_RELAY_HOST || '127.0.0.1', port: integer(environment.VYBERTRON_RELAY_PORT, 3020) },
     lavalink: {
       host: environment.LAVALINK_HOST ?? 'localhost',
       port: integer(environment.LAVALINK_PORT, 2333),
@@ -95,6 +97,10 @@ export function assertConfig(cfg = config) {
   if (cfg.torbox?.apiKey && !/^[A-Za-z0-9-]{16,128}$/.test(cfg.torbox.apiKey)) throw new Error('Invalid TORBOX_API_KEY in environment');
   if (cfg.torznab?.url && !isIndexerUrl(cfg.torznab.url)) throw new Error('Invalid TORZNAB_URL in environment');
   if (cfg.torznab?.apiKey && !/^[A-Za-z0-9_-]{1,128}$/.test(cfg.torznab.apiKey)) throw new Error('Invalid TORZNAB_API_KEY in environment');
+  if (cfg.relay) {
+    if (!isIP(cfg.relay.host)) throw new Error('Invalid VYBERTRON_RELAY_HOST in environment');
+    boundedInteger(cfg.relay.port, 'VYBERTRON_RELAY_PORT', 1, 65535);
+  }
   if (cfg.portalOrigin && !isPortalOrigin(cfg.portalOrigin)) throw new Error('Invalid PORTAL_ORIGIN in environment');
   if (cfg.portalBridge?.token) {
     if (!/^[^\s\u0000]{32,512}$/.test(cfg.portalBridge.token)) throw new Error('Invalid PORTAL_BRIDGE_TOKEN in environment');

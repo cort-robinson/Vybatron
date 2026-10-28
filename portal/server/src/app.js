@@ -4,9 +4,10 @@ import { createHash } from 'node:crypto';
 import { promises as fs, constants as fsConstants } from 'node:fs';
 import { LIMITS, isLoopback } from './config.js';
 import { SessionStore, randomToken, tokenHash } from './store.js';
-import { Transport, changeCursor, isRetryableReadError } from './transport.js';
+import { PlayerRefusal, Transport, changeCursor, isRetryableReadError } from './transport.js';
 import { eventStream, sendJson } from './compression.js';
 import { validateCommand } from './commands.js';
+import { DEVICE_KINDS, DEVICE_REQUESTS, deviceName, deviceSessionRef, playerData, validDeviceId, validatePlayerRequest } from './player.js';
 import { COMPRESSIBLE, EntityTags, acceptedCodings, immutable, notModified, openVariant } from './static.js';
 import { timeRequests } from './timing.js';
 import { HttpError, RateLimiter, busy, invalid, unauthorized, unavailable, cookie, setCookie,
@@ -126,6 +127,10 @@ export async function createPortalServer(config, testOptions = {}) {
   // Production follows the bot's change feed; test servers opt in explicitly.
   const followChanges = Object.keys(testOptions).length ? testOptions.changeFeed === true : true;
   const feedController = new AbortController(); let feedLive = false; let following;
+  // Each listener's last known player and devices (ADR-0018), kept only while
+  // one of their devices has a listener stream open. Every change goes through
+  // this portal, which pushes it to all of that listener's streams.
+  const players = new Map();
 
   function sessionFor(req) {
     const token = cookie(req, SESSION_COOKIE); const session = store.get(token);
@@ -366,6 +371,113 @@ export async function createPortalServer(config, testOptions = {}) {
     } finally { reading = false; schedule(); }
   }
 
+  const listenerStreams = actorId => [...streams].filter(stream => stream.kind === 'me' && stream.ready && stream.actorId === actorId);
+  // Devices as a page shows them: whether each is connected here, and which one plays.
+  function playerView(actorId) {
+    const { player, devices } = players.get(actorId);
+    const connected = new Set(listenerStreams(actorId).map(stream => stream.deviceId));
+    return { player, devices: devices.map(device => ({ ...device, connected: connected.has(device.deviceId), active: device.deviceId === player.activeDeviceId })) };
+  }
+  // Keeps the newest player (writes can finish out of order) and sends it to the listener's streams.
+  function publish(actorId, data) {
+    if (!listenerStreams(actorId).length) { players.delete(actorId); return null; }
+    const known = players.get(actorId);
+    // The store's updatedAt versions the player and devices together, so a
+    // snapshot answered after a newer one changes neither.
+    if (data && (known ? data.player.updatedAt > known.player.updatedAt : data.devices)) players.set(actorId, { player: data.player, devices: data.devices ?? known.devices });
+    if (!players.has(actorId)) return null;
+    const view = playerView(actorId);
+    const frame = `event:player\ndata:${JSON.stringify(view)}\n\n`;
+    for (const stream of listenerStreams(actorId)) stream.send(frame, 'player');
+    return view;
+  }
+  // Signing out, or signing in again over a session, forgets that session's
+  // devices. While the bot is busy or away it is retried with backoff, for a
+  // bounded number of sessions and attempts; the bot releases a player one of them played.
+  const forgetting = new Map();
+  function forgetDevices(session) { forgetSessionDevices(session.actorId, deviceSessionRef(session.key), 0); }
+  function forgetSessionDevices(actorId, sessionRef, attempt) {
+    forgetting.delete(sessionRef);
+    void transport.player(actorId, 'devices', { op: 'forgetSession', sessionRef })
+      .then(data => publish(actorId, playerData(data, limits.snapshotBytes)), error => {
+        if (closing || !isRetryableReadError(error) || attempt + 1 >= limits.forgetAttempts || forgetting.size >= limits.forgetPending) return;
+        const timer = setTimeout(() => forgetSessionDevices(actorId, sessionRef, attempt + 1), Math.min(60_000, limits.forgetRetryMs * 2 ** attempt)); timer.unref();
+        forgetting.set(sessionRef, timer);
+      }).catch(() => {});
+  }
+
+  // The signed-in listener's own stream (ADR-0018): their player and devices,
+  // and controls relayed to this device while it plays. Nothing is polled:
+  // every change comes through this portal. It shares the guild streams'
+  // limits, heartbeats, rotation and drain deadline.
+  async function listenerEvents(req, res, token, session, signal, device) {
+    if (streams.size >= limits.streams || [...streams].filter(stream => stream.sessionKey === session.key).length >= limits.streamsPerSession) throw busy();
+    const record = { kind: 'me', sessionKey: session.key, actorId: session.actorId, deviceId: device.deviceId, ready: false, close: null, send: null, wake() {}, reschedule() {} };
+    streams.add(record);
+    let ended = false; let out = null; let flushing = false; let heartbeatTimer; let rotateTimer; let drainTimer;
+    const queue = [];
+    const close = () => {
+      if (ended) return;
+      ended = true; clearTimeout(heartbeatTimer); clearTimeout(rotateTimer); clearTimeout(drainTimer); streams.delete(record);
+      if (!res.writableEnded) { if (out) out.end(); else res.end(); }
+      // The listener's other devices see this one leave.
+      if (record.ready) { if (listenerStreams(record.actorId).length) publish(record.actorId); else players.delete(record.actorId); }
+    };
+    record.close = close;
+    res.once('close', close);
+    const live = () => {
+      if (ended || signal.aborted || closing) return false;
+      try { return Boolean(store.get(token)); } catch { return false; }
+    };
+    // Frames go out in order, each after a fresh session check. A slow reader
+    // keeps only the newest player; one that falls further behind is dropped.
+    const flush = async () => {
+      if (flushing || !out) return;
+      flushing = true;
+      try {
+        while (queue.length && !ended) {
+          if (!live()) { close(); return; }
+          const { frame, last } = queue.shift();
+          if (!out.write(frame) && !(await new Promise(resolve => {
+            const stop = out.onceDrained(() => { clearTimeout(drainTimer); resolve(true); });
+            drainTimer = setTimeout(() => { stop(); resolve(false); }, limits.drainMs); drainTimer.unref();
+          }))) { res.destroy(); close(); return; }
+          if (last) { close(); return; }
+        }
+      } finally { flushing = false; }
+    };
+    record.send = (frame, kind, last = false) => {
+      if (ended) return;
+      if (kind === 'player') for (let index = queue.length - 1; index >= 0; index--) if (queue[index].kind === 'player') queue.splice(index, 1);
+      if (queue.length >= 32) { res.destroy(); close(); return; }
+      queue.push({ frame, kind, last }); void flush();
+    };
+    const heartbeat = () => {
+      if (!live()) { close(); return; }
+      if (!queue.length) record.send(': heartbeat\n\n', 'heartbeat');
+      heartbeatTimer = setTimeout(heartbeat, limits.heartbeatMs); heartbeatTimer.unref();
+    };
+    try {
+      // Connecting registers the device, or tells the bot it was seen again.
+      const data = playerData(await transport.player(session.actorId, 'devices', { op: 'register', ...device, sessionRef: deviceSessionRef(session.key) }, signal), limits.snapshotBytes);
+      if (!store.get(token)) throw unauthorized();
+      if (ended) return;
+      out = eventStream(req, res);
+      res.writeHead(200, { 'Content-Type': 'text/event-stream; charset=utf-8', 'X-Accel-Buffering': 'no', Connection: 'keep-alive',
+        Vary: 'Accept-Encoding', ...(out.encoding && { 'Content-Encoding': out.encoding }) });
+      req.socket.setTimeout(0);
+      record.ready = true;
+      record.send('retry: 5000\n\n: connected\n\n', 'hello');
+      publish(session.actorId, data);
+      heartbeatTimer = setTimeout(heartbeat, limits.heartbeatMs); heartbeatTimer.unref();
+      // At the end of its lifetime the stream asks the device to open a new one at once.
+      rotateTimer = setTimeout(() => record.send('event:rotate\ndata:{}\n\n', 'rotate', true), limits.streamLifetimeMs); rotateTimer.unref();
+    } catch (error) {
+      ended = true; streams.delete(record); res.off('close', close);
+      throw error;
+    }
+  }
+
   async function followFeed() {
     let instance = ''; let after = ''; let failures = 0;
     const signal = feedController.signal;
@@ -413,7 +525,8 @@ export async function createPortalServer(config, testOptions = {}) {
       const { url, pathname } = parseUrl(req.url, config, limits);
       if (!['GET', 'HEAD', 'POST'].includes(req.method)) throw new HttpError(405, 'method_not_allowed', 'This HTTP method is not supported.');
       const commandRequest = req.method === 'POST' && /^\/api\/guilds\/\d{1,20}\/commands$/.test(pathname);
-      if (!commandRequest && (req.headers['transfer-encoding'] || Number(req.headers['content-length'] || 0) !== 0)) throw invalid();
+      const playerRequest = req.method === 'POST' && pathname === '/api/me/player';
+      if (!commandRequest && !playerRequest && (req.headers['transfer-encoding'] || Number(req.headers['content-length'] || 0) !== 0)) throw invalid();
       if (commandRequest) {
         // The contract uses one commands URL, so priority is known only after a
         // bounded body read. Authenticate first; these readers cannot consume
@@ -505,8 +618,10 @@ export async function createPortalServer(config, testOptions = {}) {
           const bootstrap = await transport.bridge('/v1/bootstrap', actorId, { signal: controller.signal });
           if (bootstrap.viewer?.id !== actorId || !Array.isArray(bootstrap.guilds)) throw unavailable();
           const previousToken = cookie(req, SESSION_COOKIE);
+          const previous = previousToken ? store.get(previousToken) : null;
           const created = await store.create(actorId, previousToken);
           if (previousToken) for (const stream of streams) if (stream.sessionKey === tokenHash(previousToken)) stream.close();
+          if (previous) forgetDevices(previous);
           res.writeHead(302, { Location: '/', 'Set-Cookie': [setCookie(OAUTH_COOKIE, '', 0), setCookie(SESSION_COOKIE, created.token, limits.sessionMs / 1000)] }); res.end(); return;
         }
         if (pathname === '/auth/logout' && req.method === 'POST') {
@@ -515,6 +630,7 @@ export async function createPortalServer(config, testOptions = {}) {
           limiter.check(`logout:${session.key}`, 30);
           await store.destroy(token);
           for (const stream of streams) if (stream.sessionKey === session.key) stream.close();
+          forgetDevices(session);
           res.setHeader('Set-Cookie', setCookie(SESSION_COOKIE, '', 0)); json(res, 200, { ok: true }); return;
         }
         anonymousBudget();
@@ -557,6 +673,47 @@ export async function createPortalServer(config, testOptions = {}) {
           if (!store.get(token)) throw unauthorized();
           if (result?.ok !== true || typeof result.enabled !== 'boolean') throw unavailable();
           json(res, 200, { ok: true, enabled: result.enabled }); return;
+        }
+        if (pathname === '/api/me/time' && req.method === 'GET') {
+          // Server time for a device's round-trip clock sync (ADR-0018).
+          queryOnly(url, []);
+          json(res, 200, { now: now() }); return;
+        }
+        if (pathname === '/api/me/events' && req.method === 'GET') {
+          queryOnly(url, ['device', 'kind', 'name', 'protocol']);
+          const device = { deviceId: url.searchParams.get('device'), kind: url.searchParams.get('kind'), name: deviceName(url.searchParams.get('name')) };
+          if (url.searchParams.get('protocol') !== '1' || !validDeviceId(device.deviceId) || !DEVICE_KINDS.includes(device.kind) || !device.name) throw invalid();
+          await listenerEvents(req, res, token, session, controller.signal, device); return;
+        }
+        if (pathname === '/api/me/player' && req.method === 'POST') {
+          // The listener's shared player: the checks of the guild command route.
+          queryOnly(url, []); checkCsrf(req, session);
+          limiter.check(`player:${session.key}`, 90);
+          const request = validatePlayerRequest(await readBody(req, limits.bodyBytes, limits.requestMs, controller.signal));
+          const actor = session.actorId;
+          // No await between this live-token check and a relay or bridge dispatch.
+          if (!store.get(token)) throw unauthorized();
+          const known = players.get(actor)?.player;
+          const targets = request.op === 'control' && known?.activeDeviceId ? listenerStreams(actor).filter(stream => stream.deviceId === known.activeDeviceId) : [];
+          if (targets.length) {
+            // The device that plays carries the control out and reports the result.
+            const frame = `event:command\ndata:${JSON.stringify({ action: request.action, ...(request.value !== undefined && { value: request.value }), generation: known.generation })}\n\n`;
+            for (const stream of targets) stream.send(frame, 'command');
+            json(res, 200, { ok: true, relayed: true }); return;
+          }
+          let data;
+          try { data = playerData(await transport.player(actor, DEVICE_REQUESTS.includes(request.op) ? 'devices' : 'player', request, controller.signal), limits.snapshotBytes); }
+          catch (error) {
+            if (!(error instanceof PlayerRefusal) || !error.data) throw error;
+            // Refused against a newer player: the device gets it to catch up, and so do the others.
+            const refused = playerData(error.data, limits.snapshotBytes); const { player } = refused;
+            publish(actor, refused);
+            if (!store.get(token)) throw unauthorized();
+            json(res, error.status, { error: { code: error.code, message: error.message }, player }); return;
+          }
+          const view = publish(actor, data) || { player: data.player, devices: data.devices.map(device => ({ ...device, connected: false, active: device.deviceId === data.player.activeDeviceId })) };
+          if (!store.get(token)) throw unauthorized();
+          await sendJson(req, res, 200, JSON.stringify({ ok: true, relayed: false, ...view, ...(data.dropped !== undefined && { dropped: data.dropped }) }), live); return;
         }
         const audio = /^\/api\/guilds\/(\d{1,20})\/audio\/([\w-]{11})$/.exec(pathname);
         if (audio && req.method === 'GET') {
@@ -656,6 +813,8 @@ export async function createPortalServer(config, testOptions = {}) {
     }),
     async close() {
       closing = true; feedController.abort(); for (const stream of streams) stream.close();
+      for (const timer of forgetting.values()) clearTimeout(timer);
+      forgetting.clear();
       transport.close();
       const stopped = new Promise(resolve => server.close(resolve)); server.closeAllConnections();
       await stopped; await following; await store.close(); pendingOAuth.clear();

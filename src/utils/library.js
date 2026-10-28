@@ -5,6 +5,7 @@ import { config } from '../config.js';
 import { plainText } from './presentation.js';
 import { attachSessionSnapshots } from './sessions.js';
 import { ListeningState, mirrorDigest } from './listening-state.js';
+import { SharedPlayers } from './players.js';
 import { logEvent } from '../runtime.js';
 
 export const LIBRARY_LIMITS = Object.freeze({ favorites: 1000, mixes: 25, mixTracks: 100, queue: 500, history: 100, activity: 200, bytes: 5 * 1024 * 1024, guilds: 1000, tasteOptOuts: 10_000 });
@@ -185,6 +186,8 @@ export class MusicLibrary {
     // size cap, as it did inside the document (ADR-0009).
     this.baseBytes = Buffer.byteLength(JSON.stringify(this.document)); this.mirrorBytes = new Map();
     this.documentDigests = new WeakMap();
+    // Each listener's shared player (ADR-0018): its own tables in the store, never mirrored.
+    this.players = new SharedPlayers(this, { now });
   }
   async open() {
     await this.io.mkdir(path.dirname(this.filePath), { recursive: true, mode: 0o700 });
@@ -224,6 +227,7 @@ export class MusicLibrary {
     this.state.adopt(Object.entries(this.document.guilds).map(([id, guild]) => [id, mirrorOf(guild)]));
     if (this.state.durable && !this.state.meta('adopted')) this.state.meta('adopted', Date.now());
     this.state.prune();
+    await this.players.prune();
     this.measure();
     this.fitMirror();
   }
@@ -458,6 +462,7 @@ export class MusicLibrary {
   }
   maintain() {
     try { this.state.prune(); this.measure(); this.fitMirror(); } catch (error) { logEvent(this.logger, 'error', 'listening_state_prune_failed', error); }
+    void this.players.prune().catch(error => logEvent(this.logger, 'error', 'listening_state_prune_failed', error));
     // A store running from memory has only library.json to survive a restart.
     if (!this.state.durable) void this.mirror().catch(error => logEvent(this.logger, 'error', 'listening_state_mirror_failed', error));
   }

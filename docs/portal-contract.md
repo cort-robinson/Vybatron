@@ -268,6 +268,81 @@ Unavailable stats return 503 `stats_unavailable`.
   pages open the next stream at once. Streams and JSON replies other than
   bootstrap are gzip/brotli compressed when the browser accepts it.
 
+### Shared player (ADR-0018)
+
+Each signed-in listener has one player shared by their devices
+([ADR-0018](adr/0018-your-player-follows-you-across-devices.md)). The bot's
+listening-state store keeps it; the portal relays controls to the device that
+plays and pushes every change to the listener's streams. Step 1: nothing in the
+pages uses these routes yet.
+
+`PlayerTrack = { id: string<=64, title: string<=200, author: string<=200, uri: https string<=512,
+  source: string<=40, durationMs: number, artworkUrl: https string<=512|null, isStream: boolean }`
+(a Track without `requestedBy`/`suggested`, which the portal drops).
+`Entry = { entryId: string (12 base64url characters, made by the store), track: PlayerTrack }`.
+`Player = { guildId: string|null, revision: number, generation: number, generationAt: number,
+  activeDeviceId: string|null, playbackVersion: number, current: Entry|null, queue: Entry[] (<=500),
+  history: Entry[] (<=50, newest first), playhead: { positionMs: number, at: number (server ms),
+  playing: boolean }, volume: 0-100, repeat: 'off'|'track'|'queue', updatedAt: number }`.
+`revision` changes with the current song, queue or history; `playbackVersion` with a song change,
+play, pause or seek; `generation` each time a device becomes the active one. Without an active
+device the player is paused. `updatedAt` strictly increases with every change.
+`Device = { deviceId: string (22 base64url characters, random, kept by the device),
+  name: string<=40, kind: 'browser'|'android'|'tv', lastSeen: number, connected: boolean,
+  active: boolean }`: at most 10 per listener, the least recently seen forgotten first, and
+any unseen for 30 days. `connected` means the device has a listener stream open to this portal.
+Every change to the player or the device list advances `updatedAt`, which versions the
+whole PlayerView. `PlayerView = { player: Player, devices: Device[] }`.
+
+- GET `/api/me/time` -> `{now:number}`, the portal's clock in ms for round-trip clock sync.
+  No query.
+- GET `/api/me/events?device=<deviceId>&kind=<kind>&name=<name>&protocol=1`: credentialed
+  same-origin SSE for the signed-in listener. Opening it registers the device (or marks it seen)
+  for this session. `event:player` carries PlayerView, at once and after every change by any of
+  the listener's devices. `event:command` carries `{action, value?, generation}`, a control
+  relayed to this device because it is the active one (actions as in `control` below); a
+  device ignores one whose generation isn't the one it plays under. Heartbeat comments and
+  `event:rotate` as on the server stream. It counts toward the same stream limits
+  (`streamsPerSession` 3). Sign-out and signing in over the session close it and forget the
+  devices that session registered.
+- POST `/api/me/player` body `{op, ...}` -> `{ok:true, relayed:false, player, devices[, dropped]}`
+  (PlayerView), or `{ok:true, relayed:true}` for a control sent to the active device.
+  Same-origin + CSRF + rate limits like commands; bodies within 16 KiB.
+  - Edits, against the revision the device saw: `add {expectedRevision, tracks: PlayerTrack[1-50],
+    position: 'next'|'end'|{after: entryId}, guildId?}` (to an empty player the first song
+    becomes current), `remove {expectedRevision, entryId}`, `move {expectedRevision, entryId,
+    before: entryId|null}` (null: to the end), `clear {expectedRevision}`, `shuffle
+    {expectedRevision}`, `play {expectedRevision, tracks: PlayerTrack[1-50], startIndex,
+    guildId?}` (the list replaces the queue from `startIndex`; send the rest with `add`),
+    `skipTo {expectedRevision, entryId}` (the songs before it are skipped).
+  - From the active device: `report {deviceId, generation, seq, advance?: {from: entryId|null,
+    to: entryId|null, track?: PlayerTrack}, playhead?: {entryId: entryId|null, positionMs, at,
+    playing}, volume?, repeat?}`. `seq` numbers the device's reports from 1 in each generation; a
+    report at or below the last one applied changes nothing, so offline reports are sent again in
+    order on reconnecting. `at` is server time; a playhead naming a song that isn't current (after
+    the report's advance) is ignored. An advance makes `to` current wherever it is: from the queue
+    (`from` goes to history) or from history (going back: `from` waits at the front of the
+    queue). A `to` in neither needs `track`. Report every song change, play,
+    pause and seek, and the position every 15 s while playing.
+    `deactivate {deviceId, generation}` pauses and leaves no active device.
+  - `activate {deviceId, guildId?}`: a registered device becomes the active one, generation + 1
+    from now, at the playhead's position (moved on if it was playing). A plain resume: the
+    previous device sees the new generation on its stream and stops.
+  - `control {action: 'play'|'pause'|'seek'|'next'|'previous'|'volume'|'repeat', value?}`
+    (`seek`: ms, `volume`: 0-100, `repeat`: mode; no value otherwise). Relayed to the active
+    device while it is connected here; otherwise applied to the stored player.
+  - `adopt {tracks?: PlayerTrack[0-50], current?: PlayerTrack|null, positionMs?, volume?, repeat?,
+    guildId?}`: a device's old `vybertron.local` deck, in batches. Songs join the end of the
+    queue; to an empty player the first becomes current with the deck's place, volume and
+    repeat. `dropped` counts songs past the bounds.
+  - Devices: `rename {deviceId, name}`, `forget {deviceId}`. Forgetting the active device
+    pauses the player.
+  - A `guildId` names the server the player plays through and requires membership there.
+  Errors: 409 `stale` (an edit against an old revision) and 409 `replaced` (a report or
+  `deactivate` from a device that is no longer the active one under that generation) carry
+  `player`, the player as it now is; 400 `queue_full` ("Your queue is full.": over 500 songs or
+  256 KiB), 400 `unknown_entry`, 404 `unknown_device`, 403 `membership_required`.
+
 Mutations require `X-CSRF-Token` from bootstrap and exact same-origin checks.
 Use HttpOnly/Secure/SameSite cookies and no-store API/auth responses. Do not
 cache private API data in service worker. Production rejects demo/test auth.
@@ -406,6 +481,19 @@ browser access or CORS. Portal sets the trusted session's actorId itself.
   (404 `analysis_unavailable` otherwise, remembered for 10 minutes), one song at a time
   (429 `busy` while another runs), in a worker thread ended after each song, and keeps 24
   results in an in-memory LRU. A request waits up to 5 s, then answers `pending`.
+- GET `/v1/users/:actorId/player` -> `{player, devices}` (Device without `connected`/`active`),
+  an empty player for a listener without one. POST `/v1/users/:actorId/player` body `{op, ...}`
+  (the public player operations except the device ones) and POST `/v1/users/:actorId/devices`
+  body `{op: 'register'|'rename'|'forget'|'forgetSession', ...}` (`register {deviceId, name,
+  kind, sessionRef}`, `forgetSession {sessionRef}`) -> `{player, devices[, dropped]}`. The actor
+  in the path is the session's; identity only, plus fresh membership of any `guildId` in the body
+  (the audio route's check). `sessionRef` is a hash the portal derives from the session key; it
+  never leaves the store. Each change is one transaction in the library's write queue, in the
+  listening-state store's `players` and `devices` tables (not mirrored into `library.json`;
+  players and devices together are capped at 2 MiB, least recently updated players shed first,
+  devices at 2,000 overall, least recently seen forgotten first, and players are deleted after
+  90 days unused). Forgetting or pruning a device releases the player it played.
+  Sign-out cleanup the bot can't take yet is retried by the portal with backoff. Refusals answer `{error, player?, devices?}` with the codes above; a conflict carries the complete snapshot.
 - GET `/health` (still authenticated) -> `{ready:boolean}`.
 - GET `/v1/changes?instance=...&after=...` -> `{instanceId:string,sequence:number,reset:boolean,guildIds:string[],sequences:number[]}`.
   Private wake-up long poll (held up to 20 s). Carries guild IDs only, never

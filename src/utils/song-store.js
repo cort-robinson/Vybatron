@@ -3,7 +3,7 @@ import { closeSync, mkdirSync, openSync } from 'node:fs';
 import path from 'node:path';
 import { logEvent } from '../runtime.js';
 import { trackReference } from './library.js';
-import { recordingKey, recordingQuery, sameLength } from './song-identity.js';
+import { isYouTubeMusicSong, recordingKey, recordingQuery, sameLength } from './song-identity.js';
 
 const HOUR = 60 * 60_000;
 const DAY = 24 * HOUR;
@@ -88,13 +88,15 @@ export const MIGRATIONS = [
     author TEXT NOT NULL,
     duration INTEGER NOT NULL,
     verification TEXT NOT NULL CHECK (verification IN ('first', 'audio')),
+    -- A YouTube Music song: a Topic upload, or a Music result naming the artist.
+    music INTEGER NOT NULL DEFAULT 0 CHECK (music IN (0, 1)),
     similarity REAL,
     added_at INTEGER NOT NULL,
     last_played_at INTEGER,
     last_failed_at INTEGER
   ) STRICT;
-  INSERT INTO sources_v2 (uri, song_id, source_name, identifier, title, author, duration, verification, added_at)
-    SELECT uri, song_id, source_name, identifier, title, author, duration, verification, added_at FROM sources;
+  INSERT INTO sources_v2 (uri, song_id, source_name, identifier, title, author, duration, verification, music, added_at)
+    SELECT uri, song_id, source_name, identifier, title, author, duration, verification, author LIKE '% - Topic', added_at FROM sources;
   DROP TABLE sources;
   ALTER TABLE sources_v2 RENAME TO sources;
   CREATE INDEX sources_song ON sources (song_id);
@@ -107,6 +109,7 @@ export const MIGRATIONS = [
 ];
 export const SONG_SCHEMA_VERSION = MIGRATIONS.length;
 
+const musicSong = track => (isYouTubeMusicSong(track) || / - Topic$/i.test(String((track?.info || track)?.author || ''))) ? 1 : 0;
 const validIsrc = value => typeof value === 'string' && /^[A-Z]{2}[A-Z0-9]{3}\d{7}$/i.test(value);
 const text = (value, maxLength) => (typeof value === 'string' && value.trim() ? value.trim().slice(0, maxLength) : null);
 const httpsUrl = value => { try { return new URL(value).protocol === 'https:' ? String(value).slice(0, 500) : null; } catch { return null; } };
@@ -213,8 +216,8 @@ export class SongStore {
         if (catalog) this.linkRow(id, catalog, now);
         this.db.prepare('INSERT INTO refs (uri, song_id, added_at) VALUES (?, ?, ?)').run(ref.uri, id, now);
         if (!CATALOGS.has(ref.sourceName)) {
-          this.db.prepare(`INSERT INTO sources (uri, song_id, source_name, identifier, title, author, duration, verification, added_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 'first', ?)`).run(ref.uri, id, ref.sourceName, ref.identifier, ref.title, ref.author, ref.duration, now);
+          this.db.prepare(`INSERT INTO sources (uri, song_id, source_name, identifier, title, author, duration, verification, music, added_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'first', ?, ?)`).run(ref.uri, id, ref.sourceName, ref.identifier, ref.title, ref.author, ref.duration, musicSong(track), now);
         }
         return id;
       });
@@ -347,9 +350,9 @@ export class SongStore {
         const known = this.db.prepare('SELECT 1 FROM sources WHERE uri = ?').get(ref.uri);
         if (!known && count >= this.limits.sources) return songId;
         this.db.prepare('INSERT OR IGNORE INTO refs (uri, song_id, added_at) VALUES (?, ?, ?)').run(ref.uri, songId, now);
-        this.db.prepare(`INSERT INTO sources (uri, song_id, source_name, identifier, title, author, duration, verification, similarity, added_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, 'audio', ?, ?) ON CONFLICT (uri) DO NOTHING`)
-          .run(ref.uri, songId, ref.sourceName, ref.identifier, ref.title, ref.author, ref.duration, similarity, now);
+        this.db.prepare(`INSERT INTO sources (uri, song_id, source_name, identifier, title, author, duration, verification, music, similarity, added_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, 'audio', ?, ?, ?) ON CONFLICT (uri) DO NOTHING`)
+          .run(ref.uri, songId, ref.sourceName, ref.identifier, ref.title, ref.author, ref.duration, musicSong(track), similarity, now);
         return songId;
       });
     } catch (error) { this.failure('songs_write_failed', error); return null; }
@@ -373,6 +376,9 @@ export class SongStore {
           gone.artwork_url, gone.catalog_duration, gone.linked_at, survivor);
     }
     this.db.prepare('DELETE FROM songs WHERE id = ?').run(merged);
+    // Within the source budget, keeping what played, then first sources and Music songs. URLs stay mapped.
+    this.db.prepare(`DELETE FROM sources WHERE uri IN (SELECT uri FROM sources WHERE song_id = ?
+      ORDER BY last_played_at IS NULL, last_played_at DESC, verification = 'first' DESC, music DESC, added_at, uri LIMIT -1 OFFSET ?)`).run(survivor, this.limits.sources);
     return survivor;
   }
 
@@ -387,7 +393,7 @@ export class SongStore {
     try {
       return this.db.prepare(`SELECT uri, source_name, identifier FROM sources WHERE song_id = (SELECT song_id FROM refs WHERE uri = ?)
           AND (last_failed_at IS NULL OR last_failed_at <= ? OR (last_played_at IS NOT NULL AND last_played_at > last_failed_at))
-        ORDER BY last_played_at IS NULL, last_played_at DESC, author LIKE '% - Topic' DESC, added_at, uri`)
+        ORDER BY last_played_at IS NULL, last_played_at DESC, music DESC, added_at, uri`)
         .all(uri, now - SOURCE_COOLDOWN_MS).map(row => ({ uri: row.uri, sourceName: row.source_name, identifier: row.identifier }));
     } catch (error) { this.failure('songs_read_failed', error); return []; }
   }

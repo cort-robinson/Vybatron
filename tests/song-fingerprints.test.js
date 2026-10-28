@@ -187,3 +187,70 @@ test('a failed search leaves the song to be checked again in six hours', async t
   advance(6 * HOUR);
   assert.equal(songs.alternatesDue().id, 'song:1');
 });
+
+test('a check that merges its song into an older one carries on as the older song', async t => {
+  const { songs, advance } = await store(t);
+  const older = upload('olderSong01', 'Djo - End Of Beginning (Official Audio)', 'Djo Music', 160_000);
+  songs.record(older); advance(1000);
+  const newer = upload('newerSong01', 'Djo - End of Beginning (Official Visualiser)', 'Djo Music', 160_000);
+  songs.record(newer);
+  songs.setFingerprint('song:2', print('xy3AcmW0lrQ'));
+  const lyrics = upload('lyricSong01', 'Djo - End Of Beginning (Lyrics)', 'Dan Music', 160_000);
+  const jobs = startSongJobs({ songs }, { measure: async () => print('xy3AcmW0lrQ'), search: async () => ({ loadType: 'search', tracks: [older, lyrics] }), intervalMs: 3_600_000, logger: quiet });
+  t.after(() => jobs.stop());
+  // song:1's fingerprint failed, so one tick checks song:2's alternates; a second would hide the bug.
+  songs.setFingerprint('song:1', null);
+  await jobs.tick();
+  const song = songs.songOf(newer.info.uri);
+  assert.equal(song.id, 'song:1');
+  assert.deepEqual(song.sources.map(source => source.uri.slice(-11)).sort(), ['lyricSong01', 'newerSong01', 'olderSong01']);
+  assert.equal(songs.alternatesDue(), null);
+});
+
+test('a merge keeps the source budget and every URL mapping', async t => {
+  const { songs, advance } = await store(t, { limits: { sources: 3 } });
+  const a = ['aaaaaaaaaa1', 'aaaaaaaaaa2'].map(id => upload(id, 'Song', 'A'));
+  const b = ['bbbbbbbbbb1', 'bbbbbbbbbb2'].map(id => upload(id, 'Song', 'A'));
+  songs.record(a[0]); songs.addVerifiedSource('song:1', a[1], .9); advance(1);
+  songs.record(b[0]); songs.addVerifiedSource('song:2', b[1], .9);
+  songs.addVerifiedSource('song:2', a[0], .95);
+  assert.equal(songs.db.prepare("SELECT COUNT(*) AS n FROM sources WHERE song_id = 'song:1'").get().n, 3);
+  for (const track of [...a, ...b]) assert.equal(songs.songOf(track.info.uri).id, 'song:1');
+});
+
+test('a measurement that fails for a temporary reason waits six hours instead of retrying every tick', async t => {
+  const { songs, advance } = await store(t);
+  songs.record(upload('aaaaaaaaaaa', 'Song', 'Artist'));
+  let measured = 0;
+  const jobs = startSongJobs({ songs }, { measure: async () => { measured++; throw Object.assign(new Error('busy'), { status: 429 }); }, search: async () => null, intervalMs: 3_600_000, logger: quiet });
+  t.after(() => jobs.stop());
+  await jobs.tick(); await jobs.tick(); await jobs.tick();
+  assert.equal(measured, 1);
+  advance(SOURCE_COOLDOWN_MS);
+  assert.equal(songs.fingerprintDue().id, 'song:1');
+});
+
+test('a device play whose lookup fails is looked up again later', async t => {
+  const { songs } = await store(t);
+  let clock = 1_000_000; let failing = true;
+  const track = upload('xy3AcmW0lrQ', 'Djo - End Of Beginning (Official Audio)', 'Djo Music', 160_000);
+  const jobs = startSongJobs({ songs }, { measure: async () => null, now: () => clock, intervalMs: 3_600_000, logger: quiet,
+    search: async () => (failing ? { loadType: 'error' } : { loadType: 'track', tracks: [track] }) });
+  t.after(() => jobs.stop());
+  jobs.devicePlayed('xy3AcmW0lrQ');
+  await jobs.tick();
+  assert.equal(songs.songOf(track.info.uri), null);
+  failing = false; clock += 10 * 60_000;
+  await jobs.tick();
+  assert.ok(songs.songOf(track.info.uri));
+});
+
+test('a YouTube Music song that names its artist sorts with Topic uploads', async t => {
+  const { songs } = await store(t);
+  const music = upload('musicSong01', 'End of Beginning', 'Djo');
+  music.info.artworkUrl = 'https://lh3.googleusercontent.com/abc';
+  const lyrics = upload('lyricSong01', 'Djo - End Of Beginning (Lyrics)', 'Dan Music');
+  songs.record(lyrics);
+  songs.addVerifiedSource('song:1', music, .98);
+  assert.deepEqual(songs.playbackSources(lyrics.info.uri).map(source => source.identifier), ['musicSong01', 'lyricSong01']);
+});

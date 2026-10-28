@@ -5,9 +5,11 @@ import { recordingKey, recordingQuery, sameLength } from './song-identity.js';
 const HOUR = 60 * 60_000;
 // Uploads compared per alternates check; each costs a background download and a measurement.
 const CANDIDATES = 3;
-// Device plays waiting for their metadata, and how long a device play is remembered.
+// Device plays waiting for their metadata, how long a device play is remembered,
+// and how often a lookup that failed is tried again.
 const DEVICE_PENDING = 50;
 const DEVICE_REPEAT_MS = 10 * 60_000;
+const DEVICE_ATTEMPTS = 3;
 const watchUrl = id => `https://www.youtube.com/watch?v=${id}`;
 
 class Temporary extends Error {}
@@ -56,7 +58,8 @@ export function alternateCandidates(song, results) {
  */
 export function startSongJobs(client, { measure, search, intervalMs = 60_000, now = Date.now, logger = console } = {}) {
   const store = client.songs;
-  const pending = new Set(); const seen = new Map();
+  // Video ID -> { attempts, notBefore } for device plays still to be looked up.
+  const pending = new Map(); const seen = new Map();
   let running = false; let timer = null; let lastFailureLog = 0; let turn = 0;
   const failed = (event, error) => {
     if (now() - lastFailureLog < 60_000) return;
@@ -76,11 +79,16 @@ export function startSongJobs(client, { measure, search, intervalMs = 60_000, no
     if (track) store.record(track);
   };
 
+  // A failure, temporary or not, is recorded, so the song waits its turn again
+  // instead of being measured on every tick.
   const fingerprint = async ({ id, identifier }) => {
-    store.setFingerprint(id, await measure(identifier));
+    let measured = null;
+    try { measured = await measure(identifier); }
+    finally { store.setFingerprint(id, measured); }
   };
 
-  const alternates = async song => {
+  // `checking.id` follows the song through a merge: the older song survives.
+  const alternates = async (song, checking) => {
     const found = [];
     if (song.isrc) found.push(...await results(`"${song.isrc}"`, 'ytsearch'));
     found.push(...await results(recordingQuery(song), 'ytmsearch'));
@@ -88,25 +96,33 @@ export function startSongJobs(client, { measure, search, intervalMs = 60_000, no
       const measured = await measure(candidate.info.identifier);
       if (!measured) continue;
       const score = similarity(song.fingerprint, measured);
-      if (score >= FINGERPRINT.threshold) store.addVerifiedSource(song.id, candidate, Math.round(score * 1000) / 1000);
+      if (score >= FINGERPRINT.threshold) checking.id = store.addVerifiedSource(checking.id, candidate, Math.round(score * 1000) / 1000) || checking.id;
     }
-    store.alternatesChecked(song.id);
+    store.alternatesChecked(checking.id);
   };
 
   const tick = async () => {
     if (running || !store?.available) return;
     running = true;
-    let song = null;
+    let checking = null;
     try {
-      const device = pending.values().next().value;
-      if (device) { pending.delete(device); await recordDevice(device); return; }
+      const device = [...pending].find(([, entry]) => entry.notBefore <= now());
+      if (device) {
+        const [id, entry] = device; pending.delete(id);
+        try { await recordDevice(id); }
+        catch (error) {
+          if (entry.attempts + 1 < DEVICE_ATTEMPTS) pending.set(id, { attempts: entry.attempts + 1, notBefore: now() + DEVICE_REPEAT_MS });
+          throw error;
+        }
+        return;
+      }
       // Measuring new songs and checking measured ones take turns, so neither waits on the other.
       const steps = [() => { const due = store.fingerprintDue(); return due && fingerprint(due); },
-        () => { song = store.alternatesDue(); return song && alternates(song); }];
+        () => { const song = store.alternatesDue(); if (!song) return null; checking = { id: song.id }; return alternates(song, checking); }];
       if (turn++ % 2) steps.reverse();
       for (const step of steps) { const work = step(); if (work) { await work; return; } }
     } catch (error) {
-      if (song) store.alternatesChecked(song.id, { retryAfterMs: 6 * HOUR });
+      if (checking) store.alternatesChecked(checking.id, { retryAfterMs: 6 * HOUR });
       if (!(error instanceof Temporary)) failed('songs_job_failed', error);
     } finally { running = false; }
   };
@@ -121,7 +137,7 @@ export function startSongJobs(client, { measure, search, intervalMs = 60_000, no
         if (!store?.available || !/^[\w-]{11}$/.test(id) || (seen.get(id) ?? -Infinity) > now() - DEVICE_REPEAT_MS) return;
         seen.set(id, now());
         if (seen.size > 500) for (const [key, at] of seen) if (at <= now() - DEVICE_REPEAT_MS) seen.delete(key);
-        if (!store.touch(watchUrl(id)) && pending.size < DEVICE_PENDING) pending.add(id);
+        if (!store.touch(watchUrl(id)) && !pending.has(id) && pending.size < DEVICE_PENDING) pending.set(id, { attempts: 0, notBefore: now() });
       } catch (error) { failed('songs_job_failed', error); }
     },
     stop() { clearInterval(timer); timer = null; pending.clear(); },

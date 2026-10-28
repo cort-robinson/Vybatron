@@ -36,7 +36,7 @@ the design must not assume a phone or a browser.
 **One player per listener, shared by their devices.** Each Discord user has one player: the
 current song, the queue, recent history, the position, playing or paused, volume and repeat, and
 the server (guild) whose audio route it plays through. It is the same player on every device the
-listener signs in on, and at most one device plays it at a time: the **active device**. With no
+listener signs in on. One device at a time owns its playback: the **active device**. With no
 active device, the player is paused where it stopped.
 
 One player per listener, not per server, because the listener's devices follow the listener. The
@@ -44,77 +44,119 @@ player keeps the server it was started in for its audio and analysis requests, w
 membership-checked per request (ADR-0011). Starting music from another server's page moves the
 player to that server.
 
+### Where the state lives
+
+- **The bot's store is the record.** The player is a new table in the bot's listening-state store
+  (ADR-0009), so it survives restarts of either process and is covered by the existing backups
+  (`ops/backup.py` copies `listening-state.sqlite`). Every change to it is one transaction in the
+  store's write queue, checked against the player's revision.
+- **The portal server coordinates.** It knows which devices are connected, relays commands
+  between them and runs handoffs, all in memory. It reads and changes the player only through the
+  bridge, as the actor of the session that asked.
+- **Bounds.** 500 queued songs and 50 history songs, with each song's stored title, artist and
+  artwork address capped in length, so a player is at most 512 KiB. Every bridge request stays
+  within the bridge's 16 KiB body limit: a large add is sent in batches, and reads use the
+  response limit (4 MiB). Players have their own 4 MiB total in the store, least recently used shed
+  first, and a player unused for 90 days is deleted. The store's 8 MiB guard rises to 12 MiB,
+  which keeps ADR-0009's pre-deploy snapshot under its 64 MiB limit. Players aren't mirrored into
+  `library.json`: a rollback to an older bot loses only where each listener left off.
+
 ### Devices
 
 - **A device is a signed-in browser or app.** It gets a random ID the first time it connects,
   kept in its storage, and a name the listener can change (by default the platform and browser,
   for example "Android app" or "Firefox on Linux"). The device's ID, name and when it was last
-  seen are saved with the listener's player (below), tied to the session that registered it.
-  Which devices are connected right now is kept only in the portal server's memory. Signing out
-  removes the device, and a device that hasn't connected for 30 days is forgotten. At most 10
-  devices per listener.
-- **Each device says what it can do.** It can play, or it can only control. A browser page can
-  play only after the listener has interacted with it, because browsers block audio that starts
-  by itself. Until then it is listed as "tap to play here". The Android app (and later the TV
-  app) can always play.
+  seen are saved with the player, tied to the session that registered it. Signing out removes the
+  device, and a device that hasn't connected for 30 days is forgotten. At most 10 per listener.
 - **A per-listener live stream.** Each device opens `GET /api/me/events` alongside the server
   stream it already has. It carries the player, the device list, which device is active, and
   commands for this device. It has the server stream's limits, rotation and heartbeats, and
-  `streamsPerSession` rises from 2 to 3 to fit it. Commands go to `POST /api/me/player`, with the
-  session, CSRF and rate-limit checks of today's command route.
+  `streamsPerSession` rises from 2 to 3 to fit it. Changes go to `POST /api/me/player`, with the
+  session, `Origin`, CSRF and rate-limit checks of today's command route.
+- **Can it play right now?** A device is offered as a place to play only while its live stream is
+  connected and it can start audio. A browser tab must have been tapped since it loaded, because
+  browsers block audio that starts by itself, and is listed as "tap to play here" until then. The
+  Android app counts while its playback service is connected (below). A device that isn't
+  connected is listed as "open the app to play here".
 
 ### Who decides what
 
-- **The active device owns the playhead.** It decides when a song ends and the next starts,
-  where it is, and whether it is playing, because it must keep going with the screen off or the
-  network gone (the Android player already does this). It reports to the portal on every change
-  and every 15 seconds while playing.
-- **The portal server owns the queue.** Edits from any device (add, remove, move, clear,
-  shuffle) are applied on the server with a revision number, and a stale edit is refused, as the
-  Android player's queue already refuses stale revisions (`DeviceQueue.kt`). The active device
-  follows the new revision.
+- **Ownership has a generation.** Becoming the active device increments the player's
+  **generation**, saved with the player, so it survives a restart of either process. A
+  generation has a start time: at once for a plain move, the switch time T for a handoff (below).
+  Every report from a device carries the generation it plays under, and once a newer generation
+  has started the store refuses reports from older ones. A device whose report is refused, or
+  which sees a newer generation that has started, stops playing at once. Only the active
+  device's reports change the playhead.
+- **The active device owns the playhead.** It decides when a song ends and the next starts, where
+  it is, and whether it is playing, because it must keep going with the screen off or a brief
+  network loss (the Android player already does this). It reports every song change, pause and
+  seek, and its position every 15 seconds while playing.
+- **The store owns the queue, by entry.** Each queued song has an **entry ID**, so the same song
+  twice is two entries. Every edit names entries, not positions (add after entry X, remove entry
+  Y, move entry Z before entry W), carries the revision it was made against, and changes the
+  current song, the queue and history together, as the Android queue already does
+  (`DeviceQueue.kt`). An edit against an old revision is refused, and the device that made it
+  reloads and retries.
+- **Advancing is an edit too.** The active device reports "from entry A to entry B" with its
+  generation. The store moves A to history and makes B current, wherever B is in the queue, which
+  can't leave B both playing and upcoming. If a remote removed B meanwhile, B still becomes
+  current, because it is what's playing. Reports are idempotent, so a device that advanced while
+  offline sends them in order when it reconnects. If a newer generation took over meanwhile, they
+  are refused and that device stops (above).
 - **Remote controls are relayed.** Play, pause, seek, next, previous, skip-to, volume and repeat
   from another device are sent to the active device, which carries them out and reports the
-  result. With no active device, the server applies them to the paused player directly.
-- **One shared clock.** Positions are reported as "position P at server time T". Each device
-  estimates its offset from the server's clock from the timestamps on its live stream, so a remote
-  can show the moving position and its visualizer can follow the active device's song. A
-  Bluetooth output adds its reported latency to the position the device reports.
+  result. With no active device, the store applies them to the paused player directly.
+- **One shared clock.** Each device measures its clock offset from the server with round trips
+  (a small timing request, several samples, keeping the one with the shortest round trip and its
+  half-round-trip as the uncertainty). Positions are reported as "position P at server time T",
+  so a remote can show the moving position, and its visualizer can follow the active device's song.
+  A device adds its audio output's reported latency, including Bluetooth's, to the position it
+  reports.
 
 ### Pick up anywhere
 
-The player is saved in the bot's listening-state store (ADR-0009), as a new table, so it is
-covered by the existing backups (`ops/backup.py` copies `listening-state.sqlite`). The portal
-writes it through the bridge on every song change, pause, seek or queue edit, and every 15 seconds
-while playing, like session checkpoints today. It is bounded: 500 queued songs, 50 history songs,
-64 KiB per listener, and a player unused for 90 days is deleted. Players count toward the
-store's 8 MiB guard, shed after history and activity. Unlike history and checkpoints,
-players are not mirrored into `library.json`. A rollback to an older bot loses only where each
-listener left off.
+A device that opens the portal shows the player. If no device is active, Play makes this device
+the active one at the saved position.
 
-A device that opens the portal shows the player. If no device is active, Play starts it on this
-device at the saved position. The browser's `localStorage` copy stays only as a cache for showing
-the player before the stream connects. The first time a device connects after this change, it
-uploads its saved deck if the listener has no player yet, so nobody loses their queue.
+A browser keeps a copy of the player only to show it before its stream connects. The copy is
+keyed by the signed-in Discord user and shown only to that user. Today's `vybertron.local` deck
+belongs to no account, so it is never uploaded by itself: the first time a device connects after
+this change, if that deck exists, the device asks the listener whether to add it to their player,
+then deletes it either way. A saved deck past the bounds keeps its first 500 songs, and the device
+says so.
 
 ### Handoff
 
 Moving playback from device A to device B, started from any device:
 
-1. **Prepare.** The portal tells B to load the current song and buffer it at the position it will
-   have in about a second. A keeps playing. The audio is already in the bot's audio cache
-   (`src/portal/audio.js`) because A is playing it, so B's request doesn't wait for YouTube.
-2. **Ready.** B replies when it can start immediately, with its output latency.
-3. **Switch.** The portal picks a server time T at least 250 ms ahead and tells both. At T, B
-   starts at the position for T and fades in over 150 ms, and A fades out over 150 ms and stops.
-   B is now the active device.
-4. **Fallback.** If B isn't ready in 8 seconds, nothing changes and the device that asked says so.
-   If A is gone (switched off, out of network), B starts from A's last report, a resume rather
-   than a seamless handoff.
+1. **Prepare.** The portal gives the handoff an ID and binds it to the current generation, the
+   current entry and the player's **playback version**, which changes on every song change,
+   pause, play and seek. It tells B to load that entry and buffer it at the position it will have
+   when the switch happens. A keeps playing. B's audio may already be in the bot's audio cache
+   (`src/portal/audio.js`) because A played it, but the cache can evict it, and a request from the
+   middle of a song waits for the whole download. So the cache is only an optimization.
+2. **Ready.** B replies only when it has buffered audio at that position and can start at once.
+   With the reply comes its output latency and its clock uncertainty. If the playback version
+   changes before then, the handoff is prepared again from the new state. If B isn't ready in 15
+   seconds, the handoff is cancelled, A keeps playing, and the device that asked says why.
+3. **Schedule.** The portal picks a server time T far enough ahead for both devices' measured
+   round trips, plus a margin, and sends it to B first. B acknowledges, and the store records the
+   next generation for B, starting at T. Only then does A get the switch. If B doesn't acknowledge in
+   time, the handoff is cancelled and A was never told to stop.
+4. **Switch.** At T, B starts at the position for T and fades in over 150 ms, and A fades out over
+   150 ms and stops. If A never got the switch because its connection dropped, both play until A
+   reconnects, sees the newer generation and stops. That overlap is accepted rather than risking
+   silence.
 
 The two devices are usually in different places, so they are not kept in sample-accurate sync.
-The fade covers the small overlap or gap left by clock and output-latency estimates. The target is
-no audible gap and less than 100 ms of jump in the song.
+The fade covers small clock and output-latency errors. The target is no audible gap and less than
+100 ms of jump in the song. When either device's clock uncertainty is over 50 ms, the handoff falls
+back to a plain resume: A stops, and B starts from A's reported position.
+
+If A is gone (switched off, out of network), the move skips the handshake: the generation passes
+to B, and B starts from A's last report. If A was still playing on buffered audio, it stops when it
+reconnects.
 
 **Discord is one of the places to play.** The device picker lists the listener's devices and, when
 they are in a voice channel, Discord. Moving to Discord is today's `transfer` and moving back is
@@ -124,41 +166,50 @@ Lavalink with its own buffering.
 
 ### The Android app
 
-When it is the active device, the app has to stay reachable with its page closed. Today the page
-relays everything to the native player, so with the screen off no remote could reach it. The
-playback service keeps its own connection to `/api/me/events` while it is the active device,
-sending reports and taking commands, with the session cookie and only to the portal origin, as its
-audio requests already do (ADR-0016). It closes that connection when another device takes over or
-playback stops. New bridge operations follow ADR-0016's named-type rule: `player.prepare` and
-`player.switchAt`.
+The app must stay reachable with its page closed, but today the page relays everything to the
+native player. So the playback service keeps its own connection to `/api/me/events` and sends its
+own reports, only to the portal origin (ADR-0016). It holds that connection for as long as the
+service runs, whether or not it is the active device, so it can be handed playback back. The
+service's lifetime is unchanged: it ends when the app is swiped away while paused. After that the
+app is listed as "open the app to play here".
+
+Its requests need the same checks as the page's: the session cookie from the WebView's cookie
+store, which it already uses for audio, the portal origin as `Origin`, and the session's CSRF
+token. The page hands it the token over the bridge (`player.subscribe`) whenever it loads. If the
+portal refuses the session (signed out, expired, or replaced by a new sign-in), the service closes
+its connection and stops sending reports. The song in progress keeps playing on the phone, and the
+next time the page opens it starts over with the new session.
+
+New bridge operations follow ADR-0016's named-type rule: `player.prepare` and `player.switchAt`.
 
 ### Order
 
-1. **Shared player and remote control.** The listening-state table, the device list, the
-   per-listener stream, the server-owned queue, relayed controls, the device picker in the
-   player menu, and moving playback by stopping A and then starting B. The Android service keeps
-   its own connection.
-2. **Seamless handoff.** Prepare, ready and switch, with fades, in the browser and the app.
+1. **Shared player and remote control.** The store table, generations and entry IDs, the device
+   list, the per-listener stream, the clock, relayed controls, the device picker in the player
+   menu, and moving playback by a plain resume (A stops, B starts). The Android service keeps its
+   own connection.
+2. **Seamless handoff.** Prepare, ready, schedule and switch, with fades, in the browser and the
+   app.
 3. **Devices to come.** A TV app joins as one more device, with its own ADR for TV sign-in. Cast
    Connect, if wanted, becomes another way to start the same handoff on the TV.
 
 ## Consequences
 
-- **The portal server is no longer only a proxy.** It keeps devices, relays commands and runs
-  handoffs, all in memory. A portal restart drops the device list until devices reconnect, which
-  they do in seconds. Music keeps playing through a restart, because the active device owns the
-  playhead.
-- **More traffic through the bridge.** About one write every 15 seconds per playing listener.
-  This is the same rate as Discord session checkpoints.
-- **Two devices can disagree briefly.** If the active device is offline while another device edits
-  the queue, the active device catches up when it reconnects. Its playhead wins, and the server's
-  queue wins.
-- **Browsers can't be woken.** A browser tab must be open and must have been tapped to play. A
-  phone or TV app can always take over. A closed browser isn't listed as able to play.
-- **Sign-in still lasts 7 days.** That is fine on a phone and annoying on a TV. Longer sign-ins
-  for TV and app devices belong in the TV sign-in ADR.
-- **One device plays at a time.** Playing the same queue in sync on several devices, as a party
-  or multi-room mode, is a different design and is not part of this one.
-- **Tests to add:** queue-revision and relay tests on the portal server; a handoff test in
-  Playwright with two pages and a fake clock; Kotlin tests for prepare and switch; and an
+- **The portal server is no longer only a proxy.** It keeps the connected devices, relays commands
+  and runs handoffs, in memory. A portal restart cancels handoffs in progress and drops the list of
+  connected devices until they reconnect, which takes seconds. Music keeps playing through a
+  restart, because the active device owns the playhead and the generation is in the store.
+- **More traffic through the bridge.** About one write every 15 seconds per playing listener, the
+  same rate as Discord session checkpoints.
+- **Two devices can briefly play together.** That happens only when the active device lost its
+  connection during a move. It stops when it reconnects.
+- **Browsers can't be woken.** A browser tab must be open and tapped to play, and the Android app
+  only while its service runs. A TV app that keeps a service running would always be available.
+- **Sign-in still lasts 7 days.** That is fine on a phone and annoying on a TV. Longer sign-ins for
+  TV and app devices belong in the TV sign-in ADR.
+- **One device plays at a time.** Playing the same queue in sync on several devices, as a party or
+  multi-room mode, is a different design and is not part of this one.
+- **Tests to add:** store tests for generations, entry-based edits, stale revisions and offline
+  advance reports; portal tests for relays, handoff cancellation and partial delivery; a Playwright
+  handoff test with two pages and a controlled clock; Kotlin tests for prepare and switch; and an
   instrumented test that the app takes a remote pause with its activity gone.

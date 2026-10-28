@@ -33,4 +33,8 @@ class NavigationPolicyTest {
             "data:text/html,hi", "about:blank", "not a url")
             .forEach { assertEquals(it, Destination.BLOCKED, at(it)) }
     }
+
+    @Test fun onlyThePortalAndSignInStayInTheApp() {
+        assertEquals(listOf(true, true, false, false), listOf(Destination.PORTAL, Destination.SIGN_IN, Destination.EXTERNAL, Destination.BLOCKED).map { it.staysInApp })
+    }
 }

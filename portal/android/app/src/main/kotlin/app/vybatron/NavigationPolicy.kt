@@ -15,6 +15,10 @@ enum class Destination {
 
     /** Everything else (`intent:`, `file:`, `javascript:` and the like): ignored. */
     BLOCKED,
+    ;
+
+    /** Whether a page here may show inside the app. */
+    val staysInApp: Boolean get() = this == PORTAL || this == SIGN_IN
 }
 
 object NavigationPolicy {

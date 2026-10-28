@@ -3,6 +3,7 @@ package app.vybatron
 import android.annotation.SuppressLint
 import android.content.ActivityNotFoundException
 import android.content.Intent
+import android.graphics.Bitmap
 import android.graphics.Color
 import android.net.Uri
 import android.os.Bundle
@@ -14,6 +15,7 @@ import android.webkit.CookieManager
 import android.webkit.RenderProcessGoneDetail
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -21,6 +23,7 @@ import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
+import java.io.ByteArrayInputStream
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.OnBackPressedCallback
@@ -28,6 +31,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updatePadding
+import androidx.webkit.WebMessageCompat
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
 
@@ -70,7 +74,11 @@ class MainActivity : ComponentActivity() {
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
-                if (view.canGoBack()) view.goBack() else { isEnabled = false; onBackPressedDispatcher.onBackPressed() }
+                if (view.canGoBack()) { view.goBack(); return }
+                // Let the system handle it (Android 12+ only backgrounds the app), then take Back again.
+                isEnabled = false
+                onBackPressedDispatcher.onBackPressed()
+                isEnabled = true
             }
         })
 
@@ -103,7 +111,8 @@ class MainActivity : ComponentActivity() {
             WebViewCompat.addWebMessageListener(view, PortalBridge.NAME, setOf(portal.value)) { _, message, origin, isMainFrame, reply ->
                 // Android already limits the object to these frames; checked again so a mistake can't widen it.
                 if (!isMainFrame || !portal.matches(origin.toString())) return@addWebMessageListener
-                reply.postMessage(PortalBridge.respond(message.data, info))
+                // A binary message has no text to read; reading it would throw.
+                reply.postMessage(PortalBridge.respond(if (message.type == WebMessageCompat.TYPE_STRING) message.data else null, info))
             }
         }
 
@@ -115,6 +124,24 @@ class MainActivity : ComponentActivity() {
                     Destination.PORTAL, Destination.SIGN_IN -> false
                     Destination.EXTERNAL -> { openOutside(request.url); true }
                     Destination.BLOCKED -> true
+                }
+            }
+
+            // Android doesn't ask shouldOverrideUrlLoading about POSTs, so a top-level page
+            // that isn't allowed is refused here, before anything from it can show.
+            override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
+                if (!request.isForMainFrame || NavigationPolicy.destination(request.url.toString(), portal).staysInApp) return null
+                return WebResourceResponse("text/plain", "utf-8", 403, "Forbidden", emptyMap(), ByteArrayInputStream(ByteArray(0)))
+            }
+
+            // A redirect that keeps a POST reaches neither check above; every page that
+            // starts is checked again, and one that isn't allowed is left for the portal.
+            override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) {
+                // Only web pages; WebView's own error and blank pages are left alone.
+                val web = url.startsWith("https:", ignoreCase = true) || url.startsWith("http:", ignoreCase = true)
+                if (web && !NavigationPolicy.destination(url, portal).staysInApp) {
+                    view.stopLoading()
+                    view.loadUrl(portal.startUrl)
                 }
             }
 

@@ -41,6 +41,18 @@ class BridgeScopeTest {
             assertEquals(true, reply.getBoolean("ok"))
             assertEquals("android", reply.getJSONObject("result").getString("platform"))
 
+            // A binary message is refused, not a crash.
+            eval(web, "window.__reply = null; window.${PortalBridge.NAME}.postMessage(new ArrayBuffer(1))")
+            waitFor(web, "window.__reply !== null")
+            val refused = JSONObject(JSONObject("{\"v\":${eval(web, "window.__reply")}}").getString("v"))
+            assertEquals("bad_request", refused.getString("error"))
+
+            // A top-level POST elsewhere never shows; the app returns to the portal.
+            InstrumentationRegistry.getInstrumentation().runOnMainSync { web.postUrl("https://example.com/", ByteArray(0)) }
+            Thread.sleep(3_000)
+            waitFor(web, "location.origin === ${JSONObject.quote(origin)} && document.readyState === 'complete'")
+            assertEquals("\"false\"", eval(web, "String(document.body.innerText.includes('Example Domain'))"))
+
             // Discord's sign-in loads in the app, without the bridge.
             eval(web, "location.href = 'https://discord.com/login'")
             waitFor(web, "location.hostname === 'discord.com' && document.readyState === 'complete'")

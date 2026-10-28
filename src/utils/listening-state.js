@@ -31,8 +31,25 @@ const MIGRATIONS = [
   CREATE TABLE sessions (guild_id TEXT PRIMARY KEY, saved_at REAL NOT NULL, session TEXT NOT NULL) STRICT;
   CREATE TABLE mirrors (guild_id TEXT PRIMARY KEY, digest TEXT NOT NULL) STRICT;
   CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL) STRICT;`,
+  // Each listener's shared player and their devices (ADR-0018). Not mirrored into library.json.
+  `CREATE TABLE players (actor_id TEXT PRIMARY KEY, updated_at INTEGER NOT NULL, bytes INTEGER NOT NULL, player TEXT NOT NULL) STRICT;
+  CREATE INDEX players_updated ON players (updated_at);
+  CREATE TABLE devices (
+    actor_id TEXT NOT NULL,
+    device_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    session_ref TEXT NOT NULL,
+    last_seen INTEGER NOT NULL,
+    PRIMARY KEY (actor_id, device_id)
+  ) STRICT;
+  CREATE INDEX devices_session ON devices (actor_id, session_ref);
+  CREATE INDEX devices_seen ON devices (last_seen);`,
 ];
 export const LISTENING_STATE_SCHEMA_VERSION = MIGRATIONS.length;
+// A player unused this long is deleted, and a device not seen this long is forgotten (ADR-0018).
+export const PLAYER_RETENTION_MS = 90 * 24 * 60 * 60_000;
+export const DEVICE_RETENTION_MS = 30 * 24 * 60 * 60_000;
 
 /** Digest of one guild's mirrored fields in library.json. */
 export function mirrorDigest({ history = [], activity = [], session = null } = {}) {
@@ -40,7 +57,8 @@ export function mirrorDigest({ history = [], activity = [], session = null } = {
 }
 const EMPTY_DIGEST = mirrorDigest();
 
-// Server history, actor activity and session checkpoints (ADR-0009). Retention
+// Server history, actor activity and session checkpoints (ADR-0009), and each
+// listener's shared player and devices (ADR-0018, src/utils/players.js). Retention
 // windows and item limits are supplied by the library, which owns validation.
 // A store that cannot open runs from memory instead, so it never blocks startup.
 export class ListeningState {
@@ -113,6 +131,17 @@ export class ListeningState {
       clearSession: sql('DELETE FROM sessions WHERE guild_id = ?'),
       digest: sql('SELECT digest FROM mirrors WHERE guild_id = ?'),
       setDigest: sql('INSERT INTO mirrors (guild_id, digest) VALUES (?, ?) ON CONFLICT (guild_id) DO UPDATE SET digest = excluded.digest'),
+      player: sql('SELECT player FROM players WHERE actor_id = ?'),
+      setPlayer: sql('INSERT INTO players (actor_id, updated_at, bytes, player) VALUES (?, ?, ?, ?) ON CONFLICT (actor_id) DO UPDATE SET updated_at = excluded.updated_at, bytes = excluded.bytes, player = excluded.player'),
+      playerBytes: sql('SELECT COALESCE(SUM(bytes), 0) AS bytes FROM players'),
+      shedPlayer: sql('DELETE FROM players WHERE actor_id = (SELECT actor_id FROM players WHERE actor_id != ? ORDER BY updated_at ASC LIMIT 1)'),
+      devices: sql('SELECT device_id, name, kind, last_seen FROM devices WHERE actor_id = ? ORDER BY last_seen DESC, device_id'),
+      setDevice: sql(`INSERT INTO devices (actor_id, device_id, name, kind, session_ref, last_seen) VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT (actor_id, device_id) DO UPDATE SET name = excluded.name, kind = excluded.kind, session_ref = excluded.session_ref, last_seen = excluded.last_seen`),
+      renameDevice: sql('UPDATE devices SET name = ? WHERE actor_id = ? AND device_id = ?'),
+      deleteDevice: sql('DELETE FROM devices WHERE actor_id = ? AND device_id = ?'),
+      sessionDevices: sql('SELECT device_id FROM devices WHERE actor_id = ? AND session_ref = ?'),
+      evictDevices: sql('DELETE FROM devices WHERE actor_id = :actorId AND device_id IN (SELECT device_id FROM devices WHERE actor_id = :actorId ORDER BY last_seen DESC, device_id LIMIT -1 OFFSET :limit)'),
     };
   }
 
@@ -215,6 +244,32 @@ export class ListeningState {
     this.transaction(() => { for (const [guildId, digest] of entries) this.statements.setDigest.run(guildId, digest); });
   }
 
+  /** One listener's stored player, or null. */
+  readPlayer(actorId) {
+    const row = this.statements.player.get(actorId);
+    return row ? JSON.parse(row.player) : null;
+  }
+
+  // Players share a total budget: the least recently updated other players go first.
+  writePlayer(actorId, serialized, updatedAt, totalBytes) {
+    this.statements.setPlayer.run(actorId, updatedAt, Buffer.byteLength(serialized), serialized);
+    while (this.statements.playerBytes.get().bytes > totalBytes && this.statements.shedPlayer.run(actorId).changes) { /* shed */ }
+  }
+
+  devices(actorId) {
+    return this.statements.devices.all(actorId).map(row => ({ deviceId: row.device_id, name: row.name, kind: row.kind, lastSeen: row.last_seen }));
+  }
+
+  // Registering past the limit forgets the least recently seen.
+  saveDevice(actorId, { deviceId, name, kind, sessionRef, lastSeen }, limit) {
+    this.statements.setDevice.run(actorId, deviceId, name, kind, sessionRef, lastSeen);
+    this.statements.evictDevices.run({ actorId, limit });
+  }
+
+  renameDevice(actorId, deviceId, name) { return this.statements.renameDevice.run(name, actorId, deviceId).changes > 0; }
+  deleteDevice(actorId, deviceId) { return this.statements.deleteDevice.run(actorId, deviceId).changes > 0; }
+  sessionDevices(actorId, sessionRef) { return this.statements.sessionDevices.all(actorId, sessionRef).map(row => row.device_id); }
+
   meta(key, value) {
     if (value === undefined) return this.db.prepare('SELECT value FROM meta WHERE key = ?').get(key)?.value ?? null;
     this.db.prepare('INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value').run(key, String(value));
@@ -227,6 +282,8 @@ export class ListeningState {
         this.statements.trimHistory.run({ guildId, ...this.window('history', now) });
         this.statements.trimActivity.run({ guildId, ...this.window('activity', now) });
       }
+      this.db.prepare('DELETE FROM players WHERE updated_at < ?').run(now - PLAYER_RETENTION_MS);
+      this.db.prepare('DELETE FROM devices WHERE last_seen < ?').run(now - DEVICE_RETENTION_MS);
     });
     if (!this.durable) return;
     this.db.exec('PRAGMA incremental_vacuum');

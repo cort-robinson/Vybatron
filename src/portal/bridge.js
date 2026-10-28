@@ -21,6 +21,7 @@ import { measureWith, startSongJobs } from '../utils/song-jobs.js';
 import { trackLyrics, videoLyrics } from '../utils/lyrics.js';
 import { publicTrackId } from './selections.js';
 import { measureDiscord, serverTiming, startRequestTiming } from './request-timing.js';
+import { EDIT_OPS, PlayerError } from '../utils/players.js';
 
 const hash = value => createHash('sha256').update(value).digest();
 function json(response, status, body, maxBytes, headers = {}) {
@@ -62,6 +63,18 @@ async function boundedMap(items, width, map) {
   await Promise.all(Array.from({ length: Math.min(width, items.length) }, worker));
   return results;
 }
+
+// A listener's shared player and devices (ADR-0018), by the operation a body names.
+const PLAYER_OPS = {
+  ...Object.fromEntries(EDIT_OPS.map(op => [op, (players, actorId, input) => players.edit(actorId, { ...input, op })])),
+  report: (players, actorId, input) => players.report(actorId, input), activate: (players, actorId, input) => players.activate(actorId, input),
+  deactivate: (players, actorId, input) => players.deactivate(actorId, input), control: (players, actorId, input) => players.control(actorId, input),
+  adopt: (players, actorId, input) => players.adopt(actorId, input),
+};
+const DEVICE_OPS = {
+  register: (players, actorId, input) => players.register(actorId, input), rename: (players, actorId, input) => players.rename(actorId, input),
+  forget: (players, actorId, input) => players.forget(actorId, input), forgetSession: (players, actorId, input) => players.forgetSession(actorId, input),
+};
 
 // This adapter is the sole bot-side portal entry point. It only uses the
 // existing client.library and hardened Lavalink manager/command implementations.
@@ -130,7 +143,8 @@ export function startPortalBridge(client, {
       try {
         const url = new URL(request.url, 'http://bridge.invalid');
         const isCommand = /^\/v1\/guilds\/\d{1,22}\/commands$/.test(url.pathname) && request.method === 'POST';
-        const body = isCommand ? await readBody(request, maxBodyBytes) : null;
+        const isPlayerWrite = /^\/v1\/users\/\d{1,22}\/(?:player|devices)$/.test(url.pathname) && request.method === 'POST';
+        const body = isCommand || isPlayerWrite ? await readBody(request, maxBodyBytes) : null;
         const isStop = isCommand && body?.command === 'stop';
         if (Date.now() - rateStart >= 60_000) { rateStart = Date.now(); rateCount = 0; stopRateCount = 0; }
         if (isStop ? ++stopRateCount > 30 : ++rateCount > maxRequestsPerMinute) fail(429, 'busy', 'The bridge request limit was reached. Try again shortly.');
@@ -206,6 +220,29 @@ export function startPortalBridge(client, {
           const context = await policy.guild(actorId, analysisMatch[1], undefined, { channelScope: 'none' });
           if (!context.member) fail(403, 'membership_required', 'Join this server to listen to its music.');
           return json(response, 200, await analyses.get(analysisMatch[2]), maxResponseBytes);
+        }
+        const userMatch = url.pathname.match(/^\/v1\/users\/(\d{1,22})\/(player|devices)$/);
+        if (userMatch) {
+          // The session actor's own player and devices: identity only, like their
+          // preferences, plus membership of a server a change plays through (ADR-0018).
+          const [, actorId, resource] = userMatch;
+          await policy.identity(actorId);
+          if (request.method === 'GET' && resource === 'player') return json(response, 200, client.library.players.get(actorId), maxResponseBytes);
+          if (request.method !== 'POST') fail(400, 'invalid_method', 'That request method is unsupported.');
+          const operations = resource === 'player' ? PLAYER_OPS : DEVICE_OPS;
+          if (!body || typeof body !== 'object' || Array.isArray(body) || !Object.hasOwn(operations, body.op)) fail(400, 'invalid_input', 'Choose a supported player change.');
+          const { op, actorId: _actor, ...input } = body;
+          if (input.guildId !== undefined) {
+            if (!validId(input.guildId)) fail(400, 'invalid_input', 'Choose a supported player change.');
+            const context = policy.gatewayGuild?.(actorId, input.guildId) || await policy.guild(actorId, input.guildId, undefined, { channelScope: 'none' });
+            if (!context.member) fail(403, 'membership_required', 'Join this server to listen to its music.');
+          }
+          try { return json(response, 200, await operations[op](client.library.players, actorId, input), maxResponseBytes); }
+          catch (error) {
+            if (!(error instanceof PlayerError)) throw error;
+            // A refused change carries the current player, so the device can catch up at once.
+            return json(response, error.status, { error: { code: error.code, message: error.message }, ...(error.player && { player: error.player }) }, maxResponseBytes);
+          }
         }
         const match = url.pathname.match(/^\/v1\/guilds\/(\d{1,22})(?:\/(library|search|commands|diagnostics|activity|configuration|stats|recap|lyrics))?$/);
         if (!match) fail(404, 'not_found', 'That bridge endpoint does not exist.');

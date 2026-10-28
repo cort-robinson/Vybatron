@@ -5,6 +5,7 @@ import { config } from '../config.js';
 import { plainText } from './presentation.js';
 import { attachSessionSnapshots } from './sessions.js';
 import { ListeningState, mirrorDigest } from './listening-state.js';
+import { SharedPlayers } from './players.js';
 import { logEvent } from '../runtime.js';
 
 export const LIBRARY_LIMITS = Object.freeze({ favorites: 1000, mixes: 25, mixTracks: 100, queue: 500, history: 100, activity: 200, bytes: 5 * 1024 * 1024, guilds: 1000, tasteOptOuts: 10_000 });
@@ -185,6 +186,8 @@ export class MusicLibrary {
     // size cap, as it did inside the document (ADR-0009).
     this.baseBytes = Buffer.byteLength(JSON.stringify(this.document)); this.mirrorBytes = new Map();
     this.documentDigests = new WeakMap();
+    // Each listener's shared player (ADR-0018): its own tables in the store, never mirrored.
+    this.players = new SharedPlayers(this, { now });
   }
   async open() {
     await this.io.mkdir(path.dirname(this.filePath), { recursive: true, mode: 0o700 });

@@ -126,7 +126,8 @@ const UPLOAD_ANCHOR = /official|officiel|oficial|video|clip|audio|lyric|letra|pa
 const UPLOAD_TRAILING_ANCHOR = /official|video|lyric|audio|visuali[sz]er/i;
 // A dash part that is only a version ("Song - Remastered 2011", "Song - Live at X"),
 // never a title that starts with a version word ("Artist - Live Forever").
-const VERSION_ONLY = /^(?:(?:\d{4}\s+)?remaster(?:ed)?(?:\s+\d{4})?(?:\s+(?:version|edition))?|live(?:\s+(?:at|from|in|on)\s.+|\s+version|\s+\d{4})?|(?:radio|single|album|extended|edit)(?:\s+(?:edit|version|mix))?|acoustic(?:\s+version)?|instrumental|clean|mono|stereo|demo|unplugged|sped\s+up|slowed(?:\s+(?:\+|and|&)\s+reverb)?|.+\s+(?:remix|mix|version|edit))$/i;
+// Matched against normalized text, so "Slowed + Reverb" reads "slowed reverb".
+const VERSION_ONLY = /^(?:(?:\d{4} )?remaster(?:ed)?(?: \d{4})?(?: (?:version|edition))?|live(?: (?:at|from|in|on) .+| version| \d{4})?|(?:radio|single|album|extended|edit)(?: (?:edit|version|mix))?|acoustic(?: version)?|instrumental|clean|mono|stereo|demo|unplugged|sped up|slowed(?: (?:and )?reverb)?|re ?recorded|.+ (?:remix|mix|version|edit))$/;
 // ADR-0017's normalization: NFKC, lower case, everything but letters and digits as spaces.
 const recordingText = value => String(value || '').normalize('NFKC').toLocaleLowerCase('en-US').replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
 
@@ -135,8 +136,12 @@ const isUpload = (content, anchor = UPLOAD_ANCHOR) => {
   return Boolean(text) && anchor.test(text) && text.split(' ').every(word => UPLOAD_WORD.test(word.replace(/[.!]+$/, '')));
 };
 
+// Like fold(), but accents stay: "Café" and "Cafe" are different titles.
+const lower = value => String(value || '').normalize('NFKC').toLocaleLowerCase('en-US')
+  .replace(/[’‘`´]/g, "'").replace(/[“”«»„]/g, '"').replace(/\s+/g, ' ').trim();
+
 function recordingTitle(value) {
-  let title = fold(value).split(/\s+\|\s+|\s+\/\/\s+/)[0];
+  let title = lower(value).split(/\s+\|\s+|\s+\/\/\s+/)[0];
   title = title.replace(BRACKETS, (whole, ...groups) => {
     const content = groups.slice(0, 4).find(group => group !== undefined) || '';
     return isUpload(content) || FEATURE.test(fold(content)) ? ' ' : whole;

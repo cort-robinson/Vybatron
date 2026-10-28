@@ -47,6 +47,12 @@ test('a recording key ignores how a song was uploaded and keeps which version it
   // Word boundaries count: these are different titles.
   assert.ok(!same({ title: 'Re-Creation', author: 'A' }, { title: 'Recreation', author: 'A' }));
   assert.equal(recordingKey({ title: "Taylor's Song", author: 'A' }), 'a|taylor s song');
+  assert.ok(!same({ title: 'Café', author: 'A' }, { title: 'Cafe', author: 'A' }));
+  assert.equal(recordingKey({ title: 'Café (Official Video)', author: 'Ä' }), 'ä|café');
+  // Version suffixes written with symbols still read as versions.
+  for (const version of ['Slowed + Reverb', 'Slowed & Reverb', 'Sped Up', 'Re-recorded', 'Remastered 2011', 'Live at Wembley', "Taylor's Version"]) {
+    assert.ok(same({ title: `Song - ${version}`, author: 'A' }, { title: `Song - ${version}`, author: 'A', sourceName: 'spotify' }), version);
+  }
 });
 
 test('the length rule allows 3 seconds or 2% of the shorter, whichever is smaller', () => {

@@ -17,6 +17,7 @@ import { createCommandTimings, commandTimingSpan } from './timing.js';
 import { createChangeFeed } from './changes.js';
 import { createAudioCache, sendAudio } from './audio.js';
 import { createAnalysisCache } from './analysis.js';
+import { measureWith, startSongJobs } from '../utils/song-jobs.js';
 import { trackLyrics, videoLyrics } from '../utils/lyrics.js';
 import { publicTrackId } from './selections.js';
 import { measureDiscord, serverTiming, startRequestTiming } from './request-timing.js';
@@ -83,6 +84,15 @@ export function startPortalBridge(client, {
   const changes = createChangeFeed(client, revisions);
   const audio = createAudioCache(client);
   const analyses = createAnalysisCache(audio);
+  // Fingerprints and alternates (ADR-0017) measure songs through the same caches.
+  const songJobs = client.songs?.available ? startSongJobs(client, {
+    measure: measureWith(analyses),
+    search: async (query, source) => {
+      const node = client.lavalink?.nodeManager?.leastUsedNodes?.()[0];
+      if (!node?.connected || !node.search) return null;
+      return node.search(source ? { query, source } : { query }, client.user);
+    },
+  }) : null;
   const measuredPolicy = { ...policy, guild: (...args) => commandTimingSpan('authorization', () => policy.guild(...args)) };
   const commands = loadCommandsData();
   // Every rejection is observed even if no caller waits for startup readiness.
@@ -174,6 +184,7 @@ export function startPortalBridge(client, {
           const actorId = url.searchParams.get('actorId');
           const context = policy.gatewayGuild?.(actorId, audioMatch[1]) || await policy.guild(actorId, audioMatch[1], undefined, { channelScope: 'none' });
           if (!context.member) fail(403, 'membership_required', 'Join this server to listen to its music.');
+          songJobs?.devicePlayed(audioMatch[2]);
           return sendAudio(request, response, await audio.get(audioMatch[2]));
         }
         const videoLyricsMatch = url.pathname.match(/^\/v1\/guilds\/(\d{1,22})\/lyrics\/([\w-]{11})$/);
@@ -297,6 +308,7 @@ export function startPortalBridge(client, {
       await closed;
     }
     revisions.close();
+    songJobs?.stop();
     analyses.clear();
     audio.clear();
     policy.close();

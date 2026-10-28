@@ -262,17 +262,25 @@ export class ListeningState {
   }
   playerBytes() { return this.statements.playerBytes.get().bytes + this.statements.deviceBytes.get().bytes; }
   orphanedPlayers() { return this.statements.orphanedPlayers.all().map(row => row.actor_id); }
-  pruneDevices(oldest) { this.db.prepare('DELETE FROM devices WHERE last_seen < ?').run(oldest); }
+  /** @returns {string[]} the listeners whose devices were forgotten */
+  pruneDevices(oldest) {
+    const actors = this.db.prepare('SELECT DISTINCT actor_id FROM devices WHERE last_seen < ?').all(oldest).map(row => row.actor_id);
+    this.db.prepare('DELETE FROM devices WHERE last_seen < ?').run(oldest);
+    return actors;
+  }
 
   devices(actorId) {
     return this.statements.devices.all(actorId).map(row => ({ deviceId: row.device_id, name: row.name, kind: row.kind, lastSeen: row.last_seen }));
   }
 
-  // Registering past either limit, per listener or overall, forgets the least recently seen.
+  // Registering past either limit, per listener or overall, forgets the least
+  // recently seen. @returns {string[]} the other listeners who lost a device
   saveDevice(actorId, { deviceId, name, kind, sessionRef, lastSeen }, limit, total) {
     this.statements.setDevice.run(actorId, deviceId, name, kind, sessionRef, lastSeen);
     this.statements.evictDevices.run({ actorId, limit });
+    const evicted = this.db.prepare('SELECT DISTINCT actor_id FROM devices WHERE rowid IN (SELECT rowid FROM devices ORDER BY last_seen DESC, actor_id, device_id LIMIT -1 OFFSET ?)').all(total).map(row => row.actor_id);
     this.statements.evictAllDevices.run(total);
+    return evicted;
   }
 
   renameDevice(actorId, deviceId, name) { return this.statements.renameDevice.run(name, actorId, deviceId).changes > 0; }

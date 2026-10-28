@@ -241,7 +241,7 @@ export function startPortalBridge(client, {
           catch (error) {
             if (!(error instanceof PlayerError)) throw error;
             // A refused change carries the current player, so the device can catch up at once.
-            return json(response, error.status, { error: { code: error.code, message: error.message }, ...(error.player && { player: error.player }) }, maxResponseBytes);
+            return json(response, error.status, { error: { code: error.code, message: error.message }, ...(error.player && { player: error.player, devices: error.devices }) }, maxResponseBytes);
           }
         }
         const match = url.pathname.match(/^\/v1\/guilds\/(\d{1,22})(?:\/(library|search|commands|diagnostics|activity|configuration|stats|recap|lyrics))?$/);

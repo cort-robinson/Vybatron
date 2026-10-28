@@ -7,7 +7,7 @@ import { SessionStore, randomToken, tokenHash } from './store.js';
 import { PlayerRefusal, Transport, changeCursor, isRetryableReadError } from './transport.js';
 import { eventStream, sendJson } from './compression.js';
 import { validateCommand } from './commands.js';
-import { DEVICE_KINDS, DEVICE_REQUESTS, deviceName, deviceSessionRef, playerData, playerShape, validDeviceId, validatePlayerRequest } from './player.js';
+import { DEVICE_KINDS, DEVICE_REQUESTS, deviceName, deviceSessionRef, playerData, validDeviceId, validatePlayerRequest } from './player.js';
 import { COMPRESSIBLE, EntityTags, acceptedCodings, immutable, notModified, openVariant } from './static.js';
 import { timeRequests } from './timing.js';
 import { HttpError, RateLimiter, busy, invalid, unauthorized, unavailable, cookie, setCookie,
@@ -704,10 +704,10 @@ export async function createPortalServer(config, testOptions = {}) {
           let data;
           try { data = playerData(await transport.player(actor, DEVICE_REQUESTS.includes(request.op) ? 'devices' : 'player', request, controller.signal), limits.snapshotBytes); }
           catch (error) {
-            if (!(error instanceof PlayerRefusal) || !error.player) throw error;
+            if (!(error instanceof PlayerRefusal) || !error.data) throw error;
             // Refused against a newer player: the device gets it to catch up, and so do the others.
-            const player = playerShape(error.player, limits.snapshotBytes);
-            if (players.has(actor)) publish(actor, { player });
+            const refused = playerData(error.data, limits.snapshotBytes); const { player } = refused;
+            publish(actor, refused);
             if (!store.get(token)) throw unauthorized();
             json(res, error.status, { error: { code: error.code, message: error.message }, player }); return;
           }

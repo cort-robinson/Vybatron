@@ -374,3 +374,21 @@ test('players persist across a restart, stay out of library.json, and live in me
   assert.equal(player.queue.length, 1);
   assert.equal(memory.players.get(actor).player.revision, 1);
 });
+
+test('every device removal moves its listener’s snapshot version', async t => {
+  const { players, clock } = await fixture(t);
+  await register(players, phone, actor);
+  const registered = players.get(actor).player.updatedAt;
+  clock.now += DEVICE_RETENTION_MS + 1;
+  await players.prune();
+  const pruned = players.get(actor);
+  assert.deepEqual(pruned.devices, []); assert.ok(pruned.player.updatedAt > registered, 'pruning');
+
+  // The overall cap forgets another listener's device.
+  const id = n => `e${String(n).padStart(21, '0')}`;
+  await register(players, laptop, other);
+  const before = players.get(other).player.updatedAt;
+  for (let n = 0; n < PLAYER_LIMITS.allDevices; n++) { clock.now += 1; await register(players, id(n), String(5000 + Math.floor(n / 10))); }
+  const evicted = players.get(other);
+  assert.deepEqual(evicted.devices, []); assert.ok(evicted.player.updatedAt > before, 'overall eviction');
+});

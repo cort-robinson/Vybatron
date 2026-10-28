@@ -2025,7 +2025,7 @@ function fakePlayers(f) {
     if (body.op === 'activate') own.player = { ...player, activeDeviceId: body.deviceId, generation: player.generation + 1 };
     if (body.op === 'control' && body.action === 'volume') own.player = { ...player, volume: body.value };
     if (body.op === 'clear') {
-      if (body.expectedRevision !== player.revision) { reply(res, 409, { error: { code: 'stale', message: 'SECRET bot wording' }, player }); return; }
+      if (body.expectedRevision !== player.revision) { reply(res, 409, { error: { code: 'stale', message: 'SECRET bot wording' }, player, devices: own.devices }); return; }
       own.player = { ...player, revision: player.revision + 1, queue: [] };
     }
     if (body.op === 'add') { reply(res, 400, { error: { code: 'queue_full', message: 'SECRET bot wording' } }); return; }
@@ -2209,4 +2209,22 @@ test('Sign-out device cleanup is retried while the bot is unavailable', { timeou
   await until(() => entries.get(actorId).devices.length === 0);
   const refs = new Set(userCalls(f).filter(call => call.body?.op === 'forgetSession').map(call => call.body.sessionRef));
   assert.equal(refs.size, 1);
+});
+
+test('A conflict carries the device list, so a register answered at its version keeps every device', { timeout: 5000 }, async t => {
+  const f = await fixture(t); fakePlayers(f); const listener = await f.login(); const second = await f.login();
+  const phone = await listenerStream(f, listener); t.after(() => phone.close());
+  await until(() => playerEvents(phone).length === 1);
+  let release; const held = new Promise(resolve => { release = resolve; });
+  f.state.holdPlayers = call => call.body?.deviceId === laptopId ? held : null;
+  const laptopPending = listenerStream(f, second, { deviceId: laptopId });
+  await until(() => userCalls(f).some(call => call.body?.deviceId === laptopId));
+  // A refusal answered while the laptop's registration is still on its way back.
+  assert.equal((await postPlayer(f, listener, { op: 'clear', expectedRevision: 9 })).status, 409);
+  release();
+  const laptop = await laptopPending; t.after(() => laptop.close());
+  await until(() => playerEvents(laptop).length >= 1 && playerEvents(phone).at(-1).devices.every(device => device.connected));
+  for (const live of [phone, laptop]) {
+    assert.deepEqual(playerEvents(live).at(-1).devices.map(device => [device.deviceId, device.connected]), [[phoneId, true], [laptopId, true]]);
+  }
 });

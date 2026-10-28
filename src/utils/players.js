@@ -105,6 +105,8 @@ function skip(player, now) {
 export class SharedPlayers {
   constructor(library, { now = Date.now } = {}) { this.library = library; this.now = now; }
   get state() { return this.library.state; }
+  // A refusal carries the complete snapshot, devices included, as this transaction sees it.
+  conflict(actorId, code, message, player) { return Object.assign(new PlayerError(409, code, message, player), { devices: this.state.devices(actorId) }); }
 
   read(actorId) { return { player: this.state.readPlayer(actorId) || emptyPlayer(), devices: this.state.devices(actorId) }; }
 
@@ -150,7 +152,7 @@ export class SharedPlayers {
     if (['remove', 'move', 'skipTo'].includes(op) && !validEntryId(entryId)) throw invalid();
     if (op === 'move' && before !== null && !validEntryId(before)) throw invalid();
     return this.update(actorId, (player, now, stored) => {
-      if (player.revision !== expectedRevision) throw new PlayerError(409, 'stale', 'Your queue changed. Try again.', stored);
+      if (player.revision !== expectedRevision) throw this.conflict(actorId, 'stale', 'Your queue changed. Try again.', stored);
       if (guildId && ['add', 'play'].includes(op)) player.guildId = guildId;
       const queue = player.queue;
       if (op === 'add') {
@@ -214,7 +216,7 @@ export class SharedPlayers {
       || !Number.isSafeInteger(playhead.at) || Math.abs(playhead.at - this.now()) > CLOCK_SKEW_MS || typeof playhead.playing !== 'boolean')) throw invalid();
     if ((volume !== undefined && !integer(volume, 0, 100)) || (repeat !== undefined && !REPEAT_MODES.includes(repeat))) throw invalid();
     return this.update(actorId, (player, now, stored) => {
-      if (generation !== player.generation || deviceId !== player.activeDeviceId) throw new PlayerError(409, 'replaced', 'Another device is playing now.', stored);
+      if (generation !== player.generation || deviceId !== player.activeDeviceId) throw this.conflict(actorId, 'replaced', 'Another device is playing now.', stored);
       if (seq <= (player.reportSeq ?? 0)) return;
       player.reportSeq = seq;
       if (advance !== undefined && to !== (player.current?.entryId ?? null)) {
@@ -267,7 +269,7 @@ export class SharedPlayers {
   async deactivate(actorId, { deviceId, generation } = {}) {
     if (!validDeviceId(deviceId) || !integer(generation, 0, Number.MAX_SAFE_INTEGER)) throw invalid();
     return this.update(actorId, (player, now, stored) => {
-      if (generation !== player.generation || deviceId !== player.activeDeviceId) throw new PlayerError(409, 'replaced', 'Another device is playing now.', stored);
+      if (generation !== player.generation || deviceId !== player.activeDeviceId) throw this.conflict(actorId, 'replaced', 'Another device is playing now.', stored);
       pause(player, now);
       player.activeDeviceId = null;
     });
@@ -333,8 +335,11 @@ export class SharedPlayers {
   }
 
   // Pauses, with no active device, every player whose active device is gone.
-  releaseOrphans() {
-    for (const actorId of this.state.orphanedPlayers()) this.apply(actorId, (player, now) => { pause(player, now); player.activeDeviceId = null; });
+  // Saves each listener whose devices changed, so their snapshot version moves,
+  // pausing with no active device every player whose active device is gone.
+  release(touched) {
+    const orphans = new Set(this.state.orphanedPlayers());
+    for (const actorId of new Set([...touched, ...orphans])) this.apply(actorId, (player, now) => { if (orphans.has(actorId)) { pause(player, now); player.activeDeviceId = null; } });
   }
 
   // Device changes, in one transaction with releasing players whose active
@@ -343,9 +348,7 @@ export class SharedPlayers {
   devices(actorId, work) {
     if (!validActor(actorId)) return Promise.reject(invalid());
     return this.library.transact(() => this.state.transaction(() => {
-      work(this.now());
-      this.releaseOrphans();
-      this.apply(actorId, () => {});
+      this.release([actorId, ...(work(this.now()) || [])]);
       return this.read(actorId);
     }));
   }
@@ -353,8 +356,7 @@ export class SharedPlayers {
   /** Forget devices unseen for 30 days, releasing the players they played. */
   prune() {
     return this.library.transact(() => this.state.transaction(() => {
-      this.state.pruneDevices(this.now() - DEVICE_RETENTION_MS);
-      this.releaseOrphans();
+      this.release(this.state.pruneDevices(this.now() - DEVICE_RETENTION_MS));
     }));
   }
 

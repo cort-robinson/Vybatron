@@ -493,7 +493,7 @@ browser access or CORS. Portal sets the trusted session's actorId itself.
   players and devices together are capped at 2 MiB, least recently updated players shed first,
   devices at 2,000 overall, least recently seen forgotten first, and players are deleted after
   90 days unused). Forgetting or pruning a device releases the player it played.
-  Sign-out cleanup the bot can't take yet is retried by the portal with backoff. Refusals answer `{error, player?}` with the codes above.
+  Sign-out cleanup the bot can't take yet is retried by the portal with backoff. Refusals answer `{error, player?, devices?}` with the codes above; a conflict carries the complete snapshot.
 - GET `/health` (still authenticated) -> `{ready:boolean}`.
 - GET `/v1/changes?instance=...&after=...` -> `{instanceId:string,sequence:number,reset:boolean,guildIds:string[],sequences:number[]}`.
   Private wake-up long poll (held up to 20 s). Carries guild IDs only, never

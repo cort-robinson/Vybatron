@@ -21,7 +21,7 @@ const playerErrors = {
 };
 // A refused player change; a conflict carries the player as it now is.
 export class PlayerRefusal extends HttpError {
-  constructor(status, code, message, player) { super(status, code, message); this.player = player; }
+  constructor(status, code, message, data) { super(status, code, message); this.data = data; }
 }
 // The one bot audio error named in the portal's own words; the bot's text never passes.
 const AUDIO_UNAVAILABLE = 'This song can’t be streamed right now. Try another version.';
@@ -279,8 +279,8 @@ export class Transport {
     if (result.status === 200) return result.data;
     const code = result.data.error?.code; const known = Object.hasOwn(playerErrors, code) && playerErrors[code];
     if (known && known[0] === result.status) {
-      const player = result.status === 409 && result.data.player && typeof result.data.player === 'object' && !Array.isArray(result.data.player) ? result.data.player : undefined;
-      throw new PlayerRefusal(known[0], code, known[1], player);
+      // A conflict carries the complete snapshot: the player and its devices.
+      throw new PlayerRefusal(known[0], code, known[1], result.status === 409 && result.data.player ? { player: result.data.player, devices: result.data.devices } : undefined);
     }
     const [safeCode, message] = safeErrors[result.status] || safeErrors[503];
     throw new HttpError(safeErrors[result.status] ? result.status : 503, safeCode, message);

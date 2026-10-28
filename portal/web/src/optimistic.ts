@@ -50,7 +50,7 @@ const sameTracks = (a: { current: string | null; queue: string[] }, b: { current
 
 export function displayedPosition(snapshot: GuildSnapshot, receivedAt: number, now: number) {
   const session = snapshot.session; const duration = session.durationMs || session.current?.durationMs || 0;
-  const elapsed = session.status === 'playing' ? Math.max(0, now - receivedAt) : 0;
+  const elapsed = session.status === 'playing' && !session.starting ? Math.max(0, now - receivedAt) : 0;
   return Math.max(0, Math.min(duration || Infinity, session.positionMs + elapsed));
 }
 
@@ -102,7 +102,8 @@ function predict(intent: Intent, snapshot: GuildSnapshot): GuildSnapshot | null 
       s.current = s.queue[index - 1]; s.queue = s.queue.slice(index);
       // Repeating the queue sends the song that was playing to its end; skipped-over songs leave.
       if (s.repeat === 'queue') s.queue.push(skipped);
-      s.durationMs = s.current.durationMs;
+      // The next song holds at its start until the bot says its audio is moving.
+      s.durationMs = s.current.durationMs; s.starting = true;
       break;
     }
     case 'remove': {

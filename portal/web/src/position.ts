@@ -18,7 +18,7 @@ export type Clock = { session: GuildSnapshot['session'] | undefined; receivedAt:
 // With no current song there is no timeline, whatever position an idle snapshot still carries.
 export function usePosition({ session, receivedAt, live }: Clock) {
   const track = session?.current;
-  const moving = !!track && session.status === 'playing' && live;
+  const moving = !!track && session.status === 'playing' && !session.starting && live;
   const clock = useSyncExternalStore(moving ? subscribe : still, () => moving ? now : 0);
   if (!track) return 0;
   const duration = session.durationMs || track.durationMs || 0;

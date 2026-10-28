@@ -38,6 +38,8 @@ export interface GuildSnapshot {
     status: 'idle' | 'playing' | 'paused' | 'recovering' | 'unavailable';
     voiceChannel: { id: string; name: string } | null; textChannel: { id: string; name: string } | null;
     current: Track | null; queue: Track[]; positionMs: number; durationMs: number;
+    // A song still loading: its position holds until the audio moves. Older bots omit it.
+    starting?: boolean;
     // Autoplay picks waiting after the queue (suggested: true). Not part of the queue.
     suggestions: Track[];
     // An earlier track of this session that Back can return to; older bots omit it.

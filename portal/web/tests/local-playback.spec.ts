@@ -275,3 +275,35 @@ test('an addition on this device made while another is still looking up its song
   await expect(page.locator('.queue:not(.queue-compact) .track-row strong')).toHaveText(['Wait']);
   expect(fixture.commands).toEqual([]);
 });
+
+test('the seek bar on this device waits for a song’s audio to begin', async ({ page }) => {
+  await portal(page, { inVoice: false });
+  // The next song takes a while to come back from the bot.
+  let release = () => {};
+  const held = new Promise<void>(resolve => { release = resolve; });
+  await page.route('**/api/guilds/*/audio/Fk3RbKWbmtg', async route => { await held; await route.fulfill({ status: 200, contentType: 'audio/wav', body: audioBody }); });
+  await addSongs(page);
+  await page.getByRole('button', { name: 'Open player', exact: true }).click();
+  const seek = page.getByRole('slider', { name: 'Playback position' });
+  await expect.poll(async () => Number(await seek.inputValue())).toBeGreaterThan(0);
+
+  await page.getByRole('button', { name: 'Skip current song' }).click();
+  await expect(seek).toHaveAttribute('aria-valuetext', '0:00 of 4:04');
+  await page.waitForTimeout(2500);
+  await expect(seek).toHaveValue('0');
+  await expect(page.getByRole('button', { name: 'Pause playback' })).toBeEnabled();
+
+  release();
+  await expect.poll(async () => Number(await seek.inputValue()), { timeout: 5000 }).toBeGreaterThan(0);
+});
+
+test('in Discord the seek bar holds while the bot says a song is still starting', async ({ page }) => {
+  const fixture = await mockPortal(page);
+  Object.assign(fixture.state.snapshot.session, { positionMs: 0, starting: true });
+  await gotoSession(page);
+  await page.getByRole('button', { name: 'Open player', exact: true }).click();
+  const seek = page.getByRole('slider', { name: 'Playback position' });
+  await expect(page.getByRole('button', { name: 'Pause playback' })).toBeEnabled();
+  await page.waitForTimeout(2500);
+  await expect(seek).toHaveValue('0');
+});

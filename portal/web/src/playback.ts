@@ -18,8 +18,8 @@ interface Deck {
   current: Track | null; queue: Track[]; status: 'idle' | 'playing' | 'paused';
   // Songs this session already played, most recent first, for Back.
   history: Track[];
-  // Position at `at`; playing positions advance from there.
-  positionMs: number; at: number; durationMs: number; volume: number; repeat: Repeat;
+  // Position at `at`; playing positions advance from there once the audio is moving, not while it loads.
+  positionMs: number; at: number; waiting: boolean; durationMs: number; volume: number; repeat: Repeat;
   // Bumped by queue edits so drag-and-drop can detect a changed queue.
   revision: number;
 }
@@ -40,7 +40,7 @@ const MAX_QUEUE = 500;
 const MAX_HISTORY = 100;
 // Early in a song Back goes to the previous one; later it restarts this one.
 export const RESTART_AFTER_MS = 3000;
-const empty: Deck = { current: null, queue: [], history: [], status: 'idle', positionMs: 0, at: 0, durationMs: 0, volume: 100, repeat: 'off', revision: 0 };
+const empty: Deck = { current: null, queue: [], history: [], status: 'idle', positionMs: 0, at: 0, waiting: false, durationMs: 0, volume: 100, repeat: 'off', revision: 0 };
 export const DISCORD_ONLY = 'That works in a Discord session. Choose Discord under Play on in the player menu to use it.';
 // The bot resolves each song it receives; the rest of a long queue stays behind.
 export const TRANSFER_TRACKS = 100;
@@ -49,7 +49,7 @@ const isTrack = (value: unknown): value is Track => typeof (value as Track)?.id 
 const volumeOf = (value: unknown) => Math.max(0, Math.min(100, Math.round(Number(value)))) || 0;
 // Local songs are the listener's own: no requester, no autoplay provenance.
 const own = ({ suggested: _suggested, ...track }: Track): Track => ({ ...track, requestedBy: null });
-const position = (deck: Deck) => deck.status === 'playing' ? deck.positionMs + Math.max(0, Date.now() - deck.at) : deck.positionMs;
+const position = (deck: Deck) => deck.status === 'playing' && !deck.waiting ? deck.positionMs + Math.max(0, Date.now() - deck.at) : deck.positionMs;
 function milliseconds(value: unknown) {
   const parts = String(value ?? '').split(':').map(Number);
   return parts.length < 2 || parts.length > 3 || parts.some(part => !Number.isInteger(part) || part < 0) ? null : parts.reduce((total, part) => total * 60 + part, 0) * 1000;
@@ -103,11 +103,12 @@ export function useListening(remote: RemotePortal): Portal {
       const anchor = () => ({ positionMs: element.currentTime * 1000, at: Date.now() });
       element.addEventListener('playing', () => {
         if (!current()) return;
-        commit({ status: 'playing', ...anchor(), ...(Number.isFinite(element.duration) && { durationMs: element.duration * 1000 }) });
+        commit({ status: 'playing', waiting: false, ...anchor(), ...(Number.isFinite(element.duration) && { durationMs: element.duration * 1000 }) });
         warmNext();
       });
-      element.addEventListener('pause', () => { if (current() && !element.ended) commit({ status: 'paused', ...anchor() }); });
-      for (const event of ['seeked', 'waiting']) element.addEventListener(event, () => { if (current()) commit(anchor()); });
+      element.addEventListener('pause', () => { if (current() && !element.ended) commit({ status: 'paused', waiting: false, ...anchor() }); });
+      element.addEventListener('seeked', () => { if (current()) commit(anchor()); });
+      element.addEventListener('waiting', () => { if (current()) commit({ waiting: true, ...anchor() }); });
       element.addEventListener('ended', () => { if (current()) advance(false); });
       element.addEventListener('error', () => { if (current() && element.error) void failed(element.dataset.video!); });
       media.current = element;
@@ -142,10 +143,11 @@ export function useListening(remote: RemotePortal): Portal {
       element.volume = deckRef.current.volume / 100;
       describe(track);
       if (!autoplay) return;
+      commit({ waiting: true });
       element.play().catch((error: unknown) => {
         // A newer song replaced this one (AbortError), or the browser wants a tap first.
         if (loaded.current !== videoId || (error as Error)?.name !== 'NotAllowedError') return;
-        commit({ status: 'paused', positionMs: startMs, at: Date.now() });
+        commit({ status: 'paused', positionMs: startMs, at: Date.now(), waiting: false });
         notify('Tap play to start listening on this device.', 'info');
       });
     };
@@ -193,12 +195,12 @@ export function useListening(remote: RemotePortal): Portal {
     // Moving on remembers the song that was playing, unless it couldn't play.
     const remember = (deck: Deck, drop = false) => deck.current && !drop ? [deck.current, ...deck.history].slice(0, MAX_HISTORY) : deck.history;
     const play = (track: Track, queue: Track[], history = remember(deckRef.current), startMs = 0) => {
-      commit({ current: track, queue, history, status: 'playing', positionMs: startMs, at: Date.now(), durationMs: track.durationMs }, true);
+      commit({ current: track, queue, history, status: 'playing', positionMs: startMs, at: Date.now(), waiting: true, durationMs: track.durationMs }, true);
       start(track, startMs, true);
     };
     const stop = () => {
       ++loadToken.current; loaded.current = null;
-      commit({ current: null, queue: [], history: [], status: 'idle', positionMs: 0, at: Date.now(), durationMs: 0 }, true);
+      commit({ current: null, queue: [], history: [], status: 'idle', positionMs: 0, at: Date.now(), waiting: false, durationMs: 0 }, true);
       const element = media.current;
       if (element) { element.pause(); element.removeAttribute('src'); element.load(); }
       if ('mediaSession' in navigator) navigator.mediaSession.metadata = null;
@@ -254,8 +256,8 @@ export function useListening(remote: RemotePortal): Portal {
           commit({ status: 'paused', positionMs: position(deck), at: now }); ready()?.pause(); return true;
         case 'resume:':
           if (!deck.current) return false;
-          commit({ status: 'playing', at: now });
-          { const element = ready(); if (element) void element.play().catch(() => commit({ status: 'paused', at: Date.now() })); else start(deck.current, deck.positionMs, true); }
+          commit({ status: 'playing', at: now, waiting: true });
+          { const element = ready(); if (element) void element.play().catch(() => commit({ status: 'paused', at: Date.now(), waiting: false })); else start(deck.current, deck.positionMs, true); }
           return true;
         case 'seek:': {
           const target = milliseconds(o.timestamp);
@@ -315,7 +317,7 @@ export function useListening(remote: RemotePortal): Portal {
       commit({ volume: session.volume, repeat: session.repeat });
       const playing = session.status === 'playing';
       commit({ current: own(session.current), queue: session.queue.map(own).slice(0, MAX_QUEUE), history: [], status: playing ? 'playing' : 'paused',
-        positionMs, at: Date.now(), durationMs: session.durationMs || session.current.durationMs }, true);
+        positionMs, at: Date.now(), waiting: playing, durationMs: session.durationMs || session.current.durationMs }, true);
       start(deckRef.current.current!, positionMs, playing);
     };
     const hold = () => {
@@ -401,7 +403,7 @@ export function useListening(remote: RemotePortal): Portal {
   const snapshot = useMemo((): GuildSnapshot | null => !local || !base ? base : {
     ...base, revision: `local:${deck.revision}`,
     session: { ...base.session, status: deck.status, voiceChannel: null, textChannel: null, current: deck.current, queue: deck.queue, hasPrevious: deck.history.length > 0,
-      positionMs: deck.positionMs, durationMs: deck.durationMs, suggestions: [], volume: deck.volume, repeat: deck.repeat,
+      positionMs: deck.positionMs, starting: deck.status === 'playing' && deck.waiting, durationMs: deck.durationMs, suggestions: [], volume: deck.volume, repeat: deck.repeat,
       radio: false, autoplay: 'off', fairQueue: false, listeners: [], canAdd: true, canControl: true, canVote: false, reason: null },
     savedSession: { ...base.savedSession, exists: false, canResume: false },
   }, [local, base, deck]);

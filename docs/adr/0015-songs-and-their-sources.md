@@ -46,15 +46,22 @@ An ISRC, a Spotify track ID and a song key are facts about a song, not its ident
 merged only when all of these hold:
 
 - Their lengths are within 3 seconds or 2% of the shorter, whichever is smaller.
-- Their normalized title and artist are equal, or both are linked to the same catalog entry.
-  Normalization is the one `src/playback-recovery.js` uses (NFKC, lower case, " - Topic"
-  removed, everything but letters and digits folded to spaces), so "Song (Live)" and "Song" never
-  match.
-- Their **fingerprints** match: each energy map is reduced to 16 bands at 2 frames a second
-  (under 4 KB for a long song), aligned within 2 seconds to allow for leading silence, and
-  correlated above a threshold. PR 3 sets the threshold from known pairs (a Topic upload and its
-  official audio; studio and live; an album version and its edit; an original and a
-  re-recording) and records it here before this ADR is accepted.
+- Their titles and artists agree after removing **upload descriptors** only: "Official
+  Video", "Official Audio", "Lyric Video", "Visualizer", "HD"/"4K", `| channel` suffixes, " -
+  Topic" and VEVO channel names, and an "Artist - " prefix on non-Topic uploads, as
+  `src/utils/song-identity.js` already reads them. Recording and version qualifiers are kept
+  (live, remix, acoustic, remaster, radio or extended edit, sped up, slowed, instrumental,
+  clean, re-recorded or "Taylor's Version"), unlike ADR-0006's song key. What remains is
+  compared after the normalization `src/playback-recovery.js` uses (NFKC, lower case,
+  everything but letters and digits folded to spaces). So "Song (Official Audio)" matches
+  "Song", and "Song (Live)" never does. Linking both to the same catalog entry also counts.
+- Their **fingerprints** match: each energy map is reduced to a coarse fingerprint, aligned
+  within 2 seconds to allow for leading silence, and correlated above a threshold. A fingerprint
+  is at most 2 KB: for example 8 bands at 1 frame a second, one byte each, is 1,920 bytes for
+  four minutes, and longer songs are averaged down to fit. PR 2 chooses the representation
+  within that bound and sets the threshold from known pairs (a Topic upload and its official
+  audio; studio and live; an album version and its edit; an original and a re-recording), and
+  both are recorded here before this ADR is accepted.
 
 Nothing weaker merges songs. A metadata match makes a source a candidate, never a member.
 
@@ -101,17 +108,20 @@ reference.
 **A sibling SQLite store.** Songs, aliases, sources, fingerprints and the URL map live in
 `VYBERTRON_DATA_DIR/songs.sqlite`, opened with `node:sqlite` like ADR-0006 and ADR-0009, so it
 fails, migrates, prunes and rolls back on its own. It holds no audio. Its budget is 50,000 songs,
-8 sources per song and a 32 MiB file guard that sheds songs unused for longest. A song unused for
+8 sources per song, fingerprints for at most the 10,000 most recently played songs (about
+20 MB at 2 KB each), and a 32 MiB file guard that sheds songs unused for longest. A song
+whose fingerprint was shed keeps its verified sources and is measured again the next time one
+plays. A song unused for
 365 days is pruned; a list entry that still refers to it is resolved again on its next play.
 `ops/backup.py` backs it up and restores it with the other databases (an `ops/` change, held for
 approval), and the release snapshot's 64 MiB cap is checked with it included.
 
 **Rollout, in order, each its own PR and safe to stop after:**
 
-1. The store, song IDs, catalog links and fingerprints, recorded without changing any list or
-   playback. Backup integration.
-2. Alternate discovery, verification and the threshold calibration, still without changing
-   playback.
+1. The store, song IDs and catalog links, recorded without changing any list or playback.
+   Backup integration.
+2. Fingerprints, alternate discovery, verification and the threshold calibration, still without
+   changing playback.
 3. Playback choosing among verified sources.
 4. Search grouping and favorites and mixes deduplicated by song.
 

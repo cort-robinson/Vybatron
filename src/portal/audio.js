@@ -125,3 +125,38 @@ export async function sendAudio(request, response, entry) {
     ...(range !== undefined && { 'Content-Range': `bytes ${start}-${end}/${size}` }) });
   response.end(data.subarray(start, end + 1));
 }
+
+const watchUrl = id => `https://www.youtube.com/watch?v=${id}`;
+
+/**
+ * A device asks for one upload's audio. When the song store knows its song,
+ * the song's verified sources are tried best first, and a source that can't
+ * stream moves on to the next (ADR-0017). Unknown songs play as asked.
+ */
+export function playableAudio(audio, songs) {
+  const reported = new WeakSet();
+  return {
+    async get(id, options) {
+      if (!validVideoId(id)) return audio.get(id, options);
+      const known = songs?.playbackSources?.(watchUrl(id)) || [];
+      const order = known.filter(source => source.sourceName === 'youtube' && validVideoId(source.identifier)).map(source => source.identifier);
+      // Unknown, or every source failed recently: the upload asked for gets its own try.
+      if (!order.length) order.push(id);
+      let failure;
+      for (const source of order) {
+        let entry;
+        try { entry = await audio.get(source, options); }
+        catch (error) {
+          if (error?.status !== 404) throw error;
+          songs?.sourceResult?.(watchUrl(source), false); failure = error; continue;
+        }
+        if (!reported.has(entry)) {
+          reported.add(entry);
+          entry.done.then(() => songs?.sourceResult?.(watchUrl(source), true), () => songs?.sourceResult?.(watchUrl(source), false));
+        }
+        return entry;
+      }
+      throw failure;
+    },
+  };
+}

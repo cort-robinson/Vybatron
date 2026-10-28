@@ -15,7 +15,7 @@ import { fail, safeError } from './errors.js';
 import { pruneSuggestions, refreshSuggestions } from '../utils/radio.js';
 import { createCommandTimings, commandTimingSpan } from './timing.js';
 import { createChangeFeed } from './changes.js';
-import { createAudioCache, sendAudio } from './audio.js';
+import { createAudioCache, playableAudio, sendAudio } from './audio.js';
 import { createAnalysisCache } from './analysis.js';
 import { measureWith, startSongJobs } from '../utils/song-jobs.js';
 import { trackLyrics, videoLyrics } from '../utils/lyrics.js';
@@ -84,6 +84,8 @@ export function startPortalBridge(client, {
   const changes = createChangeFeed(client, revisions);
   const audio = createAudioCache(client);
   const analyses = createAnalysisCache(audio);
+  // A device's song plays from its best verified source (ADR-0017); analyses stay on the upload asked for.
+  const playable = playableAudio(audio, client.songs);
   // Fingerprints and alternates (ADR-0017) measure songs through the same caches.
   const songJobs = client.songs?.available ? startSongJobs(client, {
     measure: measureWith(analyses),
@@ -185,7 +187,7 @@ export function startPortalBridge(client, {
           const context = policy.gatewayGuild?.(actorId, audioMatch[1]) || await policy.guild(actorId, audioMatch[1], undefined, { channelScope: 'none' });
           if (!context.member) fail(403, 'membership_required', 'Join this server to listen to its music.');
           songJobs?.devicePlayed(audioMatch[2]);
-          return sendAudio(request, response, await audio.get(audioMatch[2]));
+          return sendAudio(request, response, await playable.get(audioMatch[2]));
         }
         const videoLyricsMatch = url.pathname.match(/^\/v1\/guilds\/(\d{1,22})\/lyrics\/([\w-]{11})$/);
         if (videoLyricsMatch && request.method === 'GET') {

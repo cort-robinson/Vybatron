@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { once } from 'node:events';
 import { portalFixture } from './portal-fixtures.js';
-import { createAudioCache, sendAudio, wholeOgg } from '../src/portal/audio.js';
+import { createAudioCache, playableAudio, sendAudio, wholeOgg } from '../src/portal/audio.js';
+import { SongStore } from '../src/utils/song-store.js';
 
 // A whole song as the plugin sends it: Ogg pages ending with end-of-stream.
 function ogg(size, flags = 0x04) {
@@ -170,4 +171,32 @@ test('a background fetch shares cached songs but never takes a download slot fro
   const idle = createAudioCache(client, { limits: { trackBytes: 50, cacheBytes: 100, downloads: 2, timeoutMs: 1000 }, fetchImpl: async () => new Response(ogg(40)) });
   const entry = await idle.get('aaaaaaaaaaa', { background: true }); await entry.done;
   assert.equal(entry.bytes, 40);
+});
+
+test('a device song plays from its best verified source and moves past one that can\'t stream', async t => {
+  const songs = new SongStore(':memory:', { logger: { log() {}, error() {} } }); await songs.open(); t.after(() => songs.close());
+  const upload = (id, author = 'Djo') => ({ info: { identifier: id, uri: `https://www.youtube.com/watch?v=${id}`, sourceName: 'youtube', title: 'End of Beginning', author, duration: 160_000, isStream: false } });
+  const id = songs.record(upload('Kf5pXDhx5Vc', 'Djo - Topic'));
+  songs.addVerifiedSource(id, upload('xy3AcmW0lrQ', 'Djo Music'), .99);
+  const asked = []; const refused = new Set(['Kf5pXDhx5Vc']);
+  const audio = { get: async video => {
+    asked.push(video);
+    if (refused.has(video)) throw Object.assign(new Error('unavailable'), { status: 404, code: 'audio_unavailable' });
+    if (video === 'busybusy001') throw Object.assign(new Error('busy'), { status: 429 });
+    return { type: 'audio/ogg', done: Promise.resolve(), video };
+  } };
+  const playable = playableAudio(audio, songs);
+  // The Topic upload is tried first and refuses; its verified alternate plays.
+  assert.equal((await playable.get('Kf5pXDhx5Vc')).video, 'xy3AcmW0lrQ');
+  assert.deepEqual(asked, ['Kf5pXDhx5Vc', 'xy3AcmW0lrQ']);
+  await new Promise(resolve => setImmediate(resolve));
+  // The refusal is remembered: next time the alternate goes straight away.
+  asked.length = 0;
+  assert.equal((await playable.get('Kf5pXDhx5Vc')).video, 'xy3AcmW0lrQ');
+  assert.deepEqual(asked, ['xy3AcmW0lrQ']);
+  // An unknown song plays as asked; busy is not a refusal; a refusal with nothing else fails as before.
+  assert.equal((await playable.get('abcdefghijk')).video, 'abcdefghijk');
+  await assert.rejects(playable.get('busybusy001'), error => error.status === 429);
+  refused.add('xy3AcmW0lrQ');
+  await assert.rejects(playable.get('Kf5pXDhx5Vc'), error => error.code === 'audio_unavailable');
 });

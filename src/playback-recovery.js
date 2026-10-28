@@ -254,6 +254,9 @@ export function createPlaybackRecovery({
   onRecovering = () => {},
   onFailed = () => {},
   onResumed = () => {},
+  // A song's other verified sources (ADR-0017), best first, and where to report how one went.
+  alternates = () => [],
+  onSourceResult = () => {},
   logger = console,
   retryDelays = [1500, 4000],
   requestTimeoutMs = 12_000,
@@ -273,7 +276,7 @@ export function createPlaybackRecovery({
     let state = states.get(player);
     if (!state) {
       state = { epoch: 0, original: null, attempts: 0, token: null, encoded: null,
-        endedTokens: new Set(), failedTokens: new Set(), recovering: false,
+        endedTokens: new Set(), failedTokens: new Set(), triedSources: new Set(), recovering: false,
         task: null, abort: null, pendingFailure: null, paused: false,
         voiceRefresh: null, voiceEpoch: 0, passiveVoiceEpoch: null,
         voiceFailures: [], voiceTask: false, requestedPaused: false };
@@ -348,6 +351,7 @@ export function createPlaybackRecovery({
       state.original = null;
       state.attempts = 0;
       state.failedTokens.clear();
+      state.triedSources.clear();
       state.voiceFailures = [];
     } else if (retryCurrent) {
       // A deliberate seek supersedes an in-flight retry. Keep its wire token
@@ -513,27 +517,56 @@ export function createPlaybackRecovery({
         }
         if (!valid(player, state, epoch, failedTrack)) return;
         if (!candidate) continue;
-        const replacement = replacementTrack(original, candidate);
-        const guard = () => valid(player, state, epoch, failedTrack);
-        state.paused = player.paused;
-        counters.retries += 1;
+        if (await replace(candidate)) return;
+      }
+    }
+    // The recording's other verified sources, once each, before giving up on the song.
+    if (circuit.until <= now() && valid(player, state, epoch, failedTrack)) {
+      onSourceResult(failedTrack, false);
+      for (const source of safeAlternates(original)) {
+        if (source.uri === original.info?.uri || state.triedSources.has(source.uri)) continue;
+        state.triedSources.add(source.uri);
+        let candidate = null;
         try {
-          await player.play({ clientTrack: replacement, noReplace: false,
-            position: recoveryPosition(player, replacement, failurePosition), paused: state.paused,
-            [RECOVERY_PLAY]: guard });
-          return;
+          const result = await within(search(player, { query: source.uri }, original.requester), requestTimeoutMs, signal, timers);
+          candidate = result?.tracks?.find((track) => track?.encoded && track.info?.sourceName === source.sourceName
+            && track.info?.identifier === source.identifier) || null;
         } catch (error) {
           if (signal.aborted || error.name === 'AbortError') return;
-          // play() switches queue.current before sending its request. Keep the
-          // replacement as the active failed attempt if that request failed.
-          if (state.epoch === epoch && player.queue.current === replacement) {
-            state.pendingFailure = { track: replacement, payload: { type: 'PlaybackRequestError' } };
-            return;
-          }
         }
+        if (!valid(player, state, epoch, failedTrack)) return;
+        if (!candidate) { onSourceResult({ info: { uri: source.uri } }, false); continue; }
+        if (await replace(candidate)) return;
       }
     }
     if (valid(player, state, epoch, failedTrack)) await terminal(player, failedTrack, state, epoch, payload);
+
+    // Plays a replacement for the failed track. True when nothing further is needed here.
+    async function replace(candidate) {
+      const replacement = replacementTrack(original, candidate);
+      const guard = () => valid(player, state, epoch, failedTrack);
+      state.paused = player.paused;
+      counters.retries += 1;
+      try {
+        await player.play({ clientTrack: replacement, noReplace: false,
+          position: recoveryPosition(player, replacement, failurePosition), paused: state.paused,
+          [RECOVERY_PLAY]: guard });
+        return true;
+      } catch (error) {
+        if (signal.aborted || error.name === 'AbortError') return true;
+        // play() switches queue.current before sending its request. Keep the
+        // replacement as the active failed attempt if that request failed.
+        if (state.epoch === epoch && player.queue.current === replacement) {
+          state.pendingFailure = { track: replacement, payload: { type: 'PlaybackRequestError' } };
+          return true;
+        }
+        return false;
+      }
+    }
+  }
+
+  function safeAlternates(track) {
+    try { const sources = alternates(track); return Array.isArray(sources) ? sources : []; } catch { return []; }
   }
 
   function handleFailure(player, track, payload = {}) {

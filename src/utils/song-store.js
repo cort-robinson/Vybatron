@@ -203,6 +203,8 @@ export class SongStore {
       if (!ref || ref.isStream || !(ref.duration > 0)) return null;
       return this.transaction(() => {
         const known = this.db.prepare('SELECT s.id, s.catalog_status, s.next_lookup_at FROM refs r JOIN songs s ON s.id = r.song_id WHERE r.uri = ?').get(ref.uri);
+        // A track that starts is a source that plays.
+        this.db.prepare('UPDATE sources SET last_played_at = ? WHERE uri = ?').run(now, ref.uri);
         if (known) {
           this.db.prepare('UPDATE sources SET music = MAX(music, ?) WHERE uri = ?').run(musicSong(track), ref.uri);
           // An exhausted lookup gets one more try each time the song plays.

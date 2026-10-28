@@ -1561,3 +1561,59 @@ test('exact refresh strips playlists from a video request and rejects unsupporte
   'https://www.youtube.com/watch?v=dQw4w9WgXcQ');
   assert.equal(exactTrackQuery({ info: { uri: 'file:///etc/passwd' } }), null);
 });
+
+// ADR-0017: a song whose upload can't play tries its other verified sources.
+function alternatesFixture(alternateIds, playable = alternateIds) {
+  const results = [];
+  const watch = id => `https://www.youtube.com/watch?v=${id}`;
+  const f = fixture({
+    alternates: track => (track.info.identifier === 'dQw4w9WgXcQ' ? ['dQw4w9WgXcQ', ...alternateIds] : [])
+      .map(id => ({ uri: watch(id), sourceName: 'youtube', identifier: id })),
+    onSourceResult: (track, played) => results.push([track.info.uri.slice(-11), played]),
+    search: async (_player, { query }) => ({ tracks: playable.filter(id => query === watch(id)).map(id => f.track(id)) }),
+  });
+  return { ...f, results };
+}
+
+test('a permanently unavailable upload plays its verified alternate instead of skipping', async () => {
+  const f = alternatesFixture(['altSource01']);
+  await f.start();
+  await f.error({ exception: { message: 'This is a private video.' } });
+  assert.equal(f.player.queue.current.info.identifier, 'altSource01');
+  assert.equal(f.player.queue.current.requester.id, 'requester-1');
+  assert.equal(f.failed.length, 0);
+  assert.deepEqual(f.results, [['dQw4w9WgXcQ', false]]);
+  assert.deepEqual(f.player.queue.tracks.map(track => track.info.identifier), ['Zi_XLOBDo_Y']);
+});
+
+test('an alternate that fails too moves on once, then the song is skipped', async () => {
+  const f = alternatesFixture(['altSource01', 'altSource02', 'altSource03'], ['altSource01', 'altSource03']);
+  await f.start();
+  await f.error({ exception: { message: 'This is a private video.' } });
+  assert.equal(f.player.queue.current.info.identifier, 'altSource01');
+  await f.node.handleEvent({ type: 'TrackStartEvent', guildId: 'g1', track: f.wire() });
+  await f.error({ exception: { message: 'This video has been removed' } });
+  // altSource02 no longer loads; altSource03 does.
+  assert.equal(f.player.queue.current.info.identifier, 'altSource03');
+  await f.node.handleEvent({ type: 'TrackStartEvent', guildId: 'g1', track: f.wire() });
+  await f.error({ exception: { message: 'This video has been removed' } });
+  assert.equal(f.player.queue.current.info.identifier, 'Zi_XLOBDo_Y');
+  assert.equal(f.failed.length, 1);
+  assert.deepEqual(f.results, [['dQw4w9WgXcQ', false], ['altSource01', false], ['altSource02', false], ['altSource03', false]]);
+});
+
+test('a temporary failure tries alternates only after its exact retries', async () => {
+  const f = alternatesFixture(['altSource01']);
+  await f.start();
+  await f.error({ exception: MIXED_CLIENT_EXCEPTION });
+  assert.equal(f.player.queue.current.info.identifier, 'altSource01');
+  assert.equal(f.failed.length, 0);
+});
+
+test('an unknown song is skipped as before', async () => {
+  const f = alternatesFixture([]);
+  await f.start();
+  await f.error({ exception: { message: 'This is a private video.' } });
+  assert.equal(f.player.queue.current.info.identifier, 'Zi_XLOBDo_Y');
+  assert.equal(f.failed.length, 1);
+});

@@ -216,7 +216,7 @@ test('the visualizer frame rate is a Settings choice that stays on this device',
   await expect(select).toHaveValue('30');
   await expect(select.locator('option')).toHaveText(['15 fps', '30 fps', '45 fps', '60 fps', 'Native']);
   await select.selectOption('native');
-  await expect(page.getByText(/As often as your display refreshes/)).toBeVisible();
+  await expect(select).toHaveAccessibleDescription(/As often as your display refreshes/);
   expect(await page.evaluate(() => localStorage.getItem('vybertron.visualizerFps'))).toBe('native');
   await page.reload();
   await openSettings(page);

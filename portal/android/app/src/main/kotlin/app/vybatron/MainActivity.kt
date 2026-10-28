@@ -28,10 +28,19 @@ import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.enableEdgeToEdge
+import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updatePadding
+import android.content.ComponentName
+import androidx.media3.session.MediaController
+import androidx.media3.session.SessionToken
+import androidx.webkit.JavaScriptReplyProxy
 import androidx.webkit.WebMessageCompat
+import app.vybatron.playback.DevicePlayer
+import app.vybatron.playback.PlaybackService
+import com.google.common.util.concurrent.ListenableFuture
+import org.json.JSONObject
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
 
@@ -42,6 +51,18 @@ import androidx.webkit.WebViewFeature
 class MainActivity : ComponentActivity() {
     private var webView: WebView? = null
     private var failure: View? = null
+
+    // This device's player lives in PlaybackService; connecting a controller starts it.
+    private var controller: ListenableFuture<MediaController>? = null
+    private var device: DevicePlayer? = null
+    // Requests that arrive before the service is up wait here, in order.
+    private val waiting = ArrayList<Pair<String?, JavaScriptReplyProxy>>()
+    // The page that last spoke to the player hears its events.
+    private var events: JavaScriptReplyProxy? = null
+    private val onState: (JSONObject) -> Unit = { events?.postMessage(PortalBridge.event("player.state", JSONObject().put("state", it))) }
+    private val onNotice: (String, String) -> Unit = { message, kind ->
+        events?.postMessage(PortalBridge.event("player.notice", JSONObject().put("message", message).put("kind", kind)))
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -56,6 +77,7 @@ class MainActivity : ComponentActivity() {
                 return showMessage(getString(R.string.webview_too_old))
         }
 
+        connectPlayer()
         val root = FrameLayout(this).apply { setBackgroundColor(getColor(R.color.portal_background)) }
         val view = createWebView(portal!!)
         root.addView(view, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
@@ -112,7 +134,8 @@ class MainActivity : ComponentActivity() {
                 // Android already limits the object to these frames; checked again so a mistake can't widen it.
                 if (!isMainFrame || !portal.matches(origin.toString())) return@addWebMessageListener
                 // A binary message has no text to read; reading it would throw.
-                reply.postMessage(PortalBridge.respond(if (message.type == WebMessageCompat.TYPE_STRING) message.data else null, info))
+                val text = if (message.type == WebMessageCompat.TYPE_STRING) message.data else null
+                if (device == null && isPlayerRequest(text)) waiting.add(text to reply) else answer(text, reply, info)
             }
         }
 
@@ -161,6 +184,29 @@ class MainActivity : ComponentActivity() {
         return view
     }
 
+    private fun connectPlayer() {
+        val future = MediaController.Builder(this, SessionToken(this, ComponentName(this, PlaybackService::class.java))).buildAsync()
+        controller = future
+        future.addListener({
+            if (controller !== future || runCatching { future.get() }.isFailure) return@addListener
+            val player = PlaybackService.player ?: return@addListener
+            device = player
+            player.addListener(onState)
+            player.addNoticeListener(onNotice)
+            val info = PortalBridge.AppInfo(BuildConfig.VERSION_NAME, BuildConfig.VERSION_CODE)
+            waiting.toList().also { waiting.clear() }.forEach { (text, reply) -> answer(text, reply, info) }
+        }, ContextCompat.getMainExecutor(this))
+    }
+
+    private fun answer(text: String?, reply: JavaScriptReplyProxy, info: PortalBridge.AppInfo) {
+        val player = device
+        if (player != null && isPlayerRequest(text)) events = reply
+        reply.postMessage(PortalBridge.respond(text, info, player?.let { PortalBridge.Player(it::handle) }))
+    }
+
+    private fun isPlayerRequest(text: String?) =
+        runCatching { JSONObject(text ?: "").optString("type").startsWith("player.") }.getOrDefault(false)
+
     private fun openOutside(url: Uri) {
         val intent = Intent(Intent.ACTION_VIEW, url).addCategory(Intent.CATEGORY_BROWSABLE)
         try { startActivity(intent) } catch (_: ActivityNotFoundException) { /* Nothing can open it. */ }
@@ -202,6 +248,12 @@ class MainActivity : ComponentActivity() {
     // No WebView.onPause(): music playing on this device keeps going with the app in the background.
 
     override fun onDestroy() {
+        device?.removeListener(onState)
+        device?.removeNoticeListener(onNotice)
+        device = null
+        events = null
+        controller?.let(MediaController::releaseFuture)
+        controller = null
         webView?.destroy()
         webView = null
         super.onDestroy()

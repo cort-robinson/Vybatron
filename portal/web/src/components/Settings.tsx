@@ -3,6 +3,7 @@ import { DiscordLogoIcon, DownloadSimpleIcon } from '../icons';
 import { api, errorMessage } from '../api';
 import type { Portal } from '../usePortal';
 import type { Skin } from '../skin';
+import { FRAME_RATES, chooseFrameRate, useFrameRate, type FrameRate } from '../visualizer/frameRate';
 
 export type AmbientMode = 'on' | 'subtle' | 'off';
 export interface InstallPrompt extends Event { prompt: () => Promise<void>; userChoice: Promise<{ outcome: string }> }
@@ -21,6 +22,7 @@ export function SettingsView({ portal, active, ambient, setAmbient, skin, setSki
       <div className="setting-row"><div><label htmlFor="portal-look">Portal look</label><p>{lookDescription[skin]}</p></div><select id="portal-look" value={skin} onChange={event => setSkin(event.target.value as Skin)}><option value="overdrive">Overdrive</option><option value="fantastic">Fantastic Four</option><option value="classic">Classic</option></select></div>
       <div className="setting-row"><div><label htmlFor="ambient-mode">Ambient motion</label><p>Album-colored lighting and the decorative spectrum display. Both settle on pause and respect reduced motion.</p></div><select id="ambient-mode" value={ambient} onChange={event => setAmbient(event.target.value as AmbientMode)}><option value="on">Immersive</option><option value="subtle">Subtle</option><option value="off">Off</option></select></div>
       <div className="setting-row"><div><h3>Performance mode</h3><p>{performance ? 'Lighter rendering is on: solid panels instead of glass blur, no blurred cover light, and a still scene and spectrum. Controls and playback are unchanged.' : 'Full effects: glass blur, cover-colored light, and a moving scene. Turn this on if the portal feels slow or drains battery.'}</p></div><button role="switch" aria-checked={performance} className="switch" aria-label="Performance mode" onClick={() => setPerformance(!performance)}><span />{performance ? 'On' : 'Off'}</button></div>
+      <FrameRateSetting />
       <div className="setting-row"><div><h3>Install the app</h3><p>{installPrompt ? 'Open Vybatron in its own window, like an app.' : 'Use your browser’s Install app or Add to Home Screen option when available.'}</p></div><button className="button secondary" disabled={!installPrompt} onClick={install}><DownloadSimpleIcon size={19} />Install app</button></div>
     </div></section>
     <section className="personal-settings" aria-labelledby="settings-account"><h2 id="settings-account">Account</h2><div className="settings-list">
@@ -48,4 +50,9 @@ function AutoplayTaste({ portal }: { portal: Portal }) {
     ? 'While you’re in voice with Vybatron, autoplay takes turns between everyone listening and picks some songs from what you request and favorite. Others in the channel may notice your picks.'
     : 'Autoplay won’t draw on your requests or favorites. It still follows what the room is playing.'} Applies in every server.</p></div>
     <button role="switch" aria-checked={value} className="switch" aria-label="Autoplay uses my taste" disabled={saving} onClick={toggle}><span />{value ? 'On' : 'Off'}</button></div>;
+}
+
+function FrameRateSetting() {
+  const rate = useFrameRate();
+  return <div className="setting-row"><div><label htmlFor="visualizer-frame-rate">Visualizer frame rate</label><p>{rate === 'native' ? 'As often as your display refreshes, which may be 120 times a second or more. The smoothest motion, and the most battery.' : `Up to ${rate} frames a second. Higher is smoother; lower saves battery.`}</p></div><select id="visualizer-frame-rate" value={rate} onChange={event => chooseFrameRate(event.target.value === 'native' ? 'native' : Number(event.target.value) as FrameRate)}>{FRAME_RATES.map(option => <option key={option} value={option}>{option === 'native' ? 'Native' : `${option} fps`}</option>)}</select></div>;
 }

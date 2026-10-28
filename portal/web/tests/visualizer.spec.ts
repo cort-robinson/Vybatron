@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { expect, test, type Locator, type Page } from './test';
-import { mockPortal } from './fixtures';
+import { mockPortal, openSettings } from './fixtures';
 import type { GuildSnapshot } from '../src/types';
 
 const emit = (page: Page, data: GuildSnapshot) => page.evaluate(snapshot => (window as unknown as { portalTest: { emit: (data: unknown) => void } }).portalTest.emit(snapshot), data);
@@ -175,6 +175,52 @@ test('the full screen overlay rests without input and returns on a key', async (
   await expect(dialog).toHaveClass(/resting/, { timeout: 6000 });
   await page.keyboard.press('Shift');
   await expect(dialog).not.toHaveClass(/resting/);
+});
+
+// Takes over the display's refreshes: from now on animation frames come only when refresh() asks,
+// at a steady hz on a clock of their own, however long the software GPU takes to draw each one. It
+// returns once the loop's frame already asked of the real display has run and asked again here.
+const ownRefreshes = (page: Page) => page.evaluate(() => {
+  let queue: FrameRequestCallback[] = []; let now = performance.now();
+  window.requestAnimationFrame = callback => { queue.push(callback); return queue.length; };
+  window.cancelAnimationFrame = () => { queue = []; };
+  (window as unknown as { refresh: (count: number, hz: number) => void }).refresh = (count, hz) => {
+    for (let i = 0; i < count; i++) { now += 1000 / hz; const due = queue; queue = []; due.forEach(callback => callback(now)); }
+  };
+  (window as unknown as { waiting: () => number }).waiting = () => queue.length;
+}).then(() => page.waitForFunction(() => (window as unknown as { waiting: () => number }).waiting() > 0));
+const refresh = (page: Page, count: number, hz: number) => page.evaluate(([count, hz]) => (window as unknown as { refresh: (count: number, hz: number) => void }).refresh(count, hz), [count, hz]);
+
+// Two seconds of refreshes at the display's rate. A rate between its whole divisions (45 on 60Hz)
+// alternates frames and lands on the rate rather than the next division down; native takes them all.
+for (const [rate, hz, frames] of [['15', 60, 30], ['30', 60, 60], ['45', 60, 90], ['60', 60, 120], ['60', 120, 120], ['native', 120, 240]] as const) test(`at ${rate === 'native' ? 'native' : `${rate}fps`} on a ${hz}Hz display the visualizer draws ${frames} frames in two seconds`, async ({ page }) => {
+  await page.addInitScript(value => localStorage.setItem('vybertron.visualizerFps', value), rate);
+  await countFrames(page);
+  await mockPortal(page);
+  await openPlayer(page);
+  await page.getByRole('button', { name: 'Show visualizer', exact: true }).click();
+  await expect(page.locator('.sleeve-visualizer canvas[data-drawn]')).toHaveCount(1);
+  await ownRefreshes(page);
+  await refresh(page, hz, hz);
+  const before = await page.evaluate(() => (window as unknown as { visualFrames: Record<string, number> }).visualFrames.sleeve);
+  await refresh(page, hz * 2, hz);
+  const after = await page.evaluate(() => (window as unknown as { visualFrames: Record<string, number> }).visualFrames.sleeve);
+  expect(Math.abs(after - before - frames)).toBeLessThanOrEqual(1);
+});
+
+test('the visualizer frame rate is a Settings choice that stays on this device', async ({ page }) => {
+  await mockPortal(page);
+  await page.goto('/');
+  await openSettings(page);
+  const select = page.getByLabel('Visualizer frame rate');
+  await expect(select).toHaveValue('30');
+  await expect(select.locator('option')).toHaveText(['15 fps', '30 fps', '45 fps', '60 fps', 'Native']);
+  await select.selectOption('native');
+  await expect(page.getByText(/As often as your display refreshes/)).toBeVisible();
+  expect(await page.evaluate(() => localStorage.getItem('vybertron.visualizerFps'))).toBe('native');
+  await page.reload();
+  await openSettings(page);
+  await expect(page.getByLabel('Visualizer frame rate')).toHaveValue('native');
 });
 
 test('visualizers draw at no more than 30fps, only while seen, and stop once paused', async ({ page }) => {

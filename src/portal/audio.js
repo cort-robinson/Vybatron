@@ -10,6 +10,17 @@ import { fail } from './errors.js';
 export const AUDIO_LIMITS = Object.freeze({ trackBytes: 40 * 1024 * 1024, cacheBytes: 64 * 1024 * 1024, downloads: 2, timeoutMs: 120_000 });
 // The plugin first; the YouTube plugin's own stream route only serves some videos.
 const SOURCES = [['/vybatron/audio/', '', 'audio/ogg'], ['/youtube/stream/', '?itag=140', 'audio/mp4'], ['/youtube/stream/', '?itag=251', 'audio/webm']];
+// The plugin ends a whole song with Ogg's end-of-stream page and a failed one
+// without it, since an HTTP response can't be withdrawn once it has started.
+export function wholeOgg(data) {
+  let at = 0; let last = 0;
+  while (at + 27 <= data.length && data.toString('latin1', at, at + 4) === 'OggS') {
+    const segments = data[at + 26]; if (at + 27 + segments > data.length) return false;
+    let size = 27 + segments; for (let i = 0; i < segments; i++) size += data[at + 27 + i];
+    last = data[at + 5]; at += size;
+  }
+  return at === data.length && (last & 0x04) !== 0;
+}
 export const validVideoId = id => typeof id === 'string' && /^[\w-]{11}$/.test(id);
 
 export function createAudioCache(client, { limits = AUDIO_LIMITS, fetchImpl = fetch } = {}) {
@@ -48,7 +59,9 @@ export function createAudioCache(client, { limits = AUDIO_LIMITS, fetchImpl = fe
         for (const listener of entry.listeners) listener(chunk);
       }
       if (!entry.bytes) fail(404, 'audio_unavailable', 'This song can’t be streamed right now. Try another version.');
-      entry.data = Buffer.concat(entry.chunks); entry.chunks = [entry.data]; entry.complete = true;
+      entry.data = Buffer.concat(entry.chunks);
+      if (entry.type === 'audio/ogg' && !wholeOgg(entry.data)) fail(502, 'audio_unavailable', 'This song can’t be streamed right now. Try another version.');
+      entry.chunks = [entry.data]; entry.complete = true;
       entry.settle();
       evict();
     } catch (error) {

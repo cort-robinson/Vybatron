@@ -36,7 +36,7 @@ export function securityHeaders(res, production) {
   res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=()');
   // Audio for this device's player comes from the portal itself (/api/.../audio). The MilkDrop
   // visualizer compiles each preset's equations to WebAssembly ('wasm-unsafe-eval'); JavaScript
-  // eval stays refused (ADR-0014).
+  // eval stays refused (ADR-0015).
   res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data:; font-src 'self'; connect-src 'self'; media-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'; worker-src 'self'; manifest-src 'self'");
   if (production) res.setHeader('Strict-Transport-Security', 'max-age=31536000');
 }

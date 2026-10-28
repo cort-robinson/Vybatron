@@ -4,7 +4,7 @@ import { waveform } from './waveform';
 import { MILKDROP } from './milkdrop-presets';
 import type { Painter } from './engine';
 
-// MilkDrop, by way of Butterchurn (ADR-0014), in the engine's loop like the other presets.
+// MilkDrop, by way of Butterchurn (ADR-0015), in the engine's loop like the other presets.
 // - No AudioContext. Butterchurn uses one only to build its analyser nodes and to read the sample
 //   rate; given none it builds no nodes and assumes 44.1 kHz. The page never makes one: on iOS an
 //   AudioContext joins the page to the audio session, which can cut this device's player off in the

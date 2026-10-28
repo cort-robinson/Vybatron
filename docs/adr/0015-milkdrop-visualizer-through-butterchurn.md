@@ -1,4 +1,4 @@
-# ADR-0014: The portal's MilkDrop visualizer runs Butterchurn with WebAssembly-only equations
+# ADR-0015: The portal's MilkDrop visualizer runs Butterchurn with WebAssembly-only equations
 
 - Status: Accepted (chosen by the maintainer, 2026-10-28)
 - Date: 2026-10-28

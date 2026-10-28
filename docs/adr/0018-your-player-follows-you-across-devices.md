@@ -53,13 +53,15 @@ player to that server.
 - **The portal server coordinates.** It knows which devices are connected, relays commands
   between them and runs handoffs, all in memory. It reads and changes the player only through the
   bridge, as the actor of the session that asked.
-- **Bounds.** 500 queued songs and 50 history songs, with each song's stored title, artist and
-  artwork address capped in length, so a player is at most 512 KiB. Every bridge request stays
-  within the bridge's 16 KiB body limit: a large add is sent in batches, and reads use the
-  response limit (4 MiB). Players have their own 4 MiB total in the store, least recently used shed
-  first, and a player unused for 90 days is deleted. The store's 8 MiB guard rises to 12 MiB,
-  which keeps ADR-0009's pre-deploy snapshot under its 64 MiB limit. Players aren't mirrored into
-  `library.json`: a rollback to an older bot loses only where each listener left off.
+- **Bounds.** At most 500 queued songs, 50 history songs and 256 KiB per player, with each song's
+  stored title, artist and artwork address capped in length. An add past either limit is refused
+  with "Your queue is full". Every bridge request stays within the bridge's 16 KiB body limit, so a
+  large add is sent in batches. Reads use the response limit (4 MiB). All players together are
+  capped at 2 MiB, least recently used shed first, and a player unused for 90 days is deleted.
+  That fits inside the store's existing 8 MiB guard, next to the about 5 MiB of history, activity
+  and checkpoints that ADR-0009 bounds, so the guard and the release snapshot's 64 MiB budget
+  don't change. Players aren't mirrored into `library.json`: a rollback to an older bot loses only
+  where each listener left off.
 
 ### Devices
 
@@ -140,14 +142,25 @@ Moving playback from device A to device B, started from any device:
    With the reply comes its output latency and its clock uncertainty. If the playback version
    changes before then, the handoff is prepared again from the new state. If B isn't ready in 15
    seconds, the handoff is cancelled, A keeps playing, and the device that asked says why.
-3. **Schedule.** The portal picks a server time T far enough ahead for both devices' measured
-   round trips, plus a margin, and sends it to B first. B acknowledges, and the store records the
-   next generation for B, starting at T. Only then does A get the switch. If B doesn't acknowledge in
-   time, the handoff is cancelled and A was never told to stop.
-4. **Switch.** At T, B starts at the position for T and fades in over 150 ms, and A fades out over
-   150 ms and stops. If A never got the switch because its connection dropped, both play until A
-   reconnects, sees the newer generation and stops. That overlap is accepted rather than risking
-   silence.
+3. **Commit.** The portal picks a server time T far enough ahead for both devices' measured round
+   trips, plus a margin, and never in the last 2 seconds of a song (it waits for the next one).
+   The store records the next generation for B, starting at T, only if the playback version is
+   still the one the handoff was prepared for. That one write is the commitment. Until it
+   happens, nothing has changed, and a cancelled handoff needs no clean-up. Then the portal sends
+   the commitment to both devices.
+4. **Switch.** B starts at T only if it has seen the commitment, from the portal's message or from
+   the generation on its stream. It starts at the position for T and fades in over 150 ms. A fades
+   out over 150 ms and stops at T. Remote controls that arrive between the commitment and T are
+   held and sent to B after T. If A's own buttons change playback in that window (its
+   notification, for example), its report doesn't match the bound playback version, so the store
+   withdraws the commitment. B then stops if it already started, and A keeps playing.
+
+Losing a message is handled by the stored generation. If A misses the commitment, both play until
+A reconnects, sees the newer generation and stops. That overlap is accepted rather than risking
+silence. If B misses it, A stops at T and B starts when it reconnects and sees that it is the
+active device, from the position for that moment. A portal restart cancels handoffs that weren't
+committed. A committed one stands, and the devices act on the stored generation when they
+reconnect.
 
 The two devices are usually in different places, so they are not kept in sample-accurate sync.
 The fade covers small clock and output-latency errors. The target is no audible gap and less than

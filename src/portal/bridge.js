@@ -16,6 +16,7 @@ import { pruneSuggestions, refreshSuggestions } from '../utils/radio.js';
 import { createCommandTimings, commandTimingSpan } from './timing.js';
 import { createChangeFeed } from './changes.js';
 import { createAudioCache, sendAudio } from './audio.js';
+import { createAnalysisCache } from './analysis.js';
 import { trackLyrics, videoLyrics } from '../utils/lyrics.js';
 import { publicTrackId } from './selections.js';
 import { measureDiscord, serverTiming, startRequestTiming } from './request-timing.js';
@@ -81,6 +82,7 @@ export function startPortalBridge(client, {
   const timings = createCommandTimings();
   const changes = createChangeFeed(client, revisions);
   const audio = createAudioCache(client);
+  const analyses = createAnalysisCache(audio);
   const measuredPolicy = { ...policy, guild: (...args) => commandTimingSpan('authorization', () => policy.guild(...args)) };
   const commands = loadCommandsData();
   // Every rejection is observed even if no caller waits for startup readiness.
@@ -183,6 +185,14 @@ export function startPortalBridge(client, {
           const node = client.lavalink?.nodeManager?.leastUsedNodes?.()[0];
           const found = await videoLyrics(node, videoLyricsMatch[2]);
           return json(response, 200, { trackId: found.track ? publicTrackId(found.track) : null, status: found.status, lyrics: found.lyrics || null }, maxResponseBytes);
+        }
+        const analysisMatch = url.pathname.match(/^\/v1\/guilds\/(\d{1,22})\/analysis\/([\w-]{11})$/);
+        if (analysisMatch && request.method === 'GET') {
+          // The visualizers' energy map of one song, wherever it plays: membership only, like its audio.
+          const actorId = url.searchParams.get('actorId');
+          const context = await policy.guild(actorId, analysisMatch[1], undefined, { channelScope: 'none' });
+          if (!context.member) fail(403, 'membership_required', 'Join this server to listen to its music.');
+          return json(response, 200, await analyses.get(analysisMatch[2]), maxResponseBytes);
         }
         const match = url.pathname.match(/^\/v1\/guilds\/(\d{1,22})(?:\/(library|search|commands|diagnostics|activity|configuration|stats|recap|lyrics))?$/);
         if (!match) fail(404, 'not_found', 'That bridge endpoint does not exist.');
@@ -287,6 +297,7 @@ export function startPortalBridge(client, {
       await closed;
     }
     revisions.close();
+    analyses.clear();
     audio.clear();
     policy.close();
     timings.close();

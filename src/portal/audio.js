@@ -56,11 +56,13 @@ export function createAudioCache(client, { limits = AUDIO_LIMITS, fetchImpl = fe
       entry.fail(error);
     } finally { downloads--; for (const listener of entry.listeners) listener(null); }
   };
-  const get = id => {
+  // A background fetch (a visualizer's analysis) shares a cached song but starts a download only
+  // while none is running, so it never takes a slot a listener's playback is about to need.
+  const get = (id, { background = false } = {}) => {
     if (!validVideoId(id)) fail(400, 'invalid_audio', 'Choose a supported song.');
     const existing = entries.get(id);
     if (existing) { existing.used = ++tick; return existing.started.then(() => existing); }
-    if (downloads >= limits.downloads) fail(429, 'busy', 'Songs are still loading. Try again in a moment.');
+    if (downloads >= (background ? 1 : limits.downloads)) fail(429, 'busy', 'Songs are still loading. Try again in a moment.');
     downloads++;
     const entry = { used: ++tick, type: null, bytes: 0, chunks: [], data: null, complete: false, error: null, listeners: new Set() };
     entry.done = new Promise((resolve, reject) => { entry.settle = resolve; entry.fail = error => { entry.error = error; if (entries.get(id) === entry) entries.delete(id); reject(error); }; });

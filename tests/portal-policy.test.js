@@ -217,3 +217,15 @@ test('a failed overlapped wave submits no further channel batches', async t => {
   held.resolve(); await delay(20);
   assert.equal(channelCalls, 4, 'only the first in-flight batch ran; the second batch was never submitted');
 });
+
+test('a playing position advances at the speed preset’s own rate between Lavalink updates', async t => {
+  const f = await portalFixture(t, { owner: { id: '202' } });
+  f.player.paused = false; f.player.playing = true;
+  f.player.lastPosition = 10_000; f.player.lastPositionChange = Date.now() - 4000;
+  f.player.filterManager = { ...f.player.filterManager, data: { ...f.player.filterManager?.data, timescale: { speed: .85, pitch: .95, rate: 1 } } };
+  const response = await f.request('', { actor: '202' });
+  assert.equal(response.status, 200);
+  assert.equal(response.body.session.status, 'playing');
+  // 4 s at 0.85x is 3.4 s of song, not 4 s.
+  assert.ok(Math.abs(response.body.session.positionMs - 13_400) < 150, `positionMs ${response.body.session.positionMs}`);
+});

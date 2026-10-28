@@ -118,6 +118,7 @@ async function fixture(t, { limits = {}, now, dataDir, production = false, botOr
     else if (url.pathname.endsWith('/recap')) reply(res, 200, { window: url.searchParams.get('window') || '30d', since: 0, personal: { plays: 0, playedMs: 0, songs: 0, topTracks: [], topArtists: [] }, server: { plays: 0, playedMs: 0, songs: 0, topTracks: [] } });
     else if (url.pathname === '/v1/stats/requests/clear') reply(res, 200, { ok: true, cleared: 2 });
     else if (url.pathname.startsWith('/v1/preferences/autoplay-taste/')) reply(res, 200, { ok: true, enabled: url.pathname.endsWith('/on') });
+    else if (/\/analysis\/[\w-]{11}$/.test(url.pathname)) reply(res, 200, state.analysis || analysisMap());
     else if (/\/lyrics\/[\w-]{11}$/.test(url.pathname)) reply(res, 200, { trackId: 'b'.repeat(24), status: 'not_found', lyrics: null });
     else if (url.pathname.endsWith('/lyrics')) reply(res, 200, { trackId: 'a'.repeat(24), status: 'found', lyrics: { source: 'lrclib', provider: 'LRCLIB', synced: true, lines: [{ startMs: 0, text: 'First line' }] } });
     else reply(res, 200, state.snapshot);
@@ -1452,6 +1453,46 @@ test('lyrics reads forward only the signed-in actor and accept no query', async 
     assert.notEqual((await f.request(`/api/guilds/${guildId}/${path}`, { headers: { Cookie: device.cookie } })).status, 200, path);
   }
   assert.equal((await f.request(`/api/guilds/${guildId}/lyrics/dX3k_QDnzHE`)).status, 401);
+});
+
+function analysisMap(overrides = {}) {
+  return { version: 1, status: 'ready', frameRate: 30, frameCount: 3, bandCount: 16, bandHz: [40, 58, 85, 123, 179, 260, 379, 551, 800, 1164, 1693, 2462, 3580, 5206, 7570, 11008, 16000],
+    durationMs: 100, tempo: 120, levels: Buffer.alloc(48, 128).toString('base64'), onsets: [0, 33], beats: [33], ...overrides };
+}
+
+test('song analysis reads forward only the signed-in actor, are kept privately once ready and are checked', async t => {
+  const f = await fixture(t); const device = await f.login();
+  const get = (path = 'analysis/dX3k_QDnzHE', headers = { Cookie: device.cookie }) => f.request(`/api/guilds/${guildId}/${path}`, { headers });
+  const ready = await get();
+  assert.equal(ready.status, 200);
+  assert.deepEqual(ready.json(), analysisMap());
+  assert.equal(ready.headers['cache-control'], 'private, max-age=604800, immutable');
+  assert.equal(ready.headers.pragma, undefined);
+  const call = f.state.calls.findLast(item => item.path.endsWith('/analysis/dX3k_QDnzHE'));
+  assert.equal(call.path, `/v1/guilds/${guildId}/analysis/dX3k_QDnzHE`);
+  assert.deepEqual([...call.params.keys()], ['actorId']);
+  assert.equal(call.params.get('actorId'), actorId);
+  for (const path of ['analysis/dX3k_QDnzHE?v=1', 'analysis/short', 'analysis/dX3k_QDnzHE/extra']) assert.notEqual((await get(path)).status, 200, path);
+  assert.equal((await get('analysis/dX3k_QDnzHE', {})).status, 401);
+
+  // Pending is passed on (its retry bounded) and never kept.
+  f.state.analysis = { version: 1, status: 'pending', retryMs: 1 };
+  const pending = await get();
+  assert.deepEqual(pending.json(), { version: 1, status: 'pending', retryMs: 500 });
+  assert.equal(pending.headers['cache-control'], 'no-store');
+  // Anything else from the bot is refused rather than forwarded.
+  for (const analysis of [analysisMap({ version: 2 }), analysisMap({ levels: 'AAAA' }), analysisMap({ bandCount: 8 }), analysisMap({ beats: [-1] }), analysisMap({ frameCount: 36_001 }), analysisMap({ secret: 'x', status: 'other' })]) {
+    f.state.analysis = analysis;
+    const refused = await get();
+    assert.equal(refused.status, 503, JSON.stringify(analysis).slice(0, 80)); assert.equal(refused.headers['cache-control'], 'no-store');
+  }
+  // Extra fields never pass through.
+  f.state.analysis = analysisMap({ secret: 'x' });
+  assert.equal((await get()).json().secret, undefined);
+  // The bot's "unavailable" stays a plain not-found.
+  f.state.analysis = null; f.state.status = 404;
+  const missing = await get();
+  assert.equal(missing.status, 404); assert.equal(missing.headers['cache-control'], 'no-store');
 });
 
 test('stats reads forward only a supported window, and clearing request stats needs CSRF and same origin', async t => {

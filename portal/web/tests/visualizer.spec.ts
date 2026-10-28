@@ -63,6 +63,8 @@ test('the sleeve swaps its cover for a visualizer, whose code loads only then', 
   await expect(page.getByRole('region', { name: 'Lyrics' })).toBeVisible();
   await page.getByRole('button', { name: 'Hide lyrics', exact: true }).click();
   await expect(page.locator('.sleeve-artwork > img.artwork')).toHaveCount(1);
+  // A song that isn't a YouTube video has no energy map to ask for.
+  expect(requested.filter(path => path.includes('/analysis/'))).toEqual([]);
   expect(errors).toEqual([]);
 });
 
@@ -240,4 +242,87 @@ test.describe('on a high-density screen', () => {
     expect(await size()).toEqual(first);
     expect(first[1]).toBeLessThanOrEqual(page.viewportSize()!.width);
   });
+});
+
+// The current song as a YouTube video, so it has an energy map to fetch.
+const VIDEO = 'dX3k_QDnzHE';
+const onYouTube = (fixture: Awaited<ReturnType<typeof mockPortal>>) => { fixture.state.snapshot.session.current!.uri = `https://www.youtube.com/watch?v=${VIDEO}`; };
+// A map whose low eight bands are full and high eight silent throughout, with a beat every half second.
+function energyMap(durationMs = 237_000) {
+  const frameCount = Math.ceil(durationMs * 30 / 1000); const levels = new Uint8Array(frameCount * 16);
+  for (let i = 0; i < frameCount; i++) levels.fill(255, i * 16, i * 16 + 8);
+  return { version: 1, status: 'ready', frameRate: 30, frameCount, bandCount: 16, bandHz: [40, 58, 85, 123, 179, 260, 379, 551, 800, 1164, 1693, 2462, 3580, 5206, 7570, 11008, 16000],
+    durationMs, tempo: 120, levels: Buffer.from(levels).toString('base64'), onsets: [], beats: Array.from({ length: Math.floor(durationMs / 500) }, (_, i) => i * 500) };
+}
+// The band levels each visualizer canvas last drew with (its uB uniform).
+async function recordBands(page: Page) {
+  await page.addInitScript(() => {
+    const record = window as unknown as { visualBands: Record<string, number[]> }; record.visualBands = {};
+    const locate = WebGL2RenderingContext.prototype.getUniformLocation;
+    WebGL2RenderingContext.prototype.getUniformLocation = function (this: WebGL2RenderingContext, program: WebGLProgram, name: string) {
+      const location = locate.call(this, program, name); if (location) (location as { uniform?: string }).uniform = name; return location;
+    };
+    const set = WebGL2RenderingContext.prototype.uniform1fv;
+    WebGL2RenderingContext.prototype.uniform1fv = function (this: WebGL2RenderingContext, location: WebGLUniformLocation | null, data: Float32List, ...rest: unknown[]) {
+      const canvas = this.canvas as HTMLCanvasElement;
+      if ((location as { uniform?: string } | null)?.uniform === 'uB') record.visualBands[canvas.closest('.visualizer-stage') ? 'full' : 'sleeve'] = Array.from(data as Float32Array);
+      return (set as (...args: unknown[]) => void).call(this, location, data, ...rest);
+    } as typeof set;
+  });
+}
+const bands = (page: Page, where: 'full' | 'sleeve') => page.evaluate(where => (window as unknown as { visualBands: Record<string, number[]> }).visualBands[where] || [], where);
+
+test('a song with an energy map moves to it, says Live, and fetches it once only when a visualizer opens', async ({ page }) => {
+  await recordBands(page);
+  const fixture = await mockPortal(page); onYouTube(fixture);
+  const asked: string[] = [];
+  await page.route('**/api/guilds/*/analysis/*', async route => { asked.push(new URL(route.request().url()).pathname); await route.fulfill({ json: energyMap() }); });
+  await openPlayer(page);
+  await page.waitForTimeout(300);
+  expect(asked).toEqual([]);
+  await page.getByRole('button', { name: 'Show visualizer', exact: true }).click();
+  await page.getByRole('button', { name: 'Full-screen visualizer', exact: true }).click();
+  const dialog = fullScreen(page);
+  await expect(dialog.locator('.visualizer-source')).toHaveText(/^Live/);
+  await expect(dialog.locator('.visualizer-source')).toContainText('moving with this song’s measured energy');
+  // The bands follow the map: the low half full, the high half resting.
+  await expect.poll(async () => { const drawn = await bands(page, 'full'); return drawn.length === 16 && drawn[0] > .85 && drawn[7] > .85 && drawn[8] < .1 && drawn[15] < .1; }).toBe(true);
+  for (const name of ['Neon', 'Cosmic Broadcast', 'Receiver', 'Gridrunner']) {
+    await dialog.getByRole('radio', { name }).check();
+    await page.waitForTimeout(150);
+    await expect(dialog.locator('.visualizer-fallback')).toHaveCount(0);
+  }
+  // The sleeve and the full screen share one request; reopening is answered without another.
+  await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: 'Full-screen visualizer', exact: true }).click();
+  await expect(fullScreen(page).locator('.visualizer-source')).toHaveText(/^Live/);
+  expect(asked).toEqual([`/api/guilds/${fixture.state.snapshot.guild.id}/analysis/${VIDEO}`]);
+});
+
+test('a map still being measured is asked again, and a song without one stays Ambient without retrying', async ({ page }) => {
+  const fixture = await mockPortal(page); onYouTube(fixture);
+  let asked = 0; let missing = false;
+  await page.route('**/api/guilds/*/analysis/*', async route => {
+    asked++;
+    if (missing) await route.fulfill({ status: 404, json: { error: { code: 'not_found', message: 'This guild or resource is unavailable to you.' } } });
+    else await route.fulfill({ json: asked === 1 ? { version: 1, status: 'pending', retryMs: 500 } : energyMap() });
+  });
+  await openPlayer(page);
+  await page.getByRole('button', { name: 'More playback controls' }).click();
+  await page.getByRole('button', { name: 'Full-screen visualizer', exact: true }).click();
+  const chip = fullScreen(page).locator('.visualizer-source');
+  await expect(chip).toHaveText(/^Ambient/);
+  await expect(chip).toHaveText(/^Live/);
+  expect(asked).toBe(2);
+
+  // The next song can't be measured: it stays on generated motion, asked once.
+  missing = true; asked = 0;
+  const state = fixture.state.snapshot;
+  state.session.current = { ...state.session.queue[0], uri: 'https://youtu.be/aaaaaaaaaaa' }; state.revision = 'next-song';
+  await emit(page, state);
+  await expect(chip).toHaveText(/^Ambient/);
+  await page.waitForTimeout(1500);
+  await expect(chip).toHaveText(/^Ambient/);
+  expect(asked).toBe(1);
+  await expect(fullScreen(page).locator('canvas[data-drawn]')).toHaveCount(1);
 });

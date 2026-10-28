@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The portal's background and theme colour (manifest.webmanifest). -->
+    <color name="portal_background">#0d0f14</color>
+    <color name="portal_text">#e8eaf0</color>
+</resources>

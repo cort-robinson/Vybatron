@@ -1,6 +1,7 @@
 # ADR-0014: An Android app, with each listener's YouTube Music account kept on their phone
 
-- Status: Accepted
+- Status: Accepted; the shell is amended by [ADR-0016](0016-android-shell-is-a-plain-webview.md)
+  (a plain WebView, not Capacitor)
 - Date: 2026-10-28
 
 ## Context

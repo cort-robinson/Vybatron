@@ -266,13 +266,37 @@ jobs:
           path: browser-verified.txt
           retention-days: 14
 
+  # The Android app: JVM tests, lint and a debug build. The bridge-scope test needs
+  # a device and the live portal, so it runs by hand (portal/android/README.md).
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: portal/android
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      # Validates the committed Gradle wrapper and caches Gradle's downloads.
+      - uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
+
+      - name: Test, lint and build
+        run: ./gradlew --no-daemon testDebugUnitTest lintDebug assembleDebug
+
   # The single required status check. Fails when any verification job fails, is
   # cancelled or is skipped, except the browser shards on a main push whose exact
   # tree already passed them on its pull request (see browser-plan).
   check:
     name: Check
     if: always()
-    needs: [lint, test, portal, browser-plan, browser]
+    needs: [lint, test, portal, android, browser-plan, browser]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

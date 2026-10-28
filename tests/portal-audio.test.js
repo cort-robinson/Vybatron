@@ -3,9 +3,18 @@ import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { once } from 'node:events';
 import { portalFixture } from './portal-fixtures.js';
-import { createAudioCache, sendAudio } from '../src/portal/audio.js';
+import { createAudioCache, sendAudio, wholeOgg } from '../src/portal/audio.js';
 
-const song = Buffer.from(Array.from({ length: 1000 }, (_, index) => index % 251));
+// A whole song as the plugin sends it: Ogg pages ending with end-of-stream.
+function ogg(size, flags = 0x04) {
+  let segments = 1; while (size - 27 - segments > 255 * segments - 1) segments++;
+  const body = size - 27 - segments;
+  const page = Buffer.from(Array.from({ length: size }, (_, index) => index % 251));
+  page.write('OggS', 0, 'latin1'); page[4] = 0; page[5] = flags; page[26] = segments;
+  for (let i = 0; i < segments; i++) page[27 + i] = i < segments - 1 ? 255 : body - 255 * (segments - 1);
+  return page;
+}
+const song = ogg(1000);
 
 // Lavalink at the network boundary: our audio plugin, plus the YouTube plugin's
 // stream route (no real length, no Range support), which serves only some videos.
@@ -20,6 +29,11 @@ async function fakeLavalink(t, { hold } = {}) {
       response.write(song.subarray(0, 500));
       if (id === 'slowsong123') await hold;
       response.end(song.subarray(500)); return;
+    }
+    // The plugin refuses a song YouTube won't serve, and drops one cut off partway.
+    if (url.pathname.startsWith('/vybatron/audio/') && id === 'refusedsong') { response.writeHead(502); response.end(); return; }
+    if (url.pathname.startsWith('/vybatron/audio/') && id === 'cutoffsong1') {
+      response.writeHead(200, { 'Content-Type': 'audio/ogg' }); response.end(ogg(500, 0)); return;
     }
     if (id === 'webmonly123' && url.searchParams.get('itag') === '251') { response.writeHead(200, { 'Content-Type': 'video/mp4' }); response.end(song); return; }
     response.writeHead(url.pathname.startsWith('/vybatron/') ? 404 : 400, { 'Content-Type': 'application/json' }); response.end('{}');
@@ -86,6 +100,31 @@ test('portal audio falls back to the YouTube stream route and explains unavailab
   assert.equal(lavalink.requests.filter(item => item.path.endsWith('missing1234')).length, 6);
 });
 
+test('a song YouTube refuses or cuts off is explained and never cached', async t => {
+  const { lavalink, get } = await audioFixture(t);
+  const refused = await get('refusedsong');
+  assert.equal(refused.status, 404);
+  assert.match((await refused.json()).error.message, /can’t be streamed right now/);
+  assert.deepEqual(lavalink.requests.map(item => item.itag ?? 'plugin'), ['plugin', '140', '251']);
+
+  // Lavalink's server ends a failed song's response normally, just without end-of-stream.
+  const cut = await get('cutoffsong1');
+  assert.equal(cut.status, 200);
+  await assert.rejects(cut.arrayBuffer());
+  // The player's follow-up check asks Lavalink again instead of getting the partial song.
+  const probe = await get('cutoffsong1', { headers: { Range: 'bytes=0-0' } });
+  assert.notEqual(probe.status, 206); await probe.arrayBuffer().catch(() => {});
+  assert.equal(lavalink.requests.filter(item => item.path === '/vybatron/audio/cutoffsong1').length, 2);
+});
+
+test('only an Ogg stream that ends with end-of-stream counts as a whole song', () => {
+  assert.equal(wholeOgg(song), true);
+  assert.equal(wholeOgg(Buffer.concat([ogg(100, 0x02), ogg(200, 0)])), false);
+  assert.equal(wholeOgg(Buffer.concat([ogg(100, 0x02), ogg(200)])), true);
+  assert.equal(wholeOgg(song.subarray(0, 999)), false);
+  assert.equal(wholeOgg(Buffer.alloc(0)), false);
+});
+
 test('portal audio needs server membership and a valid video id', async t => {
   const { lavalink, get, f } = await audioFixture(t);
   assert.equal((await get('abcdefghijk', { actor: '901' })).status, 404);
@@ -99,7 +138,7 @@ test('the audio cache evicts least recently used songs and bounds concurrent dow
   const fetches = [];
   const client = { lavalink: { nodeManager: { leastUsedNodes: () => [{ connected: true, options: { host: 'lavalink', port: 2333, authorization: 'x' } }] } } };
   const cache = createAudioCache(client, { limits: { trackBytes: 50, cacheBytes: 100, downloads: 2, timeoutMs: 1000 },
-    fetchImpl: async url => { const id = new URL(url).pathname.split('/').pop(); fetches.push(id); return new Response(Buffer.alloc(sizes[id] ?? 60)); } });
+    fetchImpl: async url => { const id = new URL(url).pathname.split('/').pop(); fetches.push(id); return new Response(ogg(sizes[id] ?? 60)); } });
   const load = async id => { const entry = await cache.get(id); await entry.done; return entry; };
   await load('aaaaaaaaaaa'); await load('bbbbbbbbbbb');
   await load('aaaaaaaaaaa');
@@ -128,7 +167,7 @@ test('a background fetch shares cached songs but never takes a download slot fro
   // A listener's next song still gets the second slot.
   void cache.get('ccccccccccc').catch(() => {});
   assert.throws(() => cache.get('ddddddddddd'), error => error.status === 429);
-  const idle = createAudioCache(client, { limits: { trackBytes: 50, cacheBytes: 100, downloads: 2, timeoutMs: 1000 }, fetchImpl: async () => new Response(Buffer.alloc(10)) });
+  const idle = createAudioCache(client, { limits: { trackBytes: 50, cacheBytes: 100, downloads: 2, timeoutMs: 1000 }, fetchImpl: async () => new Response(ogg(40)) });
   const entry = await idle.get('aaaaaaaaaaa', { background: true }); await entry.done;
-  assert.equal(entry.bytes, 10);
+  assert.equal(entry.bytes, 40);
 });

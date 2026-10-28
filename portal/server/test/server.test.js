@@ -1659,6 +1659,11 @@ test('device audio passes byte ranges through and nothing but audio', { timeout:
   f.state.bridgeResponse = res => reply(res, 404, { error: { code: 'audio_unavailable', message: 'SECRET detail' } });
   const missing = await f.request(route, { headers });
   assert.equal(missing.status, 404); assert.doesNotMatch(missing.text, /SECRET/);
+  // A song the bot can't stream says so in the portal's own words, not as a missing server.
+  assert.deepEqual(JSON.parse(missing.text).error, { code: 'audio_unavailable', message: 'This song can’t be streamed right now. Try another version.' });
+  f.state.bridgeResponse = res => reply(res, 404, { error: { code: 'not_found', message: 'SECRET detail' } });
+  const gone = await f.request(route, { headers });
+  assert.equal(JSON.parse(gone.text).error.code, 'not_found'); assert.doesNotMatch(gone.text, /SECRET/);
 
   assert.equal((await f.request(route, { headers: { ...headers, Range: 'bytes=0-1,4-5' } })).status, 400);
   assert.equal((await f.request(`/api/guilds/${guildId}/audio/short`, { headers })).status, 404);

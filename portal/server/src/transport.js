@@ -13,6 +13,11 @@ const safeErrors = {
   429: ['busy', 'The bot is busy. Please try again shortly.'],
   503: ['unavailable', 'The bot or audio service is unavailable. Refresh before making another change.'],
 };
+// Bot error codes the audio route names in its own words; the bot's text never passes.
+const audioErrors = {
+  audio_unavailable: [404, 'This song can’t be streamed right now. Try another version.'],
+};
+const AUDIO_ERROR_BYTES = 4096;
 
 // Keep rejected response payloads distinct from socket/deadline outages without
 // exposing private upstream fields or changing the public safe error contract.
@@ -89,9 +94,19 @@ export class Transport {
             res.once('close', () => { req.destroy(); resolve(); });
             return;
           }
-          response.resume();
           const [code, message] = status !== 200 && safeErrors[status] || safeErrors[503];
-          reject(new HttpError(status !== 200 && safeErrors[status] ? status : 503, code, message));
+          const safe = new HttpError(status !== 200 && safeErrors[status] ? status : 503, code, message);
+          if (status !== 404 || !/^application\/json/.test(type)) { response.resume(); reject(safe); return; }
+          // Only the error code is read, from a bounded body.
+          const chunks = []; let size = 0;
+          response.on('data', chunk => { size += chunk.length; if (size > AUDIO_ERROR_BYTES) response.destroy(); else chunks.push(chunk); });
+          response.once('error', () => reject(safe));
+          response.once('close', () => {
+            let upstream;
+            try { upstream = JSON.parse(Buffer.concat(chunks).toString('utf8'))?.error?.code; } catch {}
+            const known = Object.hasOwn(audioErrors, upstream) && audioErrors[upstream];
+            reject(known && known[0] === status ? new HttpError(status, upstream, known[1]) : safe);
+          });
         });
         const timer = setTimeout(() => req.destroy(new Error('Upstream timeout')), this.limits.audioMs); timer.unref();
         req.once('error', () => { clearTimeout(timer); reject(unavailable()); });

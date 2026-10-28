@@ -41,22 +41,34 @@ deployed portal origin, not a bundled copy of `portal/web`:
 - The origin is a build setting, never committed (the repository is public).
 - The shell navigates only within the portal origin and Discord's OAuth pages. Every other link
   opens in the system browser. Native plugins answer only the portal origin.
+- The bridge exposes only the three plugins below. Capacitor's built-in HTTP and cookie plugins
+  are disabled or refused, because native HTTP skips the CSP and shares the WebView's cookies.
+  Step 1 proves it with negative checks from the portal page and from Discord's pages. If
+  Capacitor can't be restricted this way, this ADR is amended before anything ships.
 
 Native Kotlin with its own UI was the alternative. It was rejected because it means a second UI
 to keep in step with the portal.
 
 **Three native plugins, in Kotlin.**
 
-1. **Playback.** A Media3 (ExoPlayer) media session plays the portal's existing audio route
-   (`/api/guilds/:guild/audio/:videoId`) with the portal session cookie from the WebView's cookie
-   store. In the app it replaces the `<audio>` element behind this device's player; the queue and
-   its rules stay in the web layer. This gives background playback, lock-screen, notification and
-   Bluetooth controls, and later gapless playback or crossfade.
-2. **YouTube Music account.** Sign-in runs Google's own login page in a separate WebView, never
-   the portal's. When it lands on music.youtube.com and the listener confirms the account and
-   channel, the plugin keeps the cookies and the page's account identifiers, encrypted with the
-   Android Keystore and excluded from backups. Sign-out deletes them. The cookie never reaches
-   JavaScript, the portal, or the bot.
+1. **Playback.** A Media3 `MediaSessionService` plays the portal's existing audio route
+   (`/api/guilds/:guild/audio/:videoId`) with the portal session cookie. On the phone it owns this
+   device's playing list, position, repeat and the transport (play, pause, next, previous, seek),
+   because the WebView can be destroyed while music plays. The web layer edits that list and shows
+   its state, and reconciles with it when the page is recreated; its queue rules (`playback.ts`)
+   decide what goes in the list, not when a track advances. Step 1 proves several tracks playing in
+   a row, and the notification and Bluetooth controls, with the app's activity gone. This gives
+   background playback, lock-screen, notification and Bluetooth controls, and later gapless
+   playback or crossfade. Discord sessions keep their controls in the portal page.
+2. **YouTube Music account.** Sign-in runs Google's own login page in its own WebView storage: an
+   isolated WebView profile, or a separate process with its own WebView data directory where
+   profiles aren't supported. A plain second WebView is not enough, since it shares the portal's
+   cookie store. When the page lands on music.youtube.com and the listener confirms the account
+   and channel, the plugin keeps the cookies and the page's account identifiers, encrypted with
+   the Android Keystore, and then clears that login storage. It is cleared on cancel too, and kept
+   out of backups. Signed requests carry the cookie from the encrypted copy, never from a WebView
+   cookie store. Sign-out deletes the copy. The cookie never reaches JavaScript, the portal, or
+   the bot.
 3. **YouTube Music library.** Reads, signed on the phone and sent from the phone to YouTube Music:
    home feed, liked songs, playlists, history, search, artist, album and playlist pages. Results
    reach the web layer as tracks with YouTube video IDs, titles, artists, artwork and durations.

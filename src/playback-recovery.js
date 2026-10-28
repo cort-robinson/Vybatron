@@ -441,8 +441,14 @@ export function createPlaybackRecovery({
   async function alternativeFor(player, original, signal) {
     const length = duration(original);
     if (!alternativeStream || original.info?.isStream || !(length > 0)) return null;
+    // The deadline aborts the lookup too, so a late answer can't add a
+    // torrent or load a link after the track has been skipped.
+    const abort = new AbortController();
+    const cancel = () => abort.abort();
+    signal.addEventListener('abort', cancel, { once: true });
     const lookup = async () => {
-      const stream = await alternativeStream(original, signal);
+      const stream = await alternativeStream(original, abort.signal);
+      if (abort.signal.aborted) throw abortError();
       if (!stream?.url) return null;
       const result = await search(player, { query: stream.url }, original.requester);
       const candidate = result?.tracks?.[0];
@@ -453,7 +459,12 @@ export function createPlaybackRecovery({
         artworkUrl: original.info.artworkUrl, isrc: original.info.isrc },
       pluginInfo: { ...candidate.pluginInfo, alternativeSource: 'torbox' } };
     };
-    return within(lookup(), alternativeTimeoutMs, signal, timers);
+    try {
+      return await within(lookup(), alternativeTimeoutMs, signal, timers);
+    } finally {
+      signal.removeEventListener('abort', cancel);
+      abort.abort();
+    }
   }
 
   function recoveryPosition(player, candidate, reportedPosition = player.lastPosition) {

@@ -11,8 +11,8 @@ function attribute(item, name) {
   return match ? unescape(match[1]) : null;
 }
 
-// Each result's info hash and magnet link, in the indexer's order. Results
-// without a hash (a .torrent download only) can't be checked against a cache.
+// Each result's info hash, in the indexer's order. Results without a hash
+// (a .torrent download only) can't be checked against a cache.
 export function parseTorznab(xml) {
   const results = [];
   for (const [, item] of String(xml).matchAll(/<item>([\s\S]*?)<\/item>/g)) {
@@ -20,7 +20,7 @@ export function parseTorznab(xml) {
     const magnet = attribute(item, 'magneturl') || (link ? unescape(link) : null);
     const hash = (attribute(item, 'infohash') || magnet?.match(/urn:btih:([a-f0-9]{40})/i)?.[1] || '').toLowerCase();
     if (!/^[a-f0-9]{40}$/.test(hash)) continue;
-    results.push({ hash, magnet: magnet?.startsWith('magnet:') ? magnet : `magnet:?xt=urn:btih:${hash}` });
+    results.push({ hash });
   }
   return results;
 }

@@ -4,7 +4,7 @@ import { catalogUrl, LIBRARY_LIMITS, validId } from '../utils/library.js';
 import { savedSession, usableSession } from '../utils/sessions.js';
 import { AUDIO_PRESETS, getAudioPreset } from '../utils/filters.js';
 import { autoplayActive, autoplayMode, isAutoplayTrack, radioState, suggestions } from '../utils/radio.js';
-import { isPlaybackRecovering } from '../playback-recovery.js';
+import { ATTEMPT_KEY, isPlaybackRecovering } from '../playback-recovery.js';
 import { getControllerRecord } from '../utils/player-controller.js';
 import { seekRevision } from '../utils/operations.js';
 import { sleepTimer } from '../utils/sleep-timer.js';
@@ -113,6 +113,12 @@ export function createRevisions(client) {
     const handler = player => { if (player?.guildId) epochs.set(player.guildId, (epochs.get(player.guildId) || 0) + 1); };
     client.lavalink?.on?.(event, handler); listeners.push([event, handler]);
   }
+  // Lavalink is playing this track's attempt. A copy from another source (TorBox)
+  // keeps the catalog identifier, so only its attempt token matches.
+  const sameAttempt = (remote, track) => {
+    const token = track.userData?.[ATTEMPT_KEY];
+    return token ? remote?.userData?.[ATTEMPT_KEY] === token : remote?.info?.identifier === track.info?.identifier;
+  };
   // Asks Lavalink where a fresh song is until its place moves, then lets the position run from there.
   // While it holds, the held place is part of the revision, so a corrected place reaches the page.
   const open = async player => {
@@ -127,7 +133,7 @@ export function createRevisions(client) {
         const remote = await node.fetchPlayer(player.guildId).catch(() => null);
         const position = Number(remote?.state?.position);
         if (player.queue?.current !== track || isPlaybackRecovering(player) || !Number.isFinite(position)
-          || remote?.track?.info?.identifier !== track.info?.identifier) continue;
+          || !sameAttempt(remote?.track, track)) continue;
         player.lastPosition = position; player.lastPositionChange = Date.now();
         if (first !== null && position > first) return;
         first ??= position;

@@ -25,7 +25,7 @@ function indexer(byQuery) {
   return { queries, search: async (query) => { queries.push(query); return byQuery[query] || []; } };
 }
 
-const result = (hash) => ({ hash, magnet: `magnet:?xt=urn:btih:${hash}` });
+const result = (hash) => ({ hash });
 
 test('song terms split an "Artist - Song" video title and drop release labels', () => {
   assert.deepEqual(songTerms(song), { query: 'Rick Astley Never Gonna Give You Up', song: 'never gonna give you up', artist: 'rick astley' });
@@ -47,14 +47,14 @@ test('a matching file holds the whole title and the artist; a bare title beats a
   assert.equal(matchingFile([{ name: 'Lover/02. Dreams.flac' }], terms, 'Fleetwood Mac - Discography').name, 'Lover/02. Dreams.flac');
 });
 
-test('torznab results give hashes and magnets in order, building a magnet from a bare hash', () => {
+test('torznab results give info hashes in order, from the attribute or a magnet', () => {
   const xml = `<rss><channel>
     <item><title>Rick Astley - Whenever You Need Somebody</title><link>http://prowlarr/download?apikey=x&amp;id=1</link>
       <torznab:attr name="infohash" value="${HASH.toUpperCase()}"/></item>
     <item><title>No hash</title><link>http://prowlarr/download?id=2</link></item>
     <item><title>Magnet</title><torznab:attr name="magneturl" value="magnet:?xt=urn:btih:${OTHER}&amp;dn=x"/></item>
   </channel></rss>`;
-  assert.deepEqual(parseTorznab(xml), [result(HASH), { hash: OTHER, magnet: `magnet:?xt=urn:btih:${OTHER}&dn=x` }]);
+  assert.deepEqual(parseTorznab(xml), [result(HASH), result(OTHER)]);
 });
 
 test('torznab searches the Audio category with its own key', async () => {
@@ -73,7 +73,12 @@ test('an uncached song result falls back to the artist search and streams the al
     [/checkcached\?hash=bbbb/, () => [200, { success: true, data: [] }]],
     [/checkcached\?hash=cccc/, () => [200, { success: true, data: [{ hash: ALBUM, name: 'Rick Astley - Whenever You Need Somebody',
       files: [{ name: 'Whenever/01 Never Gonna Give You Up.flac' }] }] }]],
-    [/createtorrent/, () => [200, { success: true, data: { torrent_id: 42, hash: ALBUM } }]],
+    [/createtorrent/, (_url, options) => {
+      // Only a still-cached torrent may be added, by the hash that was checked.
+      assert.equal(options.body.get('magnet'), `magnet:?xt=urn:btih:${ALBUM}`);
+      assert.equal(options.body.get('add_only_if_cached'), 'true');
+      return [200, { success: true, data: { torrent_id: 42, hash: ALBUM } }];
+    }],
     [/mylist\?bypass_cache=true&id=42/, () => [200, { success: true, data: { id: 42, hash: ALBUM,
       files: [{ id: 0, name: 'Whenever/cover.jpg' }, { id: 3, name: 'Whenever/01 Never Gonna Give You Up.flac' }] } }]],
     [/requestdl/, (url) => {
@@ -117,4 +122,18 @@ test('live streams are never looked up, and API errors never echo the key', asyn
   assert.equal(await torbox.findStream({ info: { ...song.info, isStream: true } }), null);
   assert.equal(calls.length + search.queries.length, 0);
   await assert.rejects(torbox.findStream(song), (error) => error.message.includes('BAD_TOKEN') && !error.message.includes('secret-key'));
+});
+
+test('the requested file is the checked path, not another artist\'s file with the same name', async () => {
+  const terms = { info: { title: 'Intro', author: 'Right Artist - Topic', length: 60_000 } };
+  const search = indexer({ 'Right Artist Intro': [result(HASH)] });
+  const files = [{ name: 'Compilation/Wrong Artist/Intro.flac' }, { name: 'Compilation/Right Artist/Intro.flac' }];
+  const { fetch } = api([
+    [/checkcached/, () => [200, { success: true, data: [{ hash: HASH, name: 'Compilation', files }] }]],
+    [/createtorrent/, () => [200, { success: true, data: { torrent_id: 9, hash: HASH } }]],
+    [/mylist\?bypass_cache=true&id=9/, () => [200, { success: true, data: { id: 9, hash: HASH,
+      files: [{ id: 1, name: files[0].name }, { id: 2, name: files[1].name }] } }]],
+    [/requestdl/, (url) => [200, { success: true, data: `https://cdn.example/${new URL(url).searchParams.get('file_id')}` }]],
+  ]);
+  assert.equal((await createTorbox({ apiKey: KEY, search: search.search, fetch }).findStream(terms)).url, 'https://cdn.example/2');
 });

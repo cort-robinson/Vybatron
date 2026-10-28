@@ -1648,3 +1648,23 @@ test('a failed or hung alternative lookup still skips within its deadline', asyn
   assert.equal(hung.failed.length, 1);
   assert.equal(hung.player.queue.current.info.identifier, 'Zi_XLOBDo_Y');
 });
+
+test('an alternative lookup past its deadline is aborted and never loads its late link', async () => {
+  let lookupSignal;
+  const late = deferred();
+  const loads = [];
+  const f = fixture({
+    alternativeStream: (_track, signal) => { lookupSignal = signal; return late.promise; },
+    alternativeTimeoutMs: 5,
+    search: async (_player, query) => { loads.push(query.query); return { tracks: [] }; },
+  });
+  await f.start(f.track(), []);
+  await f.node.handleEvent({ type: 'TrackExceptionEvent', guildId: 'g1', track: f.wire(),
+    exception: { message: 'This is a private video.' } });
+  await f.tasks.at(-1);
+  assert.equal(f.player.queue.current, null);
+  assert.equal(lookupSignal.aborted, true);
+  late.resolve({ url: 'https://cdn.example/late.flac' });
+  await settle();
+  assert.deepEqual(loads, []);
+});

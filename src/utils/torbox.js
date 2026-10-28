@@ -53,10 +53,6 @@ export function matchingFile(files, terms, torrentName = '') {
   return scored[0]?.file || null;
 }
 
-function sameFile(a, b) {
-  return String(a || '').split('/').pop() === String(b || '').split('/').pop();
-}
-
 export function createTorbox({ apiKey, search, fetch = globalThis.fetch, requestMs = TORBOX_LIMITS.requestMs } = {}) {
   async function call(url, { signal, method = 'GET', body } = {}) {
     const response = await fetch(url, { method, body,
@@ -83,11 +79,15 @@ export function createTorbox({ apiKey, search, fetch = globalThis.fetch, request
     return (Array.isArray(list) ? list : []).find(item => String(item?.hash).toLowerCase() === hash) || null;
   }
 
-  // Adding a cached torrent is instant. One already in the account is reused.
-  async function addTorrent(magnet, hash, signal) {
+  // Adding a cached torrent is instant, and TorBox refuses one whose cache
+  // entry went away since the check, so nothing ever downloads. The magnet is
+  // built from the checked hash, never taken from the indexer. A torrent
+  // already in the account is reused.
+  async function addTorrent(hash, signal) {
     try {
       const body = new FormData();
-      body.append('magnet', magnet);
+      body.append('magnet', `magnet:?xt=urn:btih:${hash}`);
+      body.append('add_only_if_cached', 'true');
       const created = await call(`${API}/torrents/createtorrent`, { method: 'POST', body, signal });
       if (Number.isSafeInteger(created?.torrent_id)) {
         return call(`${API}/torrents/mylist?bypass_cache=true&id=${created.torrent_id}`, { signal });
@@ -120,10 +120,11 @@ export function createTorbox({ apiKey, search, fetch = globalThis.fetch, request
     const terms = songTerms(track);
     if (!terms || track.info?.isStream) return null;
     let tried = 0;
-    for await (const { hash, magnet, file } of candidates(terms, signal)) {
+    for await (const { hash, file } of candidates(terms, signal)) {
       if (++tried > TORBOX_LIMITS.torrents) break;
-      const torrent = await addTorrent(magnet, hash, signal);
-      const owned = (torrent?.files || []).find(candidate => sameFile(candidate?.name, file.name));
+      const torrent = await addTorrent(hash, signal);
+      // The full path: a compilation can hold the same file name per artist.
+      const owned = (torrent?.files || []).find(candidate => candidate?.name === file.name);
       if (!Number.isSafeInteger(torrent?.id) || !Number.isSafeInteger(owned?.id)) continue;
       const params = new URLSearchParams({ token: apiKey, torrent_id: String(torrent.id), file_id: String(owned.id), redirect: 'false' });
       const link = await call(`${API}/torrents/requestdl?${params}`, { signal });

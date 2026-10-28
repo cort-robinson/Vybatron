@@ -99,6 +99,12 @@ plugins:
       albumLoadLimit: 6
 
 logging:
+  # Track URLs stay out of the logs: TorBox links are signed, and loads and
+  # player updates carry them in query strings, payloads and encoded tracks.
+  request:
+    includeQueryString: false
+    includePayload: false
   level:
     root: INFO
     lavalink: INFO
+    lavalink.server.player.AudioLoaderRestHandler: WARN

@@ -104,7 +104,9 @@ the bot: show its uncertainty and refresh; do not automatically resend it.
 queue/replay POSTs. Service worker script responses use `no-store`; all private
 HTTP/SSE/auth/error responses also use `no-store`. The service CSP forbids audio
 playback/media requests, third-party scripts, framing, and cross-origin API
-connections. UI imagery may use HTTPS/data images; fonts/scripts must be local.
+connections. UI imagery may use HTTPS/data images; fonts/scripts must be local. Scripts may
+compile WebAssembly (`'wasm-unsafe-eval'`, for the MilkDrop visualizer's preset
+equations, ADR-0015) but never evaluate JavaScript.
 Serve externally hosted artwork only under the bot's safe projection policy.
 
 Root owns Dockerfiles, Compose, resource limits, UI build, OAuth provisioning,

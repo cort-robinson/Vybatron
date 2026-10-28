@@ -79,6 +79,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # The tag must still name the commit that was built; a moved tag would label another commit's APK.
+          # (Annotated tags list their commit as the ^{} line, which sorts last.)
+          TAGGED=$(git ls-remote origin "refs/tags/$TAG" "refs/tags/$TAG^{}" | tail -1 | cut -f1)
+          [ "$TAGGED" = "$GITHUB_SHA" ] \
+            || { echo "::error::$TAG now points at ${TAGGED:-nothing}, not the built commit $GITHUB_SHA."; exit 1; }
           APK="vybatron-$VERSION.apk"
           cp app/build/outputs/apk/release/app-release.apk "$APK"
           sha256sum "$APK" > "$APK.sha256"

@@ -10,12 +10,12 @@ const bySkin: Record<Skin, PresetId> = { overdrive: 'gridrunner', fantastic: 'co
 
 const key = 'vybertron.visualizer';
 // MilkDrop took Neon's place in the picker, and someone who had chosen Neon keeps that place.
+// Rewriting the stored choice is best effort; the migrated one stands even if that fails.
 const read = (): PresetId | null => {
-  try {
-    let stored = localStorage.getItem(key);
-    if (stored === 'neon') { stored = 'milkdrop'; localStorage.setItem(key, stored); }
-    return PRESETS.some(preset => preset.id === stored) ? stored as PresetId : null;
-  } catch { return null; }
+  let stored: string | null;
+  try { stored = localStorage.getItem(key); } catch { return null; }
+  if (stored === 'neon') { stored = 'milkdrop'; try { localStorage.setItem(key, stored); } catch { /* Optional, non-sensitive preference. */ } }
+  return PRESETS.some(preset => preset.id === stored) ? stored as PresetId : null;
 };
 let chosen = read();
 const listeners = new Set<() => void>();

@@ -28,8 +28,9 @@ export type Events = { fail: () => void; sourced: (source: Source) => void; name
 
 // What a frame is drawn from: the song's moment, the seconds since the last frame, a visual clock
 // and a travelled distance that advance only while the song plays, the song's position, and
-// whether this is a composed still rather than a frame of the loop. One object, reused.
-export type Moment = { f: Features; dt: number; time: number; drive: number; ms: number; still: boolean };
+// whether this is a composed still rather than a frame of the loop. beatsAt: the song's beats by any
+// position (signal.ts). One object, reused.
+export type Moment = { f: Features; dt: number; time: number; drive: number; ms: number; still: boolean; beatsAt: (positionMs: number) => number };
 // A painter learns the drawing buffer's size and each view, and draws moments (false while it has
 // nothing to show yet). redraw asks the engine for a frame when something it waited for arrives;
 // lose gives up on the context.
@@ -45,7 +46,8 @@ export function startVisualizer(canvas: HTMLCanvasElement, milkdrop: boolean, { 
   else {
     void import('./milkdrop').then(({ milkdropPainter }) => {
       if (stopped) return;
-      painter = milkdropPainter(canvas, lose, redraw, name => named?.(name));
+      // Its mesh is chosen once, for the screen it is on: the full screen on a desktop gets the finer one.
+      painter = milkdropPainter(canvas, !!view?.full && !view.lite && !coarse.matches, lose, redraw, name => named?.(name));
       if (!painter) { lose(); return; }
       if (view) painter.update(view);
       if (sized) painter.resize(canvas.width, canvas.height);
@@ -57,7 +59,7 @@ export function startVisualizer(canvas: HTMLCanvasElement, milkdrop: boolean, { 
   // The map being fetched for this song (its key, and how to stop asking), and the last moment drawn.
   let mapKey: string | null = null; let loading: AbortController | null = null; let shown: Features | undefined;
   let time = 0; let drive = 0; let speed = 0;
-  const moment = { dt: 0, time: 0, drive: 0, ms: 0, still: false } as Moment;
+  const moment = { dt: 0, time: 0, drive: 0, ms: 0, still: false, beatsAt: ms => signal!.beatsAt(ms) } as Moment;
   const paint = (f: Features, dt: number, ms: number, still: boolean) => {
     moment.f = f; moment.dt = dt; moment.time = time; moment.drive = drive; moment.ms = ms; moment.still = still;
     if (painter!.draw(moment) && !drawn) { drawn = true; canvas.dataset.drawn = ''; }

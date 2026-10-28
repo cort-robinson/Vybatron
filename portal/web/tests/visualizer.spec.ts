@@ -308,6 +308,91 @@ test('MilkDrop loads its code when chosen, draws in the sleeve and full screen a
   expect(errors).toEqual([]);
 });
 
+test('a stored Neon choice still lands on MilkDrop when the browser refuses to save the change', async ({ page }) => {
+  await stored(page, 'neon');
+  await page.addInitScript(() => {
+    const save = Storage.prototype.setItem;
+    Storage.prototype.setItem = function (this: Storage, key: string, value: string) { if (key === 'vybertron.visualizer') throw new DOMException('Quota exceeded', 'QuotaExceededError'); save.call(this, key, value); };
+  });
+  await mockPortal(page);
+  await openPlayer(page);
+  await page.getByRole('button', { name: 'More playback controls' }).click();
+  await page.getByRole('button', { name: 'Full-screen visualizer', exact: true }).click();
+  await expect(fullScreen(page).getByRole('radio', { name: 'MilkDrop' })).toBeChecked();
+});
+
+const fullName = (page: Page) => fullScreen(page).locator('.visualizer-preset-name');
+async function openMilkdrop(page: Page) {
+  await page.getByRole('button', { name: 'More playback controls' }).click();
+  await page.getByRole('button', { name: 'Full-screen visualizer', exact: true }).click();
+  await expect(fullScreen(page).locator('canvas[data-drawn]')).toHaveCount(1, slowly);
+  await expect(fullName(page)).not.toBeEmpty(slowly);
+}
+
+test('Next while paused cuts to the next preset and finishes before holding still', async ({ page }) => {
+  test.slow();
+  await page.setViewportSize({ width: 960, height: 600 });
+  await countFrames(page); await stored(page, 'milkdrop');
+  const fixture = await mockPortal(page);
+  await openPlayer(page);
+  await openMilkdrop(page);
+  const state = fixture.state.snapshot; state.session.status = 'paused'; state.revision = 'paused';
+  await emit(page, state);
+  await expect.poll(async () => (await framesOver(page, 500)).full, slowly).toBe(0);
+  const first = await fullName(page).getAttribute('title');
+  const before = await page.evaluate(() => ({ ...(window as unknown as { visualFrames: Record<string, number> }).visualFrames }).full);
+  await fullScreen(page).getByRole('button', { name: 'Next preset' }).click();
+  await expect(fullName(page)).not.toHaveAttribute('title', first!, slowly);
+  await expect.poll(async () => (await framesOver(page, 500)).full, slowly).toBe(0);
+  // A blend would get the couple of frames a paused song draws and stop part way, still mostly the
+  // old preset; the cut runs the new one long enough to build before it holds.
+  const after = await page.evaluate(() => (window as unknown as { visualFrames: Record<string, number> }).visualFrames.full);
+  expect(after - before).toBeGreaterThanOrEqual(20);
+});
+
+test('resizing the full screen during a blend keeps MilkDrop’s mesh whole', async ({ page }) => {
+  test.slow();
+  await page.setViewportSize({ width: 600, height: 400 });
+  await stored(page, 'milkdrop');
+  // Counts warp mesh coordinates that aren't numbers, as Butterchurn uploads them each frame.
+  await page.addInitScript(() => {
+    const record = window as unknown as { brokenMesh: number }; record.brokenMesh = 0;
+    const upload = WebGL2RenderingContext.prototype.bufferData as (...args: unknown[]) => void;
+    WebGL2RenderingContext.prototype.bufferData = function (this: WebGL2RenderingContext, ...args: unknown[]) {
+      const data = args[1];
+      if (data instanceof Float32Array) for (let i = 0; i < data.length; i++) if (!Number.isFinite(data[i])) record.brokenMesh++;
+      return upload.apply(this, args);
+    } as typeof WebGL2RenderingContext.prototype.bufferData;
+  });
+  await mockPortal(page);
+  await openPlayer(page);
+  await openMilkdrop(page);
+  const first = await fullName(page).getAttribute('title');
+  await fullScreen(page).getByRole('button', { name: 'Next preset' }).click();
+  await expect(fullName(page)).not.toHaveAttribute('title', first!, slowly);
+  // Mid-blend, the drawing buffer grows several times over.
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.waitForTimeout(1500);
+  expect(await page.evaluate(() => (window as unknown as { brokenMesh: number }).brokenMesh)).toBe(0);
+});
+
+test('a MilkDrop opened later, or after a seek, shows the same preset as one already open', async ({ page }) => {
+  test.slow();
+  await stored(page, 'milkdrop');
+  const fixture = await mockPortal(page);
+  await openPlayer(page);
+  await openMilkdrop(page);
+  // A seek well into another turn: the open screen moves on to it as the position says.
+  const state = fixture.state.snapshot; state.session.positionMs = 180_000; state.revision = 'seek';
+  await emit(page, state);
+  await page.waitForTimeout(2000);
+  const open = await fullName(page).getAttribute('title');
+  await page.keyboard.press('Escape');
+  await expect(fullScreen(page)).toHaveCount(0);
+  await openMilkdrop(page);
+  await expect(fullName(page)).toHaveAttribute('title', open!, slowly);
+});
+
 test('MilkDrop under reduced motion shows one composed frame instead of a loop', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await countFrames(page); await stored(page, 'milkdrop');

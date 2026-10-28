@@ -37,7 +37,7 @@ import androidx.webkit.WebViewFeature
 
 /**
  * The portal in a WebView, and nothing else: no bundled copy of the site and no
- * second UI. Native code is reachable only from the portal origin (ADR-0015).
+ * second UI. Native code is reachable only from the portal origin (ADR-0016).
  */
 class MainActivity : ComponentActivity() {
     private var webView: WebView? = null

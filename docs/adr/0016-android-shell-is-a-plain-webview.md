@@ -1,4 +1,4 @@
-# ADR-0015: The Android shell is a plain WebView, not Capacitor
+# ADR-0016: The Android shell is a plain WebView, not Capacitor
 
 - Status: Accepted
 - Date: 2026-10-28

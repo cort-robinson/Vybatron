@@ -3,7 +3,7 @@
 The portal in an Android app: one activity with a WebView that loads the live portal, and native
 code the portal can reach through `window.vybatronNative` and nowhere else. Design:
 [ADR-0014](../../docs/adr/0014-android-app-with-on-device-youtube-music-account.md) and
-[ADR-0015](../../docs/adr/0015-android-shell-is-a-plain-webview.md).
+[ADR-0016](../../docs/adr/0016-android-shell-is-a-plain-webview.md).
 
 | File | Purpose |
 | --- | --- |

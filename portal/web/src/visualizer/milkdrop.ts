@@ -45,7 +45,9 @@ export function milkdropPainter(canvas: HTMLCanvasElement, dense: boolean, lose:
   // broken: presets whose equations failed to compile or trapped at run time, skipped from then on.
   const broken = new Uint8Array(MILKDROP.length);
   let order = new Uint8Array(0); let track: string | null = null; let playing = false; let stopped = false;
-  let shown = -1; let loading = -1; let fresh = false; let seen = skips;
+  // blending: seconds of a blend still to draw, with a little over, since Butterchurn's own clock
+  // runs on its estimate of the frame rate.
+  let shown = -1; let loading = -1; let fresh = false; let blending = 0; let seen = skips;
   // The preset whose turn it is at ms: its place in the order, past any broken preset.
   const choose = (ms: number, beatsAt: (ms: number) => number) => {
     const n = order.length; let at = turn(ms, beatsAt) + skips;
@@ -56,7 +58,7 @@ export function milkdropPainter(canvas: HTMLCanvasElement, dense: boolean, lose:
     loading = index; seen = skips;
     visualizer.loadPreset(MILKDROP[index].preset, blend).then(() => {
       if (stopped) return;
-      shown = index; fresh = !blend; named(MILKDROP[index].name);
+      shown = index; fresh = !blend; blending = blend && blend + .5; named(MILKDROP[index].name);
     }, () => { broken[index] = 1; }).finally(() => { loading = -1; if (!stopped) redraw(); });
   };
   return {
@@ -76,11 +78,14 @@ export function milkdropPainter(canvas: HTMLCanvasElement, dense: boolean, lose:
       else if (loading < 0) load(want, shown < 0 || still || !playing ? 0 : seen !== skips ? SKIP_BLEND : BLEND);
       if (shown < 0) return false;
       wave.write(f, dt); frame.elapsedTime = dt;
-      try { for (let i = fresh && (still || !playing) ? WARM : 1; i > 0; i--) visualizer.render(frame); }
-      catch { broken[shown] = 1; shown = -1; redraw(); }
+      try { for (let i = fresh && (still || !playing) ? WARM : 1; i > 0; i--) visualizer.render(frame); blending = Math.max(0, blending - dt); }
+      catch { broken[shown] = 1; shown = -1; blending = 0; redraw(); }
       fresh = false;
       return true;
     },
+    // A preset still compiling or a blend under way keeps the loop drawing after the song pauses, so
+    // the change is seen through rather than frozen part way.
+    busy: () => loading >= 0 || blending > 0,
     next() { skips++; redraw(); },
     stop() {
       stopped = true; context.removeEventListener('webglcontextlost', contextLost);

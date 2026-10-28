@@ -32,9 +32,9 @@ export type Events = { fail: () => void; sourced: (source: Source) => void; name
 // position (signal.ts). One object, reused.
 export type Moment = { f: Features; dt: number; time: number; drive: number; ms: number; still: boolean; beatsAt: (positionMs: number) => number };
 // A painter learns the drawing buffer's size and each view, and draws moments (false while it has
-// nothing to show yet). redraw asks the engine for a frame when something it waited for arrives;
-// lose gives up on the context.
-export type Painter = { resize: (width: number, height: number) => void; update: (view: View) => void; draw: (moment: Moment) => boolean; next: () => void; stop: () => void };
+// nothing to show yet); while busy, it needs frames even once a paused song has settled. redraw
+// asks the engine for a frame when something it waited for arrives; lose gives up on the context.
+export type Painter = { resize: (width: number, height: number) => void; update: (view: View) => void; draw: (moment: Moment) => boolean; busy: () => boolean; next: () => void; stop: () => void };
 
 const FRAME = 1000 / 31;
 
@@ -81,7 +81,7 @@ export function startVisualizer(canvas: HTMLCanvasElement, milkdrop: boolean, { 
     speed += ((view!.playing ? 1 : 0) - speed) * (1 - Math.exp(-dt * 2.2));
     time += dt * speed; drive += dt * speed * (.6 + 1.4 * f.bass + .8 * f.beat);
     paint(f, dt, ms, false);
-    if (view!.playing || !f.settled || speed > .005) schedule(); else last = 0;
+    if (view!.playing || !f.settled || speed > .005 || painter!.busy()) schedule(); else last = 0;
   };
   // A composed still: the song's shape at its position, and a scene placed by that position.
   const still = () => {
@@ -182,6 +182,7 @@ function shaderPainter(canvas: HTMLCanvasElement, lose: () => void): Painter | n
       gl.drawArrays(gl.TRIANGLES, 0, 3);
       return true;
     },
+    busy: () => false,
     next() {},
     stop() {
       canvas.removeEventListener('webglcontextlost', contextLost);

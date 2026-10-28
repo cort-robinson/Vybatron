@@ -350,6 +350,74 @@ test('Next while paused cuts to the next preset and finishes before holding stil
   expect(after - before).toBeGreaterThanOrEqual(20);
 });
 
+// When the full screen last drew, and when its preset name last changed (a load has finished and
+// its blend begun), on the page's clock.
+const timeline = (page: Page) => page.addInitScript(() => {
+  const record = window as unknown as { lastFrame: number; named: number }; record.lastFrame = 0; record.named = 0;
+  const copy = CanvasRenderingContext2D.prototype.drawImage;
+  CanvasRenderingContext2D.prototype.drawImage = function (this: CanvasRenderingContext2D, ...args: unknown[]) {
+    if (args[0] instanceof OffscreenCanvas && this.canvas.closest?.('.visualizer-stage')) record.lastFrame = performance.now();
+    return (copy as (...args: unknown[]) => void).apply(this, args);
+  } as typeof copy;
+  addEventListener('DOMContentLoaded', () => new MutationObserver(changes => {
+    if (changes.some(change => (change.target as Element).classList?.contains('visualizer-preset-name') || [...change.addedNodes].some(node => (node as Element).classList?.contains('visualizer-preset-name')))) record.named = performance.now();
+  }).observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['title'] }));
+});
+// How long the full screen went on drawing after its last preset change, once it has stopped.
+async function drawnAfterChange(page: Page) {
+  await expect.poll(async () => (await framesOver(page, 600)).full, slowly).toBe(0);
+  return page.evaluate(() => { const { lastFrame, named } = window as unknown as { lastFrame: number; named: number }; return (lastFrame - named) / 1000; });
+}
+
+// Preset equations compile to WebAssembly; this holds that from hold() until release().
+const holdCompiles = (page: Page) => page.addInitScript(() => {
+  const gate = window as unknown as { hold: () => void; release: () => void };
+  let held = false; let waiting: (() => void)[] = [];
+  gate.hold = () => { held = true; }; gate.release = () => { held = false; waiting.forEach(go => go()); waiting = []; };
+  const compile = WebAssembly.compile;
+  WebAssembly.compile = async (...args: Parameters<typeof compile>) => { if (held) await new Promise<void>(go => waiting.push(go)); return compile(...args); };
+});
+const gate = (page: Page, action: 'hold' | 'release') => page.evaluate(action => (window as unknown as Record<string, () => void>)[action](), action);
+
+test('pausing as a blend begins lets it finish rather than freezing part way', async ({ page }) => {
+  test.slow();
+  await page.setViewportSize({ width: 960, height: 600 });
+  await countFrames(page); await timeline(page); await holdCompiles(page); await stored(page, 'milkdrop');
+  const fixture = await mockPortal(page);
+  await openPlayer(page);
+  await openMilkdrop(page);
+  const first = await fullName(page).getAttribute('title');
+  // A seek into another turn asks for its 2.7 s blend while the song plays; the song pauses just
+  // before the preset is ready, so the blend begins with the loop already winding down.
+  await gate(page, 'hold');
+  const state = fixture.state.snapshot; state.session.positionMs = 180_000; state.revision = 'seek';
+  await emit(page, state);
+  await page.waitForTimeout(250);
+  state.session.status = 'paused'; state.revision = 'paused'; await emit(page, state);
+  await page.waitForTimeout(400);
+  await gate(page, 'release');
+  await expect(fullName(page)).not.toHaveAttribute('title', first!, slowly);
+  expect(await drawnAfterChange(page)).toBeGreaterThanOrEqual(2.7);
+});
+
+test('pausing while the next preset compiles still sees its blend through', async ({ page }) => {
+  test.slow();
+  await page.setViewportSize({ width: 960, height: 600 });
+  await countFrames(page); await timeline(page); await holdCompiles(page); await stored(page, 'milkdrop');
+  const fixture = await mockPortal(page);
+  await openPlayer(page);
+  await openMilkdrop(page);
+  const first = await fullName(page).getAttribute('title');
+  await gate(page, 'hold');
+  await fullScreen(page).getByRole('button', { name: 'Next preset' }).click();
+  const state = fixture.state.snapshot; state.session.status = 'paused'; state.revision = 'paused'; await emit(page, state);
+  // Long past the moment a paused song settles.
+  await page.waitForTimeout(3500);
+  await gate(page, 'release');
+  await expect(fullName(page)).not.toHaveAttribute('title', first!, slowly);
+  expect(await drawnAfterChange(page)).toBeGreaterThanOrEqual(1.2);
+});
+
 test('resizing the full screen during a blend keeps MilkDrop’s mesh whole', async ({ page }) => {
   test.slow();
   await page.setViewportSize({ width: 600, height: 400 });

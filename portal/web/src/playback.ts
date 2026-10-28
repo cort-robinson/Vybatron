@@ -6,6 +6,7 @@ import type { RemotePortal } from './usePortal';
 import { isLink } from './suggestions';
 import { youtubeId } from './youtube';
 import { useShared, useStableObject } from './stable';
+import { NativeError, nativePlayer, type NativeControl, type NativePlayer, type NativeState } from './native';
 
 // Where music plays: the shared Discord session (the bot is the authority), or
 // this device, where the portal keeps a private queue and plays its audio,
@@ -71,6 +72,147 @@ function initialDeck(): Deck {
   } catch { return empty; }
 }
 
+// Typed text plays its best match; a link adds everything it names.
+async function lookUp(remote: RemotePortal, query: string) {
+  const { tracks } = await api.search(remote.guildId, query);
+  if (!tracks.length) throw new Error(`No tracks found for “${query}”.`);
+  return isLink(query) ? tracks : tracks.slice(0, 1);
+}
+async function tracksFor(remote: RemotePortal, body: Command, hint?: Track[]): Promise<Track[] | null> {
+  const o = body.options || {}; const library = remote.library;
+  if (hint) return o.shuffle === true ? shuffled(hint) : hint;
+  switch (`${body.command}:${body.subcommand || ''}`) {
+    case 'play:': case 'playnext:': return typeof o.query === 'string' ? lookUp(remote, o.query) : null;
+    case 'favorite:play': { const track = library?.favorites[Number(o.index) - 1]; return track && track.id === body.expectedTrackId ? [track] : null; }
+    case 'replay:': { const entry = library?.history[Number(o.index) - 1]; return entry && entry.id === body.expectedHistoryId ? [entry.track] : null; }
+    case 'mix:load': return library?.mixes.find(mix => mix.name === o.name)?.tracks ?? null;
+    default: return null;
+  }
+}
+// The new queue a queue edit asks for, or null when the edit doesn't apply.
+function edited(queue: Track[], key: string, o: NonNullable<Command['options']>): Track[] | null {
+  switch (key) {
+    case 'remove:': { const index = Number(o.position) - 1; return Number.isInteger(index) && index >= 0 && index < queue.length ? queue.filter((_, at) => at !== index) : null; }
+    case 'move:': {
+      const from = Number(o.from) - 1; const to = Number(o.to) - 1; const next = [...queue];
+      if (![from, to].every(index => Number.isInteger(index) && index >= 0 && index < next.length) || from === to) return null;
+      next.splice(to, 0, next.splice(from, 1)[0]); return next;
+    }
+    case 'clear:': return [];
+    case 'shuffle:': return shuffled(queue);
+    default: return null;
+  }
+}
+const ADDS = new Set(['play:', 'playnext:', 'replay:', 'favorite:play', 'mix:load', 'top:play', 'mymix:play']);
+const LIBRARY = new Set(['favorite:remove', 'favorite:clear', 'mix:delete', 'favorite:import', 'mix:import']);
+
+interface Engine {
+  run: (body: Command, capability: Capability, hint?: Track[]) => Promise<boolean>;
+  stop: () => void; adopt: (session: GuildSnapshot['session'], positionMs: number) => void;
+  hold: () => boolean; proceed: () => void; snapshot: () => Deck;
+}
+interface EngineParts {
+  commit: (change: Partial<Deck>, structural?: boolean) => void; notify: RemotePortal['notify'];
+  deckRef: { current: Deck }; latest: { current: RemotePortal };
+  // Additions run one at a time, in the order tapped, and show as pending meanwhile.
+  inLine: (key: string, work: () => Promise<boolean>) => Promise<boolean>;
+}
+
+// Inside the Android app the app plays this device's songs (ADR-0014): it keeps the
+// queue and moves on by itself with the screen off. The page sends it what the
+// listener asks for and shows the state it reports.
+function nativeEngine(device: NativePlayer, { commit, notify, deckRef, latest, inLine }: EngineParts): Engine {
+  let revision = -1; let loaded = false;
+  const apply = (state: NativeState) => {
+    // An app with nothing loaded says nothing about a queue this page saved and hasn't handed over.
+    if (!state.current && !loaded && deckRef.current.current) { revision = state.revision; return; }
+    const structural = state.revision !== revision; revision = state.revision; loaded = !!state.current;
+    commit({ current: state.current, queue: state.queue, history: state.history, status: state.status, positionMs: state.positionMs, at: state.at,
+      waiting: state.waiting, durationMs: state.durationMs, volume: state.volume, repeat: state.repeat }, structural);
+  };
+  device.onState(apply); device.onNotice(notify);
+  // Music the app kept playing while this page was gone wins over what the page saved.
+  void device.subscribe().then(state => { if (state.current) apply(state); else revision = state.revision; }).catch(() => undefined);
+  const send = async (call: () => Promise<NativeState>) => {
+    try { apply(await call()); return true; }
+    catch (error) {
+      notify(error instanceof NativeError && error.message === 'stale' ? 'Your queue just changed. Try that again.' : 'This device’s player didn’t answer. Try again.', 'error');
+      return false;
+    }
+  };
+  const load = (deck: Pick<Deck, 'current' | 'queue' | 'history' | 'volume' | 'repeat'>, positionMs: number, playing: boolean) => send(() => device.load({
+    guildId: latest.current.guildId, current: deck.current, queue: deck.queue, history: deck.history,
+    positionMs: Math.max(0, Math.floor(positionMs)), playing, volume: deck.volume, repeat: deck.repeat }));
+  // A queue this page saved reaches the app only when it's asked to play, so nothing shows on the lock screen before.
+  const ready = async () => { const deck = deckRef.current; return loaded || !deck.current || load(deck, position(deck), false); };
+  const control = async (request: NativeControl) => await ready() && send(() => device.control(request));
+  const edit = (queue: Track[]) => {
+    if (loaded) return send(() => device.setQueue(queue, revision));
+    commit({ queue }, true); return Promise.resolve(true);
+  };
+  const setting = (change: Partial<Deck>, request: NativeControl) => {
+    commit(change);
+    return loaded ? send(() => device.control(request)) : Promise.resolve(true);
+  };
+  const enqueue = async (tracks: Track[], next: boolean) => {
+    const songs = tracks.filter(track => track.uri).map(own);
+    if (!songs.length) { notify('Nothing here has a public source this device can play.', 'error'); return false; }
+    const deck = deckRef.current;
+    const added = songs.slice(0, MAX_QUEUE - deck.queue.length + (deck.current ? 0 : 1));
+    if (!added.length) { notify(`Your queue on this device is full at ${MAX_QUEUE} songs.`, 'error'); return false; }
+    let ok: boolean;
+    if (!deck.current) { const [first, ...rest] = added; ok = await load({ ...deck, current: first, queue: next ? [...rest, ...deck.queue] : [...deck.queue, ...rest] }, 0, true); }
+    else ok = await edit(next ? [...added, ...deck.queue] : [...deck.queue, ...added]);
+    if (ok) notify(added.length === 1 ? `Added “${added[0].title}” on this device.` : `Added ${added.length} songs on this device.`, 'success');
+    return ok;
+  };
+  const stop = () => {
+    if (loaded) void send(() => device.control({ action: 'stop' }));
+    commit({ current: null, queue: [], history: [], status: 'idle', positionMs: 0, at: Date.now(), waiting: false, durationMs: 0 }, true);
+  };
+  const run = async (body: Command, capability: Capability, hint?: Track[]): Promise<boolean> => {
+    const o = body.options || {}; const deck = deckRef.current;
+    const key = `${body.command}:${body.subcommand || ''}`;
+    switch (key) {
+      case 'pause:': return deck.status !== 'playing' || control({ action: 'pause' });
+      case 'resume:': return !!deck.current && control({ action: 'play' });
+      case 'seek:': { const target = milliseconds(o.timestamp); return target !== null && !!deck.current && control({ action: 'seek', positionMs: target }); }
+      case 'back:': return (!!deck.current || deck.history.length > 0) && control({ action: 'previous' });
+      case 'volume:': { const level = volumeOf(o.level); return setting({ volume: level }, { action: 'volume', level }); }
+      case 'loop:': { const mode = (['off', 'track', 'queue'].includes(String(o.mode)) ? o.mode : 'off') as Repeat; return setting({ repeat: mode }, { action: 'repeat', mode }); }
+      case 'skip:': return !!deck.current && control({ action: 'next' });
+      case 'skipto:': {
+        const index = Number(o.position) - 1;
+        if (!Number.isInteger(index) || index < 0 || index >= deck.queue.length) return false;
+        // Read after a saved queue loads, which gives the app a new revision for the same songs.
+        return await ready() && send(() => device.control({ action: 'skipTo', index, revision }));
+      }
+      case 'remove:': case 'move:': case 'clear:': case 'shuffle:': { const queue = edited(deck.queue, key, o); return queue !== null && edit(queue); }
+      case 'stop:': stop(); return true;
+      default:
+        if (LIBRARY.has(key)) return latest.current.run(body, capability);
+        if (ADDS.has(key)) return inLine(key, async () => {
+          const tracks = await tracksFor(latest.current, body, hint);
+          if (!tracks) { notify('That list changed. Refresh it and try again.', 'error'); return false; }
+          return enqueue(tracks, key === 'playnext:' || key === 'replay:');
+        });
+        notify(DISCORD_ONLY, 'info'); return false;
+    }
+  };
+  const adopt = (session: GuildSnapshot['session'], positionMs: number) => {
+    if (!session.current) return;
+    void load({ current: own(session.current), queue: session.queue.map(own).slice(0, MAX_QUEUE), history: [], volume: session.volume, repeat: session.repeat },
+      positionMs, session.status === 'playing');
+  };
+  const hold = () => {
+    const wasPlaying = deckRef.current.status === 'playing';
+    if (wasPlaying && loaded) void send(() => device.control({ action: 'pause' }));
+    return wasPlaying;
+  };
+  const proceed = () => { if (deckRef.current.current) void run({ command: 'resume' }, 'control'); };
+  return { run, stop, adopt, hold, proceed, snapshot: () => deckRef.current };
+}
+
 export function useListening(remote: RemotePortal): Portal {
   // An explicit move this page; otherwise the target follows voice presence.
   const [choice, setChoice] = useState<PlaybackTarget | null>(null);
@@ -86,13 +228,23 @@ export function useListening(remote: RemotePortal): Portal {
   const loadToken = useRef(0);
   const latest = useRef(remote); latest.current = remote;
 
-  const engine = useMemo(() => {
+  const engine = useMemo((): Engine => {
     const notify: RemotePortal['notify'] = (message, kind) => latest.current.notify(message, kind);
     const commit = (change: Partial<Deck>, structural = false) => {
       const next = { ...deckRef.current, ...change, revision: deckRef.current.revision + (structural ? 1 : 0) };
       deckRef.current = next; setDeck(next);
       if ('mediaSession' in navigator && next.current) navigator.mediaSession.playbackState = next.status === 'playing' ? 'playing' : 'paused';
     };
+    const inLine = async (key: string, work: () => Promise<boolean>) => {
+      const queue = line.current;
+      queue.keys = [...queue.keys, key]; setPending(queue.keys);
+      const turn = queue.tail.then(work);
+      queue.tail = turn.catch(() => undefined);
+      try { return await turn; } catch (error) { notify(errorMessage(error), 'error'); return false; }
+      finally { const at = queue.keys.indexOf(key); queue.keys = queue.keys.filter((_, index) => index !== at); setPending(queue.keys); }
+    };
+    const device = nativePlayer();
+    if (device) return nativeEngine(device, { commit, notify, deckRef, latest, inLine });
     const retried = new Set<string>(); const warmed = new Set<string>();
     // One audio element for the whole session: phones keep it playing in the
     // background and on the lock screen, and it plays audio only, never video.
@@ -228,23 +380,6 @@ export function useListening(remote: RemotePortal): Portal {
       notify(added.length === 1 ? `Added “${added[0].title}” on this device.` : `Added ${added.length} songs on this device.`, 'success');
       return true;
     };
-    // Typed text plays its best match; a link adds everything it names.
-    const lookUp = async (query: string) => {
-      const { tracks } = await api.search(latest.current.guildId, query);
-      if (!tracks.length) throw new Error(`No tracks found for “${query}”.`);
-      return isLink(query) ? tracks : tracks.slice(0, 1);
-    };
-    const tracksFor = async (body: Command, hint?: Track[]): Promise<Track[] | null> => {
-      const o = body.options || {}; const library = latest.current.library;
-      if (hint) return o.shuffle === true ? shuffled(hint) : hint;
-      switch (`${body.command}:${body.subcommand || ''}`) {
-        case 'play:': case 'playnext:': return typeof o.query === 'string' ? lookUp(o.query) : null;
-        case 'favorite:play': { const track = library?.favorites[Number(o.index) - 1]; return track && track.id === body.expectedTrackId ? [track] : null; }
-        case 'replay:': { const entry = library?.history[Number(o.index) - 1]; return entry && entry.id === body.expectedHistoryId ? [entry.track] : null; }
-        case 'mix:load': return library?.mixes.find(mix => mix.name === o.name)?.tracks ?? null;
-        default: return null;
-      }
-    };
 
     // The local counterpart of the bot's command handling.
     const run = async (body: Command, capability: Capability, hint?: Track[]): Promise<boolean> => {
@@ -281,33 +416,20 @@ export function useListening(remote: RemotePortal): Portal {
           if (!Number.isInteger(index) || index < 0 || index >= deck.queue.length) return false;
           play(deck.queue[index], deck.queue.slice(index + 1)); return true;
         }
-        case 'remove:': {
-          const index = Number(o.position) - 1;
-          if (!Number.isInteger(index) || index < 0 || index >= deck.queue.length) return false;
-          commit({ queue: deck.queue.filter((_, at) => at !== index) }, true); return true;
+        case 'remove:': case 'move:': case 'clear:': case 'shuffle:': {
+          const queue = edited(deck.queue, key, o);
+          if (queue === null) return false;
+          commit({ queue }, true); return true;
         }
-        case 'move:': {
-          const from = Number(o.from) - 1; const to = Number(o.to) - 1; const queue = [...deck.queue];
-          if (![from, to].every(index => Number.isInteger(index) && index >= 0 && index < queue.length) || from === to) return false;
-          queue.splice(to, 0, queue.splice(from, 1)[0]); commit({ queue }, true); return true;
-        }
-        case 'clear:': commit({ queue: [] }, true); return true;
-        case 'shuffle:': commit({ queue: shuffled(deck.queue) }, true); return true;
         case 'stop:': stop(); return true;
         // Library edits don't touch playback, so the bot still owns them.
         case 'favorite:remove': case 'favorite:clear': case 'mix:delete': case 'favorite:import': case 'mix:import': return latest.current.run(body, capability);
-        case 'play:': case 'playnext:': case 'replay:': case 'favorite:play': case 'mix:load': case 'top:play': case 'mymix:play': {
-          const queue = line.current;
-          queue.keys = [...queue.keys, key]; setPending(queue.keys);
-          const turn = queue.tail.then(async () => {
-            const tracks = await tracksFor(body, hint);
+        case 'play:': case 'playnext:': case 'replay:': case 'favorite:play': case 'mix:load': case 'top:play': case 'mymix:play':
+          return inLine(key, async () => {
+            const tracks = await tracksFor(latest.current, body, hint);
             if (!tracks) { notify('That list changed. Refresh it and try again.', 'error'); return false; }
             return enqueue(tracks, key === 'playnext:' || key === 'replay:');
           });
-          queue.tail = turn.catch(() => undefined);
-          try { return await turn; } catch (error) { notify(errorMessage(error), 'error'); return false; }
-          finally { const at = queue.keys.indexOf(key); queue.keys = queue.keys.filter((_, index) => index !== at); setPending(queue.keys); }
-        }
         default: notify(DISCORD_ONLY, 'info'); return false;
       }
     };

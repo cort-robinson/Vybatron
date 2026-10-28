@@ -33,4 +33,18 @@ class PortalBridgeTest {
             assertEquals("bad_request", reply.getString("error"))
         }
     }
+
+    @Test fun routesPlayerRequestsAndRefusesBadOnes() {
+        val seen = mutableListOf<app.vybatron.playback.PlayerRequest>()
+        val player = PortalBridge.Player { seen.add(it); Result.success(JSONObject().put("status", "idle")) }
+        val reply = JSONObject(PortalBridge.respond("""{"id":3,"type":"player.control","action":"pause"}""", info, player))
+        assertTrue(reply.getBoolean("ok")); assertEquals("idle", reply.getJSONObject("result").getString("status"))
+        assertEquals(listOf(app.vybatron.playback.PlayerRequest.Pause), seen)
+
+        assertEquals("bad_request", JSONObject(PortalBridge.respond("""{"id":4,"type":"player.control","action":"eject"}""", info, player)).getString("error"))
+        assertEquals("unavailable", JSONObject(PortalBridge.respond("""{"id":5,"type":"player.subscribe"}""", info, null)).getString("error"))
+        val stale = PortalBridge.Player { Result.failure(IllegalStateException("stale")) }
+        assertEquals("stale", JSONObject(PortalBridge.respond("""{"id":6,"type":"player.setQueue","queue":[],"revision":1}""", info, stale)).getString("error"))
+        assertEquals(1, seen.size)
+    }
 }

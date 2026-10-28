@@ -8,6 +8,9 @@ import com.sedmelluq.discord.lavaplayer.tools.FriendlyException;
 import com.sedmelluq.discord.lavaplayer.track.AudioPlaylist;
 import com.sedmelluq.discord.lavaplayer.track.AudioTrack;
 import com.sedmelluq.discord.lavaplayer.track.AudioTrackEndReason;
+import com.sedmelluq.discord.lavaplayer.track.AudioTrackState;
+import com.sedmelluq.discord.lavaplayer.track.InternalAudioTrack;
+import com.sedmelluq.discord.lavaplayer.track.playback.AudioTrackExecutor;
 import com.sedmelluq.discord.lavaplayer.track.playback.AudioFrame;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -99,6 +102,8 @@ public class AudioController {
     /** One song on a private player: its first frame, then the rest as Ogg Opus. */
     private static final class Export {
         private final AudioPlayer player;
+        // Held from the start: once the player stops the track, the track forgets it.
+        private final AudioTrackExecutor executor;
         private final CountDownLatch ended = new CountDownLatch(1);
         // Set when the source fails, so a cut-off song never ends like a whole one.
         private volatile boolean failed;
@@ -116,6 +121,7 @@ public class AudioController {
                 @Override public void onTrackStuck(AudioPlayer p, AudioTrack t, long thresholdMs) { failed = true; ended.countDown(); }
             });
             player.playTrack(track);
+            executor = ((InternalAudioTrack) track).getActiveExecutor();
         }
 
         AudioFrame first() throws IOException {
@@ -124,6 +130,8 @@ public class AudioController {
             return frame;
         }
 
+        // A failed song ends without Ogg's end-of-stream page, which is how the bot
+        // tells it from a whole one: a servlet response can't be aborted once sent.
         void write(AudioFrame first, OutputStream out) throws IOException {
             OggOpusWriter ogg = new OggOpusWriter(out);
             for (AudioFrame frame = first; frame != null; frame = next()) ogg.packet(frame.getData());
@@ -145,6 +153,9 @@ public class AudioController {
                     // Buffered frames are drained before the end counts.
                     if (ended.getCount() == 0 || player.getPlayingTrack() == null) break;
                 }
+                // Lavaplayer ends the buffer before it reports a failure; the track
+                // finishes only after, so `failed` is final once it has.
+                while (!failed && executor.getState() != AudioTrackState.FINISHED && System.nanoTime() < deadline) Thread.sleep(10);
             } catch (InterruptedException interrupted) {
                 Thread.currentThread().interrupt();
                 throw new IOException("Export interrupted.", interrupted);

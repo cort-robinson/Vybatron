@@ -61,6 +61,7 @@ class BackupTest(unittest.TestCase):
         (self.data / 'library.json.pre-listening-state.bak').write_text(json.dumps(LIBRARY))
         self.live = live_store(self.data / 'stats.sqlite', 'plays', 50)
         self.state = live_store(self.data / 'listening-state.sqlite', 'history', 20)
+        self.songs = live_store(self.data / 'songs.sqlite', 'sources', 7)
         self.now = 1_792_000_000
         self.docker = Docker(self.data)
         self.store = BotData(self.backups, runner=self.docker, clock=self.tick)
@@ -68,6 +69,7 @@ class BackupTest(unittest.TestCase):
     def tearDown(self):
         self.live.close()
         self.state.close()
+        self.songs.close()
         self.temp.cleanup()
 
     def tick(self):
@@ -84,16 +86,17 @@ class BackupTest(unittest.TestCase):
         with self.assertRaises(sqlite3.OperationalError):
             rows(raw)
         self.assertEqual(len(rows(copy.parent / 'listening-state.sqlite', 'history')), 20)
+        self.assertEqual(len(rows(copy.parent / 'songs.sqlite', 'sources')), 7)
         self.assertEqual(sorted(p.name for p in copy.parent.iterdir()),
                          ['.backup-manifest.json', 'library.json', 'library.json.pre-listening-state.bak',
-                          'listening-state.sqlite', 'operator-alerts.json', 'stats.sqlite'])
+                          'listening-state.sqlite', 'operator-alerts.json', 'songs.sqlite', 'stats.sqlite'])
         # The bot keeps writing to its database afterwards.
         self.live.execute("INSERT INTO plays (track) VALUES ('after')")
         self.assertEqual(self.live.execute('SELECT count(*) FROM plays').fetchone(), (51,))
 
     def test_restore_drill_recovers_library_and_stats_and_keeps_damaged_state(self):
         name = self.store.create(self.data, keep=14)['backup']
-        self.assertEqual(self.store.verify(name).keys(), {'library.json', 'stats.sqlite', 'listening-state.sqlite',
+        self.assertEqual(self.store.verify(name).keys(), {'library.json', 'stats.sqlite', 'listening-state.sqlite', 'songs.sqlite',
                                                           'operator-alerts.json', 'library.json.pre-listening-state.bak'})
         # Damage: newer rows only in the WAL and a library the bot would refuse.
         self.live.executemany('INSERT INTO plays (track) VALUES (?)', [('later',)] * 5)
@@ -115,6 +118,7 @@ class BackupTest(unittest.TestCase):
         self.assertEqual(json.loads((self.data / 'library.json').read_text()), LIBRARY)
         self.assertEqual(rows(self.data / 'stats.sqlite'), [('song-%d' % i,) for i in range(50)])
         self.assertEqual(rows(self.data / 'listening-state.sqlite', 'history'), [('song-%d' % i,) for i in range(20)])
+        self.assertEqual(rows(self.data / 'songs.sqlite', 'sources'), [('song-%d' % i,) for i in range(7)])
         self.assertFalse((self.data / 'stats.sqlite-wal').exists())
         self.assertFalse((self.data / 'listening-state.sqlite-wal').exists())
         retained = self.backups / result['pre_restore']

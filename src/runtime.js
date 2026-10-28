@@ -87,6 +87,7 @@ export function installRuntime(client, {
           }],
           // Players are gone; record their open plays before the store closes.
           ['stats_close_failed', () => { client.playTracker?.closeAll?.(); client.stats?.close?.(); }],
+          ['songs_close_failed', () => client.songs?.close?.()],
           ['audio_close_failed', () => {
             if ([...(client.lavalink?.nodeManager?.nodes?.values() || [])].some((node) => node.connected)) {
               return client.lavalink.nodeManager.disconnectAll(false, false);

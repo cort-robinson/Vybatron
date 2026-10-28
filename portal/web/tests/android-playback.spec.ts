@@ -158,3 +158,20 @@ test('Play now names the queue it was chosen from, and the app refuses it once a
   await page.getByRole('button', { name: 'Play now' }).click();
   await expect(page.getByText('Your queue just changed. Try that again.')).toBeVisible();
 });
+
+test('Play now as the first thing after a reload plays the chosen song', async ({ page }) => {
+  await app(page);
+  await addSongs(page);
+  await expect.poll(async () => (await sent(page, 'player.setQueue')).length).toBe(1);
+  await page.getByRole('button', { name: 'Pause playback' }).click();
+  await expect(page.getByRole('button', { name: 'Resume playback' })).toBeEnabled();
+  await page.reload();
+  await expect(title(page)).toHaveText('Midnight City');
+
+  await page.getByRole('navigation', { name: 'Main navigation' }).getByRole('button', { name: 'Queue' }).click();
+  await page.getByRole('button', { name: 'Song options for Wait' }).click();
+  await page.getByRole('button', { name: 'Play now' }).click();
+  await expect(title(page)).toHaveText('Wait');
+  await expect(page.getByText('Your queue just changed. Try that again.')).toHaveCount(0);
+  expect((await requests(page)).map(request => request.type)).toEqual(['player.subscribe', 'player.load', 'player.control']);
+});

@@ -181,7 +181,12 @@ function nativeEngine(device: NativePlayer, { commit, notify, deckRef, latest, i
       case 'volume:': { const level = volumeOf(o.level); return setting({ volume: level }, { action: 'volume', level }); }
       case 'loop:': { const mode = (['off', 'track', 'queue'].includes(String(o.mode)) ? o.mode : 'off') as Repeat; return setting({ repeat: mode }, { action: 'repeat', mode }); }
       case 'skip:': return !!deck.current && control({ action: 'next' });
-      case 'skipto:': { const index = Number(o.position) - 1; return Number.isInteger(index) && index >= 0 && index < deck.queue.length && control({ action: 'skipTo', index, revision }); }
+      case 'skipto:': {
+        const index = Number(o.position) - 1;
+        if (!Number.isInteger(index) || index < 0 || index >= deck.queue.length) return false;
+        // Read after a saved queue loads, which gives the app a new revision for the same songs.
+        return await ready() && send(() => device.control({ action: 'skipTo', index, revision }));
+      }
       case 'remove:': case 'move:': case 'clear:': case 'shuffle:': { const queue = edited(deck.queue, key, o); return queue !== null && edit(queue); }
       case 'stop:': stop(); return true;
       default:

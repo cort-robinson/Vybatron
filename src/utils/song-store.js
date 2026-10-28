@@ -219,8 +219,8 @@ export class SongStore {
         if (catalog) this.linkRow(id, catalog, now);
         this.db.prepare('INSERT INTO refs (uri, song_id, added_at) VALUES (?, ?, ?)').run(ref.uri, id, now);
         if (!CATALOGS.has(ref.sourceName)) {
-          this.db.prepare(`INSERT INTO sources (uri, song_id, source_name, identifier, title, author, duration, verification, music, added_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 'first', ?, ?)`).run(ref.uri, id, ref.sourceName, ref.identifier, ref.title, ref.author, ref.duration, musicSong(track), now);
+          this.db.prepare(`INSERT INTO sources (uri, song_id, source_name, identifier, title, author, duration, verification, music, added_at, last_played_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'first', ?, ?, ?)`).run(ref.uri, id, ref.sourceName, ref.identifier, ref.title, ref.author, ref.duration, musicSong(track), now, now);
         }
         return id;
       });

@@ -186,7 +186,7 @@ test('a device song plays from its best verified source and moves past one that 
     return { type: 'audio/ogg', done: Promise.resolve(), video };
   } };
   const playable = playableAudio(audio, songs);
-  // The Topic upload is tried first and refuses; its verified alternate plays.
+  // The Topic upload, which played before, is tried first and refuses; its verified alternate plays.
   assert.equal((await playable.get('Kf5pXDhx5Vc')).video, 'xy3AcmW0lrQ');
   assert.deepEqual(asked, ['Kf5pXDhx5Vc', 'xy3AcmW0lrQ']);
   await new Promise(resolve => setImmediate(resolve));
@@ -197,6 +197,27 @@ test('a device song plays from its best verified source and moves past one that 
   // An unknown song plays as asked; busy is not a refusal; a refusal with nothing else fails as before.
   assert.equal((await playable.get('abcdefghijk')).video, 'abcdefghijk');
   await assert.rejects(playable.get('busybusy001'), error => error.status === 429);
+  // Both refuse: the song waits out the cooldown instead of retrying the failed uploads.
   refused.add('xy3AcmW0lrQ');
   await assert.rejects(playable.get('Kf5pXDhx5Vc'), error => error.code === 'audio_unavailable');
+  asked.length = 0;
+  await assert.rejects(playable.get('Kf5pXDhx5Vc'), error => error.code === 'audio_unavailable');
+  assert.deepEqual(asked, []);
+});
+
+test('a device song keeps the source it started with across range requests', async t => {
+  let clock = 1_800_000_000_000;
+  const songs = new SongStore(':memory:', { logger: { log() {}, error() {} }, now: () => clock }); await songs.open(); t.after(() => songs.close());
+  const upload = id => ({ info: { identifier: id, uri: `https://www.youtube.com/watch?v=${id}`, sourceName: 'youtube', title: 'Song', author: 'Artist', duration: 160_000, isStream: false } });
+  const id = songs.record(upload('firstSong01'));
+  songs.addVerifiedSource(id, upload('otherSong01'), .99);
+  const audio = { get: async video => ({ done: Promise.resolve(), video }) };
+  const playable = playableAudio(audio, songs);
+  assert.equal((await playable.get('firstSong01')).video, 'firstSong01');
+  await new Promise(resolve => setImmediate(resolve));
+  // Discord plays the other upload a minute later, which makes it the preferred source.
+  clock += 60_000;
+  songs.sourceResult('https://www.youtube.com/watch?v=otherSong01', true);
+  assert.equal(songs.playbackSources('https://www.youtube.com/watch?v=firstSong01')[0].identifier, 'otherSong01');
+  assert.equal((await playable.get('firstSong01')).video, 'firstSong01');
 });

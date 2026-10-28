@@ -1610,6 +1610,22 @@ test('a temporary failure tries alternates only after its exact retries', async 
   assert.equal(f.failed.length, 0);
 });
 
+test('a song with verified sources never takes a metadata mirror on its retries', async () => {
+  let mirrored = 0;
+  const watch = id => `https://www.youtube.com/watch?v=${id}`;
+  const f = fixture({
+    alternates: () => [{ uri: watch('altSource01'), sourceName: 'youtube', identifier: 'altSource01' }],
+    search: async (_player, { query, source }) => {
+      if (source) { mirrored++; return { tracks: [f.track('mirrorTrk01', { sourceName: 'soundcloud', uri: 'https://soundcloud.com/a/b' })] }; }
+      return { tracks: query === watch('altSource01') ? [f.track('altSource01')] : [] };
+    },
+  });
+  await f.start(f.track('dQw4w9WgXcQ', { isrc: 'USRC17607839' }));
+  await f.error({ exception: MIXED_CLIENT_EXCEPTION });
+  assert.equal(mirrored, 0);
+  assert.equal(f.player.queue.current.info.identifier, 'altSource01');
+});
+
 test('an unknown song is skipped as before', async () => {
   const f = alternatesFixture([]);
   await f.start();

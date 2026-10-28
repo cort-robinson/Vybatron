@@ -503,6 +503,8 @@ export function createPlaybackRecovery({
       && Number.isFinite(length) && length > 0 && eventPosition <= length
       ? eventPosition : player.lastPosition;
     const circuit = circuitFor(player, original);
+    // A song with verified sources (ADR-0017) never takes a metadata mirror: its retries stay exact.
+    const verified = safeAlternates(original).some((source) => source.uri !== original.info?.uri);
     if (!isPermanentFailure(payload) && circuit.until <= now()) {
       while (state.attempts < retryDelays.length && valid(player, state, epoch, failedTrack)) {
         const attempt = state.attempts++;
@@ -510,7 +512,7 @@ export function createPlaybackRecovery({
         if (!valid(player, state, epoch, failedTrack)) return;
         let candidate;
         try {
-          candidate = await candidateFor(player, original, attempt, signal);
+          candidate = attempt > 0 && verified ? null : await candidateFor(player, original, attempt, signal);
         } catch (error) {
           if (signal.aborted || error.name === 'AbortError') return;
           continue;

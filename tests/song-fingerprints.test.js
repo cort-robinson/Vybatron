@@ -118,13 +118,14 @@ test('playback tries the last success, then Topic uploads, and skips a recent fa
   songs.record(a);
   songs.addVerifiedSource('song:1', c, .95); advance(1); songs.addVerifiedSource('song:1', b, .95);
   const order = () => songs.playbackSources(a.info.uri).map(source => source.identifier[0]);
-  assert.deepEqual(order(), ['b', 'a', 'c']);
-  songs.sourceResult(c.info.uri, true);
-  assert.deepEqual(order(), ['c', 'b', 'a']);
+  // The upload that played comes first, then the Topic upload, then the rest.
+  assert.deepEqual(order(), ['a', 'b', 'c']);
+  advance(1); songs.sourceResult(c.info.uri, true);
+  assert.deepEqual(order(), ['c', 'a', 'b']);
   advance(1); songs.sourceResult(c.info.uri, false);
-  assert.deepEqual(order(), ['b', 'a']);
+  assert.deepEqual(order(), ['a', 'b']);
   advance(SOURCE_COOLDOWN_MS);
-  assert.deepEqual(order(), ['c', 'b', 'a']);
+  assert.deepEqual(order(), ['c', 'a', 'b']);
   assert.deepEqual(songs.playbackSources('https://www.youtube.com/watch?v=unknown0000'), []);
 });
 
@@ -250,9 +251,12 @@ test('a YouTube Music song that names its artist sorts with Topic uploads', asyn
   const music = upload('musicSong01', 'End of Beginning', 'Djo');
   music.info.artworkUrl = 'https://lh3.googleusercontent.com/abc';
   const lyrics = upload('lyricSong01', 'Djo - End Of Beginning (Lyrics)', 'Dan Music');
-  songs.record(lyrics);
+  const played = upload('playedSong1', 'Djo - End Of Beginning (Official Audio)', 'Djo Music');
+  songs.record(played);
+  songs.addVerifiedSource('song:1', lyrics, .98);
   songs.addVerifiedSource('song:1', music, .98);
-  assert.deepEqual(songs.playbackSources(lyrics.info.uri).map(source => source.identifier), ['musicSong01', 'lyricSong01']);
+  // After the source that played, a Music song comes before an older lyric upload.
+  assert.deepEqual(songs.playbackSources(played.info.uri).map(source => source.identifier), ['playedSong1', 'musicSong01', 'lyricSong01']);
 });
 
 test('an upload first seen plainly is recognised as a Music song when it shows up as one', async t => {

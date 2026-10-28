@@ -234,3 +234,22 @@ test('Back returns to the previous song early in a track and restarts it later',
   await expect.poll(() => fixture.commands.at(-1)?.command).toBe('seek');
   expect(fixture.commands.at(-1)?.options).toEqual({ timestamp: '00:00' });
 });
+
+test('open player upgrades a YouTube cover to its sharpest frame, skipping placeholders', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const frame = (width: number, height: number) => `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><rect width="100%" height="100%" fill="#c84"/></svg>`;
+  // YouTube answers a size the video lacks with a 120×90 placeholder.
+  const sizes: Record<string, [number, number]> = { mqdefault: [320, 180], maxresdefault: [120, 90], hq720: [1280, 720] };
+  await page.route('https://i.ytimg.com/vi/**', route => {
+    const [width, height] = sizes[new URL(route.request().url()).pathname.split('/').at(-1)!.replace('.jpg', '')] ?? [120, 90];
+    return route.fulfill({ status: width === 120 ? 404 : 200, contentType: 'image/svg+xml', body: frame(width, height) });
+  });
+  const fixture = await mockPortal(page);
+  fixture.state.snapshot.session.current!.artworkUrl = 'https://i.ytimg.com/vi/abcdefghijk/mqdefault.jpg';
+  await gotoSession(page);
+  await waitForPlayer(page);
+  const player = page.getByTestId('player');
+  await expect(player.locator('.player-expand-trigger > .artwork')).toHaveAttribute('src', 'https://i.ytimg.com/vi/abcdefghijk/mqdefault.jpg');
+  await player.getByRole('button', { name: 'Open player', exact: true }).click();
+  await expect(player.locator('.sleeve-artwork > img.artwork')).toHaveAttribute('src', 'https://i.ytimg.com/vi/abcdefghijk/hq720.jpg');
+});

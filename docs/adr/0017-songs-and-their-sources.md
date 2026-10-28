@@ -1,6 +1,6 @@
 # ADR-0017: Songs are recordings, and audio sources sit underneath them
 
-- Status: Proposed
+- Status: Accepted (fingerprint calibrated 2026-10-28)
 - Date: 2026-10-28
 
 ## Context
@@ -57,11 +57,26 @@ merged only when all of these hold:
   "Song", and "Song (Live)" never does. Linking both to the same catalog entry also counts.
 - Their **fingerprints** match: each energy map is reduced to a coarse fingerprint, aligned
   within 2 seconds to allow for leading silence, and correlated above a threshold. A fingerprint
-  is at most 2 KB: for example 8 bands at 1 frame a second, one byte each, is 1,920 bytes for
-  four minutes, and longer songs are averaged down to fit. PR 2 chooses the representation
-  within that bound and sets the threshold from known pairs (a Topic upload and its official
-  audio; studio and live; an album version and its edit; an original and a re-recording), and
-  both are recorded here before this ADR is accepted.
+  is at most 2 KB (`src/utils/fingerprint.js`): 4 bands at 2 frames a second, one byte each,
+  over the first 256 seconds. The length rule covers the rest of a longer song. Two
+  fingerprints match at a correlation of **0.85** or more at their best alignment.
+
+**Calibration (2026-10-28).** 24 uploads were downloaded through the device-audio plugin and
+measured with the bot's own analysis (`tests/fixtures/fingerprints.json` keeps their
+fingerprints and labels, and a test pins the result):
+
+- Uploads of one recording (Topic and official audio, visualiser and lyric uploads, two Topic
+  uploads, a radio edit's Topic and official uploads): 0.911 to 1.000.
+- Different performances or arrangements: studio and live 0.615, album and demo 0.684, a
+  re-recorded clean edit 0.465, unrelated songs 0.267 and 0.356.
+- Masters that differ only in mastering or a few words score like the same recording: an
+  original and its "Taylor's Version" 0.953, an original and its 2004 remaster 0.947, a
+  "Clean Audio" upload 0.973, an "8D" remix 0.949. The fingerprint can't separate these, so the
+  title rule does: their uploads carry those labels, which the recording key keeps.
+
+4 bands at 2 frames a second separated the groups best of the shapes tried within 2 KB (8 bands
+at 1 or 2 frames a second, 16 bands at half a frame). One frame a second lost uploads that start
+a fraction of a second apart, and comparing changes between frames separated nothing better.
 
 Nothing weaker merges songs. A metadata match makes a source a candidate, never a member.
 
@@ -128,7 +143,9 @@ approval), and the release snapshot's 64 MiB cap is checked with it included.
 ## Consequences
 
 - A listing plays its recording or fails with an explanation; it never plays a different
-  performance, edit or re-recording.
+  performance or arrangement, or a version labelled as different.
+- An unlabelled re-recording, remaster or clean edit sounds like the original to the
+  fingerprint and may share its listing (calibration above).
 - A remaster that sounds the same as its original, with no other evidence to separate them, may
   share one listing. The owner accepted this.
 - Duplicates go away once their uploads have been fingerprinted, not at once: a new upload can

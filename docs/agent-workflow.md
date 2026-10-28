@@ -161,6 +161,9 @@ healthy. Report Deploy's conclusion:
   `ops/PlaybackProbe.java`): Deploy stops on these. They need an operator
   release (`ops/README.md` → *V2 runtime and releases*; `docs/portal-operations.md`).
   `/root/Vybertron` on the production host is updated manually after such merges.
+- **Android app:** its own `android-vX.Y.Z` tags and GitHub Releases, published by the
+  Android release workflow from a `chore(android): release X.Y.Z` merge
+  (`portal/android/README.md`). A tag needs the owner's approval like any release.
 - **Versions:** root `package.json` version → `chore(release): X.Y.Z` PR →
   annotated `vX.Y.Z` tag on its merge commit → GitHub Release. The
   `release tags` ruleset blocks moving or deleting `v*` tags.

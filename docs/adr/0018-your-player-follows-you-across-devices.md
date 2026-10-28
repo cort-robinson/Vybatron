@@ -87,8 +87,8 @@ player to that server.
   **generation**, saved with the player, so it survives a restart of either process. A
   generation has a start time: at once for a plain move, the switch time T for a handoff (below).
   Every report from a device carries the generation it plays under, and once a newer generation
-  has started the store refuses reports from older ones. A device whose report is refused, or
-  which sees a newer generation that has started, stops playing at once. Only the active
+  has started the store refuses reports from older ones. A device whose report is refused because
+  a newer generation has started, or which sees one on its stream, stops playing at once. Only the active
   device's reports change the playhead.
 - **The active device owns the playhead.** It decides when a song ends and the next starts, where
   it is, and whether it is playing, because it must keep going with the screen off or a brief
@@ -155,7 +155,9 @@ Moving playback from device A to device B, started from any device:
    commitment it sends them as remote controls instead of carrying them out. Nothing withdraws a
    commitment, so the old generation's rejection rule has no exception. If A carried out a control
    before it saw the commitment, the store refuses that report, because once a handoff is
-   committed it accepts no playback change from the outgoing generation, and A sends
+   committed it accepts no playback change from the outgoing generation. That refusal says the
+   handoff is pending, not that A was replaced, so A undoes the control, keeps playing until T,
+   and sends
    the same control again as a remote control, which reaches B after T.
 
 Losing a message is handled by the stored generation. If A misses the commitment, both play until

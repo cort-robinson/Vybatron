@@ -21,6 +21,12 @@ async function fakeLavalink(t, { hold } = {}) {
       if (id === 'slowsong123') await hold;
       response.end(song.subarray(500)); return;
     }
+    // The plugin refuses a song YouTube won't serve, and drops one cut off partway.
+    if (url.pathname.startsWith('/vybatron/audio/') && id === 'refusedsong') { response.writeHead(502); response.end(); return; }
+    if (url.pathname.startsWith('/vybatron/audio/') && id === 'cutoffsong1') {
+      response.writeHead(200, { 'Content-Type': 'audio/ogg' }); response.write(song.subarray(0, 500));
+      setTimeout(() => response.destroy(), 20); return;
+    }
     if (id === 'webmonly123' && url.searchParams.get('itag') === '251') { response.writeHead(200, { 'Content-Type': 'video/mp4' }); response.end(song); return; }
     response.writeHead(url.pathname.startsWith('/vybatron/') ? 404 : 400, { 'Content-Type': 'application/json' }); response.end('{}');
   });
@@ -84,6 +90,22 @@ test('portal audio falls back to the YouTube stream route and explains unavailab
   // A failed lookup is not cached as a success; it is tried again next time.
   await (await get('missing1234')).arrayBuffer();
   assert.equal(lavalink.requests.filter(item => item.path.endsWith('missing1234')).length, 6);
+});
+
+test('a song YouTube refuses or cuts off is explained and never cached', async t => {
+  const { lavalink, get } = await audioFixture(t);
+  const refused = await get('refusedsong');
+  assert.equal(refused.status, 404);
+  assert.match((await refused.json()).error.message, /can’t be streamed right now/);
+  assert.deepEqual(lavalink.requests.map(item => item.itag ?? 'plugin'), ['plugin', '140', '251']);
+
+  const cut = await get('cutoffsong1');
+  assert.equal(cut.status, 200);
+  await assert.rejects(cut.arrayBuffer());
+  // The player's follow-up check asks Lavalink again instead of getting the partial song.
+  const probe = await get('cutoffsong1', { headers: { Range: 'bytes=0-0' } });
+  assert.notEqual(probe.status, 206); await probe.arrayBuffer().catch(() => {});
+  assert.equal(lavalink.requests.filter(item => item.path === '/vybatron/audio/cutoffsong1').length, 2);
 });
 
 test('portal audio needs server membership and a valid video id', async t => {

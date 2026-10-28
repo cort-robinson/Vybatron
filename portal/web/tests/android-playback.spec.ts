@@ -8,7 +8,7 @@ const youtubeTrack = (id: string, title: string) => ({ id: id.padEnd(24, '0'), t
   durationMs: 244_000, artworkUrl: null, isStream: false, requestedBy: null });
 
 interface Request { id: number; type: string; [key: string]: unknown }
-type Bridge = { requests: Request[]; endSong: () => void; notice: (message: string) => void };
+type Bridge = { requests: Request[]; endSong: (quiet?: boolean) => void; notice: (message: string) => void; broadcast: () => void };
 
 async function app(page: Page) {
   const fixture = await mockPortal(page);
@@ -29,8 +29,10 @@ async function app(page: Page) {
     (window as unknown as { bridge: Bridge }).bridge = {
       requests: requests as Request[],
       // A song ending in the app, with no page involved.
-      endSong: () => { advance(); send({ event: 'player.state', state }); },
+      endSong: quiet => { advance(); if (!quiet) send({ event: 'player.state', state }); },
       notice: message => send({ event: 'player.notice', message, kind: 'error' }),
+      // The app's state, sent to the page unasked.
+      broadcast: () => send({ event: 'player.state', state }),
     };
     (window as unknown as { vybatronNative: unknown }).vybatronNative = {
       addEventListener: (_type: string, listener: (event: { data: string }) => void) => listeners.push(listener),
@@ -44,12 +46,19 @@ async function app(page: Page) {
             if (request.revision !== state.revision) { send({ id: request.id, ok: false, error: 'stale' }); return; }
             change({ queue: request.queue }); break;
           case 'player.control':
+            if (request.action === 'skipTo') {
+              if (request.revision !== state.revision) { send({ id: request.id, ok: false, error: 'stale' }); return; }
+              const next = state.queue[request.index];
+              change({ current: next, queue: state.queue.slice(request.index + 1), history: [state.current!, ...state.history], status: 'playing', positionMs: 0 });
+            }
             if (request.action === 'play') change({ status: 'playing' }, false);
             if (request.action === 'pause') change({ status: 'paused' }, false);
             if (request.action === 'next') advance();
             if (request.action === 'volume') change({ volume: request.level }, false);
             break;
         }
+        // Like the app: every change is broadcast before the reply; subscribing only answers.
+        if (request.type !== 'player.subscribe') send({ event: 'player.state', state });
         send({ id: request.id, ok: true, result: state });
       },
     };
@@ -111,14 +120,41 @@ test('a queue saved by the page reaches the app only when it is played', async (
   await page.getByRole('button', { name: 'Pause playback' }).click();
   await expect(page.getByRole('button', { name: 'Resume playback' })).toBeEnabled();
 
-  // A new page with an app that has nothing loaded, as after the app was closed.
+  // A new page with an app that has nothing loaded, as after the app was closed. The app's
+  // empty state, even sent unasked, leaves the page's saved queue alone.
   await page.reload();
   await expect(title(page)).toHaveText('Midnight City');
   expect((await requests(page)).map(request => request.type)).toEqual(['player.subscribe']);
+  await page.evaluate(() => (window as unknown as { bridge: Bridge }).bridge.broadcast());
+  await page.waitForTimeout(100);
+  await expect(title(page)).toHaveText('Midnight City');
   await page.getByRole('button', { name: 'Resume playback' }).click();
   await expect(page.getByRole('button', { name: 'Pause playback' })).toBeEnabled();
   const types = (await requests(page)).map(request => request.type);
   expect(types).toEqual(['player.subscribe', 'player.load', 'player.control']);
   expect((await sent(page, 'player.load'))[0]).toMatchObject({ playing: false, current: { title: 'Midnight City' }, queue: [{ title: 'Wait' }] });
   expect(await sent(page, 'player.control')).toEqual([{ action: 'play' }]);
+});
+
+test('Play now names the queue it was chosen from, and the app refuses it once a song moved on', async ({ page }) => {
+  await app(page);
+  await page.getByRole('button', { name: 'Add music' }).first().click();
+  await page.getByRole('searchbox', { name: 'Music search' }).fill('midnight');
+  await page.getByRole('button', { name: 'Add Midnight City to queue' }).click();
+  await page.getByRole('button', { name: 'Add Wait to queue' }).click();
+  await page.getByRole('button', { name: 'Add Midnight City to queue' }).click();
+  await page.keyboard.press('Escape');
+  await expect.poll(async () => (await sent(page, 'player.setQueue')).length).toBe(2);
+
+  await page.getByRole('button', { name: 'Song options for Wait' }).click();
+  await page.getByRole('button', { name: 'Play now' }).click();
+  await expect(title(page)).toHaveText('Wait');
+  const [jump] = (await sent(page, 'player.control')).filter(request => request.action === 'skipTo');
+  expect(jump).toMatchObject({ action: 'skipTo', index: 0, revision: expect.any(Number) });
+
+  // A song ends in the app unseen by the page (no event), then Play now picks from the old list.
+  await page.evaluate(() => (window as unknown as { bridge: Bridge }).bridge.endSong(true));
+  await page.getByRole('button', { name: 'Song options for Midnight City' }).last().click();
+  await page.getByRole('button', { name: 'Play now' }).click();
+  await expect(page.getByText('Your queue just changed. Try that again.')).toBeVisible();
 });

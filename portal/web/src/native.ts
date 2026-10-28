@@ -20,7 +20,7 @@ export interface NativeLoad {
   positionMs: number; playing: boolean; volume: number; repeat: NativeRepeat;
 }
 export type NativeControl = { action: 'play' | 'pause' | 'next' | 'previous' | 'stop' } | { action: 'seek'; positionMs: number }
-  | { action: 'skipTo'; index: number } | { action: 'volume'; level: number } | { action: 'repeat'; mode: NativeRepeat };
+  | { action: 'skipTo'; index: number; revision: number } | { action: 'volume'; level: number } | { action: 'repeat'; mode: NativeRepeat };
 
 export interface NativePlayer {
   subscribe(): Promise<NativeState>;

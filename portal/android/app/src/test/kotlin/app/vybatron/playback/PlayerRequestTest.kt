@@ -35,7 +35,7 @@ class PlayerRequestTest {
         assertEquals(PlayerRequest.Play, parse("player.control", """{"action":"play"}"""))
         assertEquals(PlayerRequest.Next, parse("player.control", """{"action":"next"}"""))
         assertEquals(PlayerRequest.Seek(61_000), parse("player.control", """{"action":"seek","positionMs":61000}"""))
-        assertEquals(PlayerRequest.SkipTo(2), parse("player.control", """{"action":"skipTo","index":2}"""))
+        assertEquals(PlayerRequest.SkipTo(2, 9), parse("player.control", """{"action":"skipTo","index":2,"revision":9}"""))
         assertEquals(PlayerRequest.Volume(40), parse("player.control", """{"action":"volume","level":40}"""))
         assertEquals(PlayerRequest.SetRepeat(Repeat.TRACK), parse("player.control", """{"action":"repeat","mode":"track"}"""))
         assertEquals(PlayerRequest.SetQueue(listOf(), 7), parse("player.setQueue", """{"queue":[],"revision":7}"""))
@@ -43,7 +43,7 @@ class PlayerRequestTest {
     }
 
     @Test fun refusesUnknownOrMalformedControls() {
-        listOf("""{"action":"eject"}""", """{"action":"seek"}""", """{"action":"skipTo","index":1.5}""", """{"action":"skipTo","index":-1}""",
+        listOf("""{"action":"eject"}""", """{"action":"seek"}""", """{"action":"skipTo","index":1.5,"revision":1}""", """{"action":"skipTo","index":-1,"revision":1}""", """{"action":"skipTo","index":1}""",
             """{"action":"volume","level":"loud"}""", """{"action":"repeat","mode":"forever"}""")
             .forEach { assertNull(it, parse("player.control", it)) }
         assertNull(parse("player.setQueue", """{"queue":[]}"""))

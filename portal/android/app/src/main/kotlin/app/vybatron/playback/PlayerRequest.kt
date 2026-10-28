@@ -30,7 +30,8 @@ sealed interface PlayerRequest {
     data object Previous : Control
     data object Stop : Control
     data class Seek(val positionMs: Long) : Control
-    data class SkipTo(val index: Int) : Control
+    /** Jumps to a waiting song, if the songs are still the ones at `revision`. */
+    data class SkipTo(val index: Int, val revision: Long) : Control
     data class Volume(val level: Int) : Control
     data class SetRepeat(val repeat: Repeat) : Control
 
@@ -70,8 +71,11 @@ sealed interface PlayerRequest {
             "previous" -> Previous
             "stop" -> Stop
             "seek" -> milliseconds(request.opt("positionMs"))?.let(::Seek)
-            "skipTo" -> (request.opt("index") as? Number)?.toDouble()
-                ?.takeIf { it == Math.floor(it) && it >= 0 && it < DeviceQueue.MAX_QUEUE }?.let { SkipTo(it.toInt()) }
+            "skipTo" -> {
+                val index = (request.opt("index") as? Number)?.toDouble()?.takeIf { it == Math.floor(it) && it >= 0 && it < DeviceQueue.MAX_QUEUE }
+                val revision = request.opt("revision") as? Number
+                if (index != null && revision != null) SkipTo(index.toInt(), revision.toLong()) else null
+            }
             "volume" -> level(request.opt("level"))?.let(::Volume)
             "repeat" -> Repeat.of(request.opt("mode") as? String)?.let(::SetRepeat)
             else -> null

@@ -124,6 +124,8 @@ interface EngineParts {
 function nativeEngine(device: NativePlayer, { commit, notify, deckRef, latest, inLine }: EngineParts): Engine {
   let revision = -1; let loaded = false;
   const apply = (state: NativeState) => {
+    // An app with nothing loaded says nothing about a queue this page saved and hasn't handed over.
+    if (!state.current && !loaded && deckRef.current.current) { revision = state.revision; return; }
     const structural = state.revision !== revision; revision = state.revision; loaded = !!state.current;
     commit({ current: state.current, queue: state.queue, history: state.history, status: state.status, positionMs: state.positionMs, at: state.at,
       waiting: state.waiting, durationMs: state.durationMs, volume: state.volume, repeat: state.repeat }, structural);
@@ -179,7 +181,7 @@ function nativeEngine(device: NativePlayer, { commit, notify, deckRef, latest, i
       case 'volume:': { const level = volumeOf(o.level); return setting({ volume: level }, { action: 'volume', level }); }
       case 'loop:': { const mode = (['off', 'track', 'queue'].includes(String(o.mode)) ? o.mode : 'off') as Repeat; return setting({ repeat: mode }, { action: 'repeat', mode }); }
       case 'skip:': return !!deck.current && control({ action: 'next' });
-      case 'skipto:': { const index = Number(o.position) - 1; return Number.isInteger(index) && index >= 0 && index < deck.queue.length && control({ action: 'skipTo', index }); }
+      case 'skipto:': { const index = Number(o.position) - 1; return Number.isInteger(index) && index >= 0 && index < deck.queue.length && control({ action: 'skipTo', index, revision }); }
       case 'remove:': case 'move:': case 'clear:': case 'shuffle:': { const queue = edited(deck.queue, key, o); return queue !== null && edit(queue); }
       case 'stop:': stop(); return true;
       default:

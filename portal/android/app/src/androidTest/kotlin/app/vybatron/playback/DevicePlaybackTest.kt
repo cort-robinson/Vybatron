@@ -69,6 +69,8 @@ class DevicePlaybackTest {
                 }
                 if (path == "/api/guilds/1/search") {
                     return MockResponse.Builder().addHeader("Content-Type", "application/json")
+                        // Slow enough to press Pause while the match is looked up.
+                        .headersDelay(if (request.url.queryParameter("query") == "M83 Slow Lookup") 1_500 else 0, TimeUnit.MILLISECONDS)
                         .body(JSONObject().put("tracks", JSONArray().put(youtube("matchedddd1", "Matched"))).put("notice", JSONObject.NULL).toString()).build()
                 }
                 return MockResponse.Builder().code(404).build()
@@ -147,6 +149,65 @@ class DevicePlaybackTest {
         @org.junit.AfterClass @JvmStatic fun close() {
             server.close()
             PlaybackService.testBase = null
+        }
+    }
+
+    private fun result(request: PlayerRequest): Result<JSONObject> {
+        var result: Result<JSONObject>? = null
+        instrumentation.runOnMainSync { result = PlaybackService.player!!.handle(request) }
+        return result!!
+    }
+
+    @Test fun subscribingAnswersWithoutTellingEveryone() {
+        val before = states.size
+        assertTrue(result(PlayerRequest.Subscribe).isSuccess)
+        Thread.sleep(300)
+        assertEquals(before, states.size)
+    }
+
+    @Test fun pauseDuringALookupHoldsWhenTheMatchArrives() {
+        load(song("spotify-2", "Slow Lookup", "https://open.spotify.com/track/2"))
+        handle(PlayerRequest.Pause)
+        waitFor("the match to load") { currentTitle() == "Matched" }
+        Thread.sleep(1_000)
+        assertEquals("paused", states.last().optString("status"))
+        var wantsToPlay = true
+        instrumentation.runOnMainSync { wantsToPlay = controller.playWhenReady }
+        assertTrue("the match loaded paused", !wantsToPlay)
+    }
+
+    @Test fun backRestartsAPausedSongWithoutPlayingIt() {
+        load(youtube("longbbbbbbb", "First"))
+        waitFor("the song to play past three seconds", 20_000) {
+            states.lastOrNull()?.let { it.optString("status") == "playing" && !it.optBoolean("waiting") } == true &&
+                instrumentation.let { var at = 0L; it.runOnMainSync { at = controller.currentPosition }; at > 3_500 }
+        }
+        instrumentation.runOnMainSync { controller.pause() }
+        waitFor("Pause") { states.last().optString("status") == "paused" }
+        instrumentation.runOnMainSync { controller.seekToPrevious() }
+        waitFor("Back to restart the song") { states.last().optLong("positionMs") < 1_000 }
+        Thread.sleep(1_000)
+        assertEquals("First", currentTitle())
+        assertEquals("paused", states.last().optString("status"))
+    }
+
+    @Test fun playNowFromAnOlderQueueIsRefused() {
+        load(youtube("longbbbbbbb", "First"), youtube("longccccccc", "Second"), youtube("shortaaaaaa", "Third"))
+        var revision = 0L
+        instrumentation.runOnMainSync { revision = PlaybackService.player!!.state().getLong("revision") }
+        assertEquals("stale", result(PlayerRequest.SkipTo(1, revision - 1)).exceptionOrNull()?.message)
+        assertEquals("First", PlaybackService.player!!.let { var title = ""; instrumentation.runOnMainSync { title = it.state().getJSONObject("current").getString("title") }; title })
+        assertTrue(result(PlayerRequest.SkipTo(1, revision)).isSuccess)
+        waitFor("Play now to reach the third song") { currentTitle() == "Third" }
+    }
+
+    @Test fun controllersCanNotChangeRepeatShuffleVolumeOrSpeedBehindTheQueue() {
+        instrumentation.runOnMainSync {
+            listOf(androidx.media3.common.Player.COMMAND_SET_REPEAT_MODE, androidx.media3.common.Player.COMMAND_SET_SHUFFLE_MODE,
+                androidx.media3.common.Player.COMMAND_SET_VOLUME, androidx.media3.common.Player.COMMAND_SET_SPEED_AND_PITCH,
+                androidx.media3.common.Player.COMMAND_SET_MEDIA_ITEM)
+                .forEach { assertTrue("command $it", !controller.isCommandAvailable(it)) }
+            assertTrue(controller.isCommandAvailable(androidx.media3.common.Player.COMMAND_SEEK_TO_NEXT))
         }
     }
 

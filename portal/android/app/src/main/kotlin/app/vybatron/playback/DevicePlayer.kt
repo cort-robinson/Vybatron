@@ -71,9 +71,13 @@ class DevicePlayer(context: Context, private val base: String, private val cooki
             Player.COMMAND_SEEK_TO_PREVIOUS, Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM,
         ).build()
 
+        // Repeat, shuffle, volume and speed belong to this queue and the portal's settings; ExoPlayer's own would go unnoticed.
+        private val blocked = intArrayOf(Player.COMMAND_SET_REPEAT_MODE, Player.COMMAND_SET_SHUFFLE_MODE, Player.COMMAND_SET_VOLUME,
+            Player.COMMAND_SET_SPEED_AND_PITCH)
         private val wrapped = HashMap<Player.Listener, Player.Listener>()
 
-        override fun getAvailableCommands(): Player.Commands = super.getAvailableCommands().buildUpon().addAll(extra).build()
+        override fun getAvailableCommands(): Player.Commands =
+            super.getAvailableCommands().buildUpon().addAll(extra).removeAll(*blocked).build()
 
         // ExoPlayer reports its own commands when they change, without Next and Previous, and the
         // session would pass that on to the lock screen. Each listener hears ours instead.
@@ -99,7 +103,7 @@ class DevicePlayer(context: Context, private val base: String, private val cooki
         override fun removeListener(listener: Player.Listener) {
             wrapped.remove(listener)?.let { super.removeListener(it) }
         }
-        override fun isCommandAvailable(command: Int) = extra.contains(command) || super.isCommandAvailable(command)
+        override fun isCommandAvailable(command: Int) = availableCommands.contains(command)
         override fun hasNextMediaItem() = songs.queue.isNotEmpty() || songs.repeat == Repeat.QUEUE
         override fun hasPreviousMediaItem() = songs.history.isNotEmpty()
         override fun seekToNext() = next()
@@ -135,7 +139,8 @@ class DevicePlayer(context: Context, private val base: String, private val cooki
     /** Carries out one of the portal's requests and answers with the state that follows. */
     fun handle(request: PlayerRequest): Result<JSONObject> {
         when (request) {
-            PlayerRequest.Subscribe -> Unit
+            // Only the asking page needs the state; a broadcast would reach it before it knows what it's seeing.
+            PlayerRequest.Subscribe -> return Result.success(state())
             is PlayerRequest.Load -> load(request)
             is PlayerRequest.SetQueue -> if (!songs.setQueue(request.queue, request.revision)) return Result.failure(IllegalStateException("stale"))
             PlayerRequest.Play -> play()
@@ -144,7 +149,10 @@ class DevicePlayer(context: Context, private val base: String, private val cooki
             PlayerRequest.Previous -> previous()
             PlayerRequest.Stop -> stop()
             is PlayerRequest.Seek -> seek(request.positionMs)
-            is PlayerRequest.SkipTo -> step(songs.skipTo(request.index), autoplay = true)
+            is PlayerRequest.SkipTo -> {
+                if (request.revision != songs.revision) return Result.failure(IllegalStateException("stale"))
+                step(songs.skipTo(request.index), autoplay = true)
+            }
             is PlayerRequest.Volume -> { volume = request.level; exo.volume = volume / 100f }
             is PlayerRequest.SetRepeat -> songs.repeat = request.repeat
         }
@@ -157,7 +165,7 @@ class DevicePlayer(context: Context, private val base: String, private val cooki
         val loaded = current != null && exo.currentMediaItem?.mediaId == current.id
         val status = when {
             current == null -> "idle"
-            exo.playWhenReady || resolving -> "playing"
+            exo.playWhenReady -> "playing"
             else -> "paused"
         }
         val duration = if (loaded && exo.duration != C.TIME_UNSET) exo.duration else current?.durationMs ?: 0
@@ -212,7 +220,11 @@ class DevicePlayer(context: Context, private val base: String, private val cooki
 
     private fun previous() {
         val position = if (songs.current != null && exo.currentMediaItem?.mediaId == songs.current?.id) exo.currentPosition else pendingStart
-        step(songs.back(position), autoplay = true)
+        when (val step = songs.back(position)) {
+            // Restarting keeps a paused song paused, as in the portal's own player.
+            DeviceQueue.Step.Restart -> exo.seekTo(0)
+            else -> step(step, autoplay = true)
+        }
         emit()
     }
 
@@ -245,12 +257,17 @@ class DevicePlayer(context: Context, private val base: String, private val cooki
     }
 
     /** Plays [track] from [startMs]; a song from another catalog plays through its closest YouTube match. */
+    /**
+     * Plays [track] from [startMs] if [autoplay]. Whether to play is kept in ExoPlayer's
+     * playWhenReady from here on, so a Pause during a lookup or before a retry still holds.
+     */
     private fun start(track: NativeTrack, startMs: Long, autoplay: Boolean) {
         val ticket = ++token
         pendingStart = startMs
+        exo.playWhenReady = autoplay
         val videoId = track.videoId
-        if (videoId != null) { resolving = false; prepare(track, videoId, startMs, autoplay); return }
-        resolving = autoplay
+        if (videoId != null) { resolving = false; prepare(track, videoId, startMs); return }
+        resolving = true
         exo.stop()
         exo.clearMediaItems()
         val guild = guildId ?: return
@@ -266,7 +283,7 @@ class DevicePlayer(context: Context, private val base: String, private val cooki
                         advance(manual = true, drop = true)
                     } else {
                         songs.resolve(resolved)
-                        prepare(resolved, resolved.videoId!!, startMs, autoplay)
+                        prepare(resolved, resolved.videoId!!, startMs)
                         emit()
                     }
                 }, {
@@ -279,7 +296,7 @@ class DevicePlayer(context: Context, private val base: String, private val cooki
         emit()
     }
 
-    private fun prepare(track: NativeTrack, videoId: String, startMs: Long, autoplay: Boolean) {
+    private fun prepare(track: NativeTrack, videoId: String, startMs: Long) {
         val artwork = track.artworkUrl?.takeIf { it.startsWith("https://") || it.startsWith("http://") }
         val item = MediaItem.Builder()
             .setMediaId(track.id)
@@ -291,7 +308,6 @@ class DevicePlayer(context: Context, private val base: String, private val cooki
                 .build())
             .build()
         exo.setMediaItem(item, startMs)
-        exo.playWhenReady = autoplay
         exo.prepare()
     }
 
@@ -307,8 +323,7 @@ class DevicePlayer(context: Context, private val base: String, private val cooki
             retried.add(key)
             val ticket = token
             val position = exo.currentPosition.coerceAtLeast(0)
-            val playing = exo.playWhenReady
-            main.postDelayed({ if (ticket == token && songs.current === current) start(current, position, playing) }, 1_500)
+            main.postDelayed({ if (ticket == token && songs.current === current) start(current, position, exo.playWhenReady) }, 1_500)
             return
         }
         val message = response?.responseBody?.let { body ->

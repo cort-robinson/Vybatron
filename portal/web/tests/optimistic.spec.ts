@@ -1,5 +1,5 @@
 import { expect, test } from './test';
-import { applyIntents, createIntent, stillTargets } from '../src/optimistic';
+import { applyIntents, createIntent, displayedPosition, stillTargets } from '../src/optimistic';
 import { fixtureState } from './fixtures';
 
 const verified = () => fixtureState().snapshot;
@@ -67,6 +67,13 @@ test('repeating the queue sends the skipped song to its end, and skip-to drops t
   const jumped = applyIntents(repeat, 0, [createIntent(2, { command: 'skipto', options: { position: 3 } }, repeat, repeat, 0, 0)!]).snapshot;
   expect(jumped.session.current?.title).toBe('Golden Hour');
   expect(ids(jumped)).toEqual(['Afterglow', 'Evening Light']);
+});
+
+test('a predicted skip holds the next song at its start until the bot confirms it', () => {
+  const base = verified();
+  const skipped = applyIntents(base, 0, [createIntent(1, { command: 'skip' }, base, base, 0, 0)!]);
+  expect(skipped.snapshot.session.starting).toBe(true);
+  expect(displayedPosition(skipped.snapshot, skipped.receivedAt, 5000)).toBe(0);
 });
 
 test('Play next with a chosen song goes to the front and binds to the queue shown', () => {

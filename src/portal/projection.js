@@ -58,6 +58,10 @@ export function trackProjection(track, suggested) {
 }
 export function suggestionProjection(player) { return suggestions(player).map(track => trackProjection(track, true)); }
 export function guildProjection(context) { return { id: context.guild.id, name: plainText(context.guild.name, { maxLength: 100 }), iconUrl: safeImage(context.guild.iconURL?.()), admin: context.admin }; }
+// Lavalink announces a song as it starts loading it, then reports its place only every few seconds.
+// A fresh song's place holds still until Lavalink reports it moving, so a page never runs ahead of the audio.
+const opening = new WeakSet();
+const OPENING_POLL_MS = 250; const OPENING_LIMIT_MS = 10_000;
 // lavalink-client advances a playing position at 1x between Lavalink's updates; a speed preset
 // (Nightcore, Slow) plays the song's own time faster or slower than the clock.
 function playingPosition(player) {
@@ -109,6 +113,29 @@ export function createRevisions(client) {
     const handler = player => { if (player?.guildId) epochs.set(player.guildId, (epochs.get(player.guildId) || 0) + 1); };
     client.lavalink?.on?.(event, handler); listeners.push([event, handler]);
   }
+  // Asks Lavalink where a fresh song is until its place moves, then lets the position run from there.
+  // While it holds, the held place is part of the revision, so a corrected place reaches the page.
+  const open = async player => {
+    const track = player?.queue?.current; const node = player?.node;
+    if (!track || track.info?.isStream || typeof node?.fetchPlayer !== 'function' || opening.has(track)) return;
+    opening.add(track);
+    let first = null;
+    try {
+      for (const until = Date.now() + OPENING_LIMIT_MS; !closed && Date.now() < until;
+        await new Promise(resolve => { setTimeout(resolve, OPENING_POLL_MS).unref?.(); })) {
+        if (player.queue?.current !== track || isPlaybackRecovering(player)) return;
+        const remote = await node.fetchPlayer(player.guildId).catch(() => null);
+        const position = Number(remote?.state?.position);
+        if (player.queue?.current !== track || isPlaybackRecovering(player) || !Number.isFinite(position)
+          || remote?.track?.info?.identifier !== track.info?.identifier) continue;
+        player.lastPosition = position; player.lastPositionChange = Date.now();
+        if (first !== null && position > first) return;
+        first ??= position;
+      }
+    } finally { opening.delete(track); }
+  };
+  const started = player => { void open(player); };
+  client.lavalink?.on?.('trackStart', started); listeners.push(['trackStart', started]);
   const revision = guildId => {
     const player = client.lavalink?.getPlayer(guildId);
     const library = client.library.revisionInputs(guildId);
@@ -118,7 +145,7 @@ export function createRevisions(client) {
       Boolean(player?.paused), Boolean(player?.playing), Boolean(isPlaybackRecovering(player)), player?.volume, player?.repeatMode, getAudioPreset(player).label,
       seekRevision(player), Boolean(player?.queue?.previous?.length), sleepTimer(player),
       Boolean(radioState(player).enabled), radioState(player).override, autoplayActive(client, player), suggestions(player).map(trackId),
-      Boolean(current && isAutoplayTrack(player, current)), library.document, library.historyIds, checkpoint(guildId, library.session, Date.now())];
+      Boolean(current && isAutoplayTrack(player, current)), current && opening.has(current) ? player.lastPosition ?? null : false, library.document, library.historyIds, checkpoint(guildId, library.session, Date.now())];
     return createHash('sha256').update(JSON.stringify(signature)).digest('hex').slice(0, 32);
   };
   return { revision, nextSnapshot, close() { closed = true; for (const [event, handler] of listeners) client.lavalink?.off?.(event, handler); epochs.clear(); checkpoints.clear(); } };
@@ -147,6 +174,7 @@ export function snapshotProjection(client, context, revision, ordering) {
   const recovering = Boolean(player && isPlaybackRecovering(player));
   const controllerState = getControllerRecord(id)?.state;
   const status = !allowed || !player ? 'idle' : recovering ? 'recovering' : controllerState === 'unavailable' || player.node?.connected === false ? 'unavailable' : !current ? 'idle' : player.paused ? 'paused' : 'playing';
+  const starting = status === 'playing' && opening.has(current);
   const listeners = allowed ? [...(context.channels.get(player?.voiceChannelId)?.members?.values() || [])].filter(member => !member.user.bot).slice(0, 100).map(member => actorProjection({ ...member.user, id: member.id, displayName: member.displayName, avatarUrl: member.user.displayAvatarURL?.() })).filter(Boolean) : [];
   const reason = !allowed ? 'The listening channel is not visible to you.' : !context.member ? 'Join this server to control playback.' : !sameVoice ? 'Join the listening voice channel to control playback.' : !player && !canAdd ? 'An administrator must configure a visible music text channel.' : !djAccess(context, client) ? 'Playback controls require the DJ role.' : null;
   const configuration = configurationProjection(context);
@@ -156,8 +184,9 @@ export function snapshotProjection(client, context, revision, ordering) {
       suggestions: allowed && player ? suggestionProjection(player) : [],
       // Back returns to an earlier track of this session when one exists.
       hasPrevious: Boolean(allowed && player?.queue?.previous?.length),
-      positionMs: current ? boundedNumber(status === 'playing' ? playingPosition(player) : player.lastPosition ?? player.position, 0, boundedNumber(current.info?.duration) || Number.MAX_SAFE_INTEGER) : 0,
-      durationMs: current ? boundedNumber(current.info?.duration) : 0, volume: allowed ? boundedNumber(player?.volume, settings.volume, 100) : 100,
+      positionMs: current ? boundedNumber(status === 'playing' && !starting ? playingPosition(player) : player.lastPosition ?? player.position, 0, boundedNumber(current.info?.duration) || Number.MAX_SAFE_INTEGER) : 0,
+      // A song still loading: its position holds until the audio moves.
+      starting, durationMs: current ? boundedNumber(current.info?.duration) : 0, volume: allowed ? boundedNumber(player?.volume, settings.volume, 100) : 100,
       filter: allowed ? FILTERS.find(filter => filter.label === preset.label)?.id || 'custom' : 'off', repeat: allowed && ['off', 'track', 'queue'].includes(player?.repeatMode) ? player.repeatMode : 'off',
       radio: allowed && Boolean(player && autoplayActive(client, player)), autoplay: autoplayMode(client, id), fairQueue: allowed && settings.fairQueue, listeners,
       sleep: allowed ? sleepTimer(player) : null,

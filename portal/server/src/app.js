@@ -308,7 +308,7 @@ export async function createPortalServer(config, testOptions = {}) {
         return await write(`event:unchanged\ndata:${JSON.stringify({ revision: snapshot.revision, ordering: snapshot.ordering })}\n\n`, true);
       }
       if (!(await write(snapshotFrame(snapshot, guildId, limits), true))) return false;
-      baseline = { fingerprint, positionMs, playing: status === 'playing', at: now() };
+      baseline = { fingerprint, positionMs, playing: status === 'playing' && !snapshot.session.starting, at: now() };
       return true;
     };
     const heartbeat = async () => {
@@ -354,7 +354,7 @@ export async function createPortalServer(config, testOptions = {}) {
       if (await write(`retry: 5000\n\n: connected\n\n${frame}`, !initialError)) {
         failures = initialError ? 1 : 0;
         if (!initialError && quiet) {
-          baseline = { fingerprint: viewFingerprint(initial), positionMs: initial.session.positionMs, playing: initial.session.status === 'playing', at: now() };
+          baseline = { fingerprint: viewFingerprint(initial), positionMs: initial.session.positionMs, playing: initial.session.status === 'playing' && !initial.session.starting, at: now() };
         }
         heartbeatTimer = setTimeout(heartbeat, limits.heartbeatMs); heartbeatTimer.unref();
         rotateTimer = setTimeout(rotate, Math.max(0, limits.streamLifetimeMs - (now() - began))); rotateTimer.unref();

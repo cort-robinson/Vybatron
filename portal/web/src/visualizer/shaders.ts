@@ -1,7 +1,7 @@
 import type { PresetId } from './presets';
 
-// The visualizers' fragment shaders, each drawn as one full-screen triangle (the vertex shader is
-// scene/shared.ts compile's). Every one reads the same uniforms: the drawing buffer size, a visual
+// The fragment shaders of the visualizers drawn here (MilkDrop draws itself, milkdrop.ts), each one
+// full-screen triangle (the vertex shader is scene/shared.ts compile's). Every one reads the same uniforms: the drawing buffer size, a visual
 // clock and a travelled distance that advance only while the song plays, the song's bands and held
 // peaks (signal.ts), bass/mid/treble/level, the beat pulse and count, the cover's palette, a per-song
 // seed, and whether it fills the screen (1) or the sleeve (0). They are written for small buffers:
@@ -28,55 +28,6 @@ vec2 coord() { return (gl_FragCoord.xy - .5 * uRes) / uRes.y; }
 float span(float x, float lo, float hi, float w) { return smoothstep(lo - w, lo + w, x) - smoothstep(hi - w, hi + w, x); }
 float vignette(vec2 p) { return 1.0 - .4 * pow(clamp(length(p * vec2(uRes.y / uRes.x, 1.0)) * 1.2, 0.0, 1.0), 2.5); }
 `;
-
-// Neon, after Jeff Minter's Xbox 360 visualizer: light folded into mirrored wedges, then the whole
-// previous frame pulled toward the centre and turned, so everything drawn streams out and spins in a
-// tunnel of trails. It runs at half resolution into a ping-pong pair of buffers; a second pass
-// stretches the result to the canvas with a little bloom.
-const neonFlow = head + `
-uniform sampler2D uPrev;
-uniform vec4 uFlow;
-uniform float uFold;
-vec3 hue(float h) { return clamp(abs(fract(h + vec3(0.0, 2.0 / 3.0, 1.0 / 3.0)) * 6.0 - 3.0) - 1.0, 0.0, 1.0); }
-vec3 tone(int i) { return bright(uC[i == 0 ? 0 : i + 1], .5); }
-// The cover's accent and glows in turn, pushed toward a turning rainbow.
-vec3 paint(float t) { float k = fract(t) * 4.0; int i = int(k); return mix(mix(tone(i), tone((i + 1) % 4), smoothstep(0.0, 1.0, fract(k))), hue(t * .7), .42); }
-void main() {
-  vec2 p = coord(); float px = 1.0 / uRes.y;
-  // The mirrored wedge lies along the frame's longer axis, so a tall phone screen samples inside it.
-  float seg = 2.0 * PI / uFold; float r = length(p); float axis = uRes.x < uRes.y ? PI * .5 : 0.0;
-  float a = abs(mod(atan(p.y, p.x) - axis + seg * .5, seg) - seg * .5);
-  vec2 s = vec2(cos(a + axis + uFlow.y), sin(a + axis + uFlow.y)) * r * (1.0 - uFlow.x);
-  vec2 uv = s * vec2(uRes.y / uRes.x, 1.0) + .5;
-  vec3 prev = texture(uPrev, uv).rgb * step(abs(uv.x - .5), .5) * step(abs(uv.y - .5), .5);
-  // Old light drifts around the color wheel as it fades; the floor stops 8-bit trails sticking.
-  prev = mix(prev, prev.gbr, uFlow.w);
-  prev = max(prev * uFlow.z - 1.5 / 255.0, 0.0);
-  vec2 f = vec2(cos(a), sin(a)) * r; float t = uTime * .05 + uSeed;
-  vec3 add = vec3(0);
-  float r1 = .07 + .2 * uF.x + .12 * uBeat.x;
-  add += paint(t) * span(r, r1 - px * (1.0 + 2.0 * uBeat.x), r1 + px * (1.0 + 2.0 * uBeat.x), px) * (.3 + .9 * uBeat.x);
-  // Each wedge spans the bands from its centre line to its edge.
-  float r2 = .1 + .32 * band(a / (seg * .5)) * (.55 + .6 * uF.w);
-  add += paint(t + .33) * span(r, r2 - px, r2 + px, px) * .5;
-  for (int k = 0; k < 3; k++) {
-    float fk = float(k); float angle = mod(uTime * (.5 + fk * .3) + fk * 2.1, seg * .5);
-    float radius = .14 + .3 * fract(fk * .37 + uTime * .09) + .08 * uF.y;
-    vec2 d = f - vec2(cos(angle), sin(angle)) * radius;
-    add += paint(t + .66 + fk * .1) * exp(-dot(d, d) / (.0003 + .0016 * uF.z)) * .75;
-  }
-  add += paint(t + .5) * exp(-r * 18.0) * smoothstep(.7, 1.0, uBeat.x) * .5;
-  outColor = vec4(min(prev + add * .6, 1.0), 1.0);
-}`;
-const neonShow = head + `
-uniform sampler2D uFeed;
-void main() {
-  vec2 uv = gl_FragCoord.xy / uRes; vec2 o = 2.5 / vec2(textureSize(uFeed, 0));
-  vec3 c = texture(uFeed, uv).rgb;
-  vec3 b = texture(uFeed, uv + o).rgb + texture(uFeed, uv - o).rgb + texture(uFeed, uv + vec2(o.x, -o.y)).rgb + texture(uFeed, uv + vec2(-o.x, o.y)).rgb;
-  vec3 col = 1.0 - exp(-(c * 1.7 + b * .2 * (.6 + uF.x)));
-  outColor = vec4(col * vignette(coord()), 1.0);
-}`;
 
 // Gridrunner, for Overdrive: the sliced synthwave sun on the horizon, a skyline whose towers are the
 // equalizer (bass at the edges, so the sun stays in view), each with its peak floating above, and the
@@ -277,4 +228,5 @@ void main() {
   outColor = vec4(col * vignette(coord()), 1.0);
 }`;
 
-export const shaders: Record<PresetId, string[]> = { neon: [neonFlow, neonShow], gridrunner: [gridrunner], cosmic: [cosmic], receiver: [receiver] };
+export type ShaderId = Exclude<PresetId, 'milkdrop'>;
+export const shaders: Record<ShaderId, string> = { gridrunner, cosmic, receiver };

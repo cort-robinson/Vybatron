@@ -13,6 +13,9 @@ const safeErrors = {
   429: ['busy', 'The bot is busy. Please try again shortly.'],
   503: ['unavailable', 'The bot or audio service is unavailable. Refresh before making another change.'],
 };
+// The one bot audio error named in the portal's own words; the bot's text never passes.
+const AUDIO_UNAVAILABLE = 'This song can’t be streamed right now. Try another version.';
+const AUDIO_ERROR_BYTES = 4096;
 
 // Keep rejected response payloads distinct from socket/deadline outages without
 // exposing private upstream fields or changing the public safe error contract.
@@ -89,9 +92,23 @@ export class Transport {
             res.once('close', () => { req.destroy(); resolve(); });
             return;
           }
-          response.resume();
           const [code, message] = status !== 200 && safeErrors[status] || safeErrors[503];
-          reject(new HttpError(status !== 200 && safeErrors[status] ? status : 503, code, message));
+          const safe = new HttpError(status !== 200 && safeErrors[status] ? status : 503, code, message);
+          if (status !== 404 || !/^application\/json/.test(type)) { response.resume(); reject(safe); return; }
+          // Only the error code is read, from a bounded body, within the same deadline.
+          const chunks = []; let size = 0;
+          const deadline = setTimeout(() => { reject(safe); response.destroy(); }, this.limits.audioMs); deadline.unref();
+          response.on('data', chunk => {
+            size += chunk.length;
+            if (size > AUDIO_ERROR_BYTES) { clearTimeout(deadline); reject(safe); response.destroy(); } else chunks.push(chunk);
+          });
+          response.once('error', () => { clearTimeout(deadline); reject(safe); });
+          response.once('end', () => {
+            clearTimeout(deadline);
+            let upstream;
+            try { upstream = JSON.parse(Buffer.concat(chunks).toString('utf8'))?.error?.code; } catch {}
+            reject(upstream === 'audio_unavailable' ? new HttpError(404, 'audio_unavailable', AUDIO_UNAVAILABLE) : safe);
+          });
         });
         const timer = setTimeout(() => req.destroy(new Error('Upstream timeout')), this.limits.audioMs); timer.unref();
         req.once('error', () => { clearTimeout(timer); reject(unavailable()); });

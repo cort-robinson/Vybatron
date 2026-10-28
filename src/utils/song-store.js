@@ -106,6 +106,26 @@ export const MIGRATIONS = [
     merged_at INTEGER NOT NULL
   ) STRICT;
   CREATE INDEX aliases_song ON aliases (song_id);`,
+  // Two uploads that agree with each other stand in for a song whose own upload never played.
+  `CREATE TABLE sources_v3 (
+    uri TEXT PRIMARY KEY,
+    song_id TEXT NOT NULL REFERENCES songs (id) ON DELETE CASCADE,
+    source_name TEXT NOT NULL,
+    identifier TEXT NOT NULL,
+    title TEXT NOT NULL,
+    author TEXT NOT NULL,
+    duration INTEGER NOT NULL,
+    verification TEXT NOT NULL CHECK (verification IN ('first', 'audio', 'agreement')),
+    music INTEGER NOT NULL DEFAULT 0 CHECK (music IN (0, 1)),
+    similarity REAL,
+    added_at INTEGER NOT NULL,
+    last_played_at INTEGER,
+    last_failed_at INTEGER
+  ) STRICT;
+  INSERT INTO sources_v3 SELECT uri, song_id, source_name, identifier, title, author, duration, verification, music, similarity, added_at, last_played_at, last_failed_at FROM sources;
+  DROP TABLE sources;
+  ALTER TABLE sources_v3 RENAME TO sources;
+  CREATE INDEX sources_song ON sources (song_id);`,
 ];
 export const SONG_SCHEMA_VERSION = MIGRATIONS.length;
 
@@ -326,6 +346,24 @@ export class SongStore {
     } catch (error) { this.failure('songs_read_failed', error); return null; }
   }
 
+  /**
+   * A song whose own upload couldn't be measured (ADR-0017): no fingerprint, a
+   * failed measurement, and catalog evidence of what it is, either a catalog
+   * link or a YouTube Music song among its sources. Never throws.
+   */
+  agreementDue(now = this.now()) {
+    if (!this.available) return null;
+    try {
+      const row = this.db.prepare(`SELECT id, title, artist, duration, isrc FROM songs s WHERE fingerprint IS NULL AND fingerprint_failed_at IS NOT NULL
+          AND (alternates_checked_at IS NULL OR alternates_checked_at <= ?)
+          AND (catalog_status = 'linked' OR EXISTS (SELECT 1 FROM sources WHERE song_id = s.id AND music = 1))
+        ORDER BY used_at DESC, id DESC LIMIT 1`).get(now - ALTERNATES_RECHECK_MS);
+      if (!row) return null;
+      const sources = this.db.prepare('SELECT uri FROM sources WHERE song_id = ?').all(row.id).map(source => source.uri);
+      return { id: row.id, title: row.title, author: row.artist, duration: row.duration, isrc: row.isrc, sources };
+    } catch (error) { this.failure('songs_read_failed', error); return null; }
+  }
+
   /** Records an alternates check; `retryAfterMs` brings a failed one back sooner. Never throws. */
   alternatesChecked(id, { now = this.now(), retryAfterMs = null } = {}) {
     if (!this.available) return;
@@ -340,7 +378,7 @@ export class SongStore {
    * song survives and the other becomes its alias. Never throws.
    * @returns {string|null} the song the source now belongs to
    */
-  addVerifiedSource(id, track, similarity, now = this.now()) {
+  addVerifiedSource(id, track, similarity, now = this.now(), verification = 'audio') {
     try {
       if (!this.available) return null;
       const ref = trackReference(track);
@@ -356,8 +394,8 @@ export class SongStore {
         if (!known && count >= this.limits.sources) return songId;
         this.db.prepare('INSERT OR IGNORE INTO refs (uri, song_id, added_at) VALUES (?, ?, ?)').run(ref.uri, songId, now);
         this.db.prepare(`INSERT INTO sources (uri, song_id, source_name, identifier, title, author, duration, verification, music, similarity, added_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, 'audio', ?, ?, ?) ON CONFLICT (uri) DO NOTHING`)
-          .run(ref.uri, songId, ref.sourceName, ref.identifier, ref.title, ref.author, ref.duration, musicSong(track), similarity, now);
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (uri) DO NOTHING`)
+          .run(ref.uri, songId, ref.sourceName, ref.identifier, ref.title, ref.author, ref.duration, verification, musicSong(track), similarity, now);
         return songId;
       });
     } catch (error) { this.failure('songs_write_failed', error); return null; }

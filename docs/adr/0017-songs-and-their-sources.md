@@ -94,8 +94,21 @@ fingerprint. Discord playback itself never goes through the plugin. In the backg
 and only in the audio cache's background download slot, it looks for alternates: an ISRC search,
 a YouTube Music search for the title and artist, and Topic uploads. Candidates that pass the
 length and title checks are downloaded, measured and compared. Those that match become verified
-sources. A song whose only source fails before it was ever fingerprinted has no alternates and
-fails with the explanation from PR #118.
+sources.
+
+**A song whose own upload was never measured** (amended 2026-10-28, the owner's decision). When
+the listed upload is refused before it is ever fingerprinted, there is no audio to compare
+candidates with. Other uploads stand in only when all of these hold:
+
+- The song has catalog evidence of what it is: a catalog link, or a YouTube Music song (a Topic
+  upload or a Music result, delivered by the label) among its sources.
+- At least two candidates pass the length and title checks, and their fingerprints all match
+  each other.
+
+They become sources marked `agreement`, and the first one's fingerprint becomes the song's, so
+later alternates are compared with it as usual. They are never compared with the refused upload
+itself, so a same-sounding master could stand in: the same risk as a remaster above. Without
+catalog evidence or agreement, the song fails with the explanation from PR #118.
 
 **Playback uses only verified sources.** It tries the song's sources in order: last success
 first, then Topic uploads, then the rest. It skips a source that failed in the last 6 hours. It
@@ -150,7 +163,8 @@ approval), and the release snapshot's 64 MiB cap is checked with it included.
   share one listing. The owner accepted this.
 - Duplicates go away once their uploads have been fingerprinted, not at once: a new upload can
   show beside its song in search until then.
-- A song needs one successful play before it gains alternates. A song that never played can't be
+- A song needs one successful play, or two agreeing uploads and catalog evidence, before it gains
+  alternates. Otherwise a song that never played can't be
   rescued when its only upload fails.
 - Every alternate costs a background download and about 1.4 s of worker CPU to measure (ADR-0013).
   Discovery runs only in the background slot, so it never delays a listener's song.

@@ -150,10 +150,13 @@ Moving playback from device A to device B, started from any device:
    the commitment to both devices.
 4. **Switch.** B starts at T only if it has seen the commitment, from the portal's message or from
    the generation on its stream. It starts at the position for T and fades in over 150 ms. A fades
-   out over 150 ms and stops at T. Remote controls that arrive between the commitment and T are
-   held and sent to B after T. If A's own buttons change playback in that window (its
-   notification, for example), its report doesn't match the bound playback version, so the store
-   withdraws the commitment. B then stops if it already started, and A keeps playing.
+   out over 150 ms and stops at T. Controls between the commitment and T are held and sent to B
+   after T. That includes A's own buttons (its notification, for example): once A has seen the
+   commitment it sends them as remote controls instead of carrying them out. Nothing withdraws a
+   commitment, so the old generation's rejection rule has no exception. If A carried out a control
+   before it saw the commitment, the store refuses that report, because once a handoff is
+   committed it accepts no playback change from the outgoing generation, and A sends
+   the same control again as a remote control, which reaches B after T.
 
 Losing a message is handled by the stored generation. If A misses the commitment, both play until
 A reconnects, sees the newer generation and stops. That overlap is accepted rather than risking
@@ -209,7 +212,7 @@ New bridge operations follow ADR-0016's named-type rule: `player.prepare` and `p
 ## Consequences
 
 - **The portal server is no longer only a proxy.** It keeps the connected devices, relays commands
-  and runs handoffs, in memory. A portal restart cancels handoffs in progress and drops the list of
+  and runs handoffs, in memory. A portal restart cancels handoffs that weren't committed yet and drops the list of
   connected devices until they reconnect, which takes seconds. Music keeps playing through a
   restart, because the active device owns the playhead and the generation is in the store.
 - **More traffic through the bridge.** About one write every 15 seconds per playing listener, the

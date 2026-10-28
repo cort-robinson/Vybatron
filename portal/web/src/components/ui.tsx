@@ -35,8 +35,30 @@ function useDecodedSource(source: string | undefined) {
   }, [source, shown]);
   return shown;
 }
+// Lavalink gives most YouTube videos (and the portal gives saved songs) the 320×180 mqdefault
+// frame, which the open player's square crop blows up from 180 pixels. The large cover upgrades
+// to a 1280×720 frame once one loads. YouTube answers a size it lacks with a 120×90 placeholder.
+const YOUTUBE_FRAME = /^(https:\/\/i\.ytimg\.com\/vi\/[\w-]{11}\/)(?:default|mqdefault|hqdefault|sddefault)\.jpg$/;
+function useSharpSource(source: string | undefined, large: boolean) {
+  const [sharp, setSharp] = useState<{ from: string; to: string }>();
+  useEffect(() => {
+    const frame = large && source ? YOUTUBE_FRAME.exec(source) : null;
+    if (!source || !frame) return;
+    let current = true;
+    void (async () => {
+      for (const size of ['maxresdefault', 'hq720']) {
+        const image = new Image(); image.src = `${frame[1]}${size}.jpg`;
+        try { await image.decode(); } catch { continue; }
+        if (!current) return;
+        if (image.naturalWidth > 120) { setSharp({ from: source, to: image.src }); return; }
+      }
+    })();
+    return () => { current = false; };
+  }, [source, large]);
+  return sharp && sharp.from === source ? sharp.to : source;
+}
 export function Artwork({ track, className = '', large = false }: { track: Track | null; className?: string; large?: boolean }) {
-  const source = useDecodedSource(publicUrl(track?.artworkUrl));
+  const source = useDecodedSource(useSharpSource(publicUrl(track?.artworkUrl), large));
   const [failedSource, setFailedSource] = useState<string | undefined>();
   // A large cover dissolves into the next: the previous image lingers on top and fades out.
   const [ghost, setGhost] = useState<string>();

@@ -91,11 +91,15 @@ test('one keystroke, one unchanged live frame and one skip re-render only what t
   const skipped = structuredClone(fixture.state.snapshot);
   Object.assign(skipped, { revision: 'revision-skipped' });
   Object.assign(skipped.session, { current: before.queue[0], queue: before.queue.slice(1), positionMs: 0, durationMs: before.queue[0].durationMs });
+  // A new song also asks for a quiet history read once rapid skips have settled (usePortal's
+  // historySettleMs). It belongs to the skip, so it lands before the next event is measured.
+  const historyRead = page.waitForResponse(response => new URL(response.url()).pathname.endsWith('/library'));
   const skip = await measure(page, 'one skip', async () => {
     await emit(page, skipped);
     await expect(rows).toHaveCount(29);
     await expect(rows.first()).toContainText(before.queue[1].title);
   });
+  await historyRead;
 
   // With the player open over the Queue page, a frame renders the player's queue, not the hidden page's too.
   await page.getByRole('button', { name: 'Open player', exact: true }).click();

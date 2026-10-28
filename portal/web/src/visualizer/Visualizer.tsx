@@ -1,6 +1,6 @@
-import { useEffect, useId, useLayoutEffect, useRef, useState, type PointerEvent, type ReactNode } from 'react';
+import { useEffect, useId, useLayoutEffect, useRef, useState, type PointerEvent, type ReactNode, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
-import { XIcon } from '../icons';
+import { SkipForwardIcon, XIcon } from '../icons';
 import type { Palette } from '../art';
 import type { Skin } from '../skin';
 import { prefersReducedMotion } from '../motion';
@@ -30,15 +30,18 @@ function useView({ clock, palette, skin, guildId, local }: Scene, animate: boole
 }
 
 // The canvas is made here rather than rendered, so every mount (React's development double mount
-// included) gets a context of its own that the engine can release when it unmounts.
-function Stage({ view, className, onFail, onSource, onDoubleClick }: { view: View; className: string; onFail: () => void; onSource?: (source: Source) => void; onDoubleClick?: () => void }) {
-  const host = useRef<HTMLDivElement>(null); const engine = useRef<Visualizer | null>(null);
-  const fail = useRef(onFail); fail.current = onFail; const sourced = useRef(onSource); sourced.current = onSource;
+// included) gets a context of its own that the engine can release when it unmounts. MilkDrop copies
+// its frames to a 2D context and the others draw with WebGL2, and a canvas has only one kind of
+// context, so moving between them makes a new canvas.
+function Stage({ view, className, engine: shared, onFail, onSource, onName, onDoubleClick }: { view: View; className: string; engine?: RefObject<Visualizer | null>; onFail: () => void; onSource?: (source: Source) => void; onName?: (name: string) => void; onDoubleClick?: () => void }) {
+  const host = useRef<HTMLDivElement>(null); const own = useRef<Visualizer | null>(null); const engine = shared || own;
+  const fail = useRef(onFail); fail.current = onFail; const sourced = useRef(onSource); sourced.current = onSource; const naming = useRef(onName); naming.current = onName;
+  const milkdrop = view.preset === 'milkdrop';
   useEffect(() => {
     const canvas = document.createElement('canvas'); canvas.setAttribute('aria-hidden', 'true'); host.current!.append(canvas);
-    engine.current = startVisualizer(canvas, () => fail.current(), source => sourced.current?.(source));
+    engine.current = startVisualizer(canvas, milkdrop, { fail: () => fail.current(), sourced: source => sourced.current?.(source), named: name => naming.current?.(name) });
     return () => { engine.current?.stop(); engine.current = null; canvas.remove(); };
-  }, []);
+  }, [engine, milkdrop]);
   const { preset, seed, playing, positionMs, at, palette, animate, full, lite, guildId, video, lagMs, rate } = view;
   useEffect(() => { engine.current?.update({ preset, seed, playing, positionMs, at, palette, animate, full, lite, guildId, video, lagMs, rate }); }, [preset, seed, playing, positionMs, at, palette, animate, full, lite, guildId, video, lagMs, rate]);
   return <div ref={host} className={className} aria-hidden="true" onDoubleClick={onDoubleClick} />;
@@ -52,7 +55,8 @@ export function SleeveVisualizer({ animate, onFail, onFull, ...scene }: Scene & 
 // The takeover: the visualizer fills the screen; the song, its position, the presets and a way out
 // sit over it and fade after a few seconds without input, returning on any pointer or key. A touch
 // on the picture shows or hides them. It is a modal dialog, so the page and the room beneath hold
-// still, and focus returns to whatever opened it.
+// still, and focus returns to whatever opened it. MilkDrop adds the name of the preset showing and
+// a way on to the next.
 const REST_MS = 3200;
 // Without WebGL2 it shows the fallback it is given (the player's spectrum) instead.
 export function FullscreenVisualizer({ onClose, fallback, ...scene }: Scene & { onClose: () => void; fallback: ReactNode }) {
@@ -62,6 +66,7 @@ export function FullscreenVisualizer({ onClose, fallback, ...scene }: Scene & { 
   // Performance mode still animates a visualizer someone opened on purpose, at lower resolution.
   const [lite] = useState(() => document.documentElement.hasAttribute('data-performance'));
   const [failed, setFailed] = useState(false); const [source, setSource] = useState<Source>('ambient');
+  const engine = useRef<Visualizer | null>(null); const [named, setNamed] = useState('');
   const [resting, setResting] = useState(false); const rested = useRef(false); const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const rest = (value: boolean) => { clearTimeout(timer.current); if (rested.current !== value) { rested.current = value; setResting(value); } };
   const stir = () => { rest(false); timer.current = setTimeout(() => rest(true), REST_MS); };
@@ -82,11 +87,14 @@ export function FullscreenVisualizer({ onClose, fallback, ...scene }: Scene & { 
     onPointerMove={event => { if (event.pointerType === 'mouse') stir(); }} onFocus={stir}>
     <div className="visualizer-screen" onPointerDown={touch}>{failed
       ? fallback
-      : <Stage className="visualizer-stage" view={view} onFail={() => setFailed(true)} onSource={setSource} />}</div>
+      : <Stage className="visualizer-stage" view={view} engine={engine} onFail={() => setFailed(true)} onSource={setSource} onName={setNamed} />}</div>
     <div className="visualizer-chrome">
       <header className="visualizer-now"><div className="visualizer-track"><h2>{track?.title || 'Nothing playing'}</h2><p>{track ? track.author : 'Add a song to start.'}</p><Progress clock={scene.clock} /></div>
         <IconButton className="visualizer-close" label="Close visualizer" onClick={onClose}><XIcon size={26} /></IconButton></header>
       <footer className="visualizer-controls">
+        {preset === 'milkdrop' && !failed && <div className="visualizer-milkdrop">
+          <button type="button" className="visualizer-next" onClick={() => engine.current?.next()}><SkipForwardIcon size={16} weight="fill" aria-hidden="true" />Next preset</button>
+          {named && <p className="visualizer-preset-name" title={named}><span className="sr-only">Showing </span>{named}</p>}</div>}
         <fieldset className="visualizer-presets"><legend className="sr-only">Visualizer</legend>
           {PRESETS.map(item => <label key={item.id}><input type="radio" name={name} value={item.id} checked={preset === item.id} onChange={() => choosePreset(item.id)} /><span>{item.name}</span></label>)}</fieldset>
         {/* Live: the song's measured energy. Ambient: a pattern made for the song, not its audio. Say which plainly. */}

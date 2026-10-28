@@ -21,6 +21,9 @@ export interface Signal {
   features(positionMs: number, dt: number, playing: boolean): Features;
   // That moment without easing, for a still frame.
   still(positionMs: number, playing: boolean): Features;
+  // How many beats have landed by positionMs: a step that rises on each beat, from the position
+  // alone, so any screen asking about any moment gets the same answer.
+  beatsAt(positionMs: number): number;
 }
 // A song's measured energy (analysis.ts): frameCount frames of BANDS levels (0–255) at 30fps, frame
 // i describing the song at i / 30 s, and the times of its bass-weighted beats in ms, ascending.
@@ -76,6 +79,8 @@ export function ambientSignal(seed: string): Signal {
       for (let i = 0; i < BANDS; i++) target[i] = playing ? Math.max(target[i], shape[i] * energyAt(ms) * .7) : STANDBY;
       return motion.hold(target, playing, count);
     },
+    // Every beat of the grid, the ones without a kick included.
+    beatsAt: ms => Math.floor((ms - offset) / beatMs),
   };
 }
 
@@ -147,5 +152,6 @@ export function liveSignal(map: EnergyMap, from?: Features): Signal {
     source: 'live',
     features(ms, dt, playing) { compose(ms, playing); return motion.ease(target, dt, playing, pulse, count); },
     still(ms, playing) { compose(ms, playing, 8); return motion.hold(target, playing, count); },
+    beatsAt: landed,
   };
 }

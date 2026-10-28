@@ -163,7 +163,11 @@ export function playableAudio(audio, songs, { pinMs = 30 * 60_000, now = Date.no
         while (pinned.size > 500) pinned.delete(pinned.keys().next().value);
         if (!reported.has(entry)) {
           reported.add(entry);
-          entry.done.then(() => songs?.sourceResult?.(watchUrl(source), true), () => songs?.sourceResult?.(watchUrl(source), false));
+          entry.done.then(() => songs?.sourceResult?.(watchUrl(source), true), () => {
+            // A stream that fails partway gives up its pin, so the next request chooses again.
+            if (pinned.get(id)?.source === source) pinned.delete(id);
+            songs?.sourceResult?.(watchUrl(source), false);
+          });
         }
         return entry;
       }

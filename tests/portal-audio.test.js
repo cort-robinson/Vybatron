@@ -221,3 +221,23 @@ test('a device song keeps the source it started with across range requests', asy
   assert.equal(songs.playbackSources('https://www.youtube.com/watch?v=firstSong01')[0].identifier, 'otherSong01');
   assert.equal((await playable.get('firstSong01')).video, 'firstSong01');
 });
+
+test('a device song whose stream fails partway gives up its source for the next request', async t => {
+  let clock = 1_800_000_000_000;
+  const songs = new SongStore(':memory:', { logger: { log() {}, error() {} }, now: () => clock }); await songs.open(); t.after(() => songs.close());
+  const upload = id => ({ info: { identifier: id, uri: `https://www.youtube.com/watch?v=${id}`, sourceName: 'youtube', title: 'Song', author: 'Artist', duration: 160_000, isStream: false } });
+  const id = songs.record(upload('firstSong01'));
+  songs.addVerifiedSource(id, upload('otherSong01'), .99);
+  const asked = []; let cut;
+  const audio = { get: async video => {
+    asked.push(video);
+    if (video === 'firstSong01') { const done = new Promise((_, reject) => { cut = reject; }); done.catch(() => {}); return { done, video }; }
+    return { done: Promise.resolve(), video };
+  } };
+  const playable = playableAudio(audio, songs);
+  assert.equal((await playable.get('firstSong01')).video, 'firstSong01');
+  cut(new Error('cut off')); await new Promise(resolve => setImmediate(resolve));
+  clock += 1000;
+  assert.equal((await playable.get('firstSong01')).video, 'otherSong01');
+  assert.deepEqual(asked, ['firstSong01', 'otherSong01']);
+});

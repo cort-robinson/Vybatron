@@ -1569,6 +1569,7 @@ function alternatesFixture(alternateIds, playable = alternateIds) {
   const f = fixture({
     alternates: track => (track.info.identifier === 'dQw4w9WgXcQ' ? ['dQw4w9WgXcQ', ...alternateIds] : [])
       .map(id => ({ uri: watch(id), sourceName: 'youtube', identifier: id })),
+    hasAlternates: track => track.info.identifier === 'dQw4w9WgXcQ' && alternateIds.length > 0,
     onSourceResult: (track, played) => results.push([track.info.uri.slice(-11), played]),
     search: async (_player, { query }) => ({ tracks: playable.filter(id => query === watch(id)).map(id => f.track(id)) }),
   });
@@ -1615,6 +1616,7 @@ test('a song with verified sources never takes a metadata mirror on its retries'
   const watch = id => `https://www.youtube.com/watch?v=${id}`;
   const f = fixture({
     alternates: () => [{ uri: watch('altSource01'), sourceName: 'youtube', identifier: 'altSource01' }],
+    hasAlternates: () => true,
     search: async (_player, { query, source }) => {
       if (source) { mirrored++; return { tracks: [f.track('mirrorTrk01', { sourceName: 'soundcloud', uri: 'https://soundcloud.com/a/b' })] }; }
       return { tracks: query === watch('altSource01') ? [f.track('altSource01')] : [] };
@@ -1624,6 +1626,17 @@ test('a song with verified sources never takes a metadata mirror on its retries'
   await f.error({ exception: MIXED_CLIENT_EXCEPTION });
   assert.equal(mirrored, 0);
   assert.equal(f.player.queue.current.info.identifier, 'altSource01');
+});
+
+test('a song whose verified sources are all cooling down is skipped without a metadata mirror', async () => {
+  let mirrored = 0;
+  const f = fixture({ alternates: () => [], hasAlternates: () => true,
+    search: async (_player, { source }) => { if (source) mirrored++; return { tracks: [] }; } });
+  await f.start(f.track('dQw4w9WgXcQ', { isrc: 'USRC17607839' }));
+  await f.error({ exception: MIXED_CLIENT_EXCEPTION });
+  assert.equal(mirrored, 0);
+  assert.equal(f.player.queue.current.info.identifier, 'Zi_XLOBDo_Y');
+  assert.equal(f.failed.length, 1);
 });
 
 test('an unknown song is skipped as before', async () => {

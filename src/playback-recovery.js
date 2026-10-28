@@ -256,6 +256,8 @@ export function createPlaybackRecovery({
   onResumed = () => {},
   // A song's other verified sources (ADR-0017), best first, and where to report how one went.
   alternates = () => [],
+  // Whether the song has verified sources besides this upload, cooling down or not.
+  hasAlternates = () => false,
   onSourceResult = () => {},
   logger = console,
   retryDelays = [1500, 4000],
@@ -504,7 +506,8 @@ export function createPlaybackRecovery({
       ? eventPosition : player.lastPosition;
     const circuit = circuitFor(player, original);
     // A song with verified sources (ADR-0017) never takes a metadata mirror: its retries stay exact.
-    const verified = safeAlternates(original).some((source) => source.uri !== original.info?.uri);
+    let verified = false;
+    try { verified = Boolean(hasAlternates(original)); } catch {}
     if (!isPermanentFailure(payload) && circuit.until <= now()) {
       while (state.attempts < retryDelays.length && valid(player, state, epoch, failedTrack)) {
         const attempt = state.attempts++;

@@ -403,6 +403,13 @@ export class SongStore {
     } catch (error) { this.failure('songs_read_failed', error); return []; }
   }
 
+  /** How many sources a reference's song has, cooling down or not. Never throws. */
+  sourceCount(uri) {
+    if (!this.available) return 0;
+    try { return this.db.prepare('SELECT COUNT(*) AS n FROM sources WHERE song_id = (SELECT song_id FROM refs WHERE uri = ?)').get(uri).n; }
+    catch (error) { this.failure('songs_read_failed', error); return 0; }
+  }
+
   /** Records whether a source played. Never throws. */
   sourceResult(uri, played, now = this.now()) {
     if (!this.available) return;

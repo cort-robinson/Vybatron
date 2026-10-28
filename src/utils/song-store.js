@@ -204,6 +204,7 @@ export class SongStore {
       return this.transaction(() => {
         const known = this.db.prepare('SELECT s.id, s.catalog_status, s.next_lookup_at FROM refs r JOIN songs s ON s.id = r.song_id WHERE r.uri = ?').get(ref.uri);
         if (known) {
+          this.db.prepare('UPDATE sources SET music = MAX(music, ?) WHERE uri = ?').run(musicSong(track), ref.uri);
           // An exhausted lookup gets one more try each time the song plays.
           const retry = known.catalog_status === 'pending' && known.next_lookup_at === null ? now : known.next_lookup_at;
           this.db.prepare('UPDATE songs SET used_at = ?, next_lookup_at = ? WHERE id = ?').run(now, retry, known.id);
@@ -344,6 +345,8 @@ export class SongStore {
       if (!ref || ref.isStream || CATALOGS.has(ref.sourceName)) return null;
       return this.transaction(() => {
         let songId = id;
+        // Music recognition only ever upgrades, and before a merge trims sources.
+        this.db.prepare('UPDATE sources SET music = MAX(music, ?) WHERE uri = ?').run(musicSong(track), ref.uri);
         const owner = this.db.prepare('SELECT song_id FROM refs WHERE uri = ?').get(ref.uri)?.song_id;
         if (owner && owner !== id) songId = this.mergeRows(id, owner, now);
         const count = this.db.prepare('SELECT COUNT(*) AS n FROM sources WHERE song_id = ?').get(songId).n;

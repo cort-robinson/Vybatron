@@ -254,3 +254,16 @@ test('a YouTube Music song that names its artist sorts with Topic uploads', asyn
   songs.addVerifiedSource('song:1', music, .98);
   assert.deepEqual(songs.playbackSources(lyrics.info.uri).map(source => source.identifier), ['musicSong01', 'lyricSong01']);
 });
+
+test('an upload first seen plainly is recognised as a Music song when it shows up as one', async t => {
+  const { songs } = await store(t);
+  const lyrics = upload('lyricSong01', 'Djo - End Of Beginning (Lyrics)', 'Dan Music');
+  const plain = upload('musicSong01', 'End of Beginning', 'Djo');
+  const music = upload('musicSong01', 'End of Beginning', 'Djo');
+  music.info.artworkUrl = 'https://lh3.googleusercontent.com/abc';
+  songs.record(lyrics); songs.record(plain);
+  // Neither has played as a source of song:1 yet; only Music recognition can order them.
+  songs.db.exec('UPDATE sources SET last_played_at = NULL');
+  songs.addVerifiedSource('song:1', music, .98);
+  assert.deepEqual(songs.playbackSources(lyrics.info.uri).map(source => source.identifier), ['musicSong01', 'lyricSong01']);
+});

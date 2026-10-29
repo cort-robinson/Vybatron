@@ -1,6 +1,6 @@
 import http from 'node:http';
 import path from 'node:path';
-import { createHash } from 'node:crypto';
+import { createHash, randomInt } from 'node:crypto';
 import { promises as fs, constants as fsConstants } from 'node:fs';
 import { LIMITS, isLoopback } from './config.js';
 import { SessionStore, randomToken, tokenHash } from './store.js';
@@ -15,6 +15,23 @@ import { HttpError, RateLimiter, busy, invalid, unauthorized, unavailable, cooki
 
 export const SESSION_COOKIE = '__Host-vybertron_session';
 export const OAUTH_COOKIE = '__Host-vybertron_oauth';
+// Holds the device token of a sign-in with a code (ADR-0019), like OAUTH_COOKIE holds Discord's state.
+export const DEVICE_COOKIE = '__Host-vybertron_device_sign_in';
+// User codes: 8 letters that can't be mistaken for each other, shown as XXXX-XXXX.
+const CODE_LETTERS = 'BCDFGHJKLMNPQRSTVWXZ';
+const CODE_PATTERN = new RegExp(`^[${CODE_LETTERS}]{8}$`);
+const userCode = () => Array.from({ length: 8 }, () => CODE_LETTERS[randomInt(CODE_LETTERS.length)]).join('');
+const showCode = code => `${code.slice(0, 4)}-${code.slice(4)}`;
+// Case, spaces and the hyphen don't matter when a listener types a code.
+function normalizeCode(value) {
+  if (typeof value !== 'string' || value.length > 32) return null;
+  const code = value.toUpperCase().replace(/[\s-]/g, '');
+  return CODE_PATTERN.test(code) ? code : null;
+}
+// A wrong, expired, used or malformed code: one answer, so none can be told apart.
+const codeRefused = () => new HttpError(400, 'invalid_code', 'That code isn’t valid or has expired. Check the code on the screen and try again.');
+const plainObject = (value, keys = []) => value !== null && typeof value === 'object' && !Array.isArray(value)
+  && Object.keys(value).every(key => keys.includes(key));
 const DISCORD_ISSUER = 'https://discord.com';
 const notFound = () => new HttpError(404, 'not_found', 'The requested resource was not found.');
 const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
@@ -122,6 +139,9 @@ export async function createPortalServer(config, testOptions = {}) {
   const limiter = new RateLimiter(limits.rateKeys, now);
   const anonymousLimiter = new RateLimiter(limits.rateKeys, now);
   const pendingOAuth = new Map(); const streams = new Set(); const commandReaders = new Set();
+  // Sign-ins with a code (ADR-0019) by device token hash, and their user codes.
+  // In memory only, like Discord's OAuth state: a restart loses them.
+  const pendingDevices = new Map(); const deviceCodes = new Map();
   const entityTags = new EntityTags();
   let processing = 0; let stops = 0; let closing = false;
   // Production follows the bot's change feed; test servers opt in explicitly.
@@ -137,6 +157,18 @@ export async function createPortalServer(config, testOptions = {}) {
     if (!session) throw unauthorized();
     return { token, session };
   }
+
+  // Use renews a session at most once a day; the cookie goes out again with its new lifetime.
+  async function renewSession(res, token, session) {
+    const maxAge = await store.renew(session);
+    if (maxAge !== null) res.setHeader('Set-Cookie', setCookie(SESSION_COOKIE, token, maxAge));
+  }
+
+  function dropDevice(key) {
+    const entry = pendingDevices.get(key);
+    if (entry) { deviceCodes.delete(entry.code); pendingDevices.delete(key); }
+  }
+  function purgeDevices() { for (const [key, entry] of pendingDevices) if (entry.until <= now()) dropDevice(key); }
 
   function checkCsrf(req, session) {
     sameOrigin(req, config);
@@ -526,7 +558,8 @@ export async function createPortalServer(config, testOptions = {}) {
       if (!['GET', 'HEAD', 'POST'].includes(req.method)) throw new HttpError(405, 'method_not_allowed', 'This HTTP method is not supported.');
       const commandRequest = req.method === 'POST' && /^\/api\/guilds\/\d{1,20}\/commands$/.test(pathname);
       const playerRequest = req.method === 'POST' && pathname === '/api/me/player';
-      if (!commandRequest && !playerRequest && (req.headers['transfer-encoding'] || Number(req.headers['content-length'] || 0) !== 0)) throw invalid();
+      const deviceRequest = req.method === 'POST' && /^\/auth\/device\/(?:start|poll|approve|deny)$/.test(pathname);
+      if (!commandRequest && !playerRequest && !deviceRequest && (req.headers['transfer-encoding'] || Number(req.headers['content-length'] || 0) !== 0)) throw invalid();
       if (commandRequest) {
         // The contract uses one commands URL, so priority is known only after a
         // bounded body read. Authenticate first; these readers cannot consume
@@ -534,6 +567,7 @@ export async function createPortalServer(config, testOptions = {}) {
         queryOnly(url, []);
         const { token, session } = sessionFor(req); checkCsrf(req, session);
         trusted = true;
+        await renewSession(res, token, session);
         const live = () => { if (!store.get(token)) throw unauthorized(); };
         if (commandReaders.size >= limits.commandReaders) {
           // Stop has no separate URL/header and cannot be classified before its
@@ -622,7 +656,69 @@ export async function createPortalServer(config, testOptions = {}) {
           const created = await store.create(actorId, previousToken);
           if (previousToken) for (const stream of streams) if (stream.sessionKey === tokenHash(previousToken)) stream.close();
           if (previous) forgetDevices(previous);
-          res.writeHead(302, { Location: '/', 'Set-Cookie': [setCookie(OAUTH_COOKIE, '', 0), setCookie(SESSION_COOKIE, created.token, limits.sessionMs / 1000)] }); res.end(); return;
+          res.writeHead(302, { Location: '/', 'Set-Cookie': [setCookie(OAUTH_COOKIE, '', 0), setCookie(SESSION_COOKIE, created.token, created.maxAge)] }); res.end(); return;
+        }
+        // Signing in with a code (ADR-0019). Start and poll come before any
+        // session, so instead of a CSRF token they need the exact portal Origin
+        // and a JSON body, which a foreign page can't send without a preflight.
+        if (pathname === '/auth/device/start' && req.method === 'POST') {
+          queryOnly(url, []); anonymousBudget(); sameOrigin(req, config);
+          anonymousLimiter.check(`device-start:${req.socket.remoteAddress}`, limits.deviceStarts);
+          if (!plainObject(await readBody(req, limits.bodyBytes, limits.requestMs, controller.signal))) throw invalid();
+          purgeDevices();
+          const old = cookie(req, DEVICE_COOKIE); if (old) dropDevice(tokenHash(old));
+          if (pendingDevices.size >= limits.pendingDeviceSignIns) throw busy();
+          let code; do code = userCode(); while (deviceCodes.has(code));
+          const deviceToken = randomToken(); const key = tokenHash(deviceToken);
+          pendingDevices.set(key, { code, until: now() + limits.deviceSignInMs, actorId: null, denied: false }); deviceCodes.set(code, key);
+          res.setHeader('Set-Cookie', setCookie(DEVICE_COOKIE, deviceToken, limits.deviceSignInMs / 1000));
+          json(res, 200, { userCode: showCode(code), verificationUri: `${config.origin}/link`, expiresIn: limits.deviceSignInMs / 1000, interval: 5 }); return;
+        }
+        const decision = /^\/auth\/device\/(approve|deny)$/.exec(pathname);
+        if (decision && req.method === 'POST') {
+          // A signed-in listener approves (or turns down) a code shown on another screen.
+          queryOnly(url, []); const { token, session } = sessionFor(req); checkCsrf(req, session);
+          trusted = true;
+          // Every try counts, so codes can't be guessed.
+          limiter.check(`device-approve:${session.key}`, limits.deviceApprovals, limits.deviceApprovalMs);
+          const body = await readBody(req, limits.bodyBytes, limits.requestMs, controller.signal);
+          if (!plainObject(body, ['code']) || typeof body.code !== 'string') throw invalid();
+          await renewSession(res, token, session);
+          if (!store.get(token)) throw unauthorized();
+          purgeDevices();
+          const code = normalizeCode(body.code); const entry = code ? pendingDevices.get(deviceCodes.get(code)) : null;
+          // The approving listener is recorded once and never replaced.
+          if (!entry || entry.actorId || entry.denied) throw codeRefused();
+          if (decision[1] === 'approve') entry.actorId = session.actorId; else entry.denied = true;
+          json(res, 200, { ok: true }); return;
+        }
+        if (pathname === '/auth/device/poll' && req.method === 'POST') {
+          queryOnly(url, []); anonymousBudget(); sameOrigin(req, config);
+          if (!plainObject(await readBody(req, limits.bodyBytes, limits.requestMs, controller.signal))) throw invalid();
+          const deviceToken = cookie(req, DEVICE_COOKIE); const key = deviceToken ? tokenHash(deviceToken) : null;
+          if (key) anonymousLimiter.check(`device-poll:${key}`, limits.devicePolls);
+          purgeDevices();
+          const entry = key ? pendingDevices.get(key) : undefined;
+          if (!entry || entry.denied) {
+            dropDevice(key); res.setHeader('Set-Cookie', setCookie(DEVICE_COOKIE, '', 0));
+            json(res, 200, { status: entry ? 'denied' : 'expired' }); return;
+          }
+          if (!entry.actorId) { json(res, 200, { status: 'pending' }); return; }
+          // Claimed and removed in this step, with no wait in between: a second
+          // poll at the same moment finds nothing.
+          dropDevice(key); trusted = true;
+          res.setHeader('Set-Cookie', setCookie(DEVICE_COOKIE, '', 0));
+          const { actorId } = entry;
+          // As after Discord sign-in: the bot's freshly verified viewer first.
+          const bootstrap = await transport.bridge('/v1/bootstrap', actorId, { signal: controller.signal });
+          if (bootstrap.viewer?.id !== actorId || !Array.isArray(bootstrap.guilds)) throw unavailable();
+          const previousToken = cookie(req, SESSION_COOKIE);
+          const previous = previousToken ? store.get(previousToken) : null;
+          const created = await store.create(actorId, previousToken);
+          if (previousToken) for (const stream of streams) if (stream.sessionKey === tokenHash(previousToken)) stream.close();
+          if (previous) forgetDevices(previous);
+          res.setHeader('Set-Cookie', [setCookie(DEVICE_COOKIE, '', 0), setCookie(SESSION_COOKIE, created.token, created.maxAge)]);
+          json(res, 200, { status: 'approved' }); return;
         }
         if (pathname === '/auth/logout' && req.method === 'POST') {
           queryOnly(url, []); const { token, session } = sessionFor(req); checkCsrf(req, session);
@@ -643,6 +739,7 @@ export async function createPortalServer(config, testOptions = {}) {
         // Rechecked after compression, just before a protected reply goes out.
         const live = () => { if (!store.get(token)) throw unauthorized(); };
         limiter.check(`session:${session.key}`, 120);
+        await renewSession(res, token, session);
         if (pathname === '/api/bootstrap' && req.method === 'GET') {
           queryOnly(url, []);
           const bootstrap = await transport.bridge('/v1/bootstrap', session.actorId, { signal: controller.signal });
@@ -817,11 +914,12 @@ export async function createPortalServer(config, testOptions = {}) {
       forgetting.clear();
       transport.close();
       const stopped = new Promise(resolve => server.close(resolve)); server.closeAllConnections();
-      await stopped; await following; await store.close(); pendingOAuth.clear();
+      await stopped; await following; await store.close(); pendingOAuth.clear(); pendingDevices.clear(); deviceCodes.clear();
     },
     // Resource counts contain no identity, credentials, or music data.
     resourceCounts: () => ({ feedLive, streams: streams.size, requests: processing + commandReaders.size + stops,
       ordinaryRequests: processing, commandReaders: commandReaders.size, stops, upstream: transport.active,
-      ordinaryUpstream: transport.ordinary, stopUpstream: transport.stops, pendingOAuth: pendingOAuth.size }),
+      ordinaryUpstream: transport.ordinary, stopUpstream: transport.stops, pendingOAuth: pendingOAuth.size,
+      pendingDeviceSignIns: pendingDevices.size }),
   };
 }

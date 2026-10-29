@@ -9,7 +9,8 @@ import { once } from 'node:events';
 import zlib from 'node:zlib';
 import { randomBytes } from 'node:crypto';
 import { brotliCompressSync, brotliDecompressSync, gunzipSync, gzipSync } from 'node:zlib';
-import { createPortalServer, SESSION_COOKIE, OAUTH_COOKIE } from '../src/app.js';
+import { createPortalServer, SESSION_COOKIE, OAUTH_COOKIE, DEVICE_COOKIE } from '../src/app.js';
+import { SessionStore, randomToken, tokenHash } from '../src/store.js';
 import { loadConfig, LIMITS } from '../src/config.js';
 import { Transport } from '../src/transport.js';
 import { eventStream } from '../src/compression.js';
@@ -383,7 +384,7 @@ test('Session revocation cancels a command-triggered read before it returns prot
   assert.equal(f.app.resourceCounts().streams, 0);
 });
 
-test('OAuth uses exact callback, state-bound browser cookie, minimal scope, and secure seven-day sessions', { timeout: 5000 }, async t => {
+test('OAuth uses exact callback, state-bound browser cookie, minimal scope, and secure 30-day renewing sessions', { timeout: 5000 }, async t => {
   const f = await fixture(t); const device = await f.login();
   const authorize = new URL(device.pending.response.headers.location);
   assert.equal(authorize.origin, 'https://discord.com'); assert.equal(authorize.searchParams.get('response_type'), 'code');
@@ -393,7 +394,7 @@ test('OAuth uses exact callback, state-bound browser cookie, minimal scope, and 
   assert.equal(f.state.tokenCalls[0].get('client_secret'), secret);
   assert.equal(device.response.headers.location, '/');
   const sessionHeader = device.response.headers['set-cookie'].find(value => value.startsWith(SESSION_COOKIE));
-  assert.match(sessionHeader, /Max-Age=604800; Secure; HttpOnly; SameSite=Lax/);
+  assert.match(sessionHeader, /Max-Age=2592000; Secure; HttpOnly; SameSite=Lax/);
   assert.equal(device.response.headers['cache-control'], 'no-store'); assert.equal(device.response.headers['referrer-policy'], 'no-referrer');
   assert.ok(f.state.calls.every(call => call.params.get('actorId') === actorId));
 });
@@ -433,7 +434,7 @@ test('OAuth denial, expired state, invalid identity and fresh bot authorization 
   assert.equal((await f.request('/api/bootstrap')).status, 401);
 });
 
-test('Device session rotation prevents fixation; encrypted auth survives restart and expires after seven days', { timeout: 5000 }, async t => {
+test('Device session rotation prevents fixation; encrypted auth survives restart and expires after 30 days unused', { timeout: 5000 }, async t => {
   let now = Date.now(); const f = await fixture(t, { now: () => now });
   const first = await f.login(); const second = await f.login(first.cookie);
   assert.notEqual(first.cookie, second.cookie); assert.notEqual(first.csrf, second.csrf);
@@ -442,7 +443,7 @@ test('Device session rotation prevents fixation; encrypted auth survives restart
   for (const privateValue of [actorId, second.cookie.split('=')[1], second.csrf, 'private-oauth-token', 'private-refresh-token']) assert.equal(file.includes(Buffer.from(privateValue)), false);
   await f.restart();
   assert.equal((await f.request('/api/bootstrap', { headers: { Cookie: second.cookie } })).status, 200);
-  now += LIMITS.sessionMs + 1;
+  now += LIMITS.sessionIdleMs + 1;
   assert.equal((await f.request('/api/bootstrap', { headers: { Cookie: second.cookie } })).status, 401);
 });
 
@@ -640,7 +641,7 @@ test('SSE bounds global/device connections, snapshot bytes and session lifetime'
   await until(() => firstStream.text.includes('snapshot') && secondStream.text.includes('snapshot'));
   assert.equal((await f.request(`/api/guilds/${guildId}/events`, { headers: { Cookie: first.cookie } })).status, 429);
   assert.equal((await f.request(`/api/guilds/${guildId}/events`, { headers: { Cookie: third.cookie } })).status, 429);
-  now += LIMITS.sessionMs + 1; await until(() => firstStream.ended && secondStream.ended);
+  now += LIMITS.sessionIdleMs + 1; await until(() => firstStream.ended && secondStream.ended);
   assert.equal(f.app.resourceCounts().streams, 0);
   const valid = await f.login(); f.state.snapshot.session.reason = 'x'.repeat(3000);
   assert.equal((await f.request(`/api/guilds/${guildId}/events`, { headers: { Cookie: valid.cookie } })).status, 503);
@@ -1081,7 +1082,7 @@ test('SSE heartbeats and expiry remain independent of a slow fresh permission re
   assert.ok((live.text.slice(before.length).match(/heartbeat/g) || []).length >= 3, 'Slow authorization must not stall transport heartbeats');
   assert.equal(live.text.slice(before.length).includes('snapshot'), false, 'A heartbeat does not authorize state');
   assert.equal(f.state.calls.length, calls, 'A slow poll must not overlap another poll');
-  now += LIMITS.sessionMs + 1;
+  now += LIMITS.sessionIdleMs + 1;
   await until(() => live.ended && f.app.resourceCounts().upstream === 0);
   assert.match(live.text, /unauthenticated/);
   assert.equal(f.app.resourceCounts().streams, 0);
@@ -1172,7 +1173,7 @@ test('An expired session during upstream authorization cannot return protected d
   let now = Date.now(); const f = await fixture(t, { now: () => now }); const device = await f.login();
   f.state.delayMs = 100;
   const pending = f.request('/api/bootstrap', { headers: { Cookie: device.cookie } });
-  await until(() => f.app.resourceCounts().upstream === 1); now += LIMITS.sessionMs + 1;
+  await until(() => f.app.resourceCounts().upstream === 1); now += LIMITS.sessionIdleMs + 1;
   const response = await pending; assert.equal(response.status, 401); assert.equal(response.text.includes('viewer'), false);
 });
 
@@ -1228,7 +1229,7 @@ test('Security regression: logout, rotation and expiry during a partial command 
         Cookie: device.cookie, Origin: origin, 'X-CSRF-Token': device.csrf } });
       assert.equal(logout.status, 200);
     } else if (revocation === 'rotation') await f.login(device.cookie);
-    else now += LIMITS.sessionMs + 1;
+    else now += LIMITS.sessionIdleMs + 1;
     assert.equal((await f.request('/api/bootstrap', { headers: { Cookie: device.cookie } })).status, 401);
     partial.finish(); assert.equal(await partial.completed, 401);
     assert.equal(f.state.calls.filter(call => call.path.endsWith('/commands')).length, 0);
@@ -2228,4 +2229,254 @@ test('A conflict carries the device list, so a register answered at its version 
   for (const live of [phone, laptop]) {
     assert.deepEqual(playerEvents(live).at(-1).devices.map(device => [device.deviceId, device.connected]), [[phoneId, true], [laptopId, true]]);
   }
+});
+
+// Renewing sessions (ADR-0019): 30 days without use, 90 after sign-in, renewed at most once a day.
+const DAY = 24 * 60 * 60_000;
+const sessionHeader = response => (response.headers['set-cookie'] || []).find(value => value.startsWith(`${SESSION_COOKIE}=`));
+const storeBytes = f => fs.readFile(path.join(f.config.dataDir, 'sessions.enc'));
+
+test('Use renews a session at most once a day, resends its cookie, and writes the store only then', { timeout: 5000 }, async t => {
+  let now = Date.now(); const f = await fixture(t, { now: () => now }); const device = await f.login();
+  const bootstrapWith = () => f.request('/api/bootstrap', { headers: { Cookie: device.cookie } });
+  const written = await storeBytes(f);
+  now += DAY / 2;
+  const early = await bootstrapWith(); assert.equal(early.status, 200); assert.equal(sessionHeader(early), undefined);
+  assert.deepEqual(await storeBytes(f), written, 'no write without a renewal');
+  now += DAY / 2;
+  const renewed = await bootstrapWith(); assert.equal(renewed.status, 200);
+  assert.equal(sessionHeader(renewed), `${device.cookie}; Path=/; Max-Age=2592000; Secure; HttpOnly; SameSite=Lax`);
+  const rewritten = await storeBytes(f); assert.notDeepEqual(rewritten, written);
+  now += DAY - 1;
+  for (let i = 0; i < 3; i++) assert.equal(sessionHeader(await bootstrapWith()), undefined);
+  assert.deepEqual(await storeBytes(f), rewritten, 'renewed at most once a day');
+  // The renewal moved the expiry: 30 days after it, not after sign-in.
+  now += 29 * DAY - 1000; assert.equal((await bootstrapWith()).status, 200);
+  // Unused for 30 days, it ends.
+  now += 30 * DAY + 1; assert.equal((await bootstrapWith()).status, 401);
+});
+
+test('Renewal carries over a restart, applies to writes, and never passes 90 days after sign-in', { timeout: 5000 }, async t => {
+  let now = Date.now(); const signedInAt = now; const f = await fixture(t, { now: () => now }); const device = await f.login();
+  for (const day of [25, 50, 75]) {
+    now = signedInAt + day * DAY;
+    const response = day === 50 ? await sendCommand(f, device) : await f.request('/api/bootstrap', { headers: { Cookie: device.cookie } });
+    assert.equal(response.status, 200);
+    const maxAge = day === 75 ? 15 * DAY / 1000 : 30 * DAY / 1000;
+    assert.match(sessionHeader(response), new RegExp(`Max-Age=${maxAge};`));
+    if (day === 50) await f.restart();
+  }
+  now = signedInAt + 89 * DAY;
+  const capped = await f.request('/api/bootstrap', { headers: { Cookie: device.cookie } });
+  assert.equal(capped.status, 200); assert.equal(sessionHeader(capped), undefined, 'nothing left to renew at the cap');
+  now = signedInAt + 90 * DAY + 1;
+  assert.equal((await f.request('/api/bootstrap', { headers: { Cookie: device.cookie } })).status, 401);
+});
+
+test('The store loads 7-day and renewed records and drops ones outside their bounds without failing', { timeout: 5000 }, async t => {
+  const now = Date.now(); const f = await fixture(t, { now: () => now });
+  const record = (fields) => { const token = randomToken(); return { token, value: { key: tokenHash(token), actorId, csrfToken: randomToken(), ...fields } }; };
+  const kept = {
+    legacy: record({ createdAt: now - 2 * DAY, expiresAt: now + 5 * DAY }),
+    renewed: record({ createdAt: now - 60 * DAY, renewedAt: now - DAY, expiresAt: now + 29 * DAY }),
+    capped: record({ createdAt: now - 80 * DAY, renewedAt: now - 5 * DAY, expiresAt: now + 10 * DAY }),
+  };
+  const dropped = {
+    legacyLonger: record({ createdAt: now - DAY, expiresAt: now + 7 * DAY }),
+    pastIdle: record({ createdAt: now - 10 * DAY, renewedAt: now - 2 * DAY, expiresAt: now + 29 * DAY }),
+    pastAbsolute: record({ createdAt: now - 80 * DAY, renewedAt: now - DAY, expiresAt: now + 29 * DAY }),
+    renewedBeforeSignIn: record({ createdAt: now - DAY, renewedAt: now - 2 * DAY, expiresAt: now + 20 * DAY }),
+    expired: record({ createdAt: now - 8 * DAY, expiresAt: now - DAY }),
+  };
+  const writer = new SessionStore(f.config, LIMITS, () => now);
+  writer.sessions = new Map(Object.values({ ...kept, ...dropped }).map(({ value }) => [value.key, value]));
+  await writer.persist();
+  await f.restart();
+  for (const [name, { token }] of Object.entries(kept)) assert.equal((await f.request('/api/bootstrap', { headers: { Cookie: `${SESSION_COOKIE}=${token}` } })).status, 200, name);
+  for (const [name, { token }] of Object.entries(dropped)) assert.equal((await f.request('/api/bootstrap', { headers: { Cookie: `${SESSION_COOKIE}=${token}` } })).status, 401, name);
+});
+
+test('A legacy 7-day record renews on use into the 30-day lifetime', { timeout: 5000 }, async t => {
+  let now = Date.now(); const f = await fixture(t, { now: () => now });
+  const token = randomToken();
+  const writer = new SessionStore(f.config, LIMITS, () => now);
+  writer.sessions = new Map([[tokenHash(token), { key: tokenHash(token), actorId, csrfToken: randomToken(), createdAt: now - 2 * DAY, expiresAt: now + 5 * DAY }]]);
+  await writer.persist(); await f.restart();
+  const response = await f.request('/api/bootstrap', { headers: { Cookie: `${SESSION_COOKIE}=${token}` } });
+  assert.equal(response.status, 200); assert.match(sessionHeader(response), /Max-Age=2592000;/);
+  now += 20 * DAY; assert.equal((await f.request('/api/bootstrap', { headers: { Cookie: `${SESSION_COOKIE}=${token}` } })).status, 200);
+});
+
+// Signing in with a code (ADR-0019).
+const deviceJson = { Origin: origin, 'Content-Type': 'application/json' };
+const deviceStart = (f, headers = {}, body = '{}') => f.request('/auth/device/start', { method: 'POST', headers: { ...deviceJson, ...headers }, body });
+const devicePoll = (f, deviceCookie, headers = {}, body = '{}') => f.request('/auth/device/poll', { method: 'POST', headers: { ...deviceJson, ...(deviceCookie && { Cookie: deviceCookie }), ...headers }, body });
+const deviceDecide = (f, listener, code, action = 'approve', headers = {}) => f.request(`/auth/device/${action}`, { method: 'POST',
+  headers: { ...deviceJson, Cookie: listener.cookie, 'X-CSRF-Token': listener.csrf, ...headers }, body: JSON.stringify({ code }) });
+async function tv(f) {
+  const response = await deviceStart(f); assert.equal(response.status, 200, response.text);
+  return { cookie: cookieValue(response, DEVICE_COOKIE), code: response.json().userCode, response };
+}
+const viewerOf = async (f, sessionCookie) => (await f.request('/api/bootstrap', { headers: { Cookie: sessionCookie } })).json().viewer.id;
+
+test('A TV signs in with a code a signed-in listener approves, once', { timeout: 5000 }, async t => {
+  const f = await fixture(t); const listener = await f.login(); const screen = await tv(f);
+  assert.deepEqual(Object.keys(screen.response.json()).sort(), ['expiresIn', 'interval', 'userCode', 'verificationUri']);
+  assert.match(screen.code, /^[BCDFGHJKLMNPQRSTVWXZ]{4}-[BCDFGHJKLMNPQRSTVWXZ]{4}$/);
+  assert.equal(screen.response.json().verificationUri, `${origin}/link`);
+  assert.equal(screen.response.json().expiresIn, 600); assert.equal(screen.response.json().interval, 5);
+  const deviceHeader = screen.response.headers['set-cookie'].find(value => value.startsWith(`${DEVICE_COOKIE}=`));
+  assert.match(deviceHeader, /^__Host-vybertron_device_sign_in=[A-Za-z0-9_-]{43}; Path=\/; Max-Age=600; Secure; HttpOnly; SameSite=Lax$/);
+  assert.equal(screen.response.text.includes(screen.cookie.split('=')[1]), false, 'the device token stays in the cookie');
+  assert.equal(f.app.resourceCounts().pendingDeviceSignIns, 1);
+  assert.deepEqual((await devicePoll(f, screen.cookie)).json(), { status: 'pending' });
+  // Typed in lowercase without the hyphen, it's the same code.
+  const approved = await deviceDecide(f, listener, ` ${screen.code.replace('-', '').toLowerCase()} `);
+  assert.equal(approved.status, 200, approved.text); assert.deepEqual(approved.json(), { ok: true });
+  const calls = f.state.calls.length;
+  const finished = await devicePoll(f, screen.cookie);
+  assert.deepEqual(finished.json(), { status: 'approved' });
+  assert.equal(f.state.calls.length, calls + 1); assert.equal(f.state.calls.at(-1).path, '/v1/bootstrap');
+  assert.equal(f.state.calls.at(-1).params.get('actorId'), actorId);
+  assert.match(sessionHeader(finished), /Max-Age=2592000; Secure; HttpOnly; SameSite=Lax$/);
+  assert.match(finished.headers['set-cookie'].find(value => value.startsWith(`${DEVICE_COOKIE}=`)), /Max-Age=0/);
+  const tvSession = cookieValue(finished, SESSION_COOKIE);
+  assert.notEqual(tvSession, listener.cookie);
+  assert.equal(await viewerOf(f, tvSession), actorId);
+  // Single use: the record is gone and the code can't be approved again.
+  assert.equal(f.app.resourceCounts().pendingDeviceSignIns, 0);
+  assert.deepEqual((await devicePoll(f, screen.cookie)).json(), { status: 'expired' });
+  assert.equal((await deviceDecide(f, listener, screen.code)).status, 400);
+  // The two sessions are independent: signing out the TV leaves the phone signed in.
+  const tvCsrf = (await f.request('/api/bootstrap', { headers: { Cookie: tvSession } })).json().csrfToken;
+  assert.equal((await f.request('/auth/logout', { method: 'POST', headers: { Cookie: tvSession, Origin: origin, 'X-CSRF-Token': tvCsrf } })).status, 200);
+  assert.equal((await f.request('/api/bootstrap', { headers: { Cookie: listener.cookie } })).status, 200);
+});
+
+test('Code sign-in start and poll need the exact portal Origin and a JSON body; approval needs a session and CSRF', { timeout: 5000 }, async t => {
+  const f = await fixture(t); const listener = await f.login(); const screen = await tv(f);
+  for (const send of [deviceStart, (f, headers, body) => devicePoll(f, screen.cookie, headers, body)]) {
+    for (const headers of [{ Origin: 'https://evil.test' }, { Origin: `${origin}/` }, { Origin: 'null' }, { Origin: 'https://portal.example.test.evil.test' }, { 'Sec-Fetch-Site': 'cross-site' }]) {
+      assert.equal((await send(f, headers)).status, 403, JSON.stringify(headers));
+    }
+    const noOrigin = { ...deviceJson }; delete noOrigin.Origin;
+    assert.equal((await f.request('/auth/device/start', { method: 'POST', headers: noOrigin, body: '{}' })).status, 403);
+    for (const type of ['text/plain', 'application/x-www-form-urlencoded', 'multipart/form-data; boundary=x']) {
+      assert.equal((await send(f, { 'Content-Type': type })).status, 400, type);
+    }
+    assert.equal((await send(f, {}, '')).status, 400);
+    assert.equal((await send(f, {}, '{"actorId":"999"}')).status, 400);
+    assert.equal((await send(f, {}, '[]')).status, 400);
+  }
+  assert.equal((await f.request('/auth/device/start')).status, 404);
+  assert.equal((await f.request('/auth/device/start?x=1', { method: 'POST', headers: deviceJson, body: '{}' })).status, 400);
+  assert.equal(f.app.resourceCounts().pendingDeviceSignIns, 1);
+  // Approving is a change like any other.
+  assert.equal((await deviceDecide(f, { cookie: '', csrf: listener.csrf }, screen.code)).status, 401);
+  assert.equal((await deviceDecide(f, listener, screen.code, 'approve', { 'X-CSRF-Token': 'wrong' })).status, 403);
+  assert.equal((await deviceDecide(f, listener, screen.code, 'approve', { Origin: 'https://evil.test' })).status, 403);
+  assert.equal((await deviceDecide(f, listener, screen.code, 'approve', { 'Content-Type': 'text/plain' })).status, 400);
+  assert.equal((await f.request('/auth/device/approve', { method: 'POST', headers: { ...deviceJson, Cookie: listener.cookie, 'X-CSRF-Token': listener.csrf },
+    body: JSON.stringify({ code: screen.code, actorId: '999' }) })).status, 400);
+  assert.deepEqual((await devicePoll(f, screen.cookie)).json(), { status: 'pending' });
+  // A poll without the device's cookie gets nothing.
+  assert.deepEqual((await devicePoll(f, null)).json(), { status: 'expired' });
+  assert.equal((await deviceDecide(f, listener, screen.code)).status, 200);
+  assert.deepEqual((await devicePoll(f, null)).json(), { status: 'expired' });
+  assert.deepEqual((await devicePoll(f, `${DEVICE_COOKIE}=${randomToken()}`)).json(), { status: 'expired' });
+  assert.deepEqual((await devicePoll(f, screen.cookie)).json(), { status: 'approved' });
+});
+
+test('Concurrent polls of an approved code create exactly one session', { timeout: 5000 }, async t => {
+  const f = await fixture(t); const listener = await f.login(); const screen = await tv(f);
+  assert.equal((await deviceDecide(f, listener, screen.code)).status, 200);
+  f.state.delayMs = 50; const calls = f.state.calls.length;
+  const polls = await Promise.all(Array.from({ length: 5 }, () => devicePoll(f, screen.cookie)));
+  const approved = polls.filter(response => response.json().status === 'approved');
+  assert.equal(approved.length, 1);
+  assert.ok(polls.filter(response => response !== approved[0]).every(response => response.json().status === 'expired' && !sessionHeader(response)));
+  assert.equal(f.state.calls.slice(calls).filter(call => call.path === '/v1/bootstrap').length, 1, 'one bot check, for the one session');
+});
+
+test('An approval binds only the approving listener, to only that code', { timeout: 5000 }, async t => {
+  const f = await fixture(t); const otherActor = '456789012345678901';
+  const first = await f.login(); f.state.identity = otherActor; const second = await f.login();
+  const screenA = await tv(f); const screenB = await tv(f);
+  assert.notEqual(screenA.code, screenB.code); assert.notEqual(screenA.cookie, screenB.cookie);
+  assert.equal((await deviceDecide(f, first, screenA.code)).status, 200);
+  // The approval can't be changed, and approving one TV says nothing about another.
+  const refused = await deviceDecide(f, second, screenA.code);
+  assert.equal(refused.status, 400); assert.equal(refused.json().error.code, 'invalid_code');
+  assert.deepEqual((await devicePoll(f, screenB.cookie)).json(), { status: 'pending' });
+  assert.equal((await deviceDecide(f, second, screenB.code)).status, 200);
+  const sessionA = cookieValue(await devicePoll(f, screenA.cookie), SESSION_COOKIE);
+  const sessionB = cookieValue(await devicePoll(f, screenB.cookie), SESSION_COOKIE);
+  assert.equal(await viewerOf(f, sessionA), actorId);
+  assert.equal(await viewerOf(f, sessionB), otherActor);
+});
+
+test('Wrong, expired, denied and replaced codes are refused alike and never sign in', { timeout: 5000 }, async t => {
+  let now = Date.now(); const f = await fixture(t, { now: () => now }); const listener = await f.login();
+  const screen = await tv(f);
+  const wrong = await deviceDecide(f, listener, 'BCDF-GHJK');
+  const malformed = await deviceDecide(f, listener, 'AEIO-U123');
+  now += LIMITS.deviceSignInMs + 1;
+  const expired = await deviceDecide(f, listener, screen.code);
+  for (const response of [wrong, malformed, expired]) {
+    assert.equal(response.status, 400); assert.equal(response.text, expired.text);
+  }
+  const expiredPoll = await devicePoll(f, screen.cookie);
+  assert.deepEqual(expiredPoll.json(), { status: 'expired' }); assert.match(expiredPoll.headers['set-cookie'][0], /Max-Age=0/);
+  assert.equal(f.app.resourceCounts().pendingDeviceSignIns, 0);
+  // Turned down by the listener: the TV hears so, and the code can't be approved after.
+  const denied = await tv(f);
+  assert.equal((await deviceDecide(f, listener, denied.code, 'deny')).status, 200);
+  assert.equal((await deviceDecide(f, listener, denied.code)).text, expired.text);
+  assert.deepEqual((await devicePoll(f, denied.cookie)).json(), { status: 'denied' });
+  assert.deepEqual((await devicePoll(f, denied.cookie)).json(), { status: 'expired' });
+  // Starting again replaces the TV's previous code.
+  const first = await tv(f);
+  const again = await deviceStart(f, { Cookie: first.cookie });
+  assert.equal((await deviceDecide(f, listener, first.code)).text, expired.text);
+  assert.equal(f.app.resourceCounts().pendingDeviceSignIns, 1);
+  assert.equal((await deviceDecide(f, listener, again.json().userCode)).status, 200);
+  // A listener who lost access can't finish a sign-in, and the claimed code is gone.
+  const lost = await tv(f);
+  assert.equal((await deviceDecide(f, listener, lost.code)).status, 200);
+  f.state.authorized = false;
+  const refused = await devicePoll(f, lost.cookie);
+  assert.equal(refused.status, 403); assert.equal(sessionHeader(refused), undefined);
+  f.state.authorized = true;
+  assert.deepEqual((await devicePoll(f, lost.cookie)).json(), { status: 'expired' });
+});
+
+test('Code sign-in is rate-limited per address, per approving session and in total, and is lost on restart', { timeout: 10_000 }, async t => {
+  let now = Date.now(); const f = await fixture(t, { now: () => now, limits: { pendingDeviceSignIns: 3 } }); const listener = await f.login();
+  const screens = [await tv(f), await tv(f), await tv(f)];
+  assert.equal((await deviceStart(f)).status, 429, 'at most this many pending');
+  // A start from the same TV replaces its pending code, so only the address limit applies.
+  let replacing = screens[0].cookie;
+  for (let i = 4; i < LIMITS.deviceStarts; i++) {
+    const response = await deviceStart(f, { Cookie: replacing }); assert.equal(response.status, 200); replacing = cookieValue(response, DEVICE_COOKIE);
+  }
+  assert.equal((await deviceStart(f, { Cookie: replacing })).status, 429, 'starts per address per minute');
+  now += LIMITS.deviceSignInMs + 1;
+  const screen = await tv(f);
+  // Ten tries per session per ten minutes, right or wrong.
+  for (let i = 0; i < LIMITS.deviceApprovals; i++) assert.equal((await deviceDecide(f, listener, 'BCDF-BCDF')).status, 400);
+  assert.equal((await deviceDecide(f, listener, screen.code)).status, 429);
+  const other = await f.login();
+  assert.equal((await deviceDecide(f, other, screen.code, 'deny')).status, 200, 'another session has its own tries');
+  now += LIMITS.deviceApprovalMs;
+  const next = await tv(f);
+  assert.equal((await deviceDecide(f, listener, next.code)).status, 200);
+  // Polls from one device are bounded too.
+  const poller = await tv(f);
+  for (let i = 0; i < LIMITS.devicePolls; i++) assert.equal((await devicePoll(f, poller.cookie)).status, 200);
+  assert.equal((await devicePoll(f, poller.cookie)).status, 429);
+  // Pending sign-ins live only in memory: the approved one and the poller's.
+  assert.equal(f.app.resourceCounts().pendingDeviceSignIns, 2);
+  await f.restart();
+  assert.equal(f.app.resourceCounts().pendingDeviceSignIns, 0);
+  assert.deepEqual((await devicePoll(f, next.cookie)).json(), { status: 'expired' });
 });

@@ -5,6 +5,7 @@ import { once } from 'node:events';
 import { readFileSync } from 'node:fs';
 import { OpusDecoder } from 'opus-decoder';
 import { portalFixture } from './portal-fixtures.js';
+import { SongStore } from '../src/utils/song-store.js';
 import { analyseInWorker, analyseOgg, BAND_EDGES, createAnalyser, createAnalysisCache, oggPackets, opusHead, packetDecoder } from '../src/portal/analysis.js';
 
 // Ten seconds of a 60 Hz kick every half second (120 BPM) over a quiet 3 kHz
@@ -176,4 +177,16 @@ test('the bridge serves a song’s analysis to server members only', async t => 
   assert.deepEqual(lavalink.requests, ['/vybatron/audio/abcdefghijk']);
   const webm = await get('webmonly123');
   assert.equal(webm.status, 404); assert.equal((await webm.json()).error.code, 'analysis_unavailable');
+});
+
+test('a song whose own upload can\'t stream is analysed from the source its device plays', async t => {
+  const songs = new SongStore(':memory:', { logger: { log() {}, error() {} } }); await songs.open(); t.after(() => songs.close());
+  const upload = id => ({ info: { identifier: id, uri: `https://www.youtube.com/watch?v=${id}`, sourceName: 'youtube', title: 'Song', author: 'Artist', duration: 10_000, isStream: false } });
+  songs.addVerifiedSource(songs.record(upload('refusedSong')), upload('abcdefghijk'), .99);
+  const f = await portalFixture(t, { songs }); const lavalink = await fakeLavalink(t);
+  f.node.options = { host: '127.0.0.1', port: lavalink.port, authorization: 'lavalink-secret', secure: false };
+  const response = await fetch(`${f.origin}/v1/guilds/100/analysis/refusedSong?actorId=200`, { headers: { Authorization: `Bearer ${f.token}` } });
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).frameCount, 301);
+  assert.ok(lavalink.requests.includes('/vybatron/audio/abcdefghijk'));
 });

@@ -96,9 +96,12 @@ export function startPortalBridge(client, {
   const timings = createCommandTimings();
   const changes = createChangeFeed(client, revisions);
   const audio = createAudioCache(client);
+  // Fingerprints measure the exact upload asked for, or they'd verify the wrong audio.
   const analyses = createAnalysisCache(audio);
-  // A device's song plays from its best verified source (ADR-0017); analyses stay on the upload asked for.
+  // A device's song plays from its best verified source (ADR-0017), and its
+  // visualizers follow the audio it actually plays.
   const playable = playableAudio(audio, client.songs);
+  const songAnalyses = createAnalysisCache(playable);
   // Fingerprints and alternates (ADR-0017) measure songs through the same caches.
   const songJobs = client.songs?.available ? startSongJobs(client, {
     measure: measureWith(analyses),
@@ -219,7 +222,7 @@ export function startPortalBridge(client, {
           const actorId = url.searchParams.get('actorId');
           const context = await policy.guild(actorId, analysisMatch[1], undefined, { channelScope: 'none' });
           if (!context.member) fail(403, 'membership_required', 'Join this server to listen to its music.');
-          return json(response, 200, await analyses.get(analysisMatch[2]), maxResponseBytes);
+          return json(response, 200, await songAnalyses.get(analysisMatch[2]), maxResponseBytes);
         }
         const userMatch = url.pathname.match(/^\/v1\/users\/(\d{1,22})\/(player|devices)$/);
         if (userMatch) {
@@ -348,7 +351,7 @@ export function startPortalBridge(client, {
     }
     revisions.close();
     songJobs?.stop();
-    analyses.clear();
+    analyses.clear(); songAnalyses.clear();
     audio.clear();
     policy.close();
     timings.close();

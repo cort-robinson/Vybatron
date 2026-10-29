@@ -107,6 +107,8 @@ interface Engine {
   act: (action: ControlAction, value?: number | Repeat) => boolean;
   // Another device plays now: stop at once.
   halt: () => void;
+  // Stop: the current song is let go (whatever repeat says) and nothing plays.
+  stop: () => void;
 }
 interface EngineParts {
   commit: (change: Partial<Deck>) => void; deck: () => Deck; shown: () => Player | null;
@@ -303,6 +305,11 @@ function webEngine(parts: EngineParts): Engine {
     },
     act,
     halt: silence,
+    stop: () => {
+      const from = deck().entryId ?? shown()?.current?.entryId ?? null;
+      if (from) advance({ from, to: null });
+      idle();
+    },
   };
 }
 
@@ -379,7 +386,12 @@ function nativeEngine(device: NativePlayer, parts: EngineParts, subscribed: (pla
       if (keep && state?.current) {
         const song = state.current;
         const entry = [player.current, ...player.queue, ...player.history].find(item => same(item?.track, song)) ?? { entryId: newEntryId(), track: bare(song) };
-        if (entry.entryId !== player.current?.entryId) advance({ from: player.current?.entryId ?? null, to: entry.entryId, track: entry.track });
+        // The app played on through its queue: each song it reached is reported in order, so
+        // the ones it already played go to history instead of waiting to play again.
+        const at = player.queue.indexOf(entry as PlayerEntry);
+        const path = at >= 0 ? player.queue.slice(0, at + 1) : entry.entryId !== player.current?.entryId ? [entry] : [];
+        let from = player.current?.entryId ?? null;
+        for (const step of path) { advance({ from, to: step.entryId, track: step.track }); from = step.entryId; }
         if (state.volume !== player.volume) report({ volume: state.volume });
         if (state.repeat !== player.repeat) report({ repeat: state.repeat });
         commit({ entryId: entry.entryId, ...fields(state) });
@@ -418,6 +430,13 @@ function nativeEngine(device: NativePlayer, parts: EngineParts, subscribed: (pla
       const request: NativeControl = action === 'seek' ? { action, positionMs: Math.max(0, Math.floor(Number(value) || 0)) } : { action };
       void send(() => device.control(request));
       return true;
+    },
+    stop: () => {
+      const from = deck().entryId ?? shown()?.current?.entryId ?? null;
+      if (from) advance({ from, to: null });
+      expect = undefined;
+      commit({ entryId: null, track: null, status: 'idle', positionMs: 0, at: Date.now(), waiting: false, durationMs: 0 });
+      if (last?.current) void send(() => device.control({ action: 'stop' }));
     },
     halt: () => {
       expect = undefined;
@@ -560,7 +579,24 @@ export function useListening(remote: RemotePortal): Portal {
       tabs.postMessage({ ask: generation });
     });
 
+    // Tabs of one browser are one device, and only one of them plays: the one holding this
+    // lock. The tab that asked to play takes it; when another device makes this one play,
+    // the first tab to claim it does (a hidden tab waits a moment, so a visible one is preferred).
+    let unlock: (() => void) | null = null;
+    const claim = async (take: boolean) => {
+      const locks = (navigator as Navigator & { locks?: LockManager }).locks;
+      if (!locks || !me) return true;
+      if (!take && document.hidden) await new Promise(resolve => setTimeout(resolve, 200));
+      return new Promise<boolean>(resolve => {
+        locks.request(`vybertron-player-${me!.deviceId}`, take ? { steal: true } : { ifAvailable: true }, lock => {
+          if (!lock) { resolve(false); return; }
+          resolve(true);
+          return new Promise<void>(done => { unlock?.(); unlock = done; });
+        }).catch(() => resolve(false));
+      });
+    };
     const halt = (announce: boolean) => {
+      unlock?.(); unlock = null;
       own = null; outbox.length = 0; steps = []; lastPlayhead = null; clearTimeout(retryTimer);
       engine.halt();
       commit({ owner: false, entryId: null, track: null, status: 'idle', positionMs: 0, at: Date.now(), waiting: false, durationMs: 0 });
@@ -589,7 +625,14 @@ export function useListening(remote: RemotePortal): Portal {
       if (me && mine && mine.name !== me.name && validName(mine.name)) { me = { ...me, name: mine.name }; saveIdentity(me); setIdentity(me); }
       const player = server.player;
       // Made the active device from another device while connected: play here.
-      if (fromStream && !own && !activating && me && player.activeDeviceId === me.deviceId && seen !== null && player.generation > seen) begin(player, playheadAt(player, clock.now()), player.playhead.playing);
+      if (fromStream && !own && !activating && me && player.activeDeviceId === me.deviceId && seen !== null && player.generation > seen) {
+        const { generation } = player;
+        void claim(false).then(mine => {
+          const now = server?.player;
+          if (mine && !own && !activating && now?.generation === generation && now.activeDeviceId === me?.deviceId) begin(now, playheadAt(now, clock.now()), now.playhead.playing);
+          else if (mine && !own) { unlock?.(); unlock = null; }
+        });
+      }
       if (fromStream) { seen = player.generation; setStreaming(true); }
       publish();
       check();
@@ -615,7 +658,7 @@ export function useListening(remote: RemotePortal): Portal {
         try { receive(asView(await send({ op: 'deactivate', deviceId, generation }))); } catch { /* Another device took over meanwhile. */ }
       });
     };
-    const activate = async (deviceId: string, how: { positionMs?: number; playing?: boolean; volume?: number; repeat?: Repeat; keep?: boolean } = {}) => {
+    const activate = async (deviceId: string, how: { positionMs?: number; playing?: boolean; volume?: number; repeat?: Repeat; keep?: boolean; idle?: boolean } = {}) => {
       if (!me) return false;
       const self = deviceId === me.deviceId;
       if (self) activating++;
@@ -624,6 +667,8 @@ export function useListening(remote: RemotePortal): Portal {
         receive(result);
         if (!self) return true;
         const player = result.player;
+        await claim(true);
+        if (how.idle) { commit({ owner: true, entryId: player.current?.entryId ?? null, volume: player.volume, repeat: player.repeat }); own = { generation: player.generation, seq: 0 }; outbox.length = 0; steps = []; lastPlayhead = null; return true; }
         begin(player, how.positionMs ?? playheadAt(player, clock.now()), how.playing ?? player.playhead.playing, how.keep);
         if (how.volume !== undefined && how.volume !== player.volume) engine.act('volume', how.volume);
         if (how.repeat !== undefined && how.repeat !== player.repeat) engine.act('repeat', how.repeat);
@@ -683,6 +728,12 @@ export function useListening(remote: RemotePortal): Portal {
       if (me && !reachable(player)) return activate(me.deviceId, { playing: true });
       return player.playhead.playing || control('play');
     };
+    // Until the store has this device's song changes (or it stops playing), at most a few seconds.
+    const confirmed = () => new Promise<void>(resolve => {
+      const until = Date.now() + 5000;
+      const wait = () => { if (!steps.length || !own || Date.now() > until) resolve(); else setTimeout(wait, 50); };
+      wait();
+    });
     const has = (list: PlayerEntry[], entryId: string) => list.some(entry => entry.entryId === entryId);
 
     const enqueue = async (tracks: Track[], next: boolean) => {
@@ -746,9 +797,18 @@ export function useListening(remote: RemotePortal): Portal {
         case 'clear:': return !!await edit(current => ({ op: 'clear', expectedRevision: current.revision }));
         case 'shuffle:': return !!await edit(current => ({ op: 'shuffle', expectedRevision: current.revision }));
         // Stop clears what's next, then moves past the current song to nothing.
+        // Stop lets go of the current song and empties what's next, whatever repeat says. Only the
+        // device that plays can let go of a song, so another device becomes it to stop.
+        // Stop lets go of the current song and empties what's next, whatever repeat says. Only the
+        // device that plays can let go of a song, so another device becomes it to stop. On repeat the
+        // store puts the song it lets go back at the end of the queue, so the queue clears after that.
         case 'stop:': {
-          if (player?.queue.length && !await edit(current => ({ op: 'clear', expectedRevision: current.revision }))) return false;
-          return shown()?.current ? transport('next') : true;
+          if (shown()?.current) {
+            if (!own && !(me && await activate(me.deviceId, { idle: true }))) return false;
+            engine.stop();
+            await confirmed();
+          }
+          return !shown()?.queue.length || !!await edit(current => ({ op: 'clear', expectedRevision: current.revision }));
         }
         default:
           // Library edits don't touch playback, so the bot still owns them.

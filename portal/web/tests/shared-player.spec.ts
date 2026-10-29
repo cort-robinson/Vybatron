@@ -252,3 +252,53 @@ test('before its stream connects, a page shows only the same listener their last
   await expect(title(page)).toHaveText('Nothing playing');
   await hub.releaseStreams();
 });
+
+test('when another device makes this browser play, only one of its tabs plays', async ({ page, browser }) => {
+  const hub = new SharedPlayerHub();
+  await playing(page, hub);
+  // Two tabs of one browser: one device.
+  const tab = await page.context().newPage();
+  await device(tab, hub);
+  await expect.poll(() => hub.deviceOf(tab)).toBe(hub.deviceOf(page));
+  const other = await second(browser, hub);
+  await openMenu(other.page);
+  await other.page.getByRole('button', { name: /^This device/ }).click();
+  await expect.poll(() => hub.player.activeDeviceId).toBe(hub.deviceOf(other.page));
+  await expect.poll(() => calls(page)).toContain('pause');
+
+  // Back to the browser, from the other device: one tab starts, the other stays a remote.
+  const browserId = hub.deviceOf(page)!;
+  await openMenu(other.page);
+  await other.page.getByRole('menu').or(other.page.locator('.menu-panel')).getByRole('button', { name: /^Chrome on Linux/ }).click();
+  await expect.poll(() => hub.player.activeDeviceId).toBe(browserId);
+  await expect.poll(async () => (await calls(page)).filter(call => call.startsWith('play:')).length + (await calls(tab)).filter(call => call.startsWith('play:')).length).toBe(2);
+  await page.waitForTimeout(1500);
+  expect((await calls(page)).filter(call => call.startsWith('play:')).length + (await calls(tab)).filter(call => call.startsWith('play:')).length).toBe(2);
+  const reports = hub.ops('report').filter(request => request.body.generation === hub.player.generation);
+  expect(new Set(reports.map(request => request.body.seq)).size).toBe(reports.length);
+  await other.close();
+});
+
+for (const where of ['the device that plays', 'another device']) test(`Stop on ${where} stops the music even with the queue on repeat`, async ({ page, browser }) => {
+  const hub = new SharedPlayerHub();
+  await playing(page, hub);
+  // Repeat: off → this song → the queue.
+  await page.getByRole('button', { name: /^Repeat: off/ }).click();
+  await page.getByRole('button', { name: /^Repeat: track/ }).click();
+  await expect.poll(() => hub.player.repeat).toBe('queue');
+  const remote = where === 'another device' ? await second(browser, hub) : null;
+  const stopper = remote?.page ?? page;
+  await expect(title(stopper)).toHaveText('Midnight City');
+  await openMenu(stopper);
+  await stopper.getByRole('button', { name: 'Stop and clear your queue' }).click();
+  await stopper.getByRole('dialog').getByRole('button', { name: 'Stop' }).click();
+  await expect.poll(() => hub.player.current).toBeNull();
+  await expect.poll(() => calls(page)).toContain('pause');
+  await page.waitForTimeout(1000);
+  expect(hub.player.current).toBeNull();
+  expect(hub.player.queue).toEqual([]);
+  expect(hub.player.playhead.playing).toBe(false);
+  await expect(title(page)).toHaveText('Nothing playing');
+  expect((await calls(page)).filter(call => call.startsWith('play:'))).toHaveLength(1);
+  if (remote) { expect(await calls(remote.page)).toEqual([]); await remote.close(); }
+});

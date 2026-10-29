@@ -1,5 +1,6 @@
 import { test, expect, type Page } from './test';
 import { gotoSession, mockPortal } from './fixtures';
+import { SharedPlayerHub } from './shared-player';
 
 // Inside the Android app the app plays this device's songs (ADR-0014). The page talks
 // to it through `window.vybatronNative`; here a stand-in follows the same contract
@@ -10,8 +11,8 @@ const youtubeTrack = (id: string, title: string) => ({ id: id.padEnd(24, '0'), t
 interface Request { id: number; type: string; [key: string]: unknown }
 type Bridge = { requests: Request[]; endSong: (quiet?: boolean) => void; notice: (message: string) => void; broadcast: () => void };
 
-async function app(page: Page) {
-  const fixture = await mockPortal(page);
+async function app(page: Page, shared?: SharedPlayerHub) {
+  const fixture = await mockPortal(page, { shared });
   fixture.state.snapshot.session.viewerVoice = null;
   await page.addInitScript(() => {
     type Track = { id: string; durationMs: number };
@@ -19,6 +20,9 @@ async function app(page: Page) {
     const requests: unknown[] = [];
     let state = { revision: 0, current: null as Track | null, queue: [] as Track[], history: [] as Track[], status: 'idle', positionMs: 0,
       at: Date.now(), waiting: false, durationMs: 0, volume: 100, repeat: 'off' };
+    // What the app was already doing when the page opened, if a test says.
+    const seed = (window as unknown as { nativeSeed?: Partial<typeof state> }).nativeSeed;
+    if (seed) state = { ...state, ...seed, at: Date.now() };
     const send = (message: unknown) => setTimeout(() => { for (const listener of listeners) listener({ data: JSON.stringify(message) }); }, 0);
     const change = (patch: Partial<typeof state>, songs = true) => { state = { ...state, ...patch, at: Date.now(), revision: state.revision + (songs ? 1 : 0) }; };
     const advance = () => {
@@ -182,4 +186,21 @@ test('Play now as the first thing after a reload plays the chosen song', async (
   await expect(page.getByText('Your queue just changed. Try that again.')).toHaveCount(0);
   expect((await requests(page)).map(request => request.type)).toEqual(['player.subscribe', 'player.load']);
   expect((await sent(page, 'player.load'))[0]).toMatchObject({ playing: true, current: { title: 'Wait' } });
+});
+
+test('music the app played on through while its page was gone is reported song by song', async ({ page }) => {
+  const hub = new SharedPlayerHub();
+  const songs = ['dX3k_QDnzHE', 'Fk3RbKWbmtg', 'aaaaaaaaaaa', 'bbbbbbbbbbb'].map((id, index) => ({ ...youtubeTrack(id, ['A', 'B', 'C', 'D'][index]), requestedBy: undefined }));
+  const [a, b, c, d] = songs.map(({ requestedBy: _requestedBy, ...track }, index) => ({ entryId: `entry${index}`.padEnd(12, 'x'), track }));
+  // The player stopped being told anything at A; the app has since played B and reached C.
+  Object.assign(hub.player, { current: a, queue: [b, c, d], history: [], revision: 3, updatedAt: 1 });
+  await page.addInitScript(([played, now, next]) => { (window as unknown as { nativeSeed: unknown }).nativeSeed = { current: now, queue: [next], history: played, status: 'playing', positionMs: 5000, durationMs: 244_000, revision: 7 }; },
+    [[songs[1], songs[0]], songs[2], songs[3]] as const);
+  await app(page, hub);
+  await expect.poll(() => hub.player.current?.track.title).toBe('C');
+  expect(hub.ops('report').flatMap(request => request.body.advance ? [[request.body.advance.from, request.body.advance.to]] : [])).toEqual([[a.entryId, b.entryId], [b.entryId, c.entryId]]);
+  expect(hub.player.queue.map(entry => entry.track.title)).toEqual(['D']);
+  expect(hub.player.history.map(entry => entry.track.title)).toEqual(['B', 'A']);
+  // The app's queue already matches, so nothing is pushed back to it.
+  expect(await sent(page, 'player.setQueue')).toEqual([]);
 });

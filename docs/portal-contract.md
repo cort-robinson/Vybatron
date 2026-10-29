@@ -275,7 +275,9 @@ Each signed-in listener has one player shared by their devices
 listening-state store keeps it; the portal relays controls to the device that
 plays and pushes every change to the listener's streams. Each page opens the
 listener stream while signed in, plays the player while it is the active device
-(the Android app's page reports for the app) and controls it from anywhere else.
+(the Android app's playback service keeps its own stream and reports for the app, page or no
+page, when `app.info` lists `player.shared`; for older apps the page reports) and controls it from
+anywhere else.
 
 `PlayerTrack = { id: string<=64, title: string<=200, author: string<=200, uri: https string<=512,
   source: string<=40, durationMs: number, artworkUrl: https string<=512|null, isStream: boolean }`
@@ -304,7 +306,7 @@ whole PlayerView. `PlayerView = { player: Player, devices: Device[] }`.
   relayed to this device because it is the active one (actions as in `control` below); a
   device ignores one whose generation isn't the one it plays under. Heartbeat comments and
   `event:rotate` as on the server stream. It counts toward the same stream limits
-  (`streamsPerSession` 3). Sign-out and signing in over the session close it and forget the
+  (`streamsPerSession` 4). Sign-out and signing in over the session close it and forget the
   devices that session registered.
 - POST `/api/me/player` body `{op, ...}` -> `{ok:true, relayed:false, player, devices[, dropped]}`
   (PlayerView), or `{ok:true, relayed:true}` for a control sent to the active device.

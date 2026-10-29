@@ -38,7 +38,7 @@ import java.util.concurrent.Executors
  * session cookie, which goes to that origin and nowhere else.
  */
 @OptIn(UnstableApi::class)
-class DevicePlayer(context: Context, private val base: String, private val cookies: () -> String?) {
+class DevicePlayer(context: Context, private val base: String, private val cookies: () -> String?) : LocalPlayer {
     private val main = Handler(Looper.getMainLooper())
     private val worker = Executors.newSingleThreadExecutor()
     private val songs = DeviceQueue()
@@ -131,16 +131,16 @@ class DevicePlayer(context: Context, private val base: String, private val cooki
         })
     }
 
-    fun addListener(listener: (JSONObject) -> Unit) { listeners.add(listener) }
+    override fun addListener(listener: (JSONObject) -> Unit) { listeners.add(listener) }
     fun removeListener(listener: (JSONObject) -> Unit) { listeners.remove(listener) }
     fun addNoticeListener(listener: (String, String) -> Unit) { notices.add(listener) }
     fun removeNoticeListener(listener: (String, String) -> Unit) { notices.remove(listener) }
 
     /** Carries out one of the portal's requests and answers with the state that follows. */
-    fun handle(request: PlayerRequest): Result<JSONObject> {
+    override fun handle(request: PlayerRequest): Result<JSONObject> {
         when (request) {
             // Only the asking page needs the state; a broadcast would reach it before it knows what it's seeing.
-            PlayerRequest.Subscribe -> return Result.success(state())
+            is PlayerRequest.Subscribe -> return Result.success(state())
             is PlayerRequest.Load -> load(request)
             is PlayerRequest.SetQueue -> if (!songs.setQueue(request.queue, request.revision)) return Result.failure(IllegalStateException("stale"))
             PlayerRequest.Play -> play()
@@ -160,7 +160,13 @@ class DevicePlayer(context: Context, private val base: String, private val cooki
         return Result.success(state())
     }
 
-    fun state(): JSONObject {
+    /** The shared player's waiting and played songs; the song playing now plays on. */
+    override fun follow(queue: List<NativeTrack>, history: List<NativeTrack>) {
+        songs.follow(queue.map { it.own() }, history)
+        emit()
+    }
+
+    override fun state(): JSONObject {
         val current = songs.current
         val loaded = current != null && exo.currentMediaItem?.mediaId == current.id
         val status = when {
@@ -282,8 +288,10 @@ class DevicePlayer(context: Context, private val base: String, private val cooki
                         notice("“${track.title}” has no version this device can play. Skipping it.", "error")
                         advance(manual = true, drop = true)
                     } else {
-                        songs.resolve(resolved)
-                        prepare(resolved, resolved.videoId!!, startMs)
+                        // The match plays as the store's entry it stands in for.
+                        val match = resolved.withEntry(track.entryId)
+                        songs.resolve(match)
+                        prepare(match, match.videoId!!, startMs)
                         emit()
                     }
                 }, {

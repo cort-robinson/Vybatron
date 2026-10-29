@@ -1,6 +1,7 @@
 package app.vybatron
 
 import app.vybatron.playback.PlayerRequest
+import org.json.JSONArray
 import org.json.JSONObject
 
 /**
@@ -14,6 +15,7 @@ import org.json.JSONObject
  */
 object PortalBridge {
     const val NAME = "vybatronNative"
+    val FEATURES = listOf("player.shared")
 
     data class AppInfo(val version: String, val build: Int)
 
@@ -28,7 +30,10 @@ object PortalBridge {
         val id = request.opt("id")
         val type = request.optString("type")
         if (type == "app.info") {
-            return success(id, JSONObject().put("platform", "android").put("version", info.version).put("build", info.build))
+            // `player.shared`: the playback service keeps its own connection to the shared player and
+            // reports for this device (ADR-0018), so the page only shows it and sends edits and controls.
+            return success(id, JSONObject().put("platform", "android").put("version", info.version).put("build", info.build)
+                .put("features", JSONArray(FEATURES)))
         }
         if (!type.startsWith("player.")) return failure(id, "unknown_type")
         val parsed = PlayerRequest.parse(type, request) ?: return failure(id, "bad_request")

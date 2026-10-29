@@ -160,7 +160,7 @@ class DevicePlaybackTest {
 
     @Test fun subscribingAnswersWithoutTellingEveryone() {
         val before = states.size
-        assertTrue(result(PlayerRequest.Subscribe).isSuccess)
+        assertTrue(result(PlayerRequest.Subscribe()).isSuccess)
         Thread.sleep(300)
         assertEquals(before, states.size)
     }

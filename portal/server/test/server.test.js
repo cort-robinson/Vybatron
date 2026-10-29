@@ -2146,11 +2146,12 @@ test('Controls go to the active device while it is connected and to the stored p
 test('Listener streams count toward the stream limits, rotate, and close with sign-out, which forgets the session devices', { timeout: 5000 }, async t => {
   const f = await fixture(t, { limits: { streamLifetimeMs: 300 } }); const entries = fakePlayers(f); const listener = await f.login();
   const open = [];
-  for (const deviceId of [phoneId, laptopId, 'tablettablettablettabl']) open.push(await listenerStream(f, listener, { deviceId }));
+  // Four per session: a page's two streams, the Android app's service and a reconnect overlap.
+  for (const deviceId of [phoneId, laptopId, 'tablettablettablettabl', 'watchwatchwatchwatchwa']) open.push(await listenerStream(f, listener, { deviceId }));
   t.after(() => { for (const live of open) live.close(); });
-  assert.deepEqual(open.map(live => live.status), [200, 200, 200]);
-  const fourth = await listenerStream(f, listener, { deviceId: 'fourthfourthfourthfour' }); assert.equal(fourth.status, 429); fourth.close();
-  assert.equal(f.app.resourceCounts().streams, 3);
+  assert.deepEqual(open.map(live => live.status), [200, 200, 200, 200]);
+  const fifth = await listenerStream(f, listener, { deviceId: 'fifthfifthfifthfifthfi' }); assert.equal(fifth.status, 429); fifth.close();
+  assert.equal(f.app.resourceCounts().streams, 4);
   await until(() => open.every(live => live.ended), 2000);
   assert.ok(open.every(live => live.text.includes('event:rotate')));
   assert.equal(f.app.resourceCounts().streams, 0);

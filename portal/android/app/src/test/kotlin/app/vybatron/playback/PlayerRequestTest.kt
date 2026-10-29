@@ -39,7 +39,7 @@ class PlayerRequestTest {
         assertEquals(PlayerRequest.Volume(40), parse("player.control", """{"action":"volume","level":40}"""))
         assertEquals(PlayerRequest.SetRepeat(Repeat.TRACK), parse("player.control", """{"action":"repeat","mode":"track"}"""))
         assertEquals(PlayerRequest.SetQueue(listOf(), 7), parse("player.setQueue", """{"queue":[],"revision":7}"""))
-        assertEquals(PlayerRequest.Subscribe, parse("player.subscribe", "{}"))
+        assertEquals(PlayerRequest.Subscribe(), parse("player.subscribe", "{}"))
     }
 
     @Test fun refusesUnknownOrMalformedControls() {

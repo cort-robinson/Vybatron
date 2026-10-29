@@ -50,6 +50,13 @@ class DeviceQueue {
         return true
     }
 
+    /** The shared player's waiting and played songs, around the song playing now (ADR-0018). */
+    fun follow(queue: List<NativeTrack>, history: List<NativeTrack>) {
+        this.queue = queue.take(MAX_QUEUE)
+        this.history = history.take(MAX_HISTORY)
+        changed()
+    }
+
     /** A song that had no YouTube video replaced by its closest match. */
     fun resolve(track: NativeTrack) {
         current = track

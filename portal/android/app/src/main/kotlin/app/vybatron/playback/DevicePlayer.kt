@@ -13,9 +13,12 @@ import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.DataSource
+import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.HttpDataSource
 import androidx.media3.datasource.ResolvingDataSource
+import androidx.media3.datasource.TransferListener
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import app.vybatron.BuildConfig
@@ -35,10 +38,10 @@ import java.util.concurrent.Executors
  * hands to its own worker.
  *
  * [base] is the portal origin the audio comes from; [cookies] gives the portal's
- * session cookie, which goes to that origin and nowhere else.
+ * session cookie, which goes to that origin and nowhere else, and keeps a renewed one.
  */
 @OptIn(UnstableApi::class)
-class DevicePlayer(context: Context, private val base: String, private val cookies: () -> String?) : LocalPlayer {
+class DevicePlayer(context: Context, private val base: String, private val cookies: PortalCookies) : LocalPlayer {
     private val main = Handler(Looper.getMainLooper())
     private val worker = Executors.newSingleThreadExecutor()
     private val songs = DeviceQueue()
@@ -60,7 +63,7 @@ class DevicePlayer(context: Context, private val base: String, private val cooki
         .setHandleAudioBecomingNoisy(true)
         .setWakeMode(C.WAKE_MODE_NETWORK)
         .setMediaSourceFactory(DefaultMediaSourceFactory(ResolvingDataSource.Factory(http()) { spec ->
-            if (sameOrigin(spec.uri.toString())) cookies()?.let { spec.withAdditionalHeaders(mapOf("Cookie" to it)) } ?: spec else spec
+            if (sameOrigin(spec.uri.toString())) cookies.header()?.let { spec.withAdditionalHeaders(mapOf("Cookie" to it)) } ?: spec else spec
         }))
         .build()
 
@@ -359,7 +362,9 @@ class DevicePlayer(context: Context, private val base: String, private val cooki
     private fun search(guild: String, query: String): NativeTrack? {
         val connection = open("$base/api/guilds/$guild/search?query=${URLEncoder.encode(query, "UTF-8")}")
         try {
-            if (connection.responseCode != 200) error("search answered ${connection.responseCode}")
+            val code = connection.responseCode
+            cookies.renew(connection.headerFields)
+            if (code != 200) error("search answered $code")
             val tracks = JSONObject(connection.inputStream.bufferedReader().use { it.readText() }).getJSONArray("tracks")
             return (0 until tracks.length()).firstNotNullOfOrNull { index ->
                 NativeTrack.parse(tracks.opt(index))?.takeIf { it.videoId != null }?.own()
@@ -376,7 +381,7 @@ class DevicePlayer(context: Context, private val base: String, private val cooki
             readTimeout = 15_000
             instanceFollowRedirects = false
             setRequestProperty("User-Agent", USER_AGENT)
-            cookies()?.let { setRequestProperty("Cookie", it) }
+            cookies.header()?.let { setRequestProperty("Cookie", it) }
         }
     }
 
@@ -393,6 +398,15 @@ class DevicePlayer(context: Context, private val base: String, private val cooki
         .setConnectTimeoutMs(15_000)
         .setReadTimeoutMs(30_000)
         .setAllowCrossProtocolRedirects(false)
+        // An audio request can renew the session too; its cookie goes back to the WebView.
+        .setTransferListener(object : TransferListener {
+            override fun onTransferInitializing(source: DataSource, dataSpec: DataSpec, isNetwork: Boolean) {}
+            override fun onTransferStart(source: DataSource, dataSpec: DataSpec, isNetwork: Boolean) {
+                if (sameOrigin(dataSpec.uri.toString())) (source as? HttpDataSource)?.responseHeaders?.let { cookies.renew(it) }
+            }
+            override fun onBytesTransferred(source: DataSource, dataSpec: DataSpec, isNetwork: Boolean, bytesTransferred: Int) {}
+            override fun onTransferEnd(source: DataSource, dataSpec: DataSpec, isNetwork: Boolean) {}
+        })
 
     private fun notice(message: String, kind: String) = notices.toList().forEach { it(message, kind) }
 

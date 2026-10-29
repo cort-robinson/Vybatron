@@ -13,9 +13,10 @@ import java.util.concurrent.Executors
  * a thread of its own, and player requests one at a time on another. Everything goes to
  * the portal origin [base] only, with the WebView's session cookie for it (as audio
  * does), and every POST carries the portal as `Origin` and the session's CSRF token.
+ * A renewed session's cookie from any of these replies goes back to the WebView.
  * Callbacks arrive on the main thread.
  */
-class PortalConnection(private val base: String, private val cookies: () -> String?, private val userAgent: String) : PlayerLink.Net {
+class PortalConnection(private val base: String, private val cookies: PortalCookies, private val userAgent: String) : PlayerLink.Net {
     private val main = Handler(Looper.getMainLooper())
     private val posts = Executors.newSingleThreadExecutor()
     // Each stream supersedes the one before; a superseded stream's events and end are dropped.
@@ -67,6 +68,7 @@ class PortalConnection(private val base: String, private val cookies: () -> Stri
             open = connection
             if (ticket != stream) { connection.disconnect(); return }
             val code = connection.responseCode
+            cookies.renew(connection.headerFields)
             if (code != 200) { status = code; connection.disconnect(); return }
             val parser = EventStreamParser()
             connection.inputStream.bufferedReader(Charsets.UTF_8).use { lines ->
@@ -100,6 +102,7 @@ class PortalConnection(private val base: String, private val cookies: () -> Stri
                     try {
                         connection.outputStream.use { it.write(text.toByteArray(Charsets.UTF_8)) }
                         val code = connection.responseCode
+                        cookies.renew(connection.headerFields)
                         val stream = if (code >= 400) connection.errorStream else connection.inputStream
                         val answer = stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }
                         PlayerLink.Reply.Answer(code, answer?.let { runCatching { JSONObject(it) }.getOrNull() })
@@ -120,7 +123,9 @@ class PortalConnection(private val base: String, private val cookies: () -> Stri
                 val sent = System.currentTimeMillis()
                 val connection = connect("$base/api/me/time")
                 try {
-                    if (connection.responseCode != 200) return@runCatching
+                    val code = connection.responseCode
+                    cookies.renew(connection.headerFields)
+                    if (code != 200) return@runCatching
                     val now = JSONObject(connection.inputStream.bufferedReader().use { it.readText() }).getLong("now")
                     val rtt = System.currentTimeMillis() - sent
                     if (best == null || rtt < best!!.first) best = rtt to now - (sent + rtt / 2)
@@ -142,7 +147,7 @@ class PortalConnection(private val base: String, private val cookies: () -> Stri
             setRequestProperty("User-Agent", userAgent)
             // Uncompressed, so each event arrives as soon as it is sent.
             setRequestProperty("Accept-Encoding", "identity")
-            cookies()?.let { setRequestProperty("Cookie", it) }
+            cookies.header()?.let { setRequestProperty("Cookie", it) }
         }
     }
 

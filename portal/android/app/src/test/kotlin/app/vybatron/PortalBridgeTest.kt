@@ -17,6 +17,8 @@ class PortalBridgeTest {
         assertEquals("android", reply.getJSONObject("result").getString("platform"))
         assertEquals("0.1.0", reply.getJSONObject("result").getString("version"))
         assertEquals(1, reply.getJSONObject("result").getInt("build"))
+        // The page stops reporting for an app that keeps its own connection to the shared player.
+        assertEquals("player.shared", reply.getJSONObject("result").getJSONArray("features").getString(0))
     }
 
     @Test fun refusesUnknownOperations() {

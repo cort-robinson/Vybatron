@@ -5,8 +5,12 @@ import org.json.JSONObject
 
 /** What the portal can ask this device's player to do. Anything else is refused. */
 sealed interface PlayerRequest {
-    /** Start receiving `player.state` events; answered with the state now. */
-    data object Subscribe : PlayerRequest
+    /**
+     * Start receiving `player.state` events; answered with the state now. A page that
+     * hands over its [session] lets the playback service keep this device connected to
+     * the shared player by itself (ADR-0018), with or without the page.
+     */
+    data class Subscribe(val session: LinkSession? = null) : PlayerRequest
 
     /** Replace everything with these songs, starting at `positionMs` in `current`. */
     data class Load(
@@ -39,7 +43,7 @@ sealed interface PlayerRequest {
         private val guildPattern = Regex("^\\d{1,20}$")
 
         fun parse(type: String, request: JSONObject): PlayerRequest? = when (type) {
-            "player.subscribe" -> Subscribe
+            "player.subscribe" -> subscribe(request.opt("session"))
             "player.load" -> load(request)
             "player.setQueue" -> {
                 val queue = tracks(request.opt("queue"), DeviceQueue.MAX_QUEUE)
@@ -48,6 +52,21 @@ sealed interface PlayerRequest {
             }
             "player.control" -> control(request)
             else -> null
+        }
+
+        private val csrfPattern = Regex("^[\\x21-\\x7e]{1,256}$")
+        private val devicePattern = Regex("^[A-Za-z0-9_-]{22}$")
+
+        private fun subscribe(value: Any?): Subscribe? {
+            if (value == null || value == JSONObject.NULL) return Subscribe()
+            val session = value as? JSONObject ?: return null
+            val csrf = session.opt("csrfToken") as? String ?: return null
+            val deviceId = session.opt("deviceId") as? String ?: return null
+            val name = (session.opt("name") as? String)?.trim() ?: return null
+            val guild = session.opt("guildId")
+            val guildId = if (guild == null || guild == JSONObject.NULL) null else (guild as? String)?.takeIf { guildPattern.matches(it) } ?: return null
+            if (!csrfPattern.matches(csrf) || !devicePattern.matches(deviceId) || name.isEmpty() || name.length > 40 || name.any { it.code < 0x20 || it.code == 0x7f }) return null
+            return Subscribe(LinkSession(csrf, deviceId, name, guildId))
         }
 
         private fun load(request: JSONObject): Load? {

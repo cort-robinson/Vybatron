@@ -201,7 +201,9 @@ class MainActivity : ComponentActivity() {
     private fun answer(text: String?, reply: JavaScriptReplyProxy, info: PortalBridge.AppInfo) {
         val player = device
         if (player != null && isPlayerRequest(text)) events = reply
-        reply.postMessage(PortalBridge.respond(text, info, player?.let { PortalBridge.Player(it::handle) }))
+        // The service's link takes the page's session and Stop; everything else goes to the player.
+        val handler = player?.let { PlaybackService.link?.let { link -> PortalBridge.Player(link::handle) } ?: PortalBridge.Player(it::handle) }
+        reply.postMessage(PortalBridge.respond(text, info, handler))
     }
 
     private fun isPlayerRequest(text: String?) =

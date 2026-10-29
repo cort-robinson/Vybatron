@@ -21,11 +21,23 @@ import app.vybatron.PortalOrigin
 @OptIn(UnstableApi::class)
 class PlaybackService : MediaSessionService() {
     private var session: MediaSession? = null
+    private var connection: PortalConnection? = null
+    private val handler = android.os.Handler(android.os.Looper.getMainLooper())
 
     override fun onCreate() {
         super.onCreate()
         val base = testBase ?: PortalOrigin.parse(BuildConfig.PORTAL_ORIGIN)?.value ?: return
-        val device = DevicePlayer(this, base) { CookieManager.getInstance().getCookie("$base/") }
+        val cookies = { CookieManager.getInstance().getCookie("$base/") }
+        val device = DevicePlayer(this, base, cookies)
+        // This device's own connection to the shared player, so it stays reachable with its page closed.
+        val portal = PortalConnection(base, cookies, "Vybatron-Android/${BuildConfig.VERSION_NAME}")
+        val shared = PlayerLink(device, portal, { ms, task ->
+            val run = Runnable(task)
+            handler.postDelayed(run, ms)
+            ({ handler.removeCallbacks(run) })
+        }, portal::serverNow)
+        portal.link = shared
+        connection = portal
         val open = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP), PendingIntent.FLAG_IMMUTABLE)
         session = MediaSession.Builder(this, device.player)
@@ -40,6 +52,7 @@ class PlaybackService : MediaSessionService() {
             })
             .build()
         player = device
+        link = shared
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = session
@@ -50,6 +63,10 @@ class PlaybackService : MediaSessionService() {
     }
 
     override fun onDestroy() {
+        link?.close()
+        link = null
+        connection?.release()
+        connection = null
         session?.release()
         session = null
         player?.release()
@@ -60,6 +77,10 @@ class PlaybackService : MediaSessionService() {
     companion object {
         /** The running service's player, once a controller has started it. */
         var player: DevicePlayer? = null
+            private set
+
+        /** The running service's connection to the shared player (ADR-0018). */
+        var link: PlayerLink? = null
             private set
 
         /** Tests play from a local server instead of the portal. */

@@ -33,6 +33,8 @@ export class SharedPlayerHub {
   private streams = new Map<Page, string[]>();
   private staleEdits = 0;
   private holding = false;
+  private slow: { op: string; ms: number } | null = null;
+  private reportDelay = 0;
 
   /** Page-side wiring: its listener stream reports opening and closing here. */
   async attach(page: Page) {
@@ -47,6 +49,10 @@ export class SharedPlayerHub {
   // Streams open but deliver nothing until released, as before a slow first connection.
   holdStreams() { this.holding = true; }
   async releaseStreams() { this.holding = false; await this.publish(); }
+  // The next `op` is answered `ms` after its change reaches the streams (a slow reply).
+  slowNext(op: string, ms: number) { this.slow = { op, ms }; }
+  // Reports reach the store this much later (a slow network).
+  delayReports(ms: number) { this.reportDelay = ms; }
   ops(op: string) { return this.requests.filter(request => request.body.op === op); }
   deviceOf(page: Page) { return this.streams.get(page)?.[0] ?? null; }
 
@@ -91,8 +97,11 @@ export class SharedPlayerHub {
           await route.fulfill({ json: { ok: true, relayed: true } }); return;
         }
       }
+      if (body.op === 'report' && this.reportDelay) await new Promise(resolve => setTimeout(resolve, this.reportDelay));
       const extra = this.apply(body) || {};
       this.touch();
+      const slow = this.slow;
+      if (slow && slow.op === body.op) { const { ms } = slow; this.slow = null; await this.publish(); await new Promise(resolve => setTimeout(resolve, ms)); }
       await route.fulfill({ json: { ok: true, relayed: false, ...this.view(), ...extra } });
     } catch (error) {
       if (!(error instanceof Refusal)) throw error;

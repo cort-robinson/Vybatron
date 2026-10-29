@@ -302,3 +302,40 @@ for (const where of ['the device that plays', 'another device']) test(`Stop on $
   expect((await calls(page)).filter(call => call.startsWith('play:'))).toHaveLength(1);
   if (remote) { expect(await calls(remote.page)).toEqual([]); await remote.close(); }
 });
+
+test('a tab that asked to play stays a remote when another tab of the browser already took it', async ({ page, browser }) => {
+  const hub = new SharedPlayerHub();
+  const other = await second(browser, hub);
+  await addSongs(other.page);
+  await expect.poll(() => hub.player.playhead.playing).toBe(true);
+  await device(page, hub);
+  const tab = await page.context().newPage();
+  await device(tab, hub);
+  await expect(title(page)).toHaveText('Midnight City');
+  // The activation reaches both tabs' streams well before its reply reaches the tab that asked.
+  hub.slowNext('activate', 1000);
+  await openMenu(page);
+  await page.getByRole('button', { name: /^This device/ }).click();
+  await expect.poll(() => hub.player.activeDeviceId).toBe(hub.deviceOf(page));
+  const playing = async () => (await calls(page)).filter(call => call.startsWith('play:')).length + (await calls(tab)).filter(call => call.startsWith('play:')).length;
+  await expect.poll(playing).toBe(1);
+  await page.waitForTimeout(2500);
+  expect(await playing()).toBe(1);
+  await other.close();
+});
+
+test('Stop that the store hasn\'t confirmed says so and leaves the queue alone', async ({ page }) => {
+  test.setTimeout(45_000);
+  const hub = new SharedPlayerHub();
+  await playing(page, hub);
+  await page.getByRole('button', { name: /^Repeat: off/ }).click();
+  await page.getByRole('button', { name: /^Repeat: track/ }).click();
+  await expect.poll(() => hub.player.repeat).toBe('queue');
+  hub.delayReports(8000);
+  await openMenu(page);
+  await page.getByRole('button', { name: 'Stop and clear your queue' }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Stop' }).click();
+  await expect(page.getByRole('alert').filter({ hasText: 'Your player didn’t confirm the stop.' })).toBeVisible({ timeout: 10_000 });
+  await page.waitForTimeout(3500);
+  expect(hub.ops('clear')).toEqual([]);
+});

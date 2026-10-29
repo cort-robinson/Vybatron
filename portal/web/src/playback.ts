@@ -63,7 +63,9 @@ const STALE = 'Your queue just changed. Try that again.';
 
 const volumeOf = (value: unknown) => Math.max(0, Math.min(100, Math.round(Number(value)))) || 0;
 const repeatOf = (value: unknown): Repeat => value === 'track' || value === 'queue' ? value : 'off';
-const bare = ({ requestedBy: _requestedBy, suggested: _suggested, ...track }: Track): PlayerTrack => track;
+const bare = ({ requestedBy: _requestedBy, suggested: _suggested, entryId: _entryId, ...track }: Track & { entryId?: unknown }): PlayerTrack => track;
+// The entry the page named when it handed the song to the Android app, which keeps the object as given.
+const entryOf = (track: Track | null | undefined) => typeof (track as { entryId?: unknown } | null)?.entryId === 'string' ? (track as unknown as { entryId: string }).entryId : null;
 const position = (deck: Deck) => deck.status === 'playing' && !deck.waiting ? deck.positionMs + Math.max(0, Date.now() - deck.at) : deck.positionMs;
 const snowflake = (id: string) => /^\d{1,20}$/.test(id);
 function milliseconds(value: unknown) {
@@ -322,7 +324,7 @@ function nativeEngine(device: NativePlayer, parts: EngineParts, subscribed: (pla
   let revision = -1; let last: NativeState | null = null;
   // The entry the page just loaded, for the app's first state after loading it.
   let expect: string | null | undefined; let queueing = false;
-  const tracks = (entries: PlayerEntry[]) => entries.map(entry => asTrack(entry.track));
+  const tracks = (entries: PlayerEntry[]) => entries.map(entry => ({ ...asTrack(entry.track), entryId: entry.entryId }));
   const send = async (call: () => Promise<NativeState>) => {
     try { apply(await call()); return true; }
     catch (error) {
@@ -374,7 +376,7 @@ function nativeEngine(device: NativePlayer, parts: EngineParts, subscribed: (pla
     expect = player.current?.entryId ?? null;
     commit({ entryId: expect, track: player.current?.track ?? null, status: player.current ? playing ? 'playing' : 'paused' : 'idle', positionMs, at: Date.now(), waiting: playing,
       durationMs: player.current?.track.durationMs ?? 0 });
-    return send(() => device.load({ guildId: guildId(), current: player.current ? asTrack(player.current.track) : null, queue: tracks(player.queue), history: tracks(player.history),
+    return send(() => device.load({ guildId: guildId(), current: player.current ? tracks([player.current])[0] : null, queue: tracks(player.queue), history: tracks(player.history),
       positionMs: Math.max(0, Math.floor(positionMs)), playing, volume: deck().volume, repeat: deck().repeat }));
   };
   device.onState(apply); device.onNotice(notify);
@@ -385,13 +387,19 @@ function nativeEngine(device: NativePlayer, parts: EngineParts, subscribed: (pla
       const state = last;
       if (keep && state?.current) {
         const song = state.current;
-        const entry = [player.current, ...player.queue, ...player.history].find(item => same(item?.track, song)) ?? { entryId: newEntryId(), track: bare(song) };
-        // The app played on through its queue: each song it reached is reported in order, so
-        // the ones it already played go to history instead of waiting to play again.
-        const at = player.queue.indexOf(entry as PlayerEntry);
-        const path = at >= 0 ? player.queue.slice(0, at + 1) : entry.entryId !== player.current?.entryId ? [entry] : [];
+        const known = [player.current, ...player.queue, ...player.history];
+        const entryFor = (track: Track) => known.find(item => item && entryOf(track) === item.entryId)
+          ?? (entryOf(track) ? { entryId: entryOf(track)!, track: bare(track) } : known.find(item => same(item?.track, track))) ?? { entryId: newEntryId(), track: bare(track) };
+        const entry = entryFor(song);
+        // The songs the app played on to while the page was gone, from its own history, oldest
+        // first, are reported in order: they go to history, and songs it never played stay queued.
+        const since = player.current ? state.history.findIndex(track => entryOf(track) === player.current!.entryId) : -1;
         let from = player.current?.entryId ?? null;
-        for (const step of path) { advance({ from, to: step.entryId, track: step.track }); from = step.entryId; }
+        for (const track of since > 0 ? state.history.slice(0, since).reverse() : []) {
+          const step = entryFor(track);
+          advance({ from, to: step.entryId, track: step.track }); from = step.entryId;
+        }
+        if (entry.entryId !== from) advance({ from, to: entry.entryId, track: entry.track });
         if (state.volume !== player.volume) report({ volume: state.volume });
         if (state.repeat !== player.repeat) report({ repeat: state.repeat });
         commit({ entryId: entry.entryId, ...fields(state) });
@@ -582,16 +590,19 @@ export function useListening(remote: RemotePortal): Portal {
     // Tabs of one browser are one device, and only one of them plays: the one holding this
     // lock. The tab that asked to play takes it; when another device makes this one play,
     // the first tab to claim it does (a hidden tab waits a moment, so a visible one is preferred).
+    // Nothing takes the lock from a tab: it plays until it stops, and the tab that asked waits
+    // briefly for it (a tab that played before lets go as it stops) and otherwise stays a remote.
     let unlock: (() => void) | null = null;
-    const claim = async (take: boolean) => {
+    const claim = async (asked: boolean) => {
       const locks = (navigator as Navigator & { locks?: LockManager }).locks;
       if (!locks || !me) return true;
-      if (!take && document.hidden) await new Promise(resolve => setTimeout(resolve, 200));
+      if (unlock) return true;
+      if (!asked && document.hidden) await new Promise(resolve => setTimeout(resolve, 200));
       return new Promise<boolean>(resolve => {
-        locks.request(`vybertron-player-${me!.deviceId}`, take ? { steal: true } : { ifAvailable: true }, lock => {
+        locks.request(`vybertron-player-${me!.deviceId}`, asked ? { signal: AbortSignal.timeout(1500) } : { ifAvailable: true }, lock => {
           if (!lock) { resolve(false); return; }
           resolve(true);
-          return new Promise<void>(done => { unlock?.(); unlock = done; });
+          return new Promise<void>(done => { unlock = done; });
         }).catch(() => resolve(false));
       });
     };
@@ -667,7 +678,8 @@ export function useListening(remote: RemotePortal): Portal {
         receive(result);
         if (!self) return true;
         const player = result.player;
-        await claim(true);
+        // Another tab of this browser plays it: this one stays a remote.
+        if (!await claim(true)) return !how.idle;
         if (how.idle) { commit({ owner: true, entryId: player.current?.entryId ?? null, volume: player.volume, repeat: player.repeat }); own = { generation: player.generation, seq: 0 }; outbox.length = 0; steps = []; lastPlayhead = null; return true; }
         begin(player, how.positionMs ?? playheadAt(player, clock.now()), how.playing ?? player.playhead.playing, how.keep);
         if (how.volume !== undefined && how.volume !== player.volume) engine.act('volume', how.volume);
@@ -729,9 +741,9 @@ export function useListening(remote: RemotePortal): Portal {
       return player.playhead.playing || control('play');
     };
     // Until the store has this device's song changes (or it stops playing), at most a few seconds.
-    const confirmed = () => new Promise<void>(resolve => {
+    const confirmed = () => new Promise<boolean>(resolve => {
       const until = Date.now() + 5000;
-      const wait = () => { if (!steps.length || !own || Date.now() > until) resolve(); else setTimeout(wait, 50); };
+      const wait = () => { if (!own || Date.now() > until) resolve(false); else if (!steps.length) resolve(true); else setTimeout(wait, 50); };
       wait();
     });
     const has = (list: PlayerEntry[], entryId: string) => list.some(entry => entry.entryId === entryId);
@@ -806,7 +818,7 @@ export function useListening(remote: RemotePortal): Portal {
           if (shown()?.current) {
             if (!own && !(me && await activate(me.deviceId, { idle: true }))) return false;
             engine.stop();
-            await confirmed();
+            if (!await confirmed()) { notify('Your player didn’t confirm the stop. Check where it is, then try again.', 'error'); return false; }
           }
           return !shown()?.queue.length || !!await edit(current => ({ op: 'clear', expectedRevision: current.revision }));
         }

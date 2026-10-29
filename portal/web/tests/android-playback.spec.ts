@@ -188,19 +188,20 @@ test('Play now as the first thing after a reload plays the chosen song', async (
   expect((await sent(page, 'player.load'))[0]).toMatchObject({ playing: true, current: { title: 'Wait' } });
 });
 
-test('music the app played on through while its page was gone is reported song by song', async ({ page }) => {
+test('music the app played on through while its page was gone is reported from its own history', async ({ page }) => {
   const hub = new SharedPlayerHub();
   const songs = ['dX3k_QDnzHE', 'Fk3RbKWbmtg', 'aaaaaaaaaaa', 'bbbbbbbbbbb'].map((id, index) => ({ ...youtubeTrack(id, ['A', 'B', 'C', 'D'][index]), requestedBy: undefined }));
   const [a, b, c, d] = songs.map(({ requestedBy: _requestedBy, ...track }, index) => ({ entryId: `entry${index}`.padEnd(12, 'x'), track }));
-  // The player stopped being told anything at A; the app has since played B and reached C.
-  Object.assign(hub.player, { current: a, queue: [b, c, d], history: [], revision: 3, updatedAt: 1 });
+  // The player stopped hearing from the app at A, and another device has since moved D up;
+  // the app, given A then B, C, D, played B and reached C.
+  Object.assign(hub.player, { current: a, queue: [d, b, c], history: [], revision: 3, updatedAt: 1 });
+  const handed = (entry: typeof a) => ({ ...entry.track, requestedBy: null, entryId: entry.entryId });
   await page.addInitScript(([played, now, next]) => { (window as unknown as { nativeSeed: unknown }).nativeSeed = { current: now, queue: [next], history: played, status: 'playing', positionMs: 5000, durationMs: 244_000, revision: 7 }; },
-    [[songs[1], songs[0]], songs[2], songs[3]] as const);
+    [[handed(b), handed(a)], handed(c), handed(d)] as const);
   await app(page, hub);
   await expect.poll(() => hub.player.current?.track.title).toBe('C');
   expect(hub.ops('report').flatMap(request => request.body.advance ? [[request.body.advance.from, request.body.advance.to]] : [])).toEqual([[a.entryId, b.entryId], [b.entryId, c.entryId]]);
+  // D, never played, stays queued; the songs the app played are history.
   expect(hub.player.queue.map(entry => entry.track.title)).toEqual(['D']);
   expect(hub.player.history.map(entry => entry.track.title)).toEqual(['B', 'A']);
-  // The app's queue already matches, so nothing is pushed back to it.
-  expect(await sent(page, 'player.setQueue')).toEqual([]);
 });

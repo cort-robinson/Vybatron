@@ -103,10 +103,12 @@ export function saveIdentity(identity: Identity) {
 /** This device's ID and name. Inside the Android app it is the app (ADR-0016's `app.info`). */
 export async function loadIdentity(device: NativePlayer | null): Promise<Identity> {
   let kind: DeviceKind = 'browser';
-  if (device) kind = await device.info().then(info => info.platform === 'android' ? 'android' as const : 'browser' as const, () => 'android' as const);
+  // In the app on a TV, it is a TV (ADR-0019).
+  if (device) kind = await device.info().then(info => info.platform !== 'android' ? 'browser' as const : info.form === 'tv' ? 'tv' as const : 'android' as const,
+    () => 'android' as const);
   const saved = storedIdentity();
   const deviceId = typeof saved.deviceId === 'string' && /^[\w-]{22}$/.test(saved.deviceId) ? saved.deviceId : randomId(16);
-  const name = (typeof saved.name === 'string' && validName(saved.name)) || (kind === 'android' ? 'Android app' : defaultName());
+  const name = (typeof saved.name === 'string' && validName(saved.name)) || (kind === 'android' ? 'Android app' : kind === 'tv' ? 'TV' : defaultName());
   const identity = { deviceId, name, kind };
   saveIdentity(identity);
   return identity;

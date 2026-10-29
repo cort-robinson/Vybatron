@@ -28,6 +28,8 @@ async function app(page: Page, shared?: SharedPlayerHub) {
     // With `player.shared`: the service's own connection, live unless a test says otherwise.
     const shared = (window as unknown as { nativeShared?: boolean }).nativeShared;
     let link = (window as unknown as { nativeLink?: Link }).nativeLink ?? { linked: true, generation: null };
+    // On a TV the app says so (ADR-0019).
+    const form = (window as unknown as { nativeForm?: string }).nativeForm;
     if (seed) state = { ...state, ...seed, at: Date.now() };
     const send = (message: unknown) => setTimeout(() => { for (const listener of listeners) listener({ data: JSON.stringify(message) }); }, 0);
     const change = (patch: Partial<typeof state>, songs = true) => { state = { ...state, ...patch, at: Date.now(), revision: state.revision + (songs ? 1 : 0) }; };
@@ -53,7 +55,7 @@ async function app(page: Page, shared?: SharedPlayerHub) {
         // The app names itself (ADR-0016), so the page registers as the Android app.
         if (request.type === 'app.info') {
           const features = shared ? { features: ['player.shared'] } : {};
-          send({ id: request.id, ok: true, result: { platform: 'android', version: '0.2.0', build: 2, ...features } }); return;
+          send({ id: request.id, ok: true, result: { platform: 'android', version: '0.2.0', build: 2, ...features, ...(form && { form }) } }); return;
         }
         requests.push(request);
         switch (request.type) {
@@ -288,6 +290,19 @@ test('an app that reports for itself gets the page\'s session, and the page neve
   await expect(page.locator('audio, video, iframe')).toHaveCount(0);
   expect(fixture.audio).toEqual([]);
   expect(fixture.shared.devices).toEqual([expect.objectContaining({ name: 'Android app', kind: 'android' })]);
+});
+
+test('in the app on a TV, the page registers as a TV and hands the app\'s service the name TV', async ({ page }) => {
+  await page.addInitScript(() => { Object.assign(window, { nativeForm: 'tv' }); });
+  const fixture = await sharedApp(page);
+  // The service registers with the name the page hands it; the page's own registration is a TV too.
+  await expect.poll(async () => sent(page, 'player.subscribe')).toEqual([{}, { session: { csrfToken: 'local-test-csrf', deviceId: expect.stringMatching(/^[\w-]{22}$/), name: 'TV' } }]);
+  await expect.poll(() => fixture.shared.devices).toEqual([expect.objectContaining({ name: 'TV', kind: 'tv' })]);
+  // The device picker shows it with the TV icon, as it would any TV.
+  await openMenu(page);
+  const self = page.getByRole('button', { name: /This device/ });
+  await expect(self).toContainText('TV');
+  expect(await self.locator('svg path').first().getAttribute('d')).toMatch(/^M216,64H147\.31/);
 });
 
 test('a page that finds its app playing leaves it playing', async ({ page }) => {

@@ -395,8 +395,10 @@ function nativeEngine(device: NativePlayer, parts: EngineParts, subscribed: (pla
         // first, are reported in order: they go to history, and songs it never played stay queued.
         // The player's current song in the app's history: by its entry, or by the song for a track
         // handed over without one (or replaced by its YouTube match).
-        const since = !player.current ? -1 : Math.max(state.history.findIndex(track => entryOf(track) === player.current!.entryId),
-          state.history.findIndex(track => !entryOf(track) && same(track, player.current!.track)));
+        // An exact entry wins over an older untagged play of the same song.
+        const exact = !player.current ? -1 : state.history.findIndex(track => entryOf(track) === player.current!.entryId);
+        const since = exact >= 0 || !player.current ? exact
+          : state.history.findIndex(track => !entryOf(track) && same(track, player.current!.track));
         let from = player.current?.entryId ?? null;
         for (const track of since > 0 ? state.history.slice(0, since).reverse() : []) {
           const step = entryFor(track);

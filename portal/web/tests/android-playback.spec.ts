@@ -220,3 +220,19 @@ test('the app\'s catch-up also follows songs it holds without their entry', asyn
   expect(hub.player.queue.map(entry => entry.track.title)).toEqual(['D']);
   expect(hub.player.history.map(entry => entry.track.title)).toEqual(['B', 'A']);
 });
+
+test('the app\'s catch-up starts from the exact entry, not an older play of the same song', async ({ page }) => {
+  const hub = new SharedPlayerHub();
+  const songs = ['dX3k_QDnzHE', 'Fk3RbKWbmtg', 'aaaaaaaaaaa', 'bbbbbbbbbbb', 'ccccccccccc'].map((id, index) => ({ ...youtubeTrack(id, ['A', 'B', 'C', 'D', 'X'][index]), requestedBy: null }));
+  const [a, b, c, d] = songs.slice(0, 4).map(({ requestedBy: _requestedBy, ...track }, index) => ({ entryId: `entry${index}`.padEnd(12, 'x'), track }));
+  Object.assign(hub.player, { current: a, queue: [b, c, d], history: [], revision: 3, updatedAt: 1 });
+  // Newest first: B and A with their entries, then an older X and A played before entries existed.
+  const tagged = (index: number, entry: { entryId: string }) => ({ ...songs[index], entryId: entry.entryId });
+  await page.addInitScript(([played, now, next]) => { (window as unknown as { nativeSeed: unknown }).nativeSeed = { current: now, queue: [next], history: played, status: 'playing', positionMs: 5000, durationMs: 244_000, revision: 7 }; },
+    [[tagged(1, b), tagged(0, a), songs[4], songs[0]], tagged(2, c), tagged(3, d)] as const);
+  await app(page, hub);
+  await expect.poll(() => hub.player.current?.track.title).toBe('C');
+  expect(hub.ops('report').flatMap(request => request.body.advance ? [[request.body.advance.from, request.body.advance.to]] : [])).toEqual([[a.entryId, b.entryId], [b.entryId, c.entryId]]);
+  expect(hub.player.queue.map(entry => entry.track.title)).toEqual(['D']);
+  expect(hub.player.history.map(entry => entry.track.title)).toEqual(['B', 'A']);
+});

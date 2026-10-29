@@ -111,7 +111,7 @@ test('when adding is blocked the share shows why and cannot be confirmed', async
   await expect(dialog(page).getByRole('button', { name: 'Add to queue' })).toBeDisabled();
 });
 
-for (const skin of ['overdrive', 'fantastic', 'classic']) {
+for (const skin of ['overdrive', 'fantastic', 'haunted', 'classic']) {
   test(`the share confirmation fits a phone in the ${skin} look`, async ({ page }, info) => {
     await page.setViewportSize({ width: 360, height: 740 });
     await page.addInitScript(value => localStorage.setItem('vybertron.skin', value), skin);

@@ -44,7 +44,7 @@ test('?scene=css chooses the CSS scenery and is remembered on this device', asyn
   await expect(page.locator('.scene-canvas')).toHaveCount(1);
 });
 
-for (const skin of ['fantastic', 'classic']) {
+for (const skin of ['fantastic', 'haunted', 'classic']) {
   test(`the ${skin} look draws its room in the canvas too`, async ({ page }) => {
     const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
     await page.addInitScript(value => localStorage.setItem('vybertron.skin', value), skin);
@@ -52,6 +52,7 @@ for (const skin of ['fantastic', 'classic']) {
     await expect(page.getByRole('button', { name: 'Pause playback' })).toBeEnabled();
     await expect(page.locator('.ambient-scene.gl-scene .scene-canvas')).toHaveCount(1);
     if (skin === 'fantastic') await expect(page.locator('.ff-burst').first()).toHaveCSS('animation-name', 'none');
+    if (skin === 'haunted') await expect(page.locator('.hh-lantern').first()).toHaveCSS('animation-name', 'none');
     expect(errors).toEqual([]);
   });
 }

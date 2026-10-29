@@ -67,7 +67,7 @@ test('a playlist imports into a new shared mix, and another listener’s mix is 
   await expect(page.getByRole('button', { name: 'View mix Road trip' })).toBeVisible();
 });
 
-for (const skin of ['overdrive', 'fantastic', 'classic']) {
+for (const skin of ['overdrive', 'fantastic', 'haunted', 'classic']) {
   test(`the import form and preview fit the ${skin} look`, async ({ page }, info) => {
     await mockPortal(page);
     await openMusic(page, skin);

@@ -1,0 +1,313 @@
+/*
+HAUNTED: the receiver, left on in an empty house on All Hallows' Eve.
+THESIS: the room still lights up with the record, now by moonlight and candlelight. A full moon
+tinted by the cover rises over a hollow where a crooked house keeps its windows lit, bare trees
+reach across the sky, a churchyard leans on its iron fence and jack-o'-lanterns burn in the grass.
+Fog drifts through the low ground, and bats cross the moon behind the sleeve.
+MATERIAL: blackened iron and old parchment. Hairline bone trim on dark violet panels, a candle lamp
+on navigation, an ember ring that breathes around play, and the sleeve's cover hung in an iron
+frame with a cobweb in its corner and a candle's warm light beneath it. Cinzel, an inscription
+face, carries the wordmark and headings; Archivo keeps every name, number, and line of copy.
+COLOR: the cover's accent stays the lead and keeps every state meaning. Night violet, moon bone,
+jack-o'-lantern orange, candle gold and a sickly witch green are scenery and trim only; favorites,
+pause, and danger keep theirs.
+MOTION: one authored moment per track change (a breath of fog crosses the cover). Ambient motion
+(candles and windows flickering, drifting fog, bats crossing the moon, the ember ring breathing)
+runs only while the session plays live, and reduced motion removes all of it.
+REVERT: everything here is scoped to :root[data-skin='haunted']; Settings → Portal look.
+*/
+:root[data-skin='haunted'] {
+  --hh-night: #0b0812;
+  --hh-violet: #2a1742;
+  --hh-plum: #4a2660;
+  --hh-pumpkin: #ff7a1a;
+  --hh-ember: #ffa94a;
+  --hh-candle: #ffd58a;
+  --hh-witch: #a6e86e;
+  --hh-bone: #efe6d6;
+  --hh-moon: #f2ead6;
+  --hh-base: color-mix(in oklab, var(--ground) 36%, var(--hh-night));
+  --hh-iron: color-mix(in oklab, var(--hh-base), black 30%);
+  --trim: color-mix(in oklab, var(--hh-bone) 12%, transparent);
+  --display: 'Cinzel Variable', 'Archivo Variable', serif;
+
+  --text: #f4eee3;
+  --text-soft: #e6dccd;
+  --muted: #b9adbf;
+  --line: rgb(239 230 214 / .095);
+  --line-soft: rgb(239 230 214 / .06);
+  --line-strong: rgb(239 230 214 / .16);
+  --surface: color-mix(in oklab, var(--hh-base), var(--hh-violet) 22%);
+  --raised: color-mix(in oklab, var(--hh-base), var(--hh-violet) 36%);
+  --chrome: color-mix(in oklab, var(--hh-base) 80%, transparent);
+  --field: rgb(239 230 214 / .045);
+  --field-line: rgb(239 230 214 / .16);
+  --secondary: rgb(239 230 214 / .065);
+  --secondary-hover: rgb(239 230 214 / .105);
+  --hover-surface: rgb(239 230 214 / .05);
+  --selected-surface: rgb(239 230 214 / .075);
+  --range-track: rgb(239 230 214 / .15);
+  --range-thumb: var(--hh-bone);
+  --scrollbar: rgb(239 230 214 / .18);
+  --shadow-control: 0 10px 24px -10px color-mix(in oklab, var(--hh-pumpkin) 70%, transparent);
+
+  ::selection { color: var(--hh-night); background: var(--hh-ember); }
+  :focus-visible { outline-color: var(--accent); }
+}
+
+/* ── The hollow ──────────────────────────────────────────────────────────── */
+:root[data-skin='haunted'] {
+  .ambient-scene { background: var(--hh-base); --hh-horizon: calc(100% - var(--player) - var(--nav)); --moon: clamp(150px, 24vmin, 260px);
+    --moon-x: calc(var(--sidebar) + (100vw - var(--sidebar)) * .8); --moon-top: calc(var(--hh-horizon) - var(--moon) * 1.32); }
+  .room-colors { --hh-base: color-mix(in oklab, var(--ground) 36%, var(--hh-night)); background: var(--hh-base); }
+  .room-colors::after { background: radial-gradient(120% 90% at 60% 35%, transparent 42%, color-mix(in oklab, var(--hh-base) 76%, transparent) 100%); }
+  .room-light { opacity: .34; }
+  /* In the sleeve the moon rises behind the cover, so its rim and halo light the frame's edges. */
+  .ambient-scene.immersive { --hh-horizon: 72%; --moon: clamp(320px, 60vmin, 700px); --moon-x: calc(var(--sidebar) + 32px + (100vw - var(--sidebar) - 96px) * .37); --moon-top: calc(var(--hh-horizon) - var(--moon) * 1.16); }
+  /* Sign-in: the cover and spectrum stand before the moon, and the sign-in copy sits in the fog below. */
+  .auth-page .ambient-scene { --hh-horizon: calc(50% + 28px); --moon: clamp(260px, 44vmin, 480px); --moon-x: 50%; --moon-top: calc(var(--hh-horizon) - var(--moon) * 1.08); }
+}
+@media (max-width: 1023px), (max-height: 760px) { :root[data-skin='haunted'] .auth-page .ambient-scene { --hh-horizon: calc(50% + 4px); } }
+
+.hh-scene { position: absolute; inset: 0; opacity: .78; transition: opacity 900ms var(--ease-out); animation: hh-fade 700ms var(--ease-out); }
+.ambient-scene.immersive .hh-scene { opacity: 1; }
+.ambient-scene.subtle .hh-scene { opacity: .4; }
+.ambient-scene.subtle.immersive .hh-scene { opacity: .66; }
+.ambient-scene.disabled .hh-scene { opacity: .46; }
+.auth-page .hh-scene { opacity: .95; }
+
+/* Night: near-black overhead, violet at altitude, plum toward the hills and the last ember of dusk. */
+.hh-sky { position: absolute; left: 0; right: 0; top: 0; height: var(--hh-horizon); background:
+  radial-gradient(circle at var(--moon-x) calc(var(--moon-top) + var(--moon) / 2), color-mix(in oklab, color-mix(in oklab, var(--hh-moon) 70%, var(--accent)) 22%, transparent), transparent calc(var(--moon) * 1.3)),
+  linear-gradient(to bottom, transparent 12%, color-mix(in oklab, var(--hh-violet) 42%, transparent) 52%, color-mix(in oklab, var(--hh-plum) 48%, transparent) 86%, color-mix(in oklab, var(--hh-pumpkin) 24%, transparent)); }
+.hh-stars { position: absolute; left: 0; top: 0; width: 100%; height: var(--hh-horizon); }
+.hh-stars svg { display: block; width: 100%; height: 100%; }
+.hh-stars path { fill: var(--hh-bone); opacity: .5; }
+
+/* The full moon: bone white warmed by the cover, its seas faintly grey-violet, haloed in mist. */
+.hh-moon { position: absolute; left: var(--moon-x); top: var(--moon-top); width: var(--moon); aspect-ratio: 1; translate: -50% 0; opacity: .95; transition: opacity 700ms var(--ease-out) 260ms; }
+.hh-moon::before { content: ''; position: absolute; inset: -45%; border-radius: 50%; background: radial-gradient(closest-side, color-mix(in oklab, var(--hh-moon) 30%, transparent) 60%, color-mix(in oklab, var(--hh-moon) 10%, transparent) 75%, transparent); }
+.hh-moon-disc { position: absolute; inset: 0; border-radius: 50%;
+  --hh-face: color-mix(in oklab, var(--hh-moon) 86%, var(--accent));
+  --hh-sea: color-mix(in oklab, color-mix(in oklab, var(--hh-face) 70%, var(--hh-plum)) 60%, transparent);
+  background: radial-gradient(22% 18% at 62% 36%, var(--hh-sea), transparent), radial-gradient(16% 14% at 42% 60%, var(--hh-sea), transparent), radial-gradient(12% 10% at 30% 34%, var(--hh-sea), transparent), radial-gradient(9% 8% at 66% 66%, var(--hh-sea), transparent),
+    radial-gradient(circle at 42% 38%, #fffbf2, var(--hh-face) 48%, color-mix(in oklab, var(--hh-face), var(--hh-plum) 34%) 100%); }
+/* Behind reading pages the moon is dimmed so text and buttons that scroll over it keep their contrast. */
+.ambient-scene:not(.immersive) .hh-moon { opacity: .55; transition-duration: 160ms; transition-delay: 0ms; }
+.auth-page .ambient-scene .hh-moon { opacity: .95; }
+
+/* Bats cross the moon behind the sleeve and at sign-in; reading pages keep a still sky. */
+.hh-bats { position: absolute; left: 0; top: 0; width: 100%; height: var(--hh-horizon); transition: opacity 700ms var(--ease-out); }
+.app-shell .ambient-scene:not(.immersive) .hh-bats { opacity: 0; transition-duration: 160ms; }
+.hh-bat { position: absolute; left: 0; top: calc(var(--y) * 100%); width: calc(var(--size) * clamp(26px, 3vw, 40px)); overflow: visible; fill: color-mix(in oklab, var(--hh-night), black 30%);
+  translate: -12vw 0; animation: hh-fly 20s linear infinite paused; }
+.hh-bat path { transform-box: fill-box; transform-origin: center; animation: hh-flap 280ms ease-in-out infinite alternate paused; }
+
+.hh-hills { position: absolute; left: 0; bottom: calc(100% - var(--hh-horizon)); width: 100%; height: clamp(96px, 21vh, 220px); overflow: visible; }
+.ambient-scene:not(.immersive) .hh-hills { height: clamp(72px, 14vh, 160px); }
+.auth-page .ambient-scene .hh-hills { height: clamp(90px, 19vh, 200px); }
+.hh-hills-far { fill: color-mix(in oklab, var(--hh-plum) 34%, var(--hh-base)); }
+.hh-tree-far { fill: none; stroke: color-mix(in oklab, var(--hh-plum) 34%, var(--hh-base)); stroke-linecap: round; }
+.hh-hills-near, .hh-house { fill: color-mix(in oklab, var(--hh-base), #040208 62%); }
+.hh-rim { fill: none; stroke: color-mix(in oklab, var(--hh-moon) 20%, transparent); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.hh-tree { fill: none; stroke: color-mix(in oklab, var(--hh-base), #040208 62%); stroke-linecap: round; }
+.hh-window { fill: var(--hh-candle); opacity: .85; animation: hh-window 13s steps(1) infinite paused; }
+.hh-lantern { fill: var(--hh-pumpkin); stroke: color-mix(in oklab, var(--hh-pumpkin) 30%, transparent); stroke-width: 6; paint-order: stroke; animation: hh-candle 1.9s linear infinite paused; }
+
+.hh-ground { position: absolute; left: 0; right: 0; top: var(--hh-horizon); bottom: 0;
+  background: linear-gradient(to bottom, color-mix(in oklab, var(--hh-pumpkin) 7%, color-mix(in oklab, var(--hh-base), #040208 55%)), color-mix(in oklab, var(--hh-plum) 10%, var(--hh-base)) 40%, var(--hh-base) 85%); }
+
+/* Ground fog: two banks of soft ellipses, each a strip twice the screen's width that slides one
+   screen and repeats, as a transform the compositor runs. */
+.hh-fog { position: absolute; left: 0; right: 0; top: calc(var(--hh-horizon) - 11vh); height: 22vh; overflow: hidden; opacity: .8; transition: opacity 700ms var(--ease-out);
+  -webkit-mask-image: linear-gradient(transparent, #000 38%, #000 62%, transparent); mask-image: linear-gradient(transparent, #000 38%, #000 62%, transparent); }
+.hh-fog::before, .hh-fog::after { content: ''; position: absolute; top: 0; bottom: 0; left: 0; width: 200%; --hh-mist: color-mix(in oklab, color-mix(in oklab, var(--hh-moon) 60%, var(--hh-plum)) 34%, transparent);
+  background: radial-gradient(18% 34% at 20% 58%, var(--hh-mist), transparent), radial-gradient(20% 28% at 52% 44%, var(--hh-mist), transparent), radial-gradient(16% 30% at 80% 62%, var(--hh-mist), transparent);
+  background-size: 50% 100%; animation: hh-drift 90s linear infinite paused; }
+.hh-fog::after { top: 18%; opacity: .7; animation-duration: 140s; animation-direction: reverse; }
+
+.ambient-scene.moving :is(.hh-bat, .hh-bat path, .hh-window, .hh-lantern), .ambient-scene.moving .hh-fog::before, .ambient-scene.moving .hh-fog::after { animation-play-state: running; }
+/* Behind reading pages the bats are faded out; they rest instead of flying unseen. */
+.app-shell .ambient-scene:not(.immersive) :is(.hh-bat, .hh-bat path) { animation-play-state: paused; }
+
+@keyframes hh-fade { from { opacity: 0; } }
+@keyframes hh-fly { 0% { translate: -12vw 0; } 24% { translate: 22vw -2.4vh; } 50% { translate: 52vw 1.6vh; } 76% { translate: 80vw -2vh; } 100% { translate: 112vw .4vh; } }
+@keyframes hh-flap { to { transform: scaleY(.3); } }
+@keyframes hh-window { 0% { opacity: .85; } 41% { opacity: .35; } 47% { opacity: .85; } 83% { opacity: .55; } }
+@keyframes hh-candle { 0%, 100% { opacity: 1; } 14% { opacity: .78; } 22% { opacity: .95; } 39% { opacity: .7; } 52% { opacity: 1; } 68% { opacity: .82; } 80% { opacity: .96; } }
+@keyframes hh-drift { to { transform: translateX(-50%); } }
+
+/* ── Faceplate: sidebar, wordmark, navigation ───────────────────────────── */
+:root[data-skin='haunted'] {
+  /* The wordmark is carved in bone and lit from below by a candle. */
+  .brand > span { font-family: var(--display); font-weight: 700; font-stretch: normal; font-size: 19px; letter-spacing: .16em; color: var(--hh-bone); text-shadow: 0 1px 14px color-mix(in oklab, var(--hh-pumpkin) 55%, transparent); }
+  .brand svg { color: var(--hh-ember); filter: drop-shadow(0 0 6px color-mix(in oklab, var(--hh-pumpkin) 60%, transparent)); }
+
+  .sidebar { border-right-color: var(--line); background: linear-gradient(to bottom, transparent 50%, color-mix(in oklab, var(--hh-plum) 12%, transparent)), var(--chrome); }
+  .guild-card { border-color: var(--line); border-radius: 14px; outline: 1px solid var(--trim); outline-offset: -5px; background: linear-gradient(160deg, color-mix(in oklab, var(--hh-violet) 30%, transparent), rgb(239 230 214 / .02) 70%); }
+  .guild-card:hover { border-color: color-mix(in oklab, var(--hh-bone) 24%, transparent); }
+  .guild-status.playing .status-dot { background: var(--hh-ember); box-shadow: 0 0 0 3px color-mix(in oklab, var(--hh-pumpkin) 22%, transparent), 0 0 10px 1px color-mix(in oklab, var(--hh-pumpkin) 60%, transparent); }
+
+  /* Navigation: the current page carries a lit candle. */
+  .navigation button:hover { background: rgb(239 230 214 / .045); }
+  .nav-indicator { background: linear-gradient(90deg, color-mix(in oklab, var(--hh-pumpkin) 10%, transparent), transparent 80%), color-mix(in oklab, var(--hh-bone) 5%, transparent); box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--hh-bone) 12%, transparent); }
+  .nav-indicator::before { left: auto; right: 18px; width: 6px; height: 10px; margin-top: -5px; border-radius: 50% 50% 50% 50% / 64% 64% 36% 36%;
+    background: radial-gradient(circle at 50% 70%, #fff6dc, var(--hh-candle) 35%, var(--hh-pumpkin) 80%); box-shadow: 0 0 10px 2px color-mix(in oklab, var(--hh-pumpkin) 65%, transparent); }
+
+  /* ── Page frame ─────────────────────────────────────────────────────── */
+  .page-title h1 { font-family: var(--display); font-weight: 600; font-stretch: normal; font-size: 32px; line-height: 1.2; letter-spacing: .06em; }
+  .header-search:hover { box-shadow: 0 0 0 1px color-mix(in oklab, var(--hh-bone) 20%, transparent); }
+
+  .button.primary { box-shadow: inset 0 0 0 1px color-mix(in oklab, white 30%, transparent); transition: background-color 160ms, box-shadow 220ms; }
+  .button.primary:hover:not(:disabled) { box-shadow: inset 0 0 0 1px color-mix(in oklab, white 40%, transparent), var(--shadow-control); }
+  .button.secondary:hover:not(:disabled) { border-color: color-mix(in oklab, var(--hh-bone) 30%, transparent); }
+  input:focus-visible, select:focus-visible { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 18%, transparent); }
+  /* The search field rings itself; its bare input would draw a second, misaligned ring inside it. */
+  .search-field input:focus-visible { box-shadow: none; }
+
+  /* ── Lists ──────────────────────────────────────────────────────────── */
+  .track-row:hover { background-color: rgb(239 230 214 / .04); }
+  .track-row:hover .track-index { color: var(--hh-ember); }
+  .track-row.drop-target { background: var(--accent-soft); box-shadow: inset 0 2px 0 var(--accent); }
+  .queue-columns { color: color-mix(in oklab, var(--hh-bone) 42%, var(--muted)); }
+  .pill { border-color: color-mix(in oklab, var(--hh-bone) 22%, transparent); }
+  .empty-art { border-color: color-mix(in oklab, var(--hh-bone) 22%, transparent);
+    background: radial-gradient(circle at 50% 120%, color-mix(in oklab, var(--hh-pumpkin) 22%, transparent), transparent 70%), var(--surface); }
+  .tabs .tab-indicator { background: linear-gradient(90deg, var(--accent), color-mix(in oklab, var(--accent), var(--hh-pumpkin) 55%)); }
+  .switch[aria-checked='false'] > span::after { background: var(--hh-bone); }
+  .spinner { border-color: var(--accent); border-right-color: transparent; border-left-color: var(--hh-pumpkin); }
+  .menu-panel { outline: 1px solid var(--trim); outline-offset: -5px; }
+  .dialog { outline: 1px solid var(--trim); outline-offset: -7px; }
+  .continue-feature { outline: 1px solid var(--trim); outline-offset: -6px;
+    background: linear-gradient(100deg, color-mix(in oklab, var(--accent) 13%, transparent), color-mix(in oklab, var(--hh-violet) 26%, transparent) 60%, transparent), var(--surface); }
+  .recap-tiles > div { outline: 1px solid var(--trim); outline-offset: -5px; }
+  .recap-tiles dd { font-family: var(--display); font-weight: 600; font-stretch: normal; letter-spacing: .02em; }
+
+  /* Home shelves: each heading is an inscription, closed by a hairline that ends in an ember. */
+  .home-shelf-header h2 { display: flex; align-items: center; gap: 14px; font-family: var(--display); font-weight: 600; font-stretch: normal; font-size: 21px; letter-spacing: .06em; }
+  .home-shelf-header h2::after { content: ''; flex: 0 0 auto; width: 46px; height: 5px;
+    background: radial-gradient(circle, var(--hh-ember) 0 2px, color-mix(in oklab, var(--hh-pumpkin) 40%, transparent) 2.5px, transparent 4px) right center / 6px 5px no-repeat,
+      linear-gradient(90deg, transparent, color-mix(in oklab, var(--hh-bone) 40%, transparent)) left center / calc(100% - 8px) 1px no-repeat; }
+  .shelf-art .artwork, .playlist-cover { transition: transform 320ms var(--ease-out), box-shadow 320ms var(--ease-out); }
+  .shelf-row > li:hover .shelf-art .artwork, .playlist-tile:hover .playlist-cover { transform: translateY(-3px); box-shadow: 0 0 0 1px color-mix(in oklab, var(--hh-bone) 24%, transparent), 0 16px 30px -14px color-mix(in oklab, var(--hh-pumpkin) 45%, black); }
+  .shelf-rank.lead { color: var(--hh-ember); }
+  .mix-open:hover .artwork { box-shadow: 0 0 0 1px color-mix(in oklab, var(--hh-bone) 24%, transparent), 0 18px 32px -16px rgb(0 0 0 / .85); }
+
+  /* ── Deck ───────────────────────────────────────────────────────────── */
+  .persistent-player.collapsed { background: linear-gradient(to top, color-mix(in oklab, var(--hh-violet) 18%, transparent), transparent 70%), var(--chrome); }
+  .player-spectrum { opacity: .32; }
+
+  /* The play control sits in an ember ring that breathes like a candle while the room plays. */
+  .transport .play-button { --play-ring: 8px; position: relative; background-image: radial-gradient(circle at 50% 28%, rgb(255 255 255 / .3), transparent 62%); }
+  .transport .play-button::before, .transport .play-button::after { content: ''; position: absolute; inset: calc(-1 * var(--play-ring)); border-radius: 50%; pointer-events: none; }
+  .transport .play-button::before { box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--hh-bone) 22%, transparent); }
+  .transport .play-button::after { background: radial-gradient(closest-side, transparent calc(100% - 7px), color-mix(in oklab, var(--hh-pumpkin) 70%, transparent) calc(100% - 4px), color-mix(in oklab, var(--hh-candle) 50%, transparent) calc(100% - 2px), transparent);
+    opacity: 0; transition: opacity 400ms; animation: hh-candle 2.6s linear infinite paused; }
+  .persistent-player.playing .transport .play-button::after { opacity: 1; }
+  .motion-live .persistent-player.playing .transport .play-button::after { animation-play-state: running; }
+  .transport .play-button:disabled::before { opacity: .3; }
+
+  /* Ranges: the fill warms from the accent toward lantern orange; the handle is a bone knob. */
+  .range::-webkit-slider-runnable-track { background: linear-gradient(90deg, var(--accent), color-mix(in oklab, var(--accent), var(--hh-pumpkin) 55%)) 0 0 / var(--range-progress) 100% no-repeat, var(--range-track); }
+  .range::-webkit-slider-thumb { background: var(--hh-bone); box-shadow: 0 0 0 4px var(--accent-soft), 0 0 12px color-mix(in oklab, var(--hh-pumpkin) 40%, transparent); }
+  .range::-moz-range-progress { background: linear-gradient(90deg, var(--accent), color-mix(in oklab, var(--accent), var(--hh-pumpkin) 55%)); }
+  .range::-moz-range-thumb { background: var(--hh-bone); box-shadow: 0 0 0 4px var(--accent-soft), 0 0 12px color-mix(in oklab, var(--hh-pumpkin) 40%, transparent); }
+  .timeline.is-live .range::-webkit-slider-runnable-track { background: var(--range-track); }
+
+  /* ── Sleeve: the cover hangs in an iron frame, lit by a candle below ── */
+  .sleeve-artwork { --bezel: 9px; }
+  .sleeve-artwork > .artwork, .sleeve-artwork > .artwork-ghost { border-radius: 10px; }
+  .sleeve-artwork > .artwork { box-shadow: none; }
+  .sleeve-spectrum { translate: 0 calc(var(--bezel) - 4px); }
+  .hh-frame, .hh-mist { position: absolute; left: 50%; translate: -50% 0; pointer-events: none; }
+  .hh-frame { z-index: -1; top: calc((100cqh - var(--cover) - 12px - var(--spectrum)) / 2 - var(--bezel)); width: calc(var(--cover) + var(--bezel) * 2); height: calc(var(--cover) + var(--bezel) * 2); border-radius: 16px;
+    background: linear-gradient(160deg, color-mix(in oklab, var(--hh-violet) 40%, #1a1420), #0c0a10 55%, color-mix(in oklab, var(--hh-plum) 30%, #120e16));
+    box-shadow: inset 0 1px 0 color-mix(in oklab, var(--hh-moon) 30%, transparent), inset 0 0 0 1px color-mix(in oklab, var(--hh-bone) 18%, transparent), inset 0 0 0 4px rgb(0 0 0 / .4), inset 0 0 0 5px color-mix(in oklab, var(--hh-bone) 8%, transparent),
+      0 40px 80px -34px rgb(0 0 0 / .9), 0 34px 70px -34px color-mix(in oklab, var(--hh-pumpkin) 60%, transparent); }
+  /* The candle's light pools under the frame and wavers while the room plays. */
+  .hh-frame::after { content: ''; position: absolute; left: 8%; right: 8%; top: 82%; height: 34%; border-radius: 50%; background: radial-gradient(closest-side, color-mix(in oklab, var(--hh-pumpkin) 50%, transparent), transparent); animation: hh-candle 2.2s linear infinite paused; }
+  .motion-live .hh-frame::after { animation-play-state: running; }
+  /* A cobweb strung across the cover's top-left corner, over the picture. */
+  .hh-web { position: absolute; z-index: 1; left: calc(50% - var(--cover) / 2 - 3px); top: calc((100cqh - var(--cover) - 12px - var(--spectrum)) / 2 - 3px); width: clamp(42px, 17%, 92px); height: auto; overflow: visible; pointer-events: none;
+    fill: none; stroke: color-mix(in oklab, var(--hh-bone) 44%, transparent); stroke-width: .55; stroke-linecap: round; filter: drop-shadow(0 1px 1px rgb(0 0 0 / .5)); }
+  /* Track change: a breath of fog drifts across the cover. */
+  .hh-mist { top: calc((100cqh - var(--cover) - 12px - var(--spectrum)) / 2); width: var(--cover); height: var(--cover); overflow: hidden; border-radius: 10px; }
+  .hh-mist::before { content: ''; position: absolute; top: -10%; bottom: -10%; left: 0; width: 70%; translate: -105% 0; opacity: 0;
+    background: radial-gradient(50% 30% at 50% 30%, rgb(232 226 244 / .5), transparent), radial-gradient(46% 26% at 40% 62%, rgb(232 226 244 / .42), transparent), radial-gradient(40% 22% at 62% 84%, rgb(232 226 244 / .34), transparent);
+    animation: hh-breath 1300ms cubic-bezier(.4, 0, .3, 1) 80ms both; }
+  .sleeve-main .player-title-row h2 { text-shadow: 0 2px 18px color-mix(in oklab, var(--hh-pumpkin) 28%, transparent); }
+  /* The now-playing caption sits on a dark plate, so the moon and the hills never run through it. */
+  .sleeve-main > .player-identity, .sleeve-main > .player-context:has(> p) { width: fit-content; max-width: min(100%, 560px); padding: 12px 24px 14px; border-radius: 16px;
+    outline: 1px solid var(--trim); outline-offset: -5px; background: color-mix(in oklab, var(--hh-base) 78%, transparent); backdrop-filter: var(--chrome-blur); --glass: var(--chrome-blur); }
+  .sleeve-main > .player-context:has(> p) { padding-block: 10px; }
+  .sleeve-queue { outline: 1px solid var(--trim); outline-offset: -6px; background: color-mix(in oklab, var(--hh-base) 66%, transparent); }
+
+  /* ── Sign-in ────────────────────────────────────────────────────────── */
+  .signin-sleeve { box-shadow: 0 0 0 10px #0d0a12, 0 0 0 11px color-mix(in oklab, var(--hh-bone) 16%, transparent), 0 44px 90px -30px color-mix(in oklab, var(--hh-pumpkin) 45%, black); }
+  .sign-in > p, .signin-footnote { text-shadow: 0 1px 12px rgb(0 0 0 / .95); }
+}
+
+@keyframes hh-breath { 0% { translate: -105% 0; opacity: 0; } 25% { opacity: 1; } 100% { translate: 160% 0; opacity: 0; } }
+
+/* ── Phone and tablet ───────────────────────────────────────────────────── */
+@media (max-width: 1023px) {
+  :root[data-skin='haunted'] {
+    /* Reading pages run the full width, so the moon rises low behind the hills instead of behind text. */
+    .ambient-scene { --moon-x: 76%; --moon: clamp(110px, 30vw, 200px); --moon-top: calc(var(--hh-horizon) - var(--moon) * .72); }
+    /* The cover fills the sleeve's width, so the moon peeks out from behind its top corner. */
+    .ambient-scene.immersive { --hh-horizon: 64%; --moon: clamp(180px, 54vw, 380px); --moon-x: 80%; --moon-top: calc(var(--moon) * -.1); }
+    .sleeve-main > .player-identity, .sleeve-main > .player-context:has(> p) { padding: 8px 16px 10px; border-radius: 14px; }
+    .navigation { background: color-mix(in oklab, var(--hh-base) 92%, transparent); }
+    .nav-indicator { background: radial-gradient(60% 90% at 50% 100%, color-mix(in oklab, var(--hh-pumpkin) 14%, transparent), transparent); box-shadow: none; }
+    .nav-indicator::before { top: 7px; right: auto; left: 50%; width: 5px; height: 8px; margin: 0 0 0 -2.5px; }
+    .page-title h1 { font-size: 25px; }
+    .home-shelf-header h2 { font-size: 18px; }
+    .compact-progress { --progress-fill: linear-gradient(90deg, var(--accent), color-mix(in oklab, var(--accent), var(--hh-pumpkin) 55%)); }
+    .sleeve-artwork { --bezel: 7px; }
+    .hh-frame { border-radius: 14px; }
+  }
+}
+@media (max-width: 599px) {
+  :root[data-skin='haunted'] .page-title h1 { font-size: 22px; }
+}
+@media (max-width: 1023px) and (min-width: 600px) and (max-height: 500px) {
+  :root[data-skin='haunted'] :is(.hh-frame, .hh-mist, .hh-web) { display: none; }
+  :root[data-skin='haunted'] .sleeve-artwork { --bezel: 0px; }
+  :root[data-skin='haunted'] .sleeve-spectrum { translate: none; }
+  /* The side-by-side controls sit over the moon, so they get the caption's plate too (no blur:
+     this footer holds the fixed More menu). */
+  :root[data-skin='haunted'] .expanded .player-footer { margin-bottom: 8px; border-left-color: transparent; border-radius: 14px; outline: 1px solid var(--trim); outline-offset: -5px; background: color-mix(in oklab, var(--hh-base) 86%, transparent); }
+}
+
+/* ── Performance mode: no bats or fog drift; the scene is already still. */
+:root[data-skin='haunted'][data-performance] {
+  .hh-bats { display: none; opacity: 0; }
+  .hh-fog::after { display: none; }
+  .hh-web { filter: none; }
+}
+
+/* ── Nightfall, once per load: the moon rises, the hollow darkens in, the fog gathers. */
+:root[data-skin='haunted'][data-boot] {
+  .hh-moon { animation: hh-rise 2000ms var(--ease-out) both; }
+  .hh-hills { animation: hh-fade 1200ms var(--ease-out) 300ms both; }
+  .hh-ground { animation: hh-fade 1400ms var(--ease-out) 200ms both; }
+  .hh-fog { animation: hh-fade 2400ms var(--ease-out) 500ms both; }
+}
+@keyframes hh-rise { from { translate: -50% 30%; opacity: 0; } }
+
+/* Under a modal's blurred backdrop the ember ring holds still (see overdrive.css). */
+:root[data-skin='haunted']:has(dialog[open]) .transport .play-button::after { animation-play-state: paused !important; }
+
+@media (prefers-reduced-motion: reduce) {
+  :root[data-skin='haunted'] {
+    .hh-scene, .hh-bat, .hh-bat path, .hh-window, .hh-lantern, .hh-fog::before, .hh-fog::after, .hh-frame::after, .transport .play-button::after { animation: none !important; }
+    .hh-bats, .hh-mist { display: none; opacity: 0; }
+    .shelf-row > li:hover .shelf-art .artwork, .playlist-tile:hover .playlist-cover { transform: none; }
+  }
+  :root[data-skin='haunted'][data-boot] :is(.hh-moon, .hh-hills, .hh-ground, .hh-fog) { animation: none; }
+}
+
+/* Lyrics panel (components/lyrics.css): the caption's dark plate and bone trim, with the sung line lit by candlelight. */
+:root[data-skin='haunted'] .lyrics-panel { border: 0; outline: 1px solid var(--trim); outline-offset: -6px; background: color-mix(in oklab, var(--hh-base) 74%, transparent); }
+:root[data-skin='haunted'] .synced .lyrics-lines li.current { color: var(--hh-candle); text-shadow: 0 0 18px color-mix(in oklab, var(--hh-pumpkin) 45%, transparent); }
+:root[data-skin='haunted'] .lyrics-credit { font-family: var(--display); font-size: 12px; letter-spacing: .06em; }

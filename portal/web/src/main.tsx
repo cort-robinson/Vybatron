@@ -2,6 +2,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import '@fontsource-variable/archivo/wdth.css';
 import '@fontsource/michroma/latin.css';
+import '@fontsource-variable/cinzel/wght.css';
 import { App } from './App';
 import { applyPerformance, applySkin, initialPerformance, initialSkin, loadLook } from './skin';
 import './styles.css';

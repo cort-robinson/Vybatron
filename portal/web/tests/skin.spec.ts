@@ -31,6 +31,47 @@ test('Fantastic Four is opt-in: it swaps in the Earth-828 scenery and the sleeve
   await expect(page.locator('.sleeve-artwork .od-cover-hud')).toHaveCount(0);
 });
 
+test('Haunted is opt-in: it swaps in the moonlit hollow and the candlelit sleeve frame, loads only when chosen, and persists', async ({ page }) => {
+  const requested: string[] = [];
+  page.on('request', request => { if (/\/assets\/haunted-[^/]*\.css$/i.test(request.url())) requested.push(request.url()); });
+  await mockPortal(page); await page.goto('/');
+  await expect(page.getByRole('button', { name: 'Pause playback' })).toBeEnabled();
+  expect(requested).toEqual([]);
+  await openSettings(page);
+  await page.getByLabel('Portal look').selectOption('haunted');
+  await expect(page.locator('html')).toHaveAttribute('data-skin', 'haunted');
+  await expect(page.locator('.hh-scene')).toHaveCount(1);
+  await expect(page.locator('.hh-scene .hh-moon')).toHaveCount(1);
+  await expect(page.locator('.od-horizon, .ff-scene')).toHaveCount(0);
+  expect(requested).toHaveLength(1);
+  await expect(page.getByText('All Hallows’ Eve')).toBeVisible();
+  // Its headings take the inscription face; names and copy keep Archivo.
+  expect(await page.locator('.page-title h1').evaluate(element => getComputedStyle(element).fontFamily)).toContain('Cinzel');
+  expect(await page.locator('.setting-row p').first().evaluate(element => getComputedStyle(element).fontFamily)).toContain('Archivo');
+  await page.reload();
+  await expect(page.locator('html')).toHaveAttribute('data-skin', 'haunted');
+  await expect(page.locator('.hh-bats').first()).toHaveCSS('opacity', '0');
+  await page.getByRole('button', { name: 'Open player', exact: true }).click();
+  await expect(page.locator('.sleeve-artwork .hh-frame')).toHaveCount(1);
+  await expect(page.locator('.sleeve-artwork .hh-web')).toHaveAttribute('aria-hidden', 'true');
+  await expect(page.locator('.sleeve-artwork :is(.ff-tv, .od-cover-hud)')).toHaveCount(0);
+  // Its bats fly only behind the sleeve; reading pages keep a still sky.
+  await expect(page.locator('.hh-bats').first()).toHaveCSS('opacity', '1');
+});
+
+test('Haunted holds still under reduced motion: no bats, no fog drift, no breath of fog on a new track', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.addInitScript(() => localStorage.setItem('vybertron.skin', 'haunted'));
+  await mockPortal(page); await page.goto('/');
+  await expect(page.getByRole('button', { name: 'Pause playback' })).toBeEnabled();
+  await expect(page.locator('.hh-scene')).toHaveCount(1);
+  await expect(page.locator('.hh-bats').first()).toHaveCSS('display', 'none');
+  await expect(page.locator('.hh-lantern').first()).toHaveCSS('animation-name', 'none');
+  expect(await page.locator('.hh-fog').first().evaluate(element => getComputedStyle(element, '::before').animationName)).toBe('none');
+  await page.getByRole('button', { name: 'Open player', exact: true }).click();
+  await expect(page.locator('.sleeve-artwork .hh-mist')).toHaveCSS('display', 'none');
+});
+
 // Record the look's styles at the instant the app first commits and whenever data-skin flips;
 // a look applied before its stylesheet arrives would flash another one.
 async function watchLook(page: Page) {

@@ -24,8 +24,12 @@ const classic: LookScene = {
   colors: (_, ground, glow) => [[ground, 1], [glow[0], 1], [glow[1], 1], [glow[2], 1]],
   create: () => ({ measure: () => undefined, feed: () => undefined }),
 };
-// Fantastic ships in its own chunk with the look, so it loads only when someone picks it.
-const lazy = { fantastic: () => import('./fantastic').then(module => module.fantastic) };
+// The opt-in looks ship in their own chunks with the look, so each loads only when someone picks it.
+// Each is found by the root of its DOM scenery.
+const lazy: [string, () => Promise<LookScene>][] = [
+  ['.ff-scene', () => import('./fantastic').then(module => module.fantastic)],
+  ['.hh-scene', () => import('./haunted').then(module => module.haunted)],
+];
 const drifts = [[-9, 7, 1.12, 46], [10, -6, .92, 58], [-12, -8, 1.2, 38]] as const;
 const MAX_GLASS = 6;
 // Ambient drift and the rolling floor read as smooth at 30fps and cost half the GPU time; a
@@ -91,15 +95,16 @@ export function startScene(canvas: HTMLCanvasElement, scene: HTMLElement, fail: 
     }
     return prepared.get(look);
   };
-  const loaded = new Map<string, LookScene>();
+  const loaded = new Map<string, LookScene>(); const loading = new Set<string>();
   const lookOf = (top: HTMLElement): LookScene | undefined => {
     if (overdrive.matches(top)) return overdrive;
-    if (top.querySelector('.ff-scene')) {
-      const look = loaded.get('fantastic');
-      if (!look && !loaded.has('loading')) { loaded.set('loading', classic); void lazy.fantastic().then(value => { loaded.set('fantastic', value); wake(); }, () => loaded.delete('loading')); }
+    for (const [root, load] of lazy) {
+      if (!top.querySelector(root)) continue;
+      const look = loaded.get(root);
+      if (!look && !loading.has(root)) { loading.add(root); void load().then(value => { loaded.set(root, value); loading.delete(root); wake(); }, () => loading.delete(root)); }
       return look;
     }
-    return top.querySelector('.od-horizon, .ff-scene') ? undefined : classic;
+    return top.querySelector('.od-horizon') ? undefined : classic;
   };
 
   // A cover is pre-blurred once into a small texture; the shader only stretches it.
@@ -142,7 +147,7 @@ export function startScene(canvas: HTMLCanvasElement, scene: HTMLElement, fail: 
   const paletteOf = (look: LookScene, room: HTMLElement) => {
     const value = (name: string) => hex(room.style.getPropertyValue(name));
     const names = ['--accent', '--ground', '--glow-1', '--glow-2', '--glow-3'];
-    const key = look.vignette + names.map(value).join() + (look === classic ? 'c' : look === overdrive ? 'o' : 'f');
+    const key = look.vignette + names.map(value).join() + (look === classic ? 'c' : look === overdrive ? 'o' : lazy.findIndex(([root]) => loaded.get(root) === look));
     let colors = palettes.get(key);
     if (!colors) { colors = flatten(look.colors(value('--accent'), value('--ground'), [value('--glow-1'), value('--glow-2'), value('--glow-3')])); palettes.set(key, colors); if (palettes.size > 16) palettes.delete(palettes.keys().next().value!); }
     return colors;

@@ -1,12 +1,13 @@
 import { useSyncExternalStore } from 'react';
 import type { Skin } from '../skin';
 
-export type PresetId = 'milkdrop' | 'gridrunner' | 'cosmic' | 'receiver';
+export type PresetId = 'milkdrop' | 'gridrunner' | 'cosmic' | 'receiver' | 'pumpkins' | 'witching';
 export const PRESETS: readonly { id: PresetId; name: string }[] = [
   { id: 'milkdrop', name: 'MilkDrop' }, { id: 'gridrunner', name: 'Gridrunner' }, { id: 'cosmic', name: 'Cosmic Broadcast' }, { id: 'receiver', name: 'Receiver' },
+  { id: 'pumpkins', name: 'Pumpkin Patch' }, { id: 'witching', name: 'Witching Hour' },
 ];
 // Until someone picks one, the visualizer follows the look.
-const bySkin: Record<Skin, PresetId> = { overdrive: 'gridrunner', fantastic: 'cosmic', classic: 'receiver' };
+const bySkin: Record<Skin, PresetId> = { overdrive: 'gridrunner', fantastic: 'cosmic', haunted: 'pumpkins', classic: 'receiver' };
 
 const key = 'vybertron.visualizer';
 // MilkDrop took Neon's place in the picker, and someone who had chosen Neon keeps that place.

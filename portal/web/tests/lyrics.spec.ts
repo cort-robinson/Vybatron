@@ -75,7 +75,7 @@ test('long lyrics open scrolled to the sung line', async ({ page }) => {
   expect(await panel.evaluate(element => element.scrollTop)).toBeGreaterThan(0);
 });
 
-for (const skin of ['overdrive', 'fantastic', 'classic'] as const) {
+for (const skin of ['overdrive', 'fantastic', 'haunted', 'classic'] as const) {
   for (const width of [390, 1280]) {
     test(`${skin} lyrics panel fits the open player at ${width}px`, async ({ page }) => {
       await page.setViewportSize({ width, height: width < 600 ? 844 : 800 });

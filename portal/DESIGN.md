@@ -305,6 +305,37 @@ look applies once its stylesheet is in, so it never flashes and other looks neve
   and the horizon changes place without travelling (the planet only fades);
   performance mode also drops the comet and water shimmer.
 
+## Haunted look
+
+Opt-in (Settings → Portal look → Haunted); never the default. The receiver left on in an empty
+house on All Hallows' Eve. It lives in `src/haunted.css`, scoped to `:root[data-skin='haunted']`,
+plus aria-hidden scenery in `src/components/Haunted.tsx` and its WebGL room in
+`src/scene/haunted.ts`, loaded as their own chunks only when the look is chosen.
+
+- **Scenery:** a night sky over a seeded hollow: two ridges of hills, bare gnarled trees, a
+  leaning churchyard and an iron fence, a crooked house whose windows flicker, and
+  jack-o'-lanterns burning in the grass. A full moon warmed by the cover rises behind the sleeve
+  cover (on reading pages it stands low over the hills, clear of the text; on a phone it peeks
+  from behind the cover's corner). Ground fog drifts through the low ground. Bats crossing the
+  moon and will-o'-wisps in the fog appear only in the sleeve and at sign-in.
+- **Color:** night violet, moon bone, jack-o'-lantern orange, candle gold and a sparing witch
+  green are scenery and trim only. The cover accent still drives every action and state; text
+  stays bone on near-black.
+- **Material:** blackened iron and old parchment: hairline bone trim on dark violet panels, a
+  candle flame on the current navigation item, an ember ring around play, and the sleeve cover
+  hung in an iron frame with a cobweb across its corner and candlelight beneath it. Cinzel
+  (self-hosted) is for the wordmark and headings only; names, numbers, and copy stay in Archivo.
+- **Caption plate:** in the sleeve, the now-playing title and state notes sit on a dark plate so
+  the moon and the hills never run under text.
+- **Alive:** candles, windows, fog, bats and the ember ring move only while the session plays
+  live. On track change a breath of fog drifts across the cover. Reduced motion removes all of
+  it; performance mode also drops the bats and the second fog bank.
+- **Visualizers:** Pumpkin Patch (its default) is a row of jack-o'-lanterns singing the
+  spectrum: each grin opens with its band, its eyes burn with the band's held peak, and the
+  candles flare with the bass and the beat. Witching Hour is a churchyard under a great moon,
+  where a ghost rises from each grave as high as its band has reached, bats wheel round the
+  moon, fog rolls in with the bass and strong beats bring lightning.
+
 ## Performance mode
 
 Settings → On this device → Performance mode (off by default, every look). It sets

@@ -483,6 +483,22 @@ test('Left from the start of a row reaches the navigation\'s current page, and R
   expect(await focused(page)).toBe('Add Night Drive to the queue');
 });
 
+test('Right from the navigation after the page scrolled returns to a control on the screen, not one scrolled away', async ({ page }) => {
+  await tv(page);
+  await browse(page);
+  await shelfSong(page, 'On repeat in this server', 'Night Drive').focus();
+  await press(page, 'ArrowLeft');
+  expect(await focused(page)).toBe('Home');
+  // The page scrolls on while the navigation keeps focus, taking the remembered song out of sight.
+  await page.evaluate(() => scrollBy({ top: 900, behavior: 'instant' }));
+  await expect(shelfSong(page, 'On repeat in this server', 'Night Drive')).not.toBeInViewport();
+  const scrolled = await page.evaluate(() => scrollY);
+  await press(page, 'ArrowRight');
+  expect(await within(page, '[data-tv-region="content"]')).toBe(true);
+  expect(await focused(page)).not.toBe('Add Night Drive to the queue');
+  expect(await page.evaluate(() => scrollY)).toBeGreaterThanOrEqual(scrolled - 80);
+});
+
 test('Down from the last page in the side navigation goes to the account below it, not the page beside it', async ({ page }) => {
   await tv(page, large);
   await browse(page);

@@ -239,7 +239,7 @@ function travel(from: HTMLElement, direction: Direction, layer: HTMLElement): (I
     const side = nav.getBoundingClientRect(); const page = region.getBoundingClientRect();
     if (side.width && (isForward(direction) ? side.left >= page.right - 1 : side.right <= page.left + 1) && overlap(across(side, direction), across(page, direction)) > 0) {
       const entry = inside(nav); const found = lane(origin, entry, direction, lineUp) ?? least(entry, item => [score(origin, item.box, direction)]);
-      if (found) return { ...arrive(found, nav, items, origin, direction), keep: false };
+      if (found) return { ...arrive(found, nav, outside, origin, direction), keep: false };
     }
   }
   // Up and down go only to the parts above or below this one (the sidebar's account below its
@@ -249,7 +249,8 @@ function travel(from: HTMLElement, direction: Direction, layer: HTMLElement): (I
   // Sideways, chrome can always reach the page beside it; the page's rows never slip into others.
   if (!found && !content && isHorizontal(direction)) found = least(outside.filter(item => ahead(origin, item.box, direction)), item => [score(origin, item.box, direction)]);
   if (!found) return null;
-  const landed = arrive(found, regionOf(found.element, layer), items, origin, direction);
+  // A remembered control counts only if it is one of these: never one scrolled away from fixed chrome.
+  const landed = arrive(found, regionOf(found.element, layer), outside, origin, direction);
   return { ...landed, keep: landed === found };
 }
 function closest(origin: DOMRect, list: HTMLElement[]) {

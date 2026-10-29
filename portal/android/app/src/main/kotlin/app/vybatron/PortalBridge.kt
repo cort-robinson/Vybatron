@@ -10,7 +10,8 @@ import org.json.JSONObject
  *
  * Each request is `{"id": n, "type": "..."}` and gets one reply,
  * `{"id": n, "ok": true, "result": {...}}` or `{"id": n, "ok": false, "error": "..."}`.
- * Native code also sends events, `{"event": "...", ...}`, with no id.
+ * Native code also sends events, `{"event": "...", ...}`, with no id. One event asks the page
+ * something: `app.back`, which the page answers with the request `app.back` ([BackRelay]).
  * Only named operations exist; there is no general request.
  */
 object PortalBridge {
@@ -25,7 +26,12 @@ object PortalBridge {
         fun handle(request: PlayerRequest): Result<JSONObject>
     }
 
-    fun respond(message: String?, info: AppInfo, player: Player? = null): String {
+    /** Takes the page's answer to the app's `app.back` event ([BackRelay]). */
+    fun interface Back {
+        fun answer(back: Int, handled: Boolean)
+    }
+
+    fun respond(message: String?, info: AppInfo, player: Player? = null, back: Back? = null): String {
         val request = runCatching { JSONObject(message ?: "") }.getOrNull()
             ?: return failure(null, "bad_request")
         val id = request.opt("id")
@@ -37,6 +43,17 @@ object PortalBridge {
             return success(id, JSONObject().put("platform", "android").put("version", info.version).put("build", info.build)
                 .put("form", info.form)
                 .put("features", JSONArray(FEATURES)))
+        }
+        if (type == "app.back") {
+            // The page's answer to the app's Back (ADR-0019): `back` names the question, `handled` says
+            // whether the page closed something of its own. A late or unknown answer is still accepted;
+            // the app ignores it.
+            val number = request.opt("back")
+            val handled = request.opt("handled")
+            if (number !is Int || handled !is Boolean) return failure(id, "bad_request")
+            val relay = back ?: return failure(id, "unavailable")
+            relay.answer(number, handled)
+            return success(id, JSONObject())
         }
         if (!type.startsWith("player.")) return failure(id, "unknown_type")
         val parsed = PlayerRequest.parse(type, request) ?: return failure(id, "bad_request")

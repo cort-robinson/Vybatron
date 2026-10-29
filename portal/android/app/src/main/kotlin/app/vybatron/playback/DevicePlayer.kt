@@ -328,6 +328,8 @@ class DevicePlayer(context: Context, private val base: String, private val cooki
         var cause: Throwable? = error
         while (cause != null && cause !is HttpDataSource.InvalidResponseCodeException) cause = cause.cause
         val response = cause as? HttpDataSource.InvalidResponseCodeException
+        // A refused audio request can still carry the day's session renewal.
+        response?.let { cookies.renewFrom(it.dataSpec.uri.toString(), it.headerFields) }
         val status = response?.responseCode ?: 0
         val key = current.videoId ?: current.id
         if (status in setOf(0, 206, 429, 503) && key !in retried) {
@@ -350,12 +352,8 @@ class DevicePlayer(context: Context, private val base: String, private val cooki
         if (!warmed.add(videoId)) return
         val url = audioUrl(videoId)
         worker.execute {
-            runCatching {
-                val connection = open(url)
-                connection.setRequestProperty("Range", "bytes=0-0")
-                connection.inputStream.use { it.read() }
-                connection.disconnect()
-            }.onFailure { main.post { warmed.remove(videoId) } }
+            if (runCatching { warmUp(open(url), cookies) }.getOrDefault(false)) return@execute
+            main.post { warmed.remove(videoId) }
         }
     }
 
@@ -402,7 +400,7 @@ class DevicePlayer(context: Context, private val base: String, private val cooki
         .setTransferListener(object : TransferListener {
             override fun onTransferInitializing(source: DataSource, dataSpec: DataSpec, isNetwork: Boolean) {}
             override fun onTransferStart(source: DataSource, dataSpec: DataSpec, isNetwork: Boolean) {
-                if (sameOrigin(dataSpec.uri.toString())) (source as? HttpDataSource)?.responseHeaders?.let { cookies.renew(it) }
+                (source as? HttpDataSource)?.responseHeaders?.let { cookies.renewFrom(dataSpec.uri.toString(), it) }
             }
             override fun onBytesTransferred(source: DataSource, dataSpec: DataSpec, isNetwork: Boolean, bytesTransferred: Int) {}
             override fun onTransferEnd(source: DataSource, dataSpec: DataSpec, isNetwork: Boolean) {}

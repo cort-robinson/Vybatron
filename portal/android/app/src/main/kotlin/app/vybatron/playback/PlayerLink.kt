@@ -98,9 +98,10 @@ class PlayerLink(
     private var lastVolume = 100
     private var lastRepeat = Repeat.OFF
     private var lastHead: Head? = null
-    // A song that came round again on repeat: this device holds it under its old entry, the store
-    // under a fresh one, which [alias] names once the store has caught up.
-    private var wrapped: String? = null
+    // Song changes held back from a song that came round again on repeat on, in order (null: the
+    // music ended). This device holds such a song under its old entry, the store under a fresh one,
+    // which [alias] names once the store has caught up with the changes before it.
+    private val pending = ArrayList<NativeTrack?>()
     private val alias = HashMap<String, String>()
     private val statusListeners = ArrayList<(JSONObject) -> Unit>()
     private var announced: String? = null
@@ -145,7 +146,7 @@ class PlayerLink(
         outbox.clear(); sending = null
         retry?.invoke(); retry = null; retryAttempt = 0
         ticker?.invoke(); ticker = null
-        lastEntry = null; lastHead = null; wrapped = null; alias.clear()
+        lastEntry = null; lastHead = null; pending.clear(); alias.clear()
         player = null; sawPlayer = false; stopping = false; adopting = false; activatingAbove = null
     }
 
@@ -229,6 +230,9 @@ class PlayerLink(
         val me = session ?: return
         reconnect?.invoke(); reconnect = null
         linked = false
+        // Each connection's first player is a first look: whatever happened meanwhile (the page may
+        // have played under a generation of its own) is taken over under a fresh generation.
+        sawPlayer = false
         val name = URLEncoder.encode(me.name, "UTF-8")
         net.open("device=${me.deviceId}&kind=android&name=$name&protocol=1")
     }
@@ -273,7 +277,7 @@ class PlayerLink(
     /** This device starts playing the player as its active device, under [next]'s generation. */
     private fun begin(next: SharedPlayer) {
         outbox.clear(); retry?.invoke(); retry = null; retryAttempt = 0
-        lastHead = null; lastVolume = next.volume; lastRepeat = next.repeat; wrapped = null; alias.clear()
+        lastHead = null; lastVolume = next.volume; lastRepeat = next.repeat; pending.clear(); alias.clear()
         owned = Owned(next.generation, 0)
         startTicker()
         if (stopping) {
@@ -298,7 +302,7 @@ class PlayerLink(
         val guild = next.guildId ?: session?.guildId
         val current = next.current?.native()
         lastEntry = if (current != null) next.current.entryId else null
-        alias.clear(); wrapped = null
+        alias.clear(); pending.clear()
         if (guild == null) { local.handle(PlayerRequest.Stop); return }
         local.handle(PlayerRequest.Load(guild, current, next.queue.mapNotNull { it.native() }, next.history.mapNotNull { it.native() },
             next.positionAt(serverNow()), playing && current != null, lastVolume, lastRepeat))
@@ -310,7 +314,7 @@ class PlayerLink(
     private fun follow(next: SharedPlayer) {
         // This device's own song changes come first; the store catches up with them.
         if (outbox.any { it.advance != null }) return
-        if (wrapped != null) { resolveWrap(next); return }
+        if (pending.isNotEmpty()) { resolvePending(next); return }
         val state = local.state()
         val current = NativeTrack.parse(state.opt("current"))
         val storeEntry = next.current?.entryId
@@ -328,23 +332,25 @@ class PlayerLink(
     }
 
     /**
-     * A song that came round again on repeat goes to the store as the store's fresh entry for
-     * it in the queue, once the store has the song changes before it: by its old entry, which
-     * is in history, the store would take it for going back.
+     * The next held-back song change goes to the store once it has the changes before it. A
+     * song that came round again on repeat is the store's fresh entry for it in the queue: by
+     * its old entry, which is in history, the store would take it for going back.
      */
-    private fun resolveWrap(next: SharedPlayer) {
-        val held = wrapped ?: return
-        val state = local.state()
-        val current = NativeTrack.parse(state.opt("current"))
-        if (current?.entryId != held) { wrapped = null; return }
-        val fresh = next.queue.firstOrNull { it.track.optString("id") == current.id }?.entryId ?: newEntryId()
-        alias[held] = fresh
-        wrapped = null
+    private fun resolvePending(next: SharedPlayer) {
+        if (pending.isEmpty()) return
+        val song = pending.removeAt(0)
+        val raw = song?.entryId
+        val to = when {
+            song == null || raw == null -> null
+            next.queue.any { it.entryId == raw } -> raw
+            else -> next.queue.firstOrNull { it.track.optString("id") == song.id }?.entryId ?: newEntryId()
+        }
+        if (raw != null && to != null) alias[raw] = to
         val from = lastEntry
-        lastEntry = fresh
+        lastEntry = to
         lastHead = null
-        report(advance = advance(from, fresh, current.playerTrack()))
-        sync(state, force = false)
+        report(advance = advance(from, to, song?.playerTrack()))
+        if (pending.isEmpty()) sync(local.state(), force = false)
     }
 
     /** Another device plays now: stop at once. */
@@ -352,7 +358,7 @@ class PlayerLink(
         owned = null
         outbox.clear(); retry?.invoke(); retry = null
         ticker?.invoke(); ticker = null
-        lastEntry = null; lastHead = null; wrapped = null; alias.clear()
+        lastEntry = null; lastHead = null; pending.clear(); alias.clear()
         local.handle(PlayerRequest.Stop)
     }
 
@@ -378,25 +384,29 @@ class PlayerLink(
         val raw = current?.entryId
         val entry = entryOf(current)
         // A song without an entry wasn't handed over by the store; it isn't the shared player's.
-        if ((current == null || raw != null) && entry != lastEntry && raw != wrapped) {
-            if (raw != null && tracks(state, "history").any { it.entryId == raw }) {
-                // Round again on repeat: the store calls this song by a fresh entry, known once it has caught up.
-                wrapped = raw
+        if (current == null || raw != null) {
+            val held = pending.lastOrNull()
+            if (pending.isNotEmpty()) {
+                // Held back behind a song that came round again: this one waits its turn.
+                if ((held == null) != (current == null) || held?.entryId != raw) { pending.add(current); lastHead = null }
+            } else if (entry != lastEntry) {
                 lastHead = null
-                player?.let { if (outbox.none { item -> item.advance != null }) resolveWrap(it) }
-                return
+                if (raw != null && tracks(state, "history").any { it.entryId == raw }) {
+                    // Round again on repeat: the store calls this song by a fresh entry, known once it has caught up.
+                    pending.add(current)
+                    player?.let { if (outbox.none { item -> item.advance != null }) resolvePending(it) }
+                } else {
+                    val from = lastEntry
+                    lastEntry = entry
+                    report(advance = advance(from, entry, current?.playerTrack()))
+                }
             }
-            wrapped = null
-            val from = lastEntry
-            lastEntry = entry
-            lastHead = null
-            report(advance = advance(from, entry, current?.playerTrack()))
         }
         val volume = state.optInt("volume", lastVolume)
         if (volume != lastVolume) { lastVolume = volume; report(volume = volume) }
         val repeat = Repeat.of(state.optString("repeat")) ?: lastRepeat
         if (repeat != lastRepeat) { lastRepeat = repeat; report(repeat = repeat) }
-        if (wrapped == null) sync(state, force = false)
+        if (pending.isEmpty()) sync(state, force = false)
     }
 
     /** The playhead, reported whenever it moves other than by playing on: play, pause, seek, a new song. */
@@ -419,7 +429,7 @@ class PlayerLink(
             ticker = null
             if (owned == null) return@after
             val state = local.state()
-            if (state.optString("status") == "playing" && wrapped == null) sync(state, force = true)
+            if (state.optString("status") == "playing" && pending.isEmpty()) sync(state, force = true)
             startTicker()
         }
     }

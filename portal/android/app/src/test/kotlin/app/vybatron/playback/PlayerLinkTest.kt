@@ -314,4 +314,76 @@ class PlayerLinkTest {
         assertEquals(Shared.id("a"), stop.getJSONObject("advance").getString("from")); assertEquals(JSONObject.NULL, stop.getJSONObject("advance").get("to"))
         assertEquals(2, stop.getInt("generation")); assertEquals(1, stop.getInt("seq"))
     }
+
+    private fun loads() = local.requests.filterIsInstance<PlayerRequest.Load>().size
+    /** Answers the reports waiting ahead of the next song change, and returns that change. */
+    private fun nextAdvance(): JSONObject {
+        while (net.waiting.isNotEmpty() && !net.waiting.first().body.has("advance")) net.answer()
+        return net.waiting.first().body.getJSONObject("advance")
+    }
+    private fun pair(advance: JSONObject) = advance.optString("from") to (if (advance.isNull("to")) null else advance.getString("to"))
+
+    @Test fun stopLetsTheStoresSongGoAndNothingRestarts() {
+        playing()
+        net.answer()
+        link.handle(PlayerRequest.Stop)
+        assertEquals(Shared.id("a") to null, pair(nextAdvance()))
+        net.answer(200, Shared.view(Shared.player(generation = 2, active = me, history = listOf(Shared.entry("a")), queue = listOf(Shared.entry("b")), updatedAt = 50)))
+        assertEquals(null, local.songs.current)
+        assertEquals(1, loads())
+    }
+
+    @Test fun theLastSongEndingLetsTheStoresSongGoAndNothingRestarts() {
+        playing(queue = emptyList())
+        net.answer()
+        local.end()
+        assertEquals(null, local.songs.current)
+        assertEquals(Shared.id("a") to null, pair(nextAdvance()))
+        net.answer(200, Shared.view(Shared.player(generation = 2, active = me, history = listOf(Shared.entry("a")), updatedAt = 50)))
+        assertEquals(null, local.songs.current)
+        assertEquals(1, loads())
+    }
+
+    @Test fun reconnectingToFindThePagePlayingTakesOverUnderAFreshGeneration() {
+        link.start(session)
+        stream(Shared.player(generation = 1, current = Shared.entry("a"), queue = listOf(Shared.entry("b"))))
+        link.onEnded(null)
+        // Meanwhile the page made this device the active one (generation 2) and loaded the app itself.
+        local.handle(PlayerRequest.Load("1", Entry(Shared.id("a"), song("a").playerTrack()).native(), listOf(Entry(Shared.id("b"), song("b").playerTrack()).native()!!),
+            emptyList(), 0, true, 100, Repeat.OFF))
+        timers.fire()
+        stream(Shared.player(generation = 2, active = me, current = Shared.entry("a"), queue = listOf(Shared.entry("b")), playing = true))
+        assertEquals("activate", net.waiting.single().body.getString("op"))
+        net.answer(200, Shared.view(Shared.player(generation = 3, active = me, current = Shared.entry("a"), queue = listOf(Shared.entry("b")), playing = true, updatedAt = 50)))
+        val first = net.waiting.single().body
+        assertEquals(3 to 1, first.getInt("generation") to first.getInt("seq"))
+        // The music the page started plays on, not reloaded from the store.
+        assertEquals(1, loads())
+    }
+
+    @Test fun twoRoundsOnRepeatOfflineReachTheStoreInOrder() {
+        playing(repeat = "queue")
+        net.reply(PlayerLink.Reply.Unreachable)
+        // Offline: A, B, A again, B again.
+        local.end(); local.end(); local.end()
+        assertEquals("B", local.songs.current?.title)
+        timers.fire()
+        assertEquals(Shared.id("a") to Shared.id("b"), pair(nextAdvance()))
+        val a2 = JSONObject().put("entryId", Shared.id("a2")).put("track", song("a").playerTrack())
+        val b2 = JSONObject().put("entryId", Shared.id("b2")).put("track", song("b").playerTrack())
+        val a3 = JSONObject().put("entryId", Shared.id("a3")).put("track", song("a").playerTrack())
+        net.answer(200, Shared.view(Shared.player(generation = 2, active = me, current = Shared.entry("b"), queue = listOf(a2), history = listOf(Shared.entry("a")),
+            playing = true, repeat = "queue", updatedAt = 50)))
+        assertEquals(Shared.id("b") to Shared.id("a2"), pair(nextAdvance()))
+        net.answer(200, Shared.view(Shared.player(generation = 2, active = me, current = a2, queue = listOf(b2), history = listOf(Shared.entry("b"), Shared.entry("a")),
+            playing = true, repeat = "queue", updatedAt = 60)))
+        assertEquals(Shared.id("a2") to Shared.id("b2"), pair(nextAdvance()))
+        net.answer(200, Shared.view(Shared.player(generation = 2, active = me, current = b2, queue = listOf(a3), history = listOf(a2, Shared.entry("b"), Shared.entry("a")),
+            playing = true, repeat = "queue", updatedAt = 70)))
+        // In step: B plays on as the store's current song, with the store's queue after it.
+        assertEquals("B", local.songs.current?.title)
+        assertEquals(listOf(Shared.id("a3")), local.songs.queue.map { it.entryId })
+        assertEquals(1, loads())
+        assertTrue(net.reports().none { it.has("advance") && it.getJSONObject("advance").optString("to") == Shared.id("a") })
+    }
 }

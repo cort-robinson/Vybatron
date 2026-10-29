@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The Android TV launcher's banner (320x180 px at xhdpi): the portal's waveform mark and
+     wordmark on its background, drawn here so no image is needed. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="160dp"
+    android:height="90dp"
+    android:viewportWidth="320"
+    android:viewportHeight="180">
+    <path android:fillColor="@color/banner_background" android:pathData="M0,0h320v180h-320z" />
+    <path
+        android:pathData="M27.4,75.7 L27.4,104.3 M43.7,50.9 L43.7,129.1 M60.0,63.8 L60.0,116.2 M76.3,75.7 L76.3,104.3 M92.3,69.3 L92.3,110.7"
+        android:strokeColor="@color/brand_accent"
+        android:strokeLineCap="round"
+        android:strokeWidth="6.2" />
+    <group android:translateX="112.0" android:translateY="76">
+        <path
+            android:pathData="M0,0 L8.5,28 L17,0"
+            android:strokeColor="@color/portal_text"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round"
+            android:strokeWidth="4.4" />
+    </group>
+    <group android:translateX="135.5" android:translateY="76">
+        <path
+            android:pathData="M0,0 L8.5,13 L17,0 M8.5,13 L8.5,28"
+            android:strokeColor="@color/portal_text"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round"
+            android:strokeWidth="4.4" />
+    </group>
+    <group android:translateX="159.0" android:translateY="76">
+        <path
+            android:pathData="M0,0 L0,28 M0,0 L8.5,0 Q15.5,0 15.5,7 Q15.5,14 8.5,14 L0,14 M8.5,14 L10,14 Q17,14 17,21 Q17,28 10,28 L0,28"
+            android:strokeColor="@color/portal_text"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round"
+            android:strokeWidth="4.4" />
+    </group>
+    <group android:translateX="182.5" android:translateY="76">
+        <path
+            android:pathData="M0,28 L8.5,0 L17,28 M3.6,17 L13.4,17"
+            android:strokeColor="@color/portal_text"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round"
+            android:strokeWidth="4.4" />
+    </group>
+    <group android:translateX="206.0" android:translateY="76">
+        <path
+            android:pathData="M0,0 L17,0 M8.5,0 L8.5,28"
+            android:strokeColor="@color/portal_text"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round"
+            android:strokeWidth="4.4" />
+    </group>
+    <group android:translateX="229.5" android:translateY="76">
+        <path
+            android:pathData="M0,28 L0,0 L9,0 Q16,0 16,7.5 Q16,15 9,15 L0,15 M8,15 L17,28"
+            android:strokeColor="@color/portal_text"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round"
+            android:strokeWidth="4.4" />
+    </group>
+    <group android:translateX="253.0" android:translateY="76">
+        <path
+            android:pathData="M8.5,0 C13.7,0 17,6 17,14 C17,22 13.7,28 8.5,28 C3.3,28 0,22 0,14 C0,6 3.3,0 8.5,0 Z"
+            android:strokeColor="@color/portal_text"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round"
+            android:strokeWidth="4.4" />
+    </group>
+    <group android:translateX="276.5" android:translateY="76">
+        <path
+            android:pathData="M0,28 L0,0 L17,28 L17,0"
+            android:strokeColor="@color/portal_text"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round"
+            android:strokeWidth="4.4" />
+    </group>
+</vector>

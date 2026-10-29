@@ -39,6 +39,8 @@ class PlayerLink(
     /** The portal's clock now, in ms (this device's clock corrected by the measured offset). */
     private val serverNow: () -> Long,
     private val localNow: () -> Long = System::currentTimeMillis,
+    /** The device kind this device registers as: `android`, or `tv` on a TV (ADR-0019). */
+    private val kind: String = "android",
 ) {
     interface Net {
         /** Opens the listener stream with [query], replacing any open one. */
@@ -234,7 +236,7 @@ class PlayerLink(
         // have played under a generation of its own) is taken over under a fresh generation.
         sawPlayer = false
         val name = URLEncoder.encode(me.name, "UTF-8")
-        net.open("device=${me.deviceId}&kind=android&name=$name&protocol=1")
+        net.open("device=${me.deviceId}&kind=$kind&name=$name&protocol=1")
     }
 
     private fun refuse() {

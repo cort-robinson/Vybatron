@@ -19,6 +19,13 @@ class PortalBridgeTest {
         assertEquals(1, reply.getJSONObject("result").getInt("build"))
         // The page stops reporting for an app that keeps its own connection to the shared player.
         assertEquals("player.shared", reply.getJSONObject("result").getJSONArray("features").getString(0))
+        assertEquals("phone", reply.getJSONObject("result").getString("form"))
+    }
+
+    @Test fun saysWhenItIsATv() {
+        val reply = JSONObject(PortalBridge.respond("""{"id":8,"type":"app.info"}""", PortalBridge.AppInfo("0.1.0", 1, DeviceForm.TV.form)))
+        assertEquals("tv", reply.getJSONObject("result").getString("form"))
+        assertEquals("android", reply.getJSONObject("result").getString("platform"))
     }
 
     @Test fun refusesUnknownOperations() {

@@ -3,4 +3,7 @@
     <!-- The portal's background and theme colour (manifest.webmanifest). -->
     <color name="portal_background">#0d0f14</color>
     <color name="portal_text">#e8eaf0</color>
+    <!-- The launcher icon's background and waveform (drawable-nodpi/launcher_art.png). -->
+    <color name="banner_background">#09121f</color>
+    <color name="brand_accent">#f20aa7</color>
 </resources>

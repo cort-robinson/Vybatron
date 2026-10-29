@@ -10,6 +10,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import app.vybatron.BuildConfig
+import app.vybatron.DeviceForm
 import app.vybatron.MainActivity
 import app.vybatron.PortalOrigin
 
@@ -39,7 +40,7 @@ class PlaybackService : MediaSessionService() {
             val run = Runnable(task)
             handler.postDelayed(run, ms)
             ({ handler.removeCallbacks(run) })
-        }, portal::serverNow)
+        }, portal::serverNow, kind = DeviceForm.of(this).kind)
         portal.link = shared
         connection = portal
         val open = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java)

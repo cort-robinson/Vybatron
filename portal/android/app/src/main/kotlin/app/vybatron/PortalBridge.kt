@@ -17,7 +17,8 @@ object PortalBridge {
     const val NAME = "vybatronNative"
     val FEATURES = listOf("player.shared")
 
-    data class AppInfo(val version: String, val build: Int)
+    /** [form]: `phone` or `tv`, from [DeviceForm]. */
+    data class AppInfo(val version: String, val build: Int, val form: String = DeviceForm.PHONE.form)
 
     /** Carries out a player request and answers with the player's state, or an error code. */
     fun interface Player {
@@ -32,7 +33,9 @@ object PortalBridge {
         if (type == "app.info") {
             // `player.shared`: the playback service keeps its own connection to the shared player and
             // reports for this device (ADR-0018), so the page only shows it and sends edits and controls.
+            // `form`: whether this is a phone or a TV (ADR-0019), which picks the page's layout and device kind.
             return success(id, JSONObject().put("platform", "android").put("version", info.version).put("build", info.build)
+                .put("form", info.form)
                 .put("features", JSONArray(FEATURES)))
         }
         if (!type.startsWith("player.")) return failure(id, "unknown_type")

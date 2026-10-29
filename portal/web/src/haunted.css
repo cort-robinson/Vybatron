@@ -257,14 +257,17 @@ REVERT: everything here is scoped to :root[data-skin='haunted']; Settings → Po
     /* The cover fills the sleeve's width, so the moon peeks out from behind its top corner. */
     .ambient-scene.immersive { --hh-horizon: 64%; --moon: clamp(180px, 54vw, 380px); --moon-x: 80%; --moon-top: calc(var(--moon) * -.1); }
     .sleeve-main > .player-identity, .sleeve-main > .player-context:has(> p) { padding: 8px 16px 10px; border-radius: 14px; }
-    .navigation { background: color-mix(in oklab, var(--hh-base) 92%, transparent); }
-    .nav-indicator { background: radial-gradient(60% 90% at 50% 100%, color-mix(in oklab, var(--hh-pumpkin) 14%, transparent), transparent); box-shadow: none; }
-    .nav-indicator::before { top: 7px; right: auto; left: 50%; width: 5px; height: 8px; margin: 0 0 0 -2.5px; }
     .page-title h1 { font-size: 25px; }
     .home-shelf-header h2 { font-size: 18px; }
     .compact-progress { --progress-fill: linear-gradient(90deg, var(--accent), color-mix(in oklab, var(--accent), var(--hh-pumpkin) 55%)); }
     .sleeve-artwork { --bezel: 7px; }
     .hh-frame { border-radius: 14px; }
+    /* On a TV the side navigation stays as on a wide screen (tv.ts); these restyle the tab bar. */
+    &:not([data-tv]) {
+      .navigation { background: color-mix(in oklab, var(--hh-base) 92%, transparent); }
+      .nav-indicator { background: radial-gradient(60% 90% at 50% 100%, color-mix(in oklab, var(--hh-pumpkin) 14%, transparent), transparent); box-shadow: none; }
+      .nav-indicator::before { top: 7px; right: auto; left: 50%; width: 5px; height: 8px; margin: 0 0 0 -2.5px; }
+    }
   }
 }
 @media (max-width: 599px) {

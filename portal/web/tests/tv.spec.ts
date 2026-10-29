@@ -383,16 +383,15 @@ const within = (page: Page, selector: string) => page.evaluate(selector => !!doc
 const shelfSong = (page: Page, shelf: string, song: string) => page.getByRole('list', { name: shelf }).getByRole('button', { name: `Add ${song} to the queue` });
 const large = { width: 1920, height: 1080 };
 
-test('Down from the tab bar stays on it, rather than diving into the page below the screen', async ({ page }) => {
+test('at 960×540 Down from the fixed player stays on it, and the page doesn\'t scroll on under it', async ({ page }) => {
   await tv(page);
   await browse(page);
+  await page.getByTestId('player').getByRole('button', { name: 'Open player for Evening Light' }).focus();
   const scrolled = await page.evaluate(() => scrollY);
   await press(page, 'ArrowDown');
-  expect(await focused(page)).toBe('Home');
+  expect(await focused(page)).toBe('Open player for Evening Light');
   expect(await page.evaluate(() => scrollY)).toBe(scrolled);
-  // Up goes to the player just above it, and on into the page.
-  await press(page, 'ArrowUp');
-  expect(await within(page, '[data-testid="player"]')).toBe(true);
+  // Up goes into the page on the screen above it.
   await press(page, 'ArrowUp');
   expect(await within(page, '[data-tv-region="content"]')).toBe(true);
 });
@@ -436,7 +435,7 @@ test('Up from the top of the page never reaches the hidden skip link', async ({ 
 test('Up from search results returns to the search bar that stays at the top, not past it', async ({ page }) => {
   await tv(page);
   await browse(page);
-  await press(page, 'ArrowRight');
+  await press(page, 'ArrowDown');
   expect(await focused(page)).toBe('Search');
   await press(page, 'Enter');
   const field = page.getByRole('searchbox', { name: 'Music search' });
@@ -516,7 +515,8 @@ test('a shelf remembers its song: up to its header and back down returns to it',
   await shelfSong(page, 'On repeat in this server', 'Night Drive').focus();
   await press(page, 'ArrowRight', 'ArrowRight');
   expect(await focused(page)).toBe('Add Golden Hour to the queue');
-  await press(page, 'ArrowUp');
+  // Up to the shelf's header, and over to Play all above its first song.
+  await press(page, 'ArrowUp', 'ArrowLeft');
   expect(await focused(page)).toBe('Play all of On repeat');
   await press(page, 'ArrowDown');
   expect(await focused(page)).toBe('Add Golden Hour to the queue');
@@ -540,6 +540,48 @@ test('a long queue over now playing scrolls on to its last song, and back to its
   await expect(options('Song 15')).toBeInViewport();
   for (let step = 0; step < 40 && !await options('Song 1').evaluate(button => button === document.activeElement); step++) await press(page, 'ArrowUp');
   await expect(options('Song 1')).toBeFocused();
+});
+
+test('at 960×540 a TV keeps the side navigation: no tab bar, and the page gets most of the screen', async ({ page }) => {
+  await tv(page);
+  await browse(page);
+  const layout = () => page.evaluate(() => {
+    const box = (selector: string) => document.querySelector(selector)!.getBoundingClientRect();
+    const nav = box('.navigation'); const content = box('[data-tv-region="content"]'); const player = box('[data-testid="player"]');
+    const tabs = Array.from(document.querySelectorAll('.navigation button')).filter(button => button.getClientRects().length).map(button => button.getBoundingClientRect());
+    return { beside: nav.right <= content.left, stacked: tabs.every((tab, index) => !index || tab.top >= tabs[index - 1].bottom - 1), aboveThePlayer: nav.bottom <= player.top,
+      position: getComputedStyle(document.querySelector('.navigation')!).position, page: (innerWidth - content.left) * (innerHeight - player.height) / (innerWidth * innerHeight) };
+  });
+  const { page: share, ...shape } = await layout();
+  expect(shape).toEqual({ beside: true, stacked: true, aboveThePlayer: true, position: 'static' });
+  expect(share).toBeGreaterThan(.65);
+  // Outside TV mode the same width keeps the phone's tab bar along the bottom.
+  await page.goto('/?tv=0');
+  await expect(page.getByRole('heading', { name: 'Home', level: 1 })).toBeAttached();
+  expect(await page.evaluate(() => getComputedStyle(document.querySelector('.navigation')!).position)).toBe('fixed');
+  expect(await page.evaluate(() => document.querySelector('.navigation')!.getBoundingClientRect().bottom)).toBe(540);
+});
+
+test('at 960×540 Left from deep in a long list reaches the current tab in one press, and Right comes back', async ({ page }) => {
+  await page.setViewportSize({ width: 960, height: 540 });
+  const { state } = await mockPortal(page);
+  const songs = state.snapshot.session.queue;
+  state.snapshot.session.queue = Array.from({ length: 24 }, (_, index) => ({ ...songs[index % songs.length], id: `${songs[index % songs.length].id.slice(0, 20)}q${String(index).padStart(3, '0')}`, title: `Song ${index + 1}` }));
+  await page.goto('/?tv=1');
+  await browse(page);
+  await press(page, 'ArrowDown', 'ArrowDown');
+  expect(await focused(page)).toBe('Queue');
+  await press(page, 'Enter');
+  await expect(page.getByRole('heading', { name: 'Shared Queue', level: 1 })).toBeAttached();
+  await press(page, 'ArrowRight');
+  expect(await within(page, '[data-tv-region="content"]')).toBe(true);
+  const deep = page.getByRole('button', { name: 'Song options for Song 18', exact: true });
+  for (let step = 0; step < 30 && !await deep.evaluate(button => button === document.activeElement); step++) await press(page, 'ArrowDown');
+  await expect(deep).toBeFocused();
+  await press(page, 'ArrowLeft');
+  expect(await focused(page)).toBe('Queue');
+  await press(page, 'ArrowRight');
+  await expect(deep).toBeFocused();
 });
 
 test('the Visualizer menu on now playing chooses the look, keeps it, and moves MilkDrop on', async ({ page }) => {

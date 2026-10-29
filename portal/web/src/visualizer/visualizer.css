@@ -46,13 +46,15 @@
 @media (max-width: 599px) {
   .visualizer-now { padding-inline: max(16px, env(safe-area-inset-left, 0px)) max(12px, env(safe-area-inset-right, 0px)); }
   .visualizer-controls { gap: 12px; padding-inline: max(12px, env(safe-area-inset-left, 0px)) max(12px, env(safe-area-inset-right, 0px)); }
-  /* Four pills don't fit one phone row; two even rows read better than one left over. */
+  /* Six pills don't fit one phone row; even rows of two read better than one left over. */
   .visualizer-presets { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; width: 100%; }
   .visualizer-presets span, .visualizer-next { padding: 10px 12px; font-size: 13px; text-align: center; }
 }
 
 /* The looks dress the title as they dress their headings. */
 :root[data-skin='fantastic'] .visualizer-track h2 { font-family: var(--display); font-weight: 400; font-stretch: normal; letter-spacing: .03em; text-transform: uppercase; }
+:root[data-skin='haunted'] .visualizer-track h2 { font-family: var(--display); font-weight: 600; font-stretch: normal; letter-spacing: .04em; }
+:root[data-skin='haunted'] .visualizer-presets input:checked + span { box-shadow: 0 0 18px -4px var(--hh-pumpkin, #ff7a1a); }
 :root[data-skin='overdrive'] .visualizer-presets input:checked + span { box-shadow: 0 0 18px -4px var(--neon, #e04cff); }
 
 @media (prefers-reduced-motion: reduce) {

@@ -1,7 +1,7 @@
 import { expect, test } from './test';
 import { mockPortal, suggestedTracks } from './fixtures';
 
-for (const skin of ['classic', 'overdrive', 'fantastic']) {
+for (const skin of ['classic', 'overdrive', 'fantastic', 'haunted']) {
   for (const expanded of [false, true]) {
     test(`${skin} ${expanded ? 'expanded' : 'compact'} title stays fully visible through a track change`, async ({ page }) => {
       await page.setViewportSize({ width: 390, height: 844 });

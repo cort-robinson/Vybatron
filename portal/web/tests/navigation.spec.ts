@@ -138,7 +138,7 @@ test('offline Home explains the wait once, in the connection banner', async ({ p
 
 test('the phone Search field sticks to the top edge, with one focus ring in every look', async ({ page }) => {
   await page.setViewportSize(phone);
-  for (const skin of ['fantastic', 'overdrive', 'classic']) {
+  for (const skin of ['fantastic', 'haunted', 'overdrive', 'classic']) {
     await page.addInitScript(s => localStorage.setItem('vybertron.skin', s), skin);
     const fixture = await mockPortal(page);
     for (let i = 0; i < 8; i++) fixture.state.library.favorites.push({ ...fixture.state.library.favorites[0], id: `fav${i}`.padEnd(24, '0'), title: `Song ${i}`, uri: `https://example.com/music/s${i}` });

@@ -22,7 +22,7 @@ const settled = async (page: Page) => {
 };
 
 const viewports = [{ name: 'desktop', width: 1488, height: 1056 }, { name: 'tablet', width: 700, height: 852 }, { name: 'phone', width: 393, height: 852 }, { name: 'small phone', width: 320, height: 640 }];
-for (const skin of ['overdrive', 'fantastic', 'classic'])
+for (const skin of ['overdrive', 'fantastic', 'haunted', 'classic'])
   for (const { name, width, height } of viewports)
     test(`${skin} ${name}: the play ring keeps clear of the neighbouring controls`, async ({ page }) => {
       await page.setViewportSize({ width, height });

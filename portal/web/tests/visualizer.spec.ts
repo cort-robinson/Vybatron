@@ -107,7 +107,7 @@ test('full screen opens from the sleeve and the menu, and closes with its button
   await expect(dialog.locator('.visualizer-source')).toHaveText(/^Ambient/);
   await expect(dialog.locator('.visualizer-stage')).toHaveAttribute('aria-hidden', 'true');
   await expect(dialog.locator('canvas[data-drawn]')).toHaveCount(1);
-  await expect(dialog.getByRole('group', { name: 'Visualizer' }).getByRole('radio')).toHaveCount(4);
+  await expect(dialog.getByRole('group', { name: 'Visualizer' }).getByRole('radio')).toHaveCount(6);
   await dialog.getByRole('button', { name: 'Close visualizer' }).click();
   await expect(dialog).toHaveCount(0);
   await expect(opener).toBeFocused();
@@ -163,6 +163,28 @@ test('presets follow the look until one is chosen, and the choice is remembered'
   await page.getByRole('button', { name: 'Show visualizer', exact: true }).click();
   await page.getByRole('button', { name: 'Full-screen visualizer', exact: true }).click();
   await expect(fullScreen(page).getByRole('radio', { name: 'Receiver' })).toBeChecked();
+});
+
+test('the Haunted look opens on Pumpkin Patch, and both of its visualizers draw in the sleeve and full screen', async ({ page }) => {
+  const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
+  await page.addInitScript(() => localStorage.setItem('vybertron.skin', 'haunted'));
+  await mockPortal(page);
+  await openPlayer(page);
+  await page.getByRole('button', { name: 'Show visualizer', exact: true }).click();
+  await expect(page.locator('.sleeve-visualizer canvas[data-drawn]')).toHaveCount(1);
+  await page.getByRole('button', { name: 'Full-screen visualizer', exact: true }).click();
+  const dialog = fullScreen(page);
+  await expect(dialog.getByRole('radio', { name: 'Pumpkin Patch' })).toBeChecked();
+  await expect(dialog.locator('canvas[data-drawn]')).toHaveCount(1);
+  await dialog.getByRole('radio', { name: 'Witching Hour' }).check();
+  await page.waitForTimeout(150);
+  await expect(dialog.locator('.visualizer-fallback')).toHaveCount(0);
+  await expect(dialog.locator('canvas[data-drawn]')).toHaveCount(1);
+  // The sleeve shares the choice.
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.sleeve-visualizer canvas[data-drawn]')).toHaveCount(1);
+  expect(await page.evaluate(() => localStorage.getItem('vybertron.visualizer'))).toBe('witching');
+  expect(errors).toEqual([]);
 });
 
 test('the full screen overlay rests without input and returns on a key', async ({ page }) => {
@@ -296,7 +318,7 @@ test('MilkDrop takes Neon’s place, and someone who chose Neon lands on it', as
   await page.getByRole('button', { name: 'More playback controls' }).click();
   await page.getByRole('button', { name: 'Full-screen visualizer', exact: true }).click();
   const dialog = fullScreen(page);
-  await expect(dialog.locator('.visualizer-presets label')).toHaveText(['MilkDrop', 'Gridrunner', 'Cosmic Broadcast', 'Receiver']);
+  await expect(dialog.locator('.visualizer-presets label')).toHaveText(['MilkDrop', 'Gridrunner', 'Cosmic Broadcast', 'Receiver', 'Pumpkin Patch', 'Witching Hour']);
   await expect(dialog.getByRole('radio', { name: 'MilkDrop' })).toBeChecked();
   await expect(dialog.locator('canvas[data-drawn]')).toHaveCount(1, slowly);
   expect(await page.evaluate(() => localStorage.getItem('vybertron.visualizer'))).toBe('milkdrop');

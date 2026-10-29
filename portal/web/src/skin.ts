@@ -1,12 +1,14 @@
 // Portal look. Overdrive layers the synthwave horizon and HUD chrome over the receiver;
-// Fantastic tunes it to a 1960s retro-future broadcast (Earth-828); Classic is the original
-// receiver, untouched. Every skin's styles are scoped to :root[data-skin='…'], so switching
-// is a single attribute change. Overdrive stays the default; the others are opt-in.
+// Fantastic tunes it to a 1960s retro-future broadcast (Earth-828); Haunted leaves it on in a
+// moonlit hollow on All Hallows' Eve; Classic is the original receiver, untouched. Every skin's
+// styles are scoped to :root[data-skin='…'], so switching is a single attribute change.
+// Overdrive stays the default; the others are opt-in.
 import type { ComponentType, PointerEvent } from 'react';
 import { look as overdrive } from './components/Overdrive';
 import fantasticStyles from './fantastic.css?url';
+import hauntedStyles from './haunted.css?url';
 
-export type Skin = 'overdrive' | 'fantastic' | 'classic';
+export type Skin = 'overdrive' | 'fantastic' | 'haunted' | 'classic';
 
 // The default look ships in the main bundle. Opt-in looks keep their stylesheet and scenery in
 // their own chunk, so no device downloads, parses or style-matches a look it doesn't show.
@@ -20,6 +22,7 @@ export type Look = {
 const loaders: Record<Skin, () => Promise<Look | undefined>> = {
   overdrive: async () => overdrive,
   fantastic: async () => (await Promise.all([import('./components/Fantastic'), stylesheet(fantasticStyles)]))[0].look,
+  haunted: async () => (await Promise.all([import('./components/Haunted'), stylesheet(hauntedStyles)]))[0].look,
   classic: async () => undefined,
 };
 // The look's stylesheet is linked here rather than through the chunk's CSS import: Vite's
@@ -51,7 +54,7 @@ export function loadLook(skin: Skin) {
 export const skinLook = (skin: Skin) => looks.get(skin);
 
 const key = 'vybertron.skin';
-const skins: readonly Skin[] = ['overdrive', 'fantastic', 'classic'];
+const skins: readonly Skin[] = ['overdrive', 'fantastic', 'haunted', 'classic'];
 
 export function initialSkin(): Skin {
   try { const stored = localStorage.getItem(key); return skins.includes(stored as Skin) ? stored as Skin : 'overdrive'; } catch { return 'overdrive'; }
@@ -79,4 +82,6 @@ export function applyPerformance(on: boolean, persist = true) {
 // Fixed scenery partners to the cover-derived accent; decorative only, never a state color.
 export const neon = '#e04cff';
 export const flame = '#ff7a38';
-export const skinTint = (skin: Skin) => skin === 'overdrive' ? neon : skin === 'fantastic' ? flame : undefined;
+export const pumpkin = '#ff7a1a';
+const tints: Partial<Record<Skin, string>> = { overdrive: neon, fantastic: flame, haunted: pumpkin };
+export const skinTint = (skin: Skin) => tints[skin];

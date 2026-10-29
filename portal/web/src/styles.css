@@ -121,7 +121,7 @@ svg { flex-shrink: 0; }
 }
 .room-incoming { animation: room-relight var(--room-duration) ease both; }
 /* A replacement room is ready before its dissolve, and never repeats the initial power-on. */
-:root .room-prepared :is(.od-horizon, .ff-scene), :root[data-skin][data-boot] .room-prepared :is(.od-sun, .od-floor, .od-skyline, .ff-planet, .ff-bay, .ff-skyline, .ff-krackle) { animation: none; }
+:root .room-prepared :is(.od-horizon, .ff-scene, .hh-scene), :root[data-skin][data-boot] .room-prepared :is(.od-sun, .od-floor, .od-skyline, .ff-planet, .ff-bay, .ff-skyline, .ff-krackle, .hh-moon, .hh-hills, .hh-ground, .hh-fog) { animation: none; }
 @keyframes room-relight { from { opacity: 0; } to { opacity: 1; } }
 /* No will-change: a drifting light is its own compositor layer while its animation runs, and a
    still room keeps no viewport-size layers for them. */
@@ -160,7 +160,7 @@ svg { flex-shrink: 0; }
 .ambient-scene.gl-scene { background: none; }
 .scene-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 .gl-scene > .room-colors { visibility: hidden; }
-.gl-scene :is(.light, .artwork-field, .od-sky, .od-plane, .od-window, .ff-burst, .ff-window, .ff-void, .ff-herald, .ff-train), .gl-scene .ff-glint::before { animation: none !important; }
+.gl-scene :is(.light, .artwork-field, .od-sky, .od-plane, .od-window, .ff-burst, .ff-window, .ff-void, .ff-herald, .ff-train, .hh-bat, .hh-bat path, .hh-window, .hh-lantern), .gl-scene :is(.ff-glint, .hh-fog)::before, .gl-scene .hh-fog::after { animation: none !important; }
 .gl-scene .od-sun { mix-blend-mode: normal !important; }
 /* Glass panes ([data-glass]) that only ever sit over the room carry their blur in --glass; with the
    WebGL room the canvas draws that blur behind them instead of a backdrop-filter. */

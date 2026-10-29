@@ -1183,17 +1183,20 @@ p, .continue-text > span, .section-description, .field-hint { text-wrap: pretty;
 .tv-transport .icon-button svg { width: 4.8vmin; height: 4.8vmin; }
 .tv-transport .play-button { width: 12.5vmin; height: 12.5vmin; color: var(--primary-ink); background: var(--accent); }
 .tv-transport .play-button svg { width: 6vmin; height: 6vmin; }
-.tv-home .volume-control { display: flex; align-items: center; gap: 1.6vmin; width: 30vmin; margin-left: 2vmin; color: var(--text-soft); }
+.tv-home .volume-control { display: flex; align-items: center; gap: 1.6vmin; width: 26vmin; margin-left: 2vmin; color: var(--text-soft); }
 .tv-home .volume-control svg { flex: none; width: 4vmin; height: 4vmin; }
-.tv-actions { display: flex; gap: 2vmin; margin-left: auto; }
-.tv-home .tv-action { min-height: 9vmin; padding: 0 3.4vmin; gap: 1.4vmin; font-size: 3vmin; border-radius: 4.5vmin; }
+.tv-actions { display: flex; gap: 1.6vmin; margin-left: auto; }
+.tv-home .tv-action { min-height: 9vmin; padding: 0 2.6vmin; gap: 1.4vmin; font-size: 3vmin; border-radius: 4.5vmin; }
 .tv-home .tv-action svg { width: 3.8vmin; height: 3.8vmin; }
-.tv-home .tv-play-on { position: relative; }
-.tv-home .tv-play-on > .menu-panel { top: auto; bottom: calc(100% + 1.6vmin); right: 0; min-width: 56vmin; max-height: 70vh; overflow-y: auto; border-radius: 2vmin; padding: 1vmin; }
-.tv-home .tv-play-on > .menu-panel button { min-height: 8vmin; font-size: 3.4vmin; gap: 2vmin; padding: 1vmin 2vmin; border-radius: 1.4vmin; }
-.tv-home .tv-play-on > .menu-panel button svg { width: 3.6vmin; height: 3.6vmin; flex: none; }
-.tv-home .tv-play-on > .menu-panel > p { font-size: 2.6vmin; max-width: none; }
-.tv-home .tv-play-on .menu-device > small { font-size: 2.3vmin; }
+.tv-home .tv-menu { position: relative; }
+.tv-home .tv-menu > .menu-panel { top: auto; bottom: calc(100% + 1.6vmin); right: 0; min-width: 56vmin; max-height: 70vh; overflow-y: auto; border-radius: 2vmin; padding: 1vmin; }
+.tv-home .tv-menu > .menu-panel button { min-height: 8vmin; font-size: 3.4vmin; gap: 2vmin; padding: 1vmin 2vmin; border-radius: 1.4vmin; }
+.tv-home .tv-menu > .menu-panel button svg { width: 3.6vmin; height: 3.6vmin; flex: none; }
+.tv-home .tv-menu > .menu-panel > p { font-size: 2.6vmin; max-width: none; }
+.tv-home .tv-menu .menu-device > small { font-size: 2.3vmin; }
+/* The look picker: MilkDrop's preset showing, under Next preset. */
+.tv-home .tv-looks > .menu-panel { min-width: 44vmin; }
+.tv-home .tv-looks > .menu-panel > .tv-preset-name { margin: 0 2vmin 1vmin; font-size: 2.3vmin; color: var(--text-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* A focused control lifts, so the ring isn't the only sign at a distance. */
 [data-tv] .tv-home :is(.icon-button, .tv-action):focus { outline-color: var(--text); outline-width: .6vmin; outline-offset: .6vmin; transform: scale(1.08); }
 [data-tv] .tv-home .menu-panel button:focus { outline-color: var(--text); background: var(--secondary-hover); color: var(--text); }

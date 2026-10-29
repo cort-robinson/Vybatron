@@ -73,6 +73,7 @@ for (const [width, height] of [[960, 540], [1920, 1080]] as const) {
     await press(page, 'ArrowRight'); expect(await focused(page)).toBe('Volume');
     await press(page, 'ArrowRight'); expect(await focused(page)).toBe('Play on');
     await press(page, 'ArrowRight'); expect(await focused(page)).toBe('Queue');
+    await press(page, 'ArrowRight'); expect(await focused(page)).toBe('Visualizer');
     await press(page, 'ArrowRight'); expect(await focused(page)).toBe('Browse');
     // Nothing further right: focus stays.
     await press(page, 'ArrowRight'); expect(await focused(page)).toBe('Browse');
@@ -539,4 +540,56 @@ test('a long queue over now playing scrolls on to its last song, and back to its
   await expect(options('Song 15')).toBeInViewport();
   for (let step = 0; step < 40 && !await options('Song 1').evaluate(button => button === document.activeElement); step++) await press(page, 'ArrowUp');
   await expect(options('Song 1')).toBeFocused();
+});
+
+test('the Visualizer menu on now playing chooses the look, keeps it, and moves MilkDrop on', async ({ page }) => {
+  // MilkDrop compiles its presets slowly on the tests' software GPU.
+  test.slow();
+  await tv(page);
+  await ready(page);
+  await wake(page, 'Visualizer');
+  await press(page, 'Enter');
+  const menu = home(page).locator('.menu-panel');
+  await expect(menu).toBeVisible();
+  // It opens on the look showing (Overdrive's own, until one is chosen), marked as chosen.
+  await expect.poll(() => focused(page)).toBe('Gridrunner');
+  await expect(menu.getByRole('button', { name: 'Gridrunner' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(menu.getByRole('button')).toHaveText(['MilkDrop', 'Gridrunner', 'Cosmic Broadcast', 'Receiver', 'Pumpkin Patch', 'Witching Hour']);
+  await press(page, 'ArrowDown', 'ArrowDown');
+  expect(await focused(page)).toBe('Receiver');
+  await press(page, 'Enter');
+  // Chosen at once, as the full-screen visualizer keeps it; the menu stays to try another.
+  await expect(menu.getByRole('button', { name: 'Receiver' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(menu.getByRole('button', { name: 'Gridrunner' })).toHaveAttribute('aria-pressed', 'false');
+  expect(await page.evaluate(() => localStorage.getItem('vybertron.visualizer'))).toBe('receiver');
+  expect(await back(page)).toBe(true);
+  await expect(menu).toHaveCount(0);
+  await expect.poll(() => focused(page)).toBe('Visualizer');
+
+  // Kept across a reload.
+  await page.reload();
+  await ready(page);
+  await wake(page, 'Visualizer');
+  await press(page, 'Enter');
+  await expect.poll(() => focused(page)).toBe('Receiver');
+  await expect(menu.getByRole('button', { name: 'Receiver' })).toHaveAttribute('aria-pressed', 'true');
+
+  // MilkDrop adds Next preset, named for the preset showing, and Next moves on to another.
+  await press(page, 'ArrowUp', 'ArrowUp', 'ArrowUp');
+  expect(await focused(page)).toBe('MilkDrop');
+  await press(page, 'Enter');
+  const next = menu.getByRole('button', { name: 'Next preset' });
+  await expect(next).toBeVisible();
+  const name = menu.locator('.tv-preset-name');
+  await expect(name).not.toBeEmpty({ timeout: 15_000 });
+  const first = await name.getAttribute('title');
+  await press(page, 'ArrowUp');
+  expect(await focused(page)).toBe('Next preset');
+  await press(page, 'Enter');
+  await expect(name).not.toHaveAttribute('title', first!, { timeout: 15_000 });
+  // Reopened with MilkDrop showing, the menu opens on Next preset.
+  expect(await back(page)).toBe(true);
+  await wake(page, 'Visualizer');
+  await press(page, 'Enter');
+  await expect.poll(() => focused(page)).toBe('Next preset');
 });

@@ -1,11 +1,13 @@
 import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent } from 'react';
 import { flushSync } from 'react-dom';
-import { ListNumbersIcon, PauseIcon, PlayIcon, SkipForwardIcon, SpeakerHifiIcon, SquaresFourIcon } from '../icons';
+import { CheckIcon, ListNumbersIcon, PauseIcon, PlayIcon, SkipForwardIcon, SparkleIcon, SpeakerHifiIcon, SquaresFourIcon } from '../icons';
 import type { Portal } from '../usePortal';
 import type { Command } from '../types';
 import type { Palette } from '../art';
 import type { Skin } from '../skin';
 import { useVisualizer } from '../visualizer/load';
+import { PRESETS, choosePreset, usePreset, type PresetId } from '../visualizer/presets';
+import type { Visualizer } from '../visualizer/engine';
 import { focusEntry, topLayer } from '../tv';
 import { useEvent } from '../stable';
 import { ActionPopover, Artwork, Dialog, IconButton, Loading } from './ui';
@@ -30,6 +32,9 @@ export function TvHome({ portal, palette, skin, place, onBrowse, onAdd }: { port
   const clock = { session, receivedAt, live };
   const [failed, setFailed] = useState(false);
   const visuals = useVisualizer(!failed, () => setFailed(true));
+  // The look, chosen here as in the full-screen visualizer (one choice for both), and MilkDrop's
+  // preset showing, for its name and Next preset.
+  const preset = usePreset(skin); const engine = useRef<Visualizer | null>(null); const [named, setNamed] = useState('');
   const [shown, setShown] = useState(true); const showing = useRef(true);
   const [queueOpen, setQueueOpen] = useState(false);
   const [confirmHere, setConfirmHere] = useState(false);
@@ -90,7 +95,7 @@ export function TvHome({ portal, palette, skin, place, onBrowse, onAdd }: { port
   const fallback = <div className="tv-fallback"><Artwork track={track} large /><Spectrum className="tv-spectrum" seed={track?.id || 'idle'} color={palette.accent} mode={track && active && live ? 'playing' : 'standby'} animate bands={48} /></div>;
   return <section ref={root} className={`tv-home ${shown ? '' : 'resting'}`} aria-label="Now playing" tabIndex={-1} data-tv-layer data-testid="tv-home">
     <div className="tv-stage" onPointerDown={touch}>{visuals && !failed
-      ? <visuals.BackdropVisualizer clock={clock} palette={palette} skin={skin} guildId={snapshot?.guild.id ?? null} local={local} onFail={() => setFailed(true)} />
+      ? <visuals.BackdropVisualizer clock={clock} palette={palette} skin={skin} guildId={snapshot?.guild.id ?? null} local={local} engine={engine} onName={setNamed} onFail={() => setFailed(true)} />
       : failed ? fallback : null}</div>
     <div className="tv-overlay">
       <div className="tv-now">{track && <Artwork track={track} />}<div className="tv-song">
@@ -107,9 +112,11 @@ export function TvHome({ portal, palette, skin, place, onBrowse, onAdd }: { port
           <IconButton label="Skip current song" disabled={!controllable || !track} title={blockedTitle} onClick={() => void control({ command: 'skip' })}><SkipForwardIcon size={27} weight="fill" /></IconButton>
           <Volume level={session?.volume ?? 100} disabled={!controllable} reset={`${track?.id}:${snapshot?.guild.id}`} onCommit={level => void control({ command: 'volume', options: { level } })} />
           <div className="tv-actions">
-            <ActionPopover label="Play on" className="tv-play-on" triggerClassName="button secondary tv-action" trigger={<><SpeakerHifiIcon size={22} />Play on</>}>
+            <ActionPopover label="Play on" className="tv-menu tv-play-on" triggerClassName="button secondary tv-action" trigger={<><SpeakerHifiIcon size={22} />Play on</>}>
               {close => <PlayOnChoices portal={portal} close={close} onMoveHere={() => setConfirmHere(true)} />}</ActionPopover>
             <button type="button" className="button secondary tv-action" onClick={() => setQueueOpen(true)}><ListNumbersIcon size={22} />Queue</button>
+            {!failed && <ActionPopover label="Visualizer" className="tv-menu tv-looks" triggerClassName="button secondary tv-action" trigger={<><SparkleIcon size={22} />Visualizer</>}>
+              {() => <LookChoices preset={preset} named={named} onNext={() => engine.current?.next()} />}</ActionPopover>}
             <button type="button" className="button secondary tv-action" onClick={onBrowse}><SquaresFourIcon size={22} />Browse</button>
           </div>
         </div>
@@ -118,4 +125,18 @@ export function TvHome({ portal, palette, skin, place, onBrowse, onAdd }: { port
     {queueOpen && <Dialog title="Up next" className="tv-queue" onClose={() => setQueueOpen(false)}><Queue portal={portal} compact onAdd={() => { setQueueOpen(false); onAdd(); }} /></Dialog>}
     {confirmHere && <MoveHereDialog portal={portal} onClose={() => setConfirmHere(false)} />}
   </section>;
+}
+
+// The looks the full-screen visualizer offers, as a menu a remote can use. It opens on the look
+// showing, which is marked; a choice applies at once (and is kept, as everywhere) with the menu left
+// open to try another. MilkDrop adds a way on to its next preset, where it then opens, so OK can
+// press it again and again.
+function LookChoices({ preset, named, onNext }: { preset: PresetId; named: string; onNext: () => void }) {
+  const milkdrop = preset === 'milkdrop';
+  return <><p className="menu-section">Visualizer</p>
+    {milkdrop && <button type="button" data-autofocus onClick={onNext}><SkipForwardIcon weight="fill" />Next preset</button>}
+    {milkdrop && named && <p className="tv-preset-name" title={named}><span className="sr-only">Showing </span>{named}</p>}
+    {PRESETS.map(item => <button key={item.id} type="button" aria-pressed={preset === item.id} data-autofocus={!milkdrop && preset === item.id || undefined} onClick={() => choosePreset(item.id)}>
+      <span className="menu-device"><span>{item.name}</span></span>{preset === item.id && <CheckIcon className="menu-check" weight="bold" />}</button>)}
+  </>;
 }

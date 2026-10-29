@@ -18,9 +18,10 @@ export const LIMITS = Object.freeze({
   pollMs: 3000, pollFeedMs: 10_000, changesMs: 25_000, changesRetryMaxMs: 30_000,
   pollRetryMaxMs: 30_000, heartbeatMs: 10_000, drainMs: 5000,
   // A page holds its server stream and its listener stream (/api/me/events,
-  // ADR-0018); the third per session covers a reconnect overlap or a second
-  // page. 48 gzip streams at about half a megabyte each stay well inside memory.
-  streams: 48, streamsPerSession: 3, streamLifetimeMs: 30 * 60_000,
+  // ADR-0018), and the Android app's playback service its own listener stream;
+  // the fourth per session covers a reconnect overlap, such as the app's page reloading.
+  // 48 gzip streams at about half a megabyte each stay well inside memory.
+  streams: 48, streamsPerSession: 4, streamLifetimeMs: 30 * 60_000,
   // Sign-out device cleanups waiting for the bot: retried from 1 s, doubling.
   forgetPending: 256, forgetAttempts: 8, forgetRetryMs: 1000,
   // A quiet stream resends the snapshot once the playback position strays this

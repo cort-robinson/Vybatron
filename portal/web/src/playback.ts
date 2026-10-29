@@ -6,7 +6,7 @@ import type { RemotePortal } from './usePortal';
 import { isLink } from './suggestions';
 import { youtubeId } from './youtube';
 import { useShared, useStableObject } from './stable';
-import { NativeError, nativePlayer, SHARED_PLAYER, type NativeControl, type NativePlayer, type NativeSession, type NativeState } from './native';
+import { NativeError, nativePlayer, SHARED_PLAYER, type NativeControl, type NativeLink, type NativePlayer, type NativeSession, type NativeState } from './native';
 import {
   advanced, asTrack, batches, cacheView, cachedView, clock, forgetCachedViews, forgetLegacyDeck, legacyDeck, loadIdentity, newEntryId, playerTrack, playheadAt,
   saveIdentity, syncClock, validName, validPlayer, validView,
@@ -68,6 +68,15 @@ const bare = ({ requestedBy: _requestedBy, suggested: _suggested, entryId: _entr
 const entryOf = (track: Track | null | undefined) => typeof (track as { entryId?: unknown } | null)?.entryId === 'string' ? (track as unknown as { entryId: string }).entryId : null;
 const position = (deck: Deck) => deck.status === 'playing' && !deck.waiting ? deck.positionMs + Math.max(0, Date.now() - deck.at) : deck.positionMs;
 const snowflake = (id: string) => /^\d{1,20}$/.test(id);
+// A control relayed to this device, as the app's player takes it.
+function nativeControl({ action, value }: PlayerCommand): NativeControl {
+  switch (action) {
+    case 'seek': return { action, positionMs: Math.max(0, Math.floor(Number(value) || 0)) };
+    case 'volume': return { action, level: volumeOf(value) };
+    case 'repeat': return { action, mode: repeatOf(value) };
+    default: return { action };
+  }
+}
 function milliseconds(value: unknown) {
   const parts = String(value ?? '').split(':').map(Number);
   return parts.length < 2 || parts.length > 3 || parts.some(part => !Number.isInteger(part) || part < 0) ? null : parts.reduce((total, part) => total * 60 + part, 0) * 1000;
@@ -321,7 +330,7 @@ function webEngine(parts: EngineParts): Engine {
 // itself, and the page doesn't use this. With an older app, while this device is the
 // active one, the page loads the player into the app, keeps its queue in step with the
 // store's, and reports what the app does on its behalf.
-function nativeEngine(device: NativePlayer, parts: EngineParts, subscribed: (playing: boolean) => void): Engine {
+function nativeEngine(device: NativePlayer, parts: EngineParts, subscribed: (playing: boolean, link?: NativeLink) => void): Engine {
   const { commit, deck, shown, advance, report, notify, guildId, owning, steady } = parts;
   let revision = -1; let last: NativeState | null = null;
   // The entry the page just loaded, for the app's first state after loading it.
@@ -383,7 +392,7 @@ function nativeEngine(device: NativePlayer, parts: EngineParts, subscribed: (pla
   };
   device.onState(apply); device.onNotice(notify);
   // Music the app kept playing while this page was gone becomes the player's.
-  void device.subscribe().then(state => { last = state; revision = state.revision; subscribed(!!state.current && state.status === 'playing'); }, () => subscribed(false));
+  void device.subscribe().then(state => { last = state; revision = state.revision; subscribed(!!state.current && state.status === 'playing', state.link); }, () => subscribed(false));
   return {
     begin: (player, positionMs, playing, keep) => {
       const state = last;
@@ -498,9 +507,14 @@ export function useListening(remote: RemotePortal): Portal {
     let started = false;
     // Inside an app with its own connection to the shared player (`player.shared`), its playback
     // service plays and reports for this device and carries out the controls relayed to it, page or
-    // no page. This page then never plays or reports: it shows the player and sends edits and
-    // controls like any other device. Older apps leave both to the page, as before.
+    // no page, whenever it can: while its own stream is live, or while it plays under a generation
+    // of its own (then this page passes on the controls relayed here). This page then never plays or
+    // reports: it shows the player and sends edits and controls like any other device. Until the
+    // service links, and with older apps, the page drives the app as before; it lets go the moment
+    // the service links, before the service can report.
     let shared = false;
+    let link: NativeLink = { linked: false, generation: null };
+    const serviceHas = () => shared && (link.linked || link.generation !== null);
     type Report = { generation: number; seq: number; advance?: Advance; playhead?: Head; volume?: number; repeat?: Repeat };
     const outbox: Report[] = []; let sending: Report | null = null; let flushing = false;
     let retryTimer: ReturnType<typeof setTimeout> | undefined; let retryAttempt = 0;
@@ -592,11 +606,8 @@ export function useListening(remote: RemotePortal): Portal {
     let engine: Engine = device ? waitingEngine : webEngine(parts);
     if (device) {
       void device.info().then(info => Array.isArray(info.features) && info.features.includes(SHARED_PLAYER), () => false).then(flag => {
-        if (!flag) { engine = nativeEngine(device, parts, playing => { nativePlaying = playing; start(); }); return; }
-        shared = true; nativePlaying = false;
-        device.onNotice(notify);
-        setNativeShared(true);
-        start();
+        if (flag) { shared = true; setNativeShared(true); device.onLink(linkChanged); }
+        engine = nativeEngine(device, parts, (playing, linked) => { if (linked) linkChanged(linked); nativePlaying = playing; start(); });
       });
     }
     // Tabs of one browser are one device; the tab that plays answers for it.
@@ -633,13 +644,26 @@ export function useListening(remote: RemotePortal): Portal {
     const halt = (announce: boolean) => {
       unlock?.(); unlock = null;
       own = null; outbox.length = 0; steps = []; lastPlayhead = null; clearTimeout(retryTimer);
-      engine.halt();
+      // The app's service stops by itself when another device plays.
+      if (!serviceHas()) engine.halt();
       commit({ owner: false, entryId: null, track: null, status: 'idle', positionMs: 0, at: Date.now(), waiting: false, durationMs: 0 });
       publish();
       if (!announce) return;
       const active = server?.devices.find(item => item.deviceId === server?.player.activeDeviceId);
       notify(active ? `Playing on ${active.name} now.` : 'Another device is playing now.', 'info');
     };
+    // The app's service took over: this page lets go without a word and without touching the music.
+    const release = () => {
+      unlock?.(); unlock = null;
+      own = null; outbox.length = 0; steps = []; lastPlayhead = null; clearTimeout(retryTimer);
+      commit({ owner: false, entryId: null, track: null, status: 'idle', positionMs: 0, at: Date.now(), waiting: false, durationMs: 0 });
+      publish();
+    };
+    function linkChanged(next: NativeLink) {
+      if (typeof next?.linked !== 'boolean') return;
+      link = { linked: next.linked, generation: Number.isSafeInteger(next.generation) ? next.generation : null };
+      if (own && serviceHas()) release();
+    }
     const begin = (player: Player, positionMs: number, playing: boolean, keep = false) => {
       commit({ owner: true, volume: player.volume, repeat: player.repeat });
       own = { generation: player.generation, seq: 0 }; outbox.length = 0; steps = []; lastPlayhead = null;
@@ -660,7 +684,7 @@ export function useListening(remote: RemotePortal): Portal {
       if (me && mine && mine.name !== me.name && validName(mine.name)) { me = { ...me, name: mine.name }; saveIdentity(me); setIdentity(me); }
       const player = server.player;
       // Made the active device from another device while connected: play here.
-      if (fromStream && !own && !activating && !shared && me && player.activeDeviceId === me.deviceId && seen !== null && player.generation > seen) {
+      if (fromStream && !own && !activating && !serviceHas() && me && player.activeDeviceId === me.deviceId && seen !== null && player.generation > seen) {
         const { generation } = player;
         void claim(false).then(mine => {
           const now = server?.player;
@@ -682,7 +706,7 @@ export function useListening(remote: RemotePortal): Portal {
       if (started || !server || !me || seen === null || nativePlaying === null) return;
       started = true;
       // The app's playback service decides for itself.
-      if (shared) return;
+      if (serviceHas()) return;
       const player = server.player; const mine = player.activeDeviceId === me.deviceId;
       if (nativePlaying) {
         if (!mine && reachable(player)) engine.halt(); else void activate(me.deviceId, { keep: true });
@@ -704,7 +728,7 @@ export function useListening(remote: RemotePortal): Portal {
         receive(result);
         if (!self) return true;
         const player = result.player;
-        if (shared) {
+        if (serviceHas()) {
           // The app's playback service sees itself made the active device and plays from the
           // player's place; anything else asked of it goes to it as controls, relayed in order.
           const playing = how.playing ?? player.playhead.playing;
@@ -759,7 +783,7 @@ export function useListening(remote: RemotePortal): Portal {
       const active = player?.activeDeviceId;
       if (!active) return false;
       // This device's own app plays it: its playback service takes controls relayed to it.
-      if (active === me?.deviceId) return shared;
+      if (active === me?.deviceId) return serviceHas();
       return !!server?.devices.some(item => item.deviceId === active && item.connected);
     };
     // Play, pause and the rest: carried out here while this device plays, otherwise sent
@@ -859,7 +883,7 @@ export function useListening(remote: RemotePortal): Portal {
         // device that plays can let go of a song, so another device becomes it to stop. On repeat the
         // store puts the song it lets go back at the end of the queue, so the queue clears after that.
         case 'stop:': {
-          if (shown()?.current && shared && device) {
+          if (shown()?.current && serviceHas() && device) {
             // The app's playback service lets go of the song as the active device, becoming it first if it isn't.
             const asked = await device.control({ action: 'stop' }).then(() => true, () => false);
             if (!asked || !await until(() => !shown()?.current)) { notify('Your player didn’t confirm the stop. Check where it is, then try again.', 'error'); return false; }
@@ -903,9 +927,9 @@ export function useListening(remote: RemotePortal): Portal {
 
     return {
       device, run, transport, control, activate, edit, shown, receive, halt, send,
-      own: () => own, identity: () => me, shared: () => shared,
+      own: () => own, identity: () => me, serviceHas,
       // Hands the app's playback service what it needs to reach the shared player by itself.
-      handOver: (session: NativeSession) => { if (shared && device) void device.subscribe(session).catch(() => undefined); },
+      handOver: (session: NativeSession) => { if (shared && device) void device.subscribe(session).then(state => { if (state.link) linkChanged(state.link); }, () => undefined); },
       identify: (identity: Identity) => { me = identity; },
       // Before its stream connects, a page shows only the same listener's last copy of their player.
       signedIn: (actorId: string) => {
@@ -916,7 +940,11 @@ export function useListening(remote: RemotePortal): Portal {
       },
       signedOut: () => { if (own) halt(false); actor = null; server = null; seen = null; started = false; setStreaming(false); setView(null); },
       disconnected: () => setStreaming(false),
-      command: (data: PlayerCommand) => { if (own && data.generation === own.generation) engine.act(data.action, data.value); },
+      command: (data: PlayerCommand) => {
+        if (own && data.generation === own.generation) { engine.act(data.action, data.value); return; }
+        // The app's service plays under this generation but its own stream is down: pass the control on.
+        if (shared && device && !link.linked && link.generation !== null && link.generation === data.generation) void device.control(nativeControl(data)).catch(() => undefined);
+      },
       tick: () => { if (own && deckRef.current.status === 'playing') sync(true); },
       // A page going away lets go of playback, so the player waits paused where it stopped.
       // The Android app keeps playing without its page, so it keeps playback.
@@ -1080,7 +1108,7 @@ export function useListening(remote: RemotePortal): Portal {
     setChoice('local');
     if (!me) return false;
     if (id === me.deviceId) {
-      if (core.own() || (core.shared() && core.shown()?.activeDeviceId === id)) return true;
+      if (core.own() || (core.serviceHas() && core.shown()?.activeDeviceId === id)) return true;
       const player = core.shown();
       return core.activate(id, { playing: !!player?.activeDeviceId && player.playhead.playing });
     }

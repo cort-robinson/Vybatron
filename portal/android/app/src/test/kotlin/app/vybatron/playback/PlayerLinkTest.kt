@@ -12,10 +12,10 @@ object Shared {
     fun id(name: String) = name.padEnd(12, 'x')
     fun entry(name: String): JSONObject = JSONObject().put("entryId", id(name)).put("track", song(name).playerTrack())
     fun player(generation: Long = 0, active: String? = null, current: JSONObject? = null, queue: List<JSONObject> = emptyList(), history: List<JSONObject> = emptyList(),
-               playing: Boolean = false, at: Long = NOW, positionMs: Long = 0, updatedAt: Long = 1, revision: Long = 1): JSONObject = JSONObject()
+               playing: Boolean = false, at: Long = NOW, positionMs: Long = 0, updatedAt: Long = 1, revision: Long = 1, repeat: String = "off"): JSONObject = JSONObject()
         .put("guildId", "1").put("revision", revision).put("generation", generation).put("generationAt", 0).put("activeDeviceId", active ?: JSONObject.NULL)
         .put("playbackVersion", 0).put("current", current ?: JSONObject.NULL).put("queue", JSONArray(queue)).put("history", JSONArray(history))
-        .put("playhead", JSONObject().put("positionMs", positionMs).put("at", at).put("playing", playing)).put("volume", 100).put("repeat", "off").put("updatedAt", updatedAt)
+        .put("playhead", JSONObject().put("positionMs", positionMs).put("at", at).put("playing", playing)).put("volume", 100).put("repeat", repeat).put("updatedAt", updatedAt)
     fun view(player: JSONObject): JSONObject = JSONObject().put("player", player).put("devices", JSONArray())
     const val NOW = 1_000_000L
 }
@@ -99,10 +99,10 @@ class PlayerLinkTest {
     private fun titles(list: List<NativeTrack>) = list.map { it.title }
 
     /** Connected, then made the active device under [generation] with A playing and [queue] waiting. */
-    private fun playing(generation: Long = 2, queue: List<String> = listOf("b")) {
+    private fun playing(generation: Long = 2, queue: List<String> = listOf("b"), repeat: String = "off") {
         link.start(session)
-        stream(Shared.player(generation = generation - 1, current = Shared.entry("a"), queue = queue.map(Shared::entry)))
-        stream(Shared.player(generation = generation, active = me, current = Shared.entry("a"), queue = queue.map(Shared::entry), playing = true))
+        stream(Shared.player(generation = generation - 1, current = Shared.entry("a"), queue = queue.map(Shared::entry), repeat = repeat))
+        stream(Shared.player(generation = generation, active = me, current = Shared.entry("a"), queue = queue.map(Shared::entry), playing = true, repeat = repeat))
     }
 
     @Test fun connectsWithThePagesSessionAsTheAndroidApp() {
@@ -145,18 +145,74 @@ class PlayerLinkTest {
         assertEquals(5 to 1, renewed.getInt("generation") to renewed.getInt("seq"))
     }
 
-    @Test fun reportsWaitInOrderWhileOffline() {
+    @Test fun reportsWaitInOrderWhileOfflineAndASentOneNeverChanges() {
         playing()
         net.reply(PlayerLink.Reply.Unreachable)
-        // Paused meanwhile: the newer position replaces the one not yet delivered; volume follows it.
+        // Paused meanwhile. The store may have applied the report it never answered, so the pause
+        // is a report of its own, not a change to that one under the same number.
         command("pause", 2)
         command("volume", 2, 30)
         assertEquals(1, net.posts.size)
         timers.fire()
         val again = net.waiting.single().body
-        assertEquals(1, again.getInt("seq")); assertFalse(again.getJSONObject("playhead").getBoolean("playing"))
+        assertEquals(1, again.getInt("seq")); assertTrue(again.getJSONObject("playhead").getBoolean("playing"))
         net.answer()
-        assertEquals(2, net.waiting.single().body.getInt("seq")); assertEquals(30, net.waiting.single().body.getInt("volume"))
+        val paused = net.waiting.single().body
+        assertEquals(2, paused.getInt("seq")); assertFalse(paused.getJSONObject("playhead").getBoolean("playing"))
+        net.answer()
+        assertEquals(3, net.waiting.single().body.getInt("seq")); assertEquals(30, net.waiting.single().body.getInt("volume"))
+    }
+
+    @Test fun aNewSessionStartsOverWithNothingFromTheOldOne() {
+        playing()
+        net.answer()
+        local.end()
+        val inFlight = net.posts.size
+        // The listener signed in again: a new token, the same device.
+        link.start(session.copy(csrfToken = "csrf-2"))
+        assertEquals(null, link.generation)
+        // The old session's answer arrives late and changes nothing; nothing old is sent with the new token.
+        net.answer(200, Shared.view(Shared.player(generation = 2, active = me, current = Shared.entry("b"), updatedAt = 40)))
+        local.handle(PlayerRequest.Pause); local.handle(PlayerRequest.Play)
+        assertEquals(inFlight, net.posts.size)
+        // The new session's player: this device is still listed as playing it, and B plays here,
+        // which this session hasn't reported. It becomes the player's under a new generation.
+        stream(Shared.player(generation = 2, active = me, current = Shared.entry("a"), queue = listOf(Shared.entry("b")), playing = true))
+        val activate = net.waiting.single()
+        assertEquals("activate", activate.body.getString("op")); assertEquals("csrf-2", activate.csrf)
+        net.answer(200, Shared.view(Shared.player(generation = 3, active = me, current = Shared.entry("a"), queue = listOf(Shared.entry("b")), playing = true, updatedAt = 60)))
+        val adopted = net.waiting.single()
+        assertEquals("csrf-2", adopted.csrf)
+        assertEquals(3 to 1, adopted.body.getInt("generation") to adopted.body.getInt("seq"))
+        assertEquals(Shared.id("b"), adopted.body.getJSONObject("advance").getString("to"))
+        assertTrue(local.requests.filterIsInstance<PlayerRequest.Load>().size == 1)
+    }
+
+    @Test fun aSongRoundAgainOnRepeatIsTheStoresFreshEntry() {
+        playing(repeat = "queue")
+        assertEquals(Repeat.QUEUE, local.songs.repeat)
+        // Offline for a whole round: A, then B, then A again.
+        net.reply(PlayerLink.Reply.Unreachable)
+        local.end(); local.end()
+        assertEquals("A", local.songs.current?.title)
+        timers.fire()
+        net.answer()
+        val toB = net.waiting.single().body.getJSONObject("advance")
+        assertEquals(Shared.id("a") to Shared.id("b"), toB.getString("from") to toB.getString("to"))
+        // The store moved A to history and queued it again as a fresh entry.
+        val fresh = JSONObject().put("entryId", Shared.id("a2")).put("track", song("a").playerTrack())
+        net.answer(200, Shared.view(Shared.player(generation = 2, active = me, current = Shared.entry("b"), queue = listOf(fresh), history = listOf(Shared.entry("a")),
+            playing = true, repeat = "queue", updatedAt = 50)))
+        while (net.waiting.isNotEmpty() && !net.waiting.first().body.has("advance")) net.answer()
+        val toA = net.waiting.single().body.getJSONObject("advance")
+        // Not the old entry, which is in history and would mean going back.
+        assertEquals(Shared.id("b") to Shared.id("a2"), toA.getString("from") to toA.getString("to"))
+        net.answer(200, Shared.view(Shared.player(generation = 2, active = me, current = fresh, queue = listOf(Shared.entry("b").put("entryId", Shared.id("b2"))),
+            history = listOf(Shared.entry("b"), Shared.entry("a")), playing = true, repeat = "queue", updatedAt = 60)))
+        // In step with the store again: A plays on, and what follows is the store's.
+        assertEquals("A", local.songs.current?.title)
+        assertEquals(listOf(Shared.id("b2")), local.songs.queue.map { it.entryId })
+        assertEquals(1, local.requests.filterIsInstance<PlayerRequest.Load>().size)
     }
 
     @Test fun followsTheStoresQueueAndKeepsTheSongPlaying() {
@@ -213,8 +269,7 @@ class PlayerLinkTest {
         assertEquals(1, net.posts.size); assertTrue(timers.others().isEmpty())
         link.start(session.copy(csrfToken = "csrf-2"))
         assertEquals(2, net.opened.size)
-        val resent = net.waiting.single()
-        assertEquals("csrf-2", resent.csrf); assertEquals(1, resent.body.getInt("seq"))
+        assertEquals(1, net.posts.size)
     }
 
     @Test fun aStreamRefusedForTheSessionStaysClosed() {

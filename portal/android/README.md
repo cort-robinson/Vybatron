@@ -39,7 +39,11 @@ edits to the queue, carries out relayed controls, and reports song changes, play
 position every 15 s, volume and repeat. A newer generation stops it at once. If the portal refuses
 the session, the stream closes and reports wait, the song keeps playing, until the page hands over
 a session again. The page then only shows the player and sends edits and controls, and asks the
-app to `player.control` `stop` to let go of a song. Pages keep driving an app without the feature
+app to `player.control` `stop` to let go of a song. `player.subscribe` answers with `link`
+(`{linked, generation}`) and the app sends `player.link` when it changes: until the service's stream
+is live the page drives the app as before, and lets go the moment it links; while the service plays
+under a generation but its stream is down, the page passes on the controls relayed to it. A new
+session (a new token) starts over: nothing queued under the old one is sent. Pages keep driving an app without the feature
 (0.2.0) the old way.
 
 `DevicePlaybackTest` checks the player without the app's screen or the page: songs in a row, a

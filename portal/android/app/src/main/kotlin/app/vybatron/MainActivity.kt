@@ -60,6 +60,8 @@ class MainActivity : ComponentActivity() {
     // The page that last spoke to the player hears its events.
     private var events: JavaScriptReplyProxy? = null
     private val onState: (JSONObject) -> Unit = { events?.postMessage(PortalBridge.event("player.state", JSONObject().put("state", it))) }
+    // Whether the service's own connection to the shared player is live, and the generation it plays under.
+    private val onLink: (JSONObject) -> Unit = { events?.postMessage(PortalBridge.event("player.link", JSONObject().put("link", it))) }
     private val onNotice: (String, String) -> Unit = { message, kind ->
         events?.postMessage(PortalBridge.event("player.notice", JSONObject().put("message", message).put("kind", kind)))
     }
@@ -193,6 +195,7 @@ class MainActivity : ComponentActivity() {
             device = player
             player.addListener(onState)
             player.addNoticeListener(onNotice)
+            PlaybackService.link?.addStatusListener(onLink)
             val info = PortalBridge.AppInfo(BuildConfig.VERSION_NAME, BuildConfig.VERSION_CODE)
             waiting.toList().also { waiting.clear() }.forEach { (text, reply) -> answer(text, reply, info) }
         }, ContextCompat.getMainExecutor(this))
@@ -252,6 +255,7 @@ class MainActivity : ComponentActivity() {
     override fun onDestroy() {
         device?.removeListener(onState)
         device?.removeNoticeListener(onNotice)
+        PlaybackService.link?.removeStatusListener(onLink)
         device = null
         events = null
         controller?.let(MediaController::releaseFuture)

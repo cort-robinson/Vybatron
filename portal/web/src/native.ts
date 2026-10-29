@@ -14,7 +14,11 @@ export interface NativeState {
   revision: number; current: Track | null; queue: Track[]; history: Track[];
   status: 'idle' | 'playing' | 'paused'; positionMs: number; at: number; waiting: boolean;
   durationMs: number; volume: number; repeat: NativeRepeat;
+  // With `player.shared`, on `player.subscribe`'s answer: the service's own connection.
+  link?: NativeLink;
 }
+// Whether the app's playback service has its own live stream to the shared player, and the generation it plays under.
+export interface NativeLink { linked: boolean; generation: number | null }
 export interface NativeLoad {
   guildId: string; current: Track | null; queue: Track[]; history: Track[];
   positionMs: number; playing: boolean; volume: number; repeat: NativeRepeat;
@@ -38,6 +42,7 @@ export interface NativePlayer {
   control(control: NativeControl): Promise<NativeState>;
   onState(listener: (state: NativeState) => void): void;
   onNotice(listener: (message: string, kind: 'error' | 'info' | 'success') => void): void;
+  onLink(listener: (link: NativeLink) => void): void;
 }
 
 export class NativeError extends Error {}
@@ -48,10 +53,12 @@ export function nativePlayer(port: Port | undefined = typeof window === 'undefin
   const waiting = new Map<number, { resolve: (value: unknown) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> }>();
   const states = new Set<(state: NativeState) => void>();
   const notices = new Set<(message: string, kind: 'error' | 'info' | 'success') => void>();
+  const links = new Set<(link: NativeLink) => void>();
   port.addEventListener('message', event => {
-    let message: { id?: number; ok?: boolean; result?: unknown; error?: string; event?: string; state?: NativeState; message?: string; kind?: string };
+    let message: { id?: number; ok?: boolean; result?: unknown; error?: string; event?: string; state?: NativeState; message?: string; kind?: string; link?: NativeLink };
     try { message = JSON.parse(String(event.data)); } catch { return; }
     if (message.event === 'player.state' && message.state) { for (const listener of states) listener(message.state); return; }
+    if (message.event === 'player.link' && message.link) { for (const listener of links) listener(message.link); return; }
     if (message.event === 'player.notice' && typeof message.message === 'string') {
       const kind = message.kind === 'info' || message.kind === 'success' ? message.kind : 'error';
       for (const listener of notices) listener(message.message, kind);
@@ -77,5 +84,6 @@ export function nativePlayer(port: Port | undefined = typeof window === 'undefin
     control: control => request<NativeState>('player.control', control),
     onState: listener => { states.add(listener); },
     onNotice: listener => { notices.add(listener); },
+    onLink: listener => { links.add(listener); },
   };
 }

@@ -11,7 +11,8 @@ const youtubeTrack = (id: string, title: string) => ({ id: id.padEnd(24, '0'), t
   durationMs: 244_000, artworkUrl: null, isStream: false, requestedBy: null });
 
 interface Request { id: number; type: string; [key: string]: unknown }
-type Bridge = { requests: Request[]; endSong: (quiet?: boolean) => void; notice: (message: string) => void; broadcast: () => void };
+type Link = { linked: boolean; generation: number | null };
+type Bridge = { requests: Request[]; endSong: (quiet?: boolean) => void; notice: (message: string) => void; broadcast: () => void; link: (link: Link) => void };
 
 async function app(page: Page, shared?: SharedPlayerHub) {
   const fixture = await mockPortal(page, { shared });
@@ -24,6 +25,9 @@ async function app(page: Page, shared?: SharedPlayerHub) {
       at: Date.now(), waiting: false, durationMs: 0, volume: 100, repeat: 'off' };
     // What the app was already doing when the page opened, if a test says.
     const seed = (window as unknown as { nativeSeed?: Partial<typeof state> }).nativeSeed;
+    // With `player.shared`: the service's own connection, live unless a test says otherwise.
+    const shared = (window as unknown as { nativeShared?: boolean }).nativeShared;
+    let link = (window as unknown as { nativeLink?: Link }).nativeLink ?? { linked: true, generation: null };
     if (seed) state = { ...state, ...seed, at: Date.now() };
     const send = (message: unknown) => setTimeout(() => { for (const listener of listeners) listener({ data: JSON.stringify(message) }); }, 0);
     const change = (patch: Partial<typeof state>, songs = true) => { state = { ...state, ...patch, at: Date.now(), revision: state.revision + (songs ? 1 : 0) }; };
@@ -39,6 +43,8 @@ async function app(page: Page, shared?: SharedPlayerHub) {
       notice: message => send({ event: 'player.notice', message, kind: 'error' }),
       // The app's state, sent to the page unasked.
       broadcast: () => send({ event: 'player.state', state }),
+      // The service's stream opened or closed.
+      link: next => { link = next; send({ event: 'player.link', link }); },
     };
     (window as unknown as { vybatronNative: unknown }).vybatronNative = {
       addEventListener: (_type: string, listener: (event: { data: string }) => void) => listeners.push(listener),
@@ -46,7 +52,7 @@ async function app(page: Page, shared?: SharedPlayerHub) {
         const request = JSON.parse(data);
         // The app names itself (ADR-0016), so the page registers as the Android app.
         if (request.type === 'app.info') {
-          const features = (window as unknown as { nativeShared?: boolean }).nativeShared ? { features: ['player.shared'] } : {};
+          const features = shared ? { features: ['player.shared'] } : {};
           send({ id: request.id, ok: true, result: { platform: 'android', version: '0.2.0', build: 2, ...features } }); return;
         }
         requests.push(request);
@@ -72,7 +78,7 @@ async function app(page: Page, shared?: SharedPlayerHub) {
         }
         // Like the app: every change is broadcast before the reply; subscribing only answers.
         if (request.type !== 'player.subscribe') send({ event: 'player.state', state });
-        send({ id: request.id, ok: true, result: state });
+        send({ id: request.id, ok: true, result: request.type === 'player.subscribe' && shared ? { ...state, link } : state });
       },
     };
   });
@@ -246,8 +252,8 @@ test('the app\'s catch-up starts from the exact entry, not an older play of the 
 
 // An app with its own connection to the shared player (`player.shared`): its playback service
 // plays and reports for this device, page or no page, so the page only shows and controls it.
-async function sharedApp(page: Page, hub = new SharedPlayerHub()) {
-  await page.addInitScript(() => { (window as unknown as { nativeShared: boolean }).nativeShared = true; });
+async function sharedApp(page: Page, hub = new SharedPlayerHub(), link?: { linked: boolean; generation: number | null }) {
+  await page.addInitScript(next => { Object.assign(window, { nativeShared: true, ...(next && { nativeLink: next }) }); }, link);
   return app(page, hub);
 }
 // The app's playback service, which the hub would hear from over its own stream: here it reports directly.
@@ -260,7 +266,7 @@ async function serviceReports(hub: SharedPlayerHub, change: (player: SharedPlaye
 test('an app that reports for itself gets the page\'s session, and the page never reports or plays for it', async ({ page }) => {
   const fixture = await sharedApp(page);
   // The page hands the app's service what it needs to stay a device with the page closed.
-  await expect.poll(async () => sent(page, 'player.subscribe')).toEqual([{ session: { csrfToken: 'local-test-csrf', deviceId: expect.stringMatching(/^[\w-]{22}$/), name: 'Android app' } }]);
+  await expect.poll(async () => sent(page, 'player.subscribe')).toEqual([{}, { session: { csrfToken: 'local-test-csrf', deviceId: expect.stringMatching(/^[\w-]{22}$/), name: 'Android app' } }]);
   await addSongs(page);
   // The first song made this device the active one, and Play went to it as a relayed control.
   await expect.poll(() => fixture.shared.player.activeDeviceId).toBe(fixture.shared.devices[0]?.deviceId);
@@ -278,7 +284,7 @@ test('an app that reports for itself gets the page\'s session, and the page neve
   // The relayed controls reached this page too, which left them to the app: no reports, no player requests.
   expect(fixture.shared.ops('report')).toEqual([]);
   expect(fixture.shared.ops('deactivate')).toEqual([]);
-  expect((await requests(page)).map(request => request.type)).toEqual(['player.subscribe']);
+  expect((await requests(page)).map(request => request.type)).toEqual(['player.subscribe', 'player.subscribe']);
   await expect(page.locator('audio, video, iframe')).toHaveCount(0);
   expect(fixture.audio).toEqual([]);
   expect(fixture.shared.devices).toEqual([expect.objectContaining({ name: 'Android app', kind: 'android' })]);
@@ -301,7 +307,7 @@ test('a page that finds its app playing leaves it playing', async ({ page }) => 
   expect(hub.ops('deactivate')).toEqual([]);
   expect(hub.ops('activate')).toEqual([]);
   expect(hub.ops('report')).toEqual([]);
-  expect((await requests(page)).map(request => request.type)).toEqual(['player.subscribe']);
+  expect((await requests(page)).map(request => request.type)).toEqual(['player.subscribe', 'player.subscribe']);
 });
 
 test('Stop asks the app\'s service to let the song go, then clears the queue', async ({ page }) => {
@@ -317,4 +323,42 @@ test('Stop asks the app\'s service to let the song go, then clears the queue', a
   await expect.poll(() => fixture.shared.ops('clear').length).toBe(1);
   expect(fixture.shared.player.queue).toEqual([]);
   expect(fixture.shared.ops('report')).toEqual([]);
+});
+
+test('until the app\'s service links, the page drives the app; then it lets go before the service reports', async ({ page }) => {
+  const fixture = await sharedApp(page, undefined, { linked: false, generation: null });
+  await addSongs(page);
+  await expect(title(page)).toHaveText('Midnight City');
+  // As with an older app: the page loads the app and reports for it.
+  await expect.poll(async () => (await sent(page, 'player.load')).length).toBe(1);
+  await expect.poll(() => fixture.shared.ops('report').length).toBeGreaterThan(0);
+  await expect(page.getByRole('button', { name: 'Pause playback' })).toBeEnabled();
+  // The service's stream comes up: the page stops at once and leaves the music alone.
+  await page.evaluate(() => (window as unknown as { bridge: Bridge }).bridge.link({ linked: true, generation: null }));
+  await page.waitForTimeout(300);
+  const reports = fixture.shared.ops('report').length;
+  const controls = (await sent(page, 'player.control')).length;
+  await page.getByRole('button', { name: 'Pause playback' }).click();
+  await expect.poll(() => fixture.shared.ops('control').map(request => request.body.action)).toEqual(['pause']);
+  await page.waitForTimeout(300);
+  expect(fixture.shared.ops('report')).toHaveLength(reports);
+  expect(await sent(page, 'player.control')).toHaveLength(controls);
+});
+
+test('while the service\'s own stream is down, controls relayed to the app go to it through the page', async ({ page }) => {
+  const hub = new SharedPlayerHub();
+  const [a] = [youtubeTrack('dX3k_QDnzHE', 'A')].map(({ requestedBy: _requestedBy, ...track }) => ({ entryId: 'entry0xxxxxx', track }));
+  await page.addInitScript(() => localStorage.setItem('vybertron.device', JSON.stringify({ deviceId: 'AndroidAppDevice_01234', name: 'Android app' })));
+  hub.devices.push({ deviceId: 'AndroidAppDevice_01234', name: 'Android app', kind: 'android', lastSeen: Date.now() });
+  Object.assign(hub.player, { current: a, revision: 3, generation: 4, activeDeviceId: 'AndroidAppDevice_01234', playhead: { positionMs: 5000, at: Date.now(), playing: true }, updatedAt: 1 });
+  // The service plays under generation 4, but its stream is down.
+  await sharedApp(page, hub, { linked: false, generation: 4 });
+  await expect(page.getByRole('button', { name: 'Pause playback' })).toBeEnabled();
+  await page.getByRole('button', { name: 'Pause playback' }).click();
+  await expect.poll(async () => sent(page, 'player.control')).toEqual([{ action: 'pause' }]);
+  expect(hub.ops('control').map(request => request.body.action)).toEqual(['pause']);
+  // The service reports it; the page neither reports nor takes over.
+  expect(hub.ops('report')).toEqual([]);
+  expect(hub.ops('activate')).toEqual([]);
+  expect(hub.player.generation).toBe(4);
 });

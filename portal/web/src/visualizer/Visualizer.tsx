@@ -52,6 +52,14 @@ export function SleeveVisualizer({ animate, onFail, onFull, ...scene }: Scene & 
   return <Stage className="artwork sleeve-visualizer" view={useView(scene, animate, false, false)} onFail={onFail} onDoubleClick={onFull} />;
 }
 
+// The TV's now-playing screen (ADR-0019): the visualizer behind everything, at the frame rate chosen
+// in Settings. The screen draws its own song and controls over it.
+export function BackdropVisualizer({ onFail, ...scene }: Scene & { onFail: () => void }) {
+  const [reduced] = useState(prefersReducedMotion);
+  const [lite] = useState(() => document.documentElement.hasAttribute('data-performance'));
+  return <Stage className="visualizer-stage visualizer-backdrop" view={useView(scene, !reduced, true, lite)} onFail={onFail} />;
+}
+
 // The takeover: the visualizer fills the screen; the song, its position, the presets and a way out
 // sit over it and fade after a few seconds without input, returning on any pointer or key. A touch
 // on the picture shows or hides them. It is a modal dialog, so the page and the room beneath hold

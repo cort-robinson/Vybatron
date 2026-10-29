@@ -45,6 +45,10 @@ export interface NativePlayer {
   onState(listener: (state: NativeState) => void): void;
   onNotice(listener: (message: string, kind: 'error' | 'info' | 'success') => void): void;
   onLink(listener: (link: NativeLink) => void): void;
+  // Back (ADR-0019): the app asks the page first with the event `app.back` (`{event, back}`), and the
+  // page answers with the request `app.back` (`{back, handled}`). With `handled: false`, or no answer
+  // in time, the app does its own Back. The latest handler answers; returns how to remove it.
+  onBack(handler: () => boolean): () => void;
 }
 
 export class NativeError extends Error {}
@@ -70,9 +74,16 @@ function connect(port: Port): NativePlayer {
   const states = new Set<(state: NativeState) => void>();
   const notices = new Set<(message: string, kind: 'error' | 'info' | 'success') => void>();
   const links = new Set<(link: NativeLink) => void>();
+  let back: (() => boolean) | null = null;
   port.addEventListener('message', event => {
-    let message: { id?: number; ok?: boolean; result?: unknown; error?: string; event?: string; state?: NativeState; message?: string; kind?: string; link?: NativeLink };
+    let message: { id?: number; ok?: boolean; result?: unknown; error?: string; event?: string; state?: NativeState; message?: string; kind?: string; link?: NativeLink; back?: number };
     try { message = JSON.parse(String(event.data)); } catch { return; }
+    if (message.event === 'app.back' && Number.isSafeInteger(message.back)) {
+      let handled = false;
+      try { handled = !!back?.(); } catch { /* A failed step leaves Back to the app. */ }
+      void request('app.back', { back: message.back, handled }).catch(() => undefined);
+      return;
+    }
     if (message.event === 'player.state' && message.state) { for (const listener of states) listener(message.state); return; }
     if (message.event === 'player.link' && message.link) { for (const listener of links) listener(message.link); return; }
     if (message.event === 'player.notice' && typeof message.message === 'string') {
@@ -101,5 +112,6 @@ function connect(port: Port): NativePlayer {
     onState: listener => { states.add(listener); },
     onNotice: listener => { notices.add(listener); },
     onLink: listener => { links.add(listener); },
+    onBack: handler => { back = handler; return () => { if (back === handler) back = null; }; },
   };
 }

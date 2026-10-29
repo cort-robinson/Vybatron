@@ -1,5 +1,5 @@
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { CaretDownIcon, CheckIcon, DesktopIcon, DiscordLogoIcon, CaretUpIcon, DotsThreeIcon, HeartIcon, PauseIcon, PlayIcon, RepeatIcon, RepeatOnceIcon, ShuffleIcon, SkipBackIcon, SkipForwardIcon, SpeakerHighIcon, StopIcon, RadioIcon, HandPalmIcon, ArrowSquareOutIcon, TrashIcon, WarningCircleIcon, ThumbsDownIcon, VinylRecordIcon, MoonIcon, MicrophoneStageIcon, WaveformIcon, CornersOutIcon } from '../icons';
+import { CaretDownIcon, CheckIcon, DesktopIcon, DeviceMobileIcon, DiscordLogoIcon, PencilSimpleIcon, TelevisionSimpleIcon, CaretUpIcon, DotsThreeIcon, HeartIcon, PauseIcon, PlayIcon, RepeatIcon, RepeatOnceIcon, ShuffleIcon, SkipBackIcon, SkipForwardIcon, SpeakerHighIcon, StopIcon, RadioIcon, HandPalmIcon, ArrowSquareOutIcon, TrashIcon, WarningCircleIcon, ThumbsDownIcon, VinylRecordIcon, MoonIcon, MicrophoneStageIcon, WaveformIcon, CornersOutIcon } from '../icons';
 import type { Portal } from '../usePortal';
 import { saveByLink, useSavingFavorite } from '../favorites';
 import type { Command, Track } from '../types';
@@ -33,6 +33,7 @@ export function Player({ portal, expanded, setExpanded, onAdd, palette, animate,
   const [confirmClear, setConfirmClear] = useState(false);
   const [saveSession, setSaveSession] = useState(false);
   const [confirmHere, setConfirmHere] = useState(false);
+  const [renaming, setRenaming] = useState(false);
   const [sleepOpen, setSleepOpen] = useState(false);
   const [queueOpen, setQueueOpen] = useState(false);
   // The open player can show the current song's lyrics in place of its cover.
@@ -196,10 +197,23 @@ export function Player({ portal, expanded, setExpanded, onAdd, palette, animate,
         {sourceUrl && <a href={sourceUrl} target="_blank" rel="noreferrer" onClick={close}><ArrowSquareOutIcon />Open original track</a>}
         {!local && <button disabled={!can('library') || !track} onClick={() => { close(); setSaveSession(true); }}><VinylRecordIcon />Save session as mix</button>}
         <p className="menu-section">Play on</p>
-        <button aria-pressed={local} disabled={!!pending.length} onClick={() => { close(); if (!local) { if (discord?.current) setConfirmHere(true); else void portal.moveHere(false); } }}><DesktopIcon />This device{local && <CheckIcon className="menu-check" weight="bold" />}</button>
+        {portal.devices.map(device => {
+          // With nothing playing anywhere, the player waits on this device.
+          const chosen = local && (device.active || device.self && !portal.devices.some(other => other.active));
+          const Icon = device.kind === 'android' ? DeviceMobileIcon : device.kind === 'tv' ? TelevisionSimpleIcon : DesktopIcon;
+          const note = [device.self ? device.name : '', device.note].filter(Boolean).join(' · ');
+          const choose = () => {
+            close();
+            if (device.self && !local) { if (discord?.current) setConfirmHere(true); else void portal.moveHere(false); }
+            else if (!device.active) void portal.playOn(device.deviceId);
+          };
+          return <button key={device.deviceId} aria-pressed={chosen} disabled={!!pending.length || !device.self && !device.playable} onClick={choose}><Icon />
+            <span className="menu-device"><span>{device.self ? 'This device' : device.name}</span>{note && <small>{note}</small>}</span>{chosen && <CheckIcon className="menu-check" weight="bold" />}</button>;
+        })}
         <button aria-pressed={!local} disabled={!!pending.length || local && !discordActive && !discord?.viewerVoice} onClick={() => { close(); if (local) void portal.moveToDiscord(); }}><DiscordLogoIcon />{discordLabel}{!local && <CheckIcon className="menu-check" weight="bold" />}</button>
+        {portal.devices.length > 0 && <button onClick={() => { close(); setRenaming(true); }}><PencilSimpleIcon />Rename this device</button>}
         <button className="danger-text" disabled={!controllable || !session?.queue.length} onClick={() => { close(); setConfirmClear(true); }}><TrashIcon />Clear upcoming queue</button>
-        <button className="danger-text" disabled={!can('control') || !track} onClick={() => { close(); setConfirmStop(true); }}><StopIcon />{local ? 'Stop and clear this device’s queue' : 'Stop and discard session'}</button>
+        <button className="danger-text" disabled={!can('control') || !track} onClick={() => { close(); setConfirmStop(true); }}><StopIcon />{local ? 'Stop and clear your queue' : 'Stop and discard session'}</button>
       </>}
     </ActionPopover>
   </div>;
@@ -219,7 +233,7 @@ export function Player({ portal, expanded, setExpanded, onAdd, palette, animate,
       <button ref={expandTriggerRef} className="expand-button" aria-expanded={expanded} aria-label={expanded ? 'Close player' : 'Open player'} title={expanded ? 'Close player' : 'Open player'} onClick={() => { openedFromIdentity.current = false; setExpanded(!expanded); }}>{expanded ? <CaretDownIcon size={29} /> : <CaretUpIcon size={29} />}<span>{expanded ? 'Close player' : 'Open player'}</span></button>
     </div>
     {visualsFull && visuals && <visuals.FullscreenVisualizer clock={clock} palette={palette} skin={skin} guildId={snapshot?.guild.id ?? null} local={local} onClose={() => setVisualsFull(false)} fallback={spectrum('visualizer-fallback', 48, undefined, 6, 4)} />}
-    {confirmStop && (local ? <Confirm title="Stop playing on this device?" detail="Stops the current song and clears this device’s queue. The Discord session, your favorites and shared mixes aren’t affected." action="Stop" onClose={() => setConfirmStop(false)} onConfirm={() => { setConfirmStop(false); void run({ command: 'stop' }, 'control'); }} />
+    {confirmStop && (local ? <Confirm title="Stop and clear your queue?" detail="Stops the current song and clears your queue on all your devices. The Discord session, your favorites and shared mixes aren’t affected." action="Stop" onClose={() => setConfirmStop(false)} onConfirm={() => { setConfirmStop(false); void run({ command: 'stop' }, 'control'); }} />
       : <StopDialog portal={portal} onClose={() => setConfirmStop(false)} />)}
     {sleepOpen && !local && <SleepDialog portal={portal} onClose={() => setSleepOpen(false)} />}
     {saveSession && <SaveSessionDialog portal={portal} onClose={() => setSaveSession(false)} />}
@@ -230,10 +244,32 @@ export function Player({ portal, expanded, setExpanded, onAdd, palette, animate,
         <button type="button" className="button secondary" onClick={() => { setConfirmHere(false); void portal.moveHere(false); }}>Listen here too</button>
         <button type="button" className="button primary" disabled={!can('control') || !!pending.length} onClick={() => void portal.moveHere(true).then(ok => { if (ok) setConfirmHere(false); })}>Move here</button></div>
     </Dialog>}
+    {renaming && <RenameDevice portal={portal} onClose={() => setRenaming(false)} />}
+    {portal.legacySongs > 0 && <Dialog title="Add this device’s songs to your player?" onClose={() => void portal.answerLegacy(false)} className="confirm-dialog">
+      <p>This device kept {portal.legacySongs === 1 ? 'a song' : `${portal.legacySongs} songs`} from before your player followed you to all your devices. Add {portal.legacySongs === 1 ? 'it' : 'them'} to your player, or leave {portal.legacySongs === 1 ? 'it' : 'them'} out. Either way, this device stops keeping its own copy.</p>
+      <div className="form-actions"><button type="button" className="button secondary" onClick={() => void portal.answerLegacy(false)}>Leave out</button>
+        <button type="button" className="button primary" onClick={() => void portal.answerLegacy(true)}>Add to my player</button></div>
+    </Dialog>}
     {confirmClear && <Confirm title="Clear the upcoming queue?" detail={`Removes ${session?.queue.length || 0} queued songs. The current song keeps its position and playback state${local ? '' : ' in Discord'}.`} action="Clear queue" onClose={() => setConfirmClear(false)} onConfirm={() => { setConfirmClear(false); void control({ command: 'clear' }); }} />}
   </section>;
 }
 
+// The name this device goes by in the listener's device list.
+function RenameDevice({ portal, onClose }: { portal: Portal; onClose: () => void }) {
+  const current = portal.devices.find(device => device.self)?.name ?? '';
+  const [name, setName] = useState(current);
+  const [saving, setSaving] = useState(false);
+  const input = useRef<HTMLInputElement>(null);
+  const valid = !!name.trim() && name.trim().length <= 40;
+  return <Dialog title="Rename this device" onClose={onClose} className="confirm-dialog session-mix-dialog" initialFocusRef={input}>
+    <form onSubmit={event => { event.preventDefault(); if (!valid) return; setSaving(true); void portal.renameDevice(name).then(ok => { setSaving(false); if (ok) onClose(); }); }}>
+      <label className="session-mix-field">Device name<input ref={input} value={name} dir="auto" maxLength={40} placeholder="Kitchen speaker" autoComplete="off" onChange={event => setName(event.target.value)} />
+        <span className="field-hint">Your other devices show this name when you choose where to play.</span></label>
+      <div className="form-actions"><button type="button" className="button secondary" onClick={onClose}>Cancel</button>
+        <button type="submit" className="button primary" disabled={!valid || saving}>{saving ? 'Saving…' : 'Save'}</button></div>
+    </form>
+  </Dialog>;
+}
 function Timeline({ clock, track, duration, seekable, reset, onSeek }: { clock: Clock; track: Track | null; duration: number; seekable: boolean; reset?: string; onSeek: (value: number) => void }) {
   const position = usePosition(clock);
   const [scrub, setScrub] = useState<number | null>(null);

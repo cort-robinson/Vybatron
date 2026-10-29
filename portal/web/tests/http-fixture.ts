@@ -19,6 +19,7 @@ export async function startHttpFixture(options: { initialSnapshotFailures?: numb
   const logouts: { method: string | undefined; body: string; contentType: string | undefined; csrfToken: string | string[] | undefined }[] = [];
   let signedOut = false;
   const streams = new Set<ServerResponse>(); const held = new Set<ServerResponse>(); let hold = false;
+  const listenerStreams = new Set<ServerResponse>();
   const streamGuilds = new Map<ServerResponse, string>();
   const heldLibraries = new Set<ServerResponse>(); let holdLibrary = false;
   const capturedSnapshots = new Map<ServerResponse, GuildSnapshot>();
@@ -45,6 +46,16 @@ export async function startHttpFixture(options: { initialSnapshotFailures?: numb
       const logout = { method: request.method, body, contentType: request.headers['content-type'], csrfToken: request.headers['x-csrf-token'] }; logouts.push(logout);
       if (logout.method !== 'POST' || body || logout.contentType || logout.csrfToken !== 'local-test-csrf') { json(response, { error: { code: 'invalid_logout', message: 'Logout requires a bodyless CSRF-protected POST.' } }, 400); return; }
       signedOut = true; for (const stream of streams) stream.end(); json(response, { ok: true }); return;
+    }
+    // The listener's shared player (ADR-0018) is idle here: its stream stays open with an empty player.
+    if (path.startsWith('/api/me/')) {
+      if (path === '/api/me/time') { json(response, { now: Date.now() }); return; }
+      if (path !== '/api/me/events') { json(response, { error: { code: 'unavailable', message: 'The shared player is unavailable here.' } }, 503); return; }
+      response.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store', Connection: 'keep-alive' });
+      const player = { guildId: null, revision: 0, generation: 0, generationAt: 0, activeDeviceId: null, playbackVersion: 0, current: null, queue: [], history: [],
+        playhead: { positionMs: 0, at: 0, playing: false }, volume: 100, repeat: 'off', updatedAt: 1 };
+      response.write(`retry: 1000\n\nevent:player\ndata:${JSON.stringify({ player, devices: [] })}\n\n`);
+      listenerStreams.add(response); response.on('close', () => listenerStreams.delete(response)); return;
     }
     if (accessStatus && path.startsWith('/api/guilds/')) { json(response, { error: { code: 'forbidden', message: 'You no longer have access to this listening space.' } }, accessStatus); return; }
     if (path.endsWith('/configuration')) {
@@ -157,6 +168,6 @@ export async function startHttpFixture(options: { initialSnapshotFailures?: numb
     releaseCommandReplies: () => { holdCommands = false; for (const [response, snapshot] of heldCommands) json(response, { ok: true, message: 'Accepted by the loopback HTTP fixture.', snapshot }); heldCommands.clear(); },
     holdLibraryReads: () => { holdLibrary = true; },
     releaseLibraryReads: () => { holdLibrary = false; for (const response of heldLibraries) json(response, state.library); heldLibraries.clear(); },
-    close: async () => { releaseCommandGate?.(); for (const response of streams) response.end(); for (const response of held) response.end(); for (const response of heldLibraries) response.end(); for (const response of heldCommands.keys()) response.end(); for (const response of heldConfigurations.keys()) response.end(); server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); },
+    close: async () => { releaseCommandGate?.(); for (const response of listenerStreams) response.end(); for (const response of streams) response.end(); for (const response of held) response.end(); for (const response of heldLibraries) response.end(); for (const response of heldCommands.keys()) response.end(); for (const response of heldConfigurations.keys()) response.end(); server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); },
   };
 }

@@ -56,4 +56,20 @@ class PortalBridgeTest {
         assertEquals("stale", JSONObject(PortalBridge.respond("""{"id":6,"type":"player.setQueue","queue":[],"revision":1}""", info, stale)).getString("error"))
         assertEquals(1, seen.size)
     }
+
+    @Test fun takesThePagesAnswerToBack() {
+        val answers = mutableListOf<Pair<Int, Boolean>>()
+        val back = PortalBridge.Back { number, handled -> answers.add(number to handled) }
+        val reply = JSONObject(PortalBridge.respond("""{"id":9,"type":"app.back","back":3,"handled":true}""", info, null, back))
+        assertEquals(9, reply.getInt("id"))
+        assertTrue(reply.getBoolean("ok"))
+        assertEquals(listOf(3 to true), answers)
+
+        listOf("""{"id":10,"type":"app.back","back":"3","handled":true}""", """{"id":10,"type":"app.back","back":3}""",
+            """{"id":10,"type":"app.back","handled":false}""", """{"id":10,"type":"app.back","back":3,"handled":"no"}""").forEach {
+            assertEquals("bad_request", JSONObject(PortalBridge.respond(it, info, null, back)).getString("error"))
+        }
+        assertEquals("unavailable", JSONObject(PortalBridge.respond("""{"id":11,"type":"app.back","back":3,"handled":false}""", info)).getString("error"))
+        assertEquals(listOf(3 to true), answers)
+    }
 }

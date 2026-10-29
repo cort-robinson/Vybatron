@@ -298,8 +298,10 @@ test('in the app on a TV, the page registers as a TV and hands the app\'s servic
   // The service registers with the name the page hands it; the page's own registration is a TV too.
   await expect.poll(async () => sent(page, 'player.subscribe')).toEqual([{}, { session: { csrfToken: 'local-test-csrf', deviceId: expect.stringMatching(/^[\w-]{22}$/), name: 'TV' } }]);
   await expect.poll(() => fixture.shared.devices).toEqual([expect.objectContaining({ name: 'TV', kind: 'tv' })]);
-  // The device picker shows it with the TV icon, as it would any TV.
-  await openMenu(page);
+  // On a TV now playing is the first screen (ADR-0019), so the setup's Queue opened its queue; its
+  // device picker shows this device with the TV icon.
+  await page.getByRole('dialog', { name: 'Up next' }).getByRole('button', { name: 'Close dialog' }).click();
+  await page.getByTestId('tv-home').getByRole('button', { name: 'Play on' }).click();
   const self = page.getByRole('button', { name: /This device/ });
   await expect(self).toContainText('TV');
   expect(await self.locator('svg path').first().getAttribute('d')).toMatch(/^M216,64H147\.31/);

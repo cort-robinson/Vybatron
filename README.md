@@ -120,7 +120,10 @@ playback still follows voice and DJ rules. A device stays signed in while it's u
 30 days without use or 90 days after sign-in end it. A screen without a keyboard, such
 as a TV, can sign in with a code instead of Discord: it shows the code, the `/link`
 address and a QR code, and a listener approves it on a signed-in phone
-([ADR-0019](docs/adr/0019-the-app-on-android-tv.md)).
+([ADR-0019](docs/adr/0019-the-app-on-android-tv.md)). In the app on a TV (or with `?tv=1` in a
+browser, for testing) the portal works with a remote (`portal/web/src/tv.ts`): now playing, with the
+visualizer, is the first screen; the arrow keys move focus to the nearest control; OK starts and
+stops editing a slider or text field; and Back closes the open menu or dialog, then goes back a view.
 Permissions follow Discord's live Gateway updates, so a removed role or hidden
 channel applies to the next read; the account and bot owner checks are reused
 for up to 30 seconds and five minutes ([ADR-0011](docs/adr/0011-portal-authorization-from-gateway-state.md)).

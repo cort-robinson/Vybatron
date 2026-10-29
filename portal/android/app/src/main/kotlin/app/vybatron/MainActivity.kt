@@ -7,6 +7,8 @@ import android.graphics.Bitmap
 import android.graphics.Color
 import android.net.Uri
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
@@ -65,6 +67,13 @@ class MainActivity : ComponentActivity() {
     private val onNotice: (String, String) -> Unit = { message, kind ->
         events?.postMessage(PortalBridge.event("player.notice", JSONObject().put("message", message).put("kind", kind)))
     }
+    // Back asks the portal page first (ADR-0019): it closes its own menus, dialogs and views.
+    private val main = Handler(Looper.getMainLooper())
+    private val back = BackRelay({ ms, task ->
+        val run = Runnable(task)
+        main.postDelayed(run, ms)
+        ({ main.removeCallbacks(run) })
+    })
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -98,11 +107,14 @@ class MainActivity : ComponentActivity() {
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
-                if (view.canGoBack()) { view.goBack(); return }
-                // Let the system handle it (Android 12+ only backgrounds the app), then take Back again.
-                isEnabled = false
-                onBackPressedDispatcher.onBackPressed()
-                isEnabled = true
+                back.press {
+                    if (webView !== view || isFinishing) return@press
+                    if (view.canGoBack()) { view.goBack(); return@press }
+                    // Let the system handle it (Android 12+ only backgrounds the app), then take Back again.
+                    isEnabled = false
+                    onBackPressedDispatcher.onBackPressed()
+                    isEnabled = true
+                }
             }
         })
 
@@ -137,6 +149,8 @@ class MainActivity : ComponentActivity() {
                 if (!isMainFrame || !portal.matches(origin.toString())) return@addWebMessageListener
                 // A binary message has no text to read; reading it would throw.
                 val text = if (message.type == WebMessageCompat.TYPE_STRING) message.data else null
+                // The page that last spoke is the one Back asks.
+                back.attach { reply.postMessage(it) }
                 if (device == null && isPlayerRequest(text)) waiting.add(text to reply) else answer(text, reply, info)
             }
         }
@@ -163,6 +177,8 @@ class MainActivity : ComponentActivity() {
             // starts is checked again, and one that isn't allowed is left for the portal.
             override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) {
                 // Only web pages; WebView's own error and blank pages are left alone.
+                // A new page hasn't spoken yet, and the last one is gone: Back has no page to ask.
+                back.attach(null)
                 val web = url.startsWith("https:", ignoreCase = true) || url.startsWith("http:", ignoreCase = true)
                 if (web && !NavigationPolicy.destination(url, portal).staysInApp) {
                     view.stopLoading()
@@ -206,7 +222,7 @@ class MainActivity : ComponentActivity() {
         if (player != null && isPlayerRequest(text)) events = reply
         // The service's link takes the page's session and Stop; everything else goes to the player.
         val handler = player?.let { PlaybackService.link?.let { link -> PortalBridge.Player(link::handle) } ?: PortalBridge.Player(it::handle) }
-        reply.postMessage(PortalBridge.respond(text, info, handler))
+        reply.postMessage(PortalBridge.respond(text, info, handler) { number, handled -> back.answer(number, handled) })
     }
 
     private fun isPlayerRequest(text: String?) =
@@ -253,6 +269,7 @@ class MainActivity : ComponentActivity() {
     // No WebView.onPause(): music playing on this device keeps going with the app in the background.
 
     override fun onDestroy() {
+        back.close()
         device?.removeListener(onState)
         device?.removeNoticeListener(onNotice)
         PlaybackService.link?.removeStatusListener(onLink)

@@ -205,3 +205,18 @@ test('music the app played on through while its page was gone is reported from i
   expect(hub.player.queue.map(entry => entry.track.title)).toEqual(['D']);
   expect(hub.player.history.map(entry => entry.track.title)).toEqual(['B', 'A']);
 });
+
+test('the app\'s catch-up also follows songs it holds without their entry', async ({ page }) => {
+  const hub = new SharedPlayerHub();
+  const songs = ['dX3k_QDnzHE', 'Fk3RbKWbmtg', 'aaaaaaaaaaa', 'bbbbbbbbbbb'].map((id, index) => ({ ...youtubeTrack(id, ['A', 'B', 'C', 'D'][index]), requestedBy: null }));
+  const [a, b, c, d] = songs.map(({ requestedBy: _requestedBy, ...track }, index) => ({ entryId: `entry${index}`.padEnd(12, 'x'), track }));
+  Object.assign(hub.player, { current: a, queue: [b, c, d], history: [], revision: 3, updatedAt: 1 });
+  // An app that was handed these songs before they carried entries.
+  await page.addInitScript(([played, now, next]) => { (window as unknown as { nativeSeed: unknown }).nativeSeed = { current: now, queue: [next], history: played, status: 'playing', positionMs: 5000, durationMs: 244_000, revision: 7 }; },
+    [[songs[1], songs[0]], songs[2], songs[3]] as const);
+  await app(page, hub);
+  await expect.poll(() => hub.player.current?.track.title).toBe('C');
+  expect(hub.ops('report').flatMap(request => request.body.advance ? [[request.body.advance.from, request.body.advance.to]] : [])).toEqual([[a.entryId, b.entryId], [b.entryId, c.entryId]]);
+  expect(hub.player.queue.map(entry => entry.track.title)).toEqual(['D']);
+  expect(hub.player.history.map(entry => entry.track.title)).toEqual(['B', 'A']);
+});

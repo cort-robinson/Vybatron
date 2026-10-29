@@ -1,7 +1,8 @@
 import type { Bootstrap, GuildSnapshot, Library, Track, Command, CommandResult, Configuration, Diagnostics, Activity, Recap, RecapWindow, Stats, StatsWindow, LyricsResponse } from './types';
 
 export class ApiError extends Error {
-  constructor(public status: number, public code: string, message: string, public retryAfterMs = 0) { super(message); this.name = 'ApiError'; }
+  // `body` is the refusal's JSON, for errors that carry state (the shared player's 409s).
+  constructor(public status: number, public code: string, message: string, public retryAfterMs = 0, public body: unknown = null) { super(message); this.name = 'ApiError'; }
 }
 
 async function request<T>(path: string, init: RequestInit = {}, timeoutMs = 20_000): Promise<T> {
@@ -19,7 +20,7 @@ async function request<T>(path: string, init: RequestInit = {}, timeoutMs = 20_0
     const delay = retryAfter === null ? 0 : /^\d+$/.test(retryAfter) ? Number(retryAfter) * 1000 : Date.parse(retryAfter) - Date.now();
     throw new ApiError(response.status, body?.error?.code || 'request_failed',
       typeof body?.error?.message === 'string' ? body.error.message : 'This request could not be completed. Refresh and try again.',
-      Number.isFinite(delay) ? Math.max(0, Math.min(delay, 60_000)) : 0);
+      Number.isFinite(delay) ? Math.max(0, Math.min(delay, 60_000)) : 0, body);
   }
   if (!body || typeof body !== 'object') throw new ApiError(503, 'invalid_response', 'Live state is unavailable. Refresh and try again.');
   return body as T;
@@ -86,6 +87,13 @@ export const api = {
   }),
   // Protocol 2 lets the API answer an unchanged read with a short `unchanged` event.
   eventsUrl: (id: string) => `${guildPath(id)}/events?protocol=2`,
+  // The listener's shared player (ADR-0018): its clock, its live stream and its changes.
+  time: (signal?: AbortSignal) => request<{ now: number }>('/api/me/time', { signal }, 5000),
+  playerEventsUrl: (device: { deviceId: string; kind: string; name: string }) =>
+    `/api/me/events?${new URLSearchParams({ device: device.deviceId, kind: device.kind, name: device.name, protocol: '1' })}`,
+  player: (csrfToken: string, body: object, signal?: AbortSignal) => request<Record<string, unknown>>('/api/me/player', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken }, body: JSON.stringify(body), signal,
+  }),
 };
 
 export function errorMessage(error: unknown): string {

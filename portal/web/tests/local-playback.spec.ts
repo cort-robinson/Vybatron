@@ -38,7 +38,7 @@ async function portal(page: Page, { inVoice, idle = false }: { inVoice: boolean;
 const calls = (page: Page) => page.evaluate(() => (window as unknown as { audioCalls?: string[] }).audioCalls || []);
 const title = (page: Page) => page.getByTestId('player').locator('.compact-track-title');
 const openMenu = (page: Page) => page.getByTestId('player').getByRole('button', { name: 'More playback controls' }).click();
-async function playOn(page: Page, choice: string) {
+async function playOn(page: Page, choice: string | RegExp) {
   await openMenu(page);
   await page.getByRole('button', { name: choice, exact: true }).click();
 }
@@ -132,7 +132,7 @@ test('moving to voice casts this device’s queue and place into the listener’
 
 test('moving here can leave Discord playing or stop it', async ({ page }) => {
   const fixture = await portal(page, { inVoice: true });
-  await playOn(page, 'This device');
+  await playOn(page, /^This device/);
   const dialog = page.getByRole('dialog', { name: 'Move playback to this device?' });
   await expect(dialog).toContainText('2 other people are listening in General.');
   await dialog.getByRole('button', { name: 'Listen here too' }).click();
@@ -145,7 +145,7 @@ test('moving here can leave Discord playing or stop it', async ({ page }) => {
   await playOn(page, 'Join the session in General');
   await expect(title(page)).toHaveText('Evening Light');
   await expect.poll(() => calls(page)).toContain('pause');
-  await playOn(page, 'This device');
+  await playOn(page, /^This device/);
   await page.getByRole('dialog').getByRole('button', { name: 'Move here' }).click();
   await expect.poll(() => fixture.commands.map(command => command.command)).toEqual(['stop']);
   await expect(page.getByRole('heading', { name: 'Your Queue' })).toBeAttached();

@@ -23,6 +23,8 @@ export type NativeControl = { action: 'play' | 'pause' | 'next' | 'previous' | '
   | { action: 'skipTo'; index: number; revision: number } | { action: 'volume'; level: number } | { action: 'repeat'; mode: NativeRepeat };
 
 export interface NativePlayer {
+  // The app itself (ADR-0016): which platform, and its version.
+  info(): Promise<{ platform: string; version: string; build: number }>;
   subscribe(): Promise<NativeState>;
   load(load: NativeLoad): Promise<NativeState>;
   // Refused with 'stale' when the songs changed since `revision`.
@@ -61,6 +63,7 @@ export function nativePlayer(port: Port | undefined = typeof window === 'undefin
     port.postMessage(JSON.stringify({ ...body, id, type }));
   });
   return {
+    info: () => request<{ platform: string; version: string; build: number }>('app.info'),
     subscribe: () => request<NativeState>('player.subscribe'),
     load: load => request<NativeState>('player.load', load),
     setQueue: (queue, revision) => request<NativeState>('player.setQueue', { queue, revision }),

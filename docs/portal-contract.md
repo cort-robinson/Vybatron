@@ -273,8 +273,9 @@ Unavailable stats return 503 `stats_unavailable`.
 Each signed-in listener has one player shared by their devices
 ([ADR-0018](adr/0018-your-player-follows-you-across-devices.md)). The bot's
 listening-state store keeps it; the portal relays controls to the device that
-plays and pushes every change to the listener's streams. Step 1: nothing in the
-pages uses these routes yet.
+plays and pushes every change to the listener's streams. Each page opens the
+listener stream while signed in, plays the player while it is the active device
+(the Android app's page reports for the app) and controls it from anywhere else.
 
 `PlayerTrack = { id: string<=64, title: string<=200, author: string<=200, uri: https string<=512,
   source: string<=40, durationMs: number, artworkUrl: https string<=512|null, isStream: boolean }`

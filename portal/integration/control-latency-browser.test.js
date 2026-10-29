@@ -79,7 +79,8 @@ test('another compiled device receives Pause promptly without waiting for the pe
     await page.getByRole('link', { name: /Continue with Discord/ }).click();
     await expect(page.getByRole('button', { name: 'Pause playback' })).toBeEnabled();
   }
-  await expect.poll(() => app.resourceCounts().streams).toBe(2);
+  // Each page holds its server stream and its listener stream (/api/me/events).
+  await expect.poll(() => app.resourceCounts().streams).toBe(4);
   const streamReads = observerStreams;
   const actingStreamReads = actingStreams, snapshotReads = actingSnapshotReads;
   await pages[0].getByRole('button', { name: 'Pause playback' }).click();

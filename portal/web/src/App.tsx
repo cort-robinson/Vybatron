@@ -147,7 +147,7 @@ export function App() {
   const heading = surface === 'home' ? 'Home' : surface === 'search' ? 'Search' : surface === 'session' ? portal.target === 'local' ? 'Your Queue' : 'Shared Queue' : surface === 'music' ? 'My Music' : surface === 'settings' ? 'Settings' : 'Your Server';
   const room = snapshot?.session.voiceChannel; const listening = snapshot?.session.listeners.length || 0;
   // Voice room and listeners live once, in the server header; tabs name each page's sections.
-  const place = portal.target === 'local' ? 'On this device' : room ? room.name : snapshot?.savedSession.voiceChannel ? `Saved in ${snapshot.savedSession.voiceChannel.name}` : 'Join a voice channel';
+  const place = portal.target === 'local' ? portal.playingOn ? `On ${portal.playingOn}` : 'On this device' : room ? room.name : snapshot?.savedSession.voiceChannel ? `Saved in ${snapshot.savedSession.voiceChannel.name}` : 'Join a voice channel';
   return <div className={`app-shell ${expanded ? 'player-open' : ''} ${motion ? 'motion-live' : ''} ${connection !== 'live' ? 'has-connection-notice' : ''}`}>{background}<a href="#main-content" className="skip-link" onClick={event => { event.preventDefault(); document.getElementById('main-content')?.focus(); }}>Skip to content</a>
     <Sidebar bootstrap={bootstrap!} guildId={portal.guildId} iconUrl={snapshot?.guild.iconUrl || bootstrap!.guilds.find(g => g.id === portal.guildId)?.iconUrl} status={snapshot?.session.status || 'idle'}
       statusText={`${statusLabel(snapshot)} · ${place}`} listening={listening} listeners={snapshot?.session.voiceChannel ? snapshot.session.listeners : null} surface={surface}

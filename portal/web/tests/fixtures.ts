@@ -3,6 +3,7 @@ import type { Locator, Page } from '@playwright/test';
 import type { Activity, Bootstrap, Command, Configuration, Diagnostics, GuildSnapshot, Library, Track, Recap, Stats, LyricsResponse } from '../src/types';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
+import { SharedPlayerHub } from './shared-player';
 
 const art = (name: string) => `http://127.0.0.1:${Number(process.env.PLAYWRIGHT_PORT || 4178)}/test-art/${name}.png`;
 const person = (id: string, displayName: string, image: string) => ({ id, displayName, avatarUrl: art(image) });
@@ -77,7 +78,7 @@ export function selectedCommandError(library: Library, command: Command) {
   return null;
 }
 export const INVITE_URL = 'https://discord.com/oauth2/authorize?client_id=123456789012345678&scope=bot+applications.commands&permissions=281474979875840&integration_type=0';
-export async function mockPortal(page: Page, options: { signedOut?: boolean; basic?: boolean; outsideVoice?: boolean; saved?: boolean; maintainerOutsideGuild?: boolean; suggested?: boolean } = {}) {
+export async function mockPortal(page: Page, options: { signedOut?: boolean; basic?: boolean; outsideVoice?: boolean; saved?: boolean; maintainerOutsideGuild?: boolean; suggested?: boolean; shared?: SharedPlayerHub } = {}) {
   const state = fixtureState();
   if (options.suggested) Object.assign(state.snapshot.session, { radio: true, autoplay: 'on', queue: state.snapshot.session.queue.slice(0, 1), suggestions: suggestedTracks() });
   if (options.basic) { state.snapshot.guild.admin = false; state.snapshot.settings = null; state.snapshot.roles = []; state.snapshot.channels = []; state.snapshot.session.canControl = false; state.snapshot.session.reason = 'Playback controls need the DJ role. You can add music and vote to skip.'; }
@@ -94,19 +95,28 @@ export async function mockPortal(page: Page, options: { signedOut?: boolean; bas
   let signedOut = !!options.signedOut;
   let conflict = false; let snapshotDelay = 0; let libraryFailure = false; let snapshotFailure = 0;
   let uncertain = false; let commandDelay = 0; let commandGate: Promise<void> | undefined; let libraryDelay = 0;
+  // The listener's shared player (ADR-0018), shared with other pages a test opens on the same hub.
+  const shared = options.shared ?? new SharedPlayerHub();
+  await shared.attach(page);
   await page.addInitScript(() => {
     const streams: FakeEventSource[] = [];
+    // The listener stream (/api/me/events) tells the hub when it opens and closes, as the portal registers the device.
+    const listener = (url: string, open: boolean) => { if (url.includes('/api/me/events')) void (window as unknown as { portalMeStream?: (url: string, open: boolean) => Promise<void> }).portalMeStream?.(url, open); };
     class FakeEventSource {
-      onopen: (() => void) | null = null; onerror: (() => void) | null = null; closed = false;
+      onopen: (() => void) | null = null; onerror: (() => void) | null = null; closed = false; url: string;
       listeners = new Map<string, ((event: MessageEvent) => void)[]>();
-      constructor() { streams.push(this); setTimeout(() => { if (!this.closed) this.onopen?.(); }, 20); }
+      constructor(url: string | URL) { this.url = String(url); streams.push(this); setTimeout(() => { if (!this.closed) { this.onopen?.(); listener(this.url, true); } }, 20); }
       addEventListener(type: string, callback: (event: MessageEvent) => void) { this.listeners.set(type, [...(this.listeners.get(type) || []), callback]); }
-      close() { this.closed = true; }
+      close() { if (!this.closed) listener(this.url, false); this.closed = true; }
     }
     Object.defineProperty(window, 'EventSource', { value: FakeEventSource });
-    (window as unknown as { portalTest: { emit: (data: unknown) => void; disconnect: () => void; reconnect: () => void } }).portalTest = {
-      emit: data => streams.filter(s => !s.closed).forEach(s => s.listeners.get('snapshot')?.forEach(callback => callback(new MessageEvent('snapshot', { data: JSON.stringify(data) })))),
-      disconnect: () => streams.filter(s => !s.closed).forEach(s => s.onerror?.()), reconnect: () => window.dispatchEvent(new Event('online')),
+    const send = (type: string, data: unknown, mine: (stream: FakeEventSource) => boolean) => streams.filter(s => !s.closed && mine(s))
+      .forEach(s => s.listeners.get(type)?.forEach(callback => callback(new MessageEvent(type, { data: JSON.stringify(data) }))));
+    const me = (stream: FakeEventSource) => stream.url.includes('/api/me/events');
+    (window as unknown as { portalTest: { emit: (data: unknown) => void; emitPlayer: (data: unknown) => void; emitCommand: (data: unknown) => void; disconnect: () => void; reconnect: () => void } }).portalTest = {
+      emit: data => send('snapshot', data, stream => !me(stream)),
+      emitPlayer: data => send('player', data, me), emitCommand: data => send('command', data, me),
+      disconnect: () => streams.filter(s => !s.closed && !me(s)).forEach(s => s.onerror?.()), reconnect: () => window.dispatchEvent(new Event('online')),
     };
   });
   await page.route('**/test-art/*.png', async route => {
@@ -117,6 +127,7 @@ export async function mockPortal(page: Page, options: { signedOut?: boolean; bas
   await page.route('**/api/**', async route => {
     const path = new URL(route.request().url()).pathname; requests.push(path);
     if (signedOut) { await route.fulfill({ status: 401, json: { error: { code: 'unauthenticated', message: 'Sign in with Discord.' } } }); return; }
+    if (path.startsWith('/api/me/')) { await shared.handle(page, route); return; }
     if (path.endsWith('/bootstrap')) await route.fulfill(reply(state.bootstrap));
     else if (path.endsWith('/configuration')) {
       if (!state.snapshot.guild.admin) await route.fulfill({ status: 403, json: { error: { code: 'forbidden', message: 'Manage Server permission is required for channel and role options.' } } });
@@ -227,7 +238,7 @@ export async function mockPortal(page: Page, options: { signedOut?: boolean; bas
     if (logout.method !== 'POST' || logout.body !== null || logout.contentType !== null || logout.csrfToken !== 'local-test-csrf') { await route.fulfill({ status: 400, json: { error: { code: 'invalid_logout', message: 'Logout requires a bodyless CSRF-protected POST.' } } }); return; }
     signedOut = true; await route.fulfill({ json: { ok: true } });
   });
-  return { state, commands, requests, requestClears, recapWindows, tastePreferences, logouts, signIn: () => { signedOut = false; }, conflictNext: () => { conflict = true; }, uncertainNext: () => { uncertain = true; }, delayCommand: (ms: number) => { commandDelay = ms; }, holdCommands: () => { let release!: () => void; commandGate = new Promise(resolve => { release = resolve; }); return () => { commandGate = undefined; release(); }; }, delaySnapshot: (ms: number) => { snapshotDelay = ms; }, delayLibrary: (ms: number) => { libraryDelay = ms; }, failLibrary: () => { libraryFailure = true; }, denySnapshot: (status: number) => { snapshotFailure = status; } };
+  return { state, shared, commands, requests, requestClears, recapWindows, tastePreferences, logouts, signIn: () => { signedOut = false; }, conflictNext: () => { conflict = true; }, uncertainNext: () => { uncertain = true; }, delayCommand: (ms: number) => { commandDelay = ms; }, holdCommands: () => { let release!: () => void; commandGate = new Promise(resolve => { release = resolve; }); return () => { commandGate = undefined; release(); }; }, delaySnapshot: (ms: number) => { snapshotDelay = ms; }, delayLibrary: (ms: number) => { libraryDelay = ms; }, failLibrary: () => { libraryFailure = true; }, denySnapshot: (status: number) => { snapshotFailure = status; } };
 }
 
 export async function streamAction(page: Page, action: 'disconnect' | 'reconnect', data?: GuildSnapshot) {

@@ -112,7 +112,8 @@ test('two real clients recover transient authorization reads and synchronize slo
 
   // Both long-lived streams encounter a real private-bridge 503. The compiled
   // clients must retain context read-only and recover without a Refresh click.
-  await expect.poll(() => app.resourceCounts().streams).toBe(2);
+  // Each page holds its server stream and its listener stream (/api/me/events).
+  await expect.poll(() => app.resourceCounts().streams).toBe(4);
   // The reconciled command may have opened a stream whose first delayed
   // authorization is still pending. Establish it before injecting the fault.
   await delay(250);

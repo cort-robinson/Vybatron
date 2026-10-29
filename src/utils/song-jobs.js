@@ -83,6 +83,15 @@ export function startSongJobs(client, { measure, search, intervalMs = 60_000, no
     if (!found || found.loadType === 'error') throw new Temporary('search_failed');
     return Array.isArray(found.tracks) ? found.tracks : [];
   };
+  // YouTube Music often lists only the song's own upload, so plain YouTube is
+  // searched too. Music results come first; the audio check decides either way.
+  const uploadsOf = async song => {
+    const found = [];
+    if (song.isrc) found.push(...await results(`"${song.isrc}"`, 'ytsearch'));
+    found.push(...await results(recordingQuery(song), 'ytmsearch'));
+    found.push(...await results(recordingQuery(song), 'ytsearch'));
+    return found;
+  };
 
   // A device play reaches the bot as a video ID. A known song is marked used;
   // an unknown one is looked up by its URL and recorded like a Discord play.
@@ -102,10 +111,7 @@ export function startSongJobs(client, { measure, search, intervalMs = 60_000, no
 
   // `checking.id` follows the song through a merge: the older song survives.
   const alternates = async (song, checking) => {
-    const found = [];
-    if (song.isrc) found.push(...await results(`"${song.isrc}"`, 'ytsearch'));
-    found.push(...await results(recordingQuery(song), 'ytmsearch'));
-    for (const candidate of alternateCandidates(song, found)) {
+    for (const candidate of alternateCandidates(song, await uploadsOf(song))) {
       const measured = await measure(candidate.info.identifier);
       if (!measured) continue;
       const score = similarity(song.fingerprint, measured);
@@ -117,11 +123,8 @@ export function startSongJobs(client, { measure, search, intervalMs = 60_000, no
   // A song whose own upload couldn't be measured: other uploads stand in only when at
   // least two of them agree on the audio. The first then fingerprints the song.
   const agreement = async (song, checking) => {
-    const found = [];
-    if (song.isrc) found.push(...await results(`"${song.isrc}"`, 'ytsearch'));
-    found.push(...await results(recordingQuery(song), 'ytmsearch'));
     const measured = [];
-    for (const candidate of alternateCandidates(song, found)) {
+    for (const candidate of alternateCandidates(song, await uploadsOf(song))) {
       const fingerprint = await measure(candidate.info.identifier);
       if (fingerprint) measured.push({ candidate, fingerprint });
     }

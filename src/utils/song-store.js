@@ -126,6 +126,8 @@ export const MIGRATIONS = [
   DROP TABLE sources;
   ALTER TABLE sources_v3 RENAME TO sources;
   CREATE INDEX sources_song ON sources (song_id);`,
+  // Alternates are now searched on YouTube too: songs checked before are checked again.
+  'UPDATE songs SET alternates_checked_at = NULL;',
 ];
 export const SONG_SCHEMA_VERSION = MIGRATIONS.length;
 

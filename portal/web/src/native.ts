@@ -22,10 +22,16 @@ export interface NativeLoad {
 export type NativeControl = { action: 'play' | 'pause' | 'next' | 'previous' | 'stop' } | { action: 'seek'; positionMs: number }
   | { action: 'skipTo'; index: number; revision: number } | { action: 'volume'; level: number } | { action: 'repeat'; mode: NativeRepeat };
 
+// What the page hands the app's playback service so it can reach the shared player by itself (ADR-0018).
+export interface NativeSession { csrfToken: string; deviceId: string; name: string; guildId?: string }
+// `features`: 'player.shared' when the app keeps its own connection to the shared player and reports for this device.
+export interface NativeInfo { platform: string; version: string; build: number; features?: string[] }
+export const SHARED_PLAYER = 'player.shared';
+
 export interface NativePlayer {
-  // The app itself (ADR-0016): which platform, and its version.
-  info(): Promise<{ platform: string; version: string; build: number }>;
-  subscribe(): Promise<NativeState>;
+  // The app itself (ADR-0016): which platform, its version, and what it can do.
+  info(): Promise<NativeInfo>;
+  subscribe(session?: NativeSession): Promise<NativeState>;
   load(load: NativeLoad): Promise<NativeState>;
   // Refused with 'stale' when the songs changed since `revision`.
   setQueue(queue: Track[], revision: number): Promise<NativeState>;
@@ -62,9 +68,10 @@ export function nativePlayer(port: Port | undefined = typeof window === 'undefin
     waiting.set(id, { resolve: resolve as (value: unknown) => void, reject, timer });
     port.postMessage(JSON.stringify({ ...body, id, type }));
   });
+  let info: Promise<NativeInfo> | null = null;
   return {
-    info: () => request<{ platform: string; version: string; build: number }>('app.info'),
-    subscribe: () => request<NativeState>('player.subscribe'),
+    info: () => (info ??= request<NativeInfo>('app.info').catch(error => { info = null; throw error; })),
+    subscribe: session => request<NativeState>('player.subscribe', session ? { session } : {}),
     load: load => request<NativeState>('player.load', load),
     setQueue: (queue, revision) => request<NativeState>('player.setQueue', { queue, revision }),
     control: control => request<NativeState>('player.control', control),

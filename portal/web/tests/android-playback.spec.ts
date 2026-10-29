@@ -5,6 +5,8 @@ import { SharedPlayerHub } from './shared-player';
 // Inside the Android app the app plays this device's songs (ADR-0014). The page talks
 // to it through `window.vybatronNative`; here a stand-in follows the same contract
 // (portal/android: PortalBridge, PlayerRequest, DevicePlayer) and records each request.
+// An app that says it has `player.shared` keeps its own connection to the shared player
+// and reports for itself (ADR-0018); one that doesn't (0.2.0) is driven by the page.
 const youtubeTrack = (id: string, title: string) => ({ id: id.padEnd(24, '0'), title, author: 'M83', uri: `https://www.youtube.com/watch?v=${id}`, source: 'youtube',
   durationMs: 244_000, artworkUrl: null, isStream: false, requestedBy: null });
 
@@ -43,7 +45,10 @@ async function app(page: Page, shared?: SharedPlayerHub) {
       postMessage(data: string) {
         const request = JSON.parse(data);
         // The app names itself (ADR-0016), so the page registers as the Android app.
-        if (request.type === 'app.info') { send({ id: request.id, ok: true, result: { platform: 'android', version: '0.2.0', build: 2 } }); return; }
+        if (request.type === 'app.info') {
+          const features = (window as unknown as { nativeShared?: boolean }).nativeShared ? { features: ['player.shared'] } : {};
+          send({ id: request.id, ok: true, result: { platform: 'android', version: '0.2.0', build: 2, ...features } }); return;
+        }
         requests.push(request);
         switch (request.type) {
           case 'player.load': change({ current: request.current, queue: request.queue, history: request.history,
@@ -62,6 +67,7 @@ async function app(page: Page, shared?: SharedPlayerHub) {
             if (request.action === 'pause') change({ status: 'paused' }, false);
             if (request.action === 'next') advance();
             if (request.action === 'volume') change({ volume: request.level }, false);
+            if (request.action === 'stop') change({ current: null, queue: [], history: [], status: 'idle', positionMs: 0, durationMs: 0 });
             break;
         }
         // Like the app: every change is broadcast before the reply; subscribing only answers.
@@ -79,6 +85,7 @@ async function app(page: Page, shared?: SharedPlayerHub) {
 const requests = (page: Page) => page.evaluate(() => (window as unknown as { bridge: Bridge }).bridge.requests);
 const sent = async (page: Page, type: string) => (await requests(page)).filter(request => request.type === type).map(({ id: _id, type: _type, ...rest }) => rest);
 const title = (page: Page) => page.getByTestId('player').locator('.compact-track-title');
+const openMenu = (page: Page) => page.getByTestId('player').getByRole('button', { name: 'More playback controls' }).click();
 async function addSongs(page: Page) {
   await page.getByRole('button', { name: 'Add music' }).first().click();
   await page.getByRole('searchbox', { name: 'Music search' }).fill('midnight');
@@ -235,4 +242,79 @@ test('the app\'s catch-up starts from the exact entry, not an older play of the 
   expect(hub.ops('report').flatMap(request => request.body.advance ? [[request.body.advance.from, request.body.advance.to]] : [])).toEqual([[a.entryId, b.entryId], [b.entryId, c.entryId]]);
   expect(hub.player.queue.map(entry => entry.track.title)).toEqual(['D']);
   expect(hub.player.history.map(entry => entry.track.title)).toEqual(['B', 'A']);
+});
+
+// An app with its own connection to the shared player (`player.shared`): its playback service
+// plays and reports for this device, page or no page, so the page only shows and controls it.
+async function sharedApp(page: Page, hub = new SharedPlayerHub()) {
+  await page.addInitScript(() => { (window as unknown as { nativeShared: boolean }).nativeShared = true; });
+  return app(page, hub);
+}
+// The app's playback service, which the hub would hear from over its own stream: here it reports directly.
+async function serviceReports(hub: SharedPlayerHub, change: (player: SharedPlayerHub['player']) => void) {
+  change(hub.player);
+  hub.player.updatedAt = Math.max(Date.now(), hub.player.updatedAt + 1);
+  await hub.publish();
+}
+
+test('an app that reports for itself gets the page\'s session, and the page never reports or plays for it', async ({ page }) => {
+  const fixture = await sharedApp(page);
+  // The page hands the app's service what it needs to stay a device with the page closed.
+  await expect.poll(async () => sent(page, 'player.subscribe')).toEqual([{ session: { csrfToken: 'local-test-csrf', deviceId: expect.stringMatching(/^[\w-]{22}$/), name: 'Android app' } }]);
+  await addSongs(page);
+  // The first song made this device the active one, and Play went to it as a relayed control.
+  await expect.poll(() => fixture.shared.player.activeDeviceId).toBe(fixture.shared.devices[0]?.deviceId);
+  await expect.poll(() => fixture.shared.ops('control').map(request => request.body.action)).toEqual(['play']);
+  await expect(title(page)).toHaveText('Midnight City');
+  await serviceReports(fixture.shared, player => { player.playhead = { positionMs: 1000, at: Date.now(), playing: true }; });
+  await expect(page.getByRole('button', { name: 'Pause playback' })).toBeEnabled();
+
+  // Controls from this page go to the app the way they go to any device.
+  await page.getByRole('button', { name: 'Pause playback' }).click();
+  await expect.poll(() => fixture.shared.ops('control').map(request => request.body.action)).toEqual(['play', 'pause']);
+  await page.getByRole('button', { name: 'Skip current song' }).click();
+  await expect.poll(() => fixture.shared.ops('control').map(request => request.body.action)).toEqual(['play', 'pause', 'next']);
+  await page.waitForTimeout(300);
+  // The relayed controls reached this page too, which left them to the app: no reports, no player requests.
+  expect(fixture.shared.ops('report')).toEqual([]);
+  expect(fixture.shared.ops('deactivate')).toEqual([]);
+  expect((await requests(page)).map(request => request.type)).toEqual(['player.subscribe']);
+  await expect(page.locator('audio, video, iframe')).toHaveCount(0);
+  expect(fixture.audio).toEqual([]);
+  expect(fixture.shared.devices).toEqual([expect.objectContaining({ name: 'Android app', kind: 'android' })]);
+});
+
+test('a page that finds its app playing leaves it playing', async ({ page }) => {
+  const hub = new SharedPlayerHub();
+  const songs = ['dX3k_QDnzHE', 'Fk3RbKWbmtg'].map((id, index) => ({ ...youtubeTrack(id, ['A', 'B'][index]), requestedBy: undefined }));
+  const [a, b] = songs.map(({ requestedBy: _requestedBy, ...track }, index) => ({ entryId: `entry${index}`.padEnd(12, 'x'), track }));
+  // The app's service plays the player, reporting for this device, while its page was closed.
+  await page.addInitScript(() => localStorage.setItem('vybertron.device', JSON.stringify({ deviceId: 'AndroidAppDevice_01234', name: 'Android app' })));
+  hub.devices.push({ deviceId: 'AndroidAppDevice_01234', name: 'Android app', kind: 'android', lastSeen: Date.now() });
+  Object.assign(hub.player, { current: a, queue: [b], revision: 3, generation: 4, activeDeviceId: 'AndroidAppDevice_01234', playhead: { positionMs: 5000, at: Date.now(), playing: true }, updatedAt: 1 });
+  await sharedApp(page, hub);
+  await expect(title(page)).toHaveText('A');
+  await expect(page.getByRole('button', { name: 'Pause playback' })).toBeEnabled();
+  await page.waitForTimeout(500);
+  // Nothing taken over, let go of or loaded: the app keeps playing as it was.
+  expect(hub.player.generation).toBe(4);
+  expect(hub.ops('deactivate')).toEqual([]);
+  expect(hub.ops('activate')).toEqual([]);
+  expect(hub.ops('report')).toEqual([]);
+  expect((await requests(page)).map(request => request.type)).toEqual(['player.subscribe']);
+});
+
+test('Stop asks the app\'s service to let the song go, then clears the queue', async ({ page }) => {
+  const fixture = await sharedApp(page);
+  await addSongs(page);
+  await expect.poll(() => fixture.shared.player.queue.length).toBe(1);
+  await openMenu(page);
+  await page.getByRole('button', { name: 'Stop and clear your queue' }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Stop' }).click();
+  await expect.poll(async () => sent(page, 'player.control')).toEqual([{ action: 'stop' }]);
+  // The service, the active device, lets go of the song.
+  await serviceReports(fixture.shared, player => { player.history = [player.current!, ...player.history]; player.current = null; player.revision++; });
+  await expect.poll(() => fixture.shared.ops('clear').length).toBe(1);
+  expect(fixture.shared.player.queue).toEqual([]);
+  expect(fixture.shared.ops('report')).toEqual([]);
 });

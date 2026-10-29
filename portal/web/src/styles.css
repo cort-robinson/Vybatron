@@ -1150,6 +1150,8 @@ p, .continue-text > span, .section-description, .field-hint { text-wrap: pretty;
 [data-tv] [data-tv-editing] { outline: 3px solid var(--text); outline-offset: 3px; box-shadow: 0 0 0 9px color-mix(in oklab, var(--accent) 55%, transparent); border-radius: 10px; }
 [data-tv] .search-field:has(input[data-tv-editing]) { outline-color: var(--text); box-shadow: 0 0 0 9px color-mix(in oklab, var(--accent) 55%, transparent); }
 [data-tv] .range[data-tv-editing]::-webkit-slider-thumb { transform: scale(1.5); }
+/* A row reached with the arrows scrolls in with its heading above it in view, not flush to the edge. */
+[data-tv] [data-tv-region="content"] :focus { scroll-margin-block: 72px 16px; }
 
 /* Now playing on a TV: the visualizer fills the screen; the song and controls sit on a scrim at the
    bottom, sized in vmin so 960×540 and 1920×1080 look the same, and the controls fade while idle. */

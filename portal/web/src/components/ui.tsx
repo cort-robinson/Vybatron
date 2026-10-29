@@ -138,9 +138,14 @@ export function ActionPopover({ label, trigger, className = '', triggerClassName
     const focusOutside = (event: FocusEvent) => {
       if (event.target instanceof Node && !inside(event.target)) setOpen(false);
     };
+    // Escape is caught on its way down, so a menu inside a dialog closes alone: the dialog's own
+    // Escape handler, nearer the target, never sees it.
+    const escape = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.key !== 'Escape') return;
+      event.preventDefault(); event.stopPropagation(); close();
+    };
     const keyboard = (event: KeyboardEvent) => {
       if (event.defaultPrevented) return;
-      if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close(); return; }
       if (event.key !== 'Tab' || !panel.current?.contains(document.activeElement)) return;
       const actions = focusableElements(panel.current);
       const first = actions[0]; const last = actions[actions.length - 1];
@@ -154,10 +159,12 @@ export function ActionPopover({ label, trigger, className = '', triggerClassName
     };
     document.addEventListener('pointerdown', outside, true);
     document.addEventListener('focusin', focusOutside);
+    document.addEventListener('keydown', escape, true);
     document.addEventListener('keydown', keyboard);
     return () => {
       document.removeEventListener('pointerdown', outside, true);
       document.removeEventListener('focusin', focusOutside);
+      document.removeEventListener('keydown', escape, true);
       document.removeEventListener('keydown', keyboard);
     };
   }, [open, close]);

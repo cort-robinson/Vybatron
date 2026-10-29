@@ -4,19 +4,21 @@
 // and the arrows then change its value or move the caret until OK or Back stops editing.
 //
 // TV mode starts from the app (`app.info` `form: "tv"`) or, for testing in a browser, from `?tv=1`,
-// kept for the tab in sessionStorage (`?tv=0` turns it off). Nothing here runs outside TV mode
-// except `closeTopLayer`, which the app's Back uses in every form.
+// kept for the tab in sessionStorage. `?tv=0` turns it off, even in the app on a TV. Nothing here
+// runs outside TV mode except `closeTopLayer`, which the app's Back uses in every form.
 
 const FLAG = 'vybertron.tv';
-/** Whether the address (now or earlier in this tab) asked for TV mode. */
-export function tvFlag(): boolean {
+/** What the address (now or earlier in this tab) asked for: TV mode on, off, or nothing. */
+export function tvChoice(): boolean | null {
   try {
     const asked = new URLSearchParams(location.search).get('tv');
-    if (asked === '1') sessionStorage.setItem(FLAG, '1');
-    else if (asked === '0') sessionStorage.removeItem(FLAG);
-    return sessionStorage.getItem(FLAG) === '1';
-  } catch { return false; }
+    if (asked === '1' || asked === '0') sessionStorage.setItem(FLAG, asked);
+    const kept = sessionStorage.getItem(FLAG);
+    return kept === '1' ? true : kept === '0' ? false : null;
+  } catch { return null; }
 }
+/** Whether the address asked for TV mode. */
+export const tvFlag = () => tvChoice() === true;
 
 type Direction = 'up' | 'down' | 'left' | 'right';
 const directions: Record<string, Direction> = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right' };
@@ -86,19 +88,46 @@ function score(from: DOMRect, to: DOMRect, direction: Direction) {
 /** The control focus moves to from `from` in `direction`, within `layer`. */
 export function nearest(from: HTMLElement, direction: Direction, layer: ParentNode = topLayer()) {
   const origin = from.getBoundingClientRect();
-  let best: HTMLElement | null = null; let bestScore = Infinity;
-  for (const element of candidates(layer)) {
-    if (element === from || element.contains(from) || from.contains(element)) continue;
-    const value = score(origin, element.getBoundingClientRect(), direction);
-    if (value < bestScore) { best = element; bestScore = value; }
-  }
-  return best;
+  const all = candidates(layer);
+  const pick = (list: HTMLElement[]) => {
+    let best: HTMLElement | null = null; let bestScore = Infinity;
+    for (const element of list) {
+      if (element === from || element.contains(from) || from.contains(element)) continue;
+      const value = score(origin, element.getBoundingClientRect(), direction);
+      if (value < bestScore) { best = element; bestScore = value; }
+    }
+    return best;
+  };
+  // From the page, the arrows stay in the page while it has a control that way: the fixed player
+  // and navigation over it come after, so Down scrolls on past them instead of jumping into them.
+  const fixed = (element: HTMLElement) => {
+    for (let node: HTMLElement | null = element; node && node !== layer; node = node.parentElement) {
+      const { position } = getComputedStyle(node);
+      if (position === 'fixed' || position === 'sticky') return true;
+    }
+    return false;
+  };
+  const best = (fixed(from) ? null : pick(all.filter(element => !fixed(element)))) ?? pick(all);
+  // A focusable container (a sideways shelf, which is a tab stop for scrolling) is entered: focus
+  // goes to its nearest control in that direction, or failing that its closest one.
+  const inner = best ? all.filter(element => element !== best && best.contains(element)) : [];
+  if (!inner.length) return best;
+  return pick(inner) ?? closest(origin, inner);
+}
+function closest(origin: DOMRect, list: HTMLElement[]) {
+  const centre = (box: DOMRect) => [box.left + box.width / 2, box.top + box.height / 2];
+  const [x, y] = centre(origin);
+  return list.reduce((best, element) => {
+    const [ex, ey] = centre(element.getBoundingClientRect()); const [bx, by] = centre(best.getBoundingClientRect());
+    return Math.hypot(ex - x, ey - y) < Math.hypot(bx - x, by - y) ? element : best;
+  });
 }
 // With nothing focused in the layer, the first press lands on its chosen control, or its first.
 function entry(layer: HTMLElement) {
   const preferred = layer.querySelector<HTMLElement>('[data-tv-autofocus]');
-  if (preferred && candidates(layer).includes(preferred)) return preferred;
-  return candidates(layer).sort((a, b) => {
+  const all = candidates(layer);
+  if (preferred && all.includes(preferred)) return preferred;
+  return all.filter(element => !all.some(other => other !== element && element.contains(other))).sort((a, b) => {
     const one = a.getBoundingClientRect(); const two = b.getBoundingClientRect();
     return Math.abs(one.top - two.top) > 8 ? one.top - two.top : one.left - two.left;
   })[0] ?? null;
@@ -111,7 +140,35 @@ export function focusEntry(layer: HTMLElement, preferred?: Element | null) {
 }
 function move(to: HTMLElement) {
   to.focus({ preventScroll: true });
-  to.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  to.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' });
+  // Stacked chrome (the player above the tab bar) may take a step each.
+  for (let step = 0; step < 4 && uncover(to); step++);
+}
+// The fixed player, navigation and bars stay over the page as it scrolls, so a control scrolled
+// just into view can still be under one. Scroll it clear, with room for its focus ring.
+const RING = 12;
+function uncover(element: HTMLElement): boolean {
+  const box = element.getBoundingClientRect();
+  const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+  if (!hit || element.contains(hit) || hit.contains(element)) return false;
+  let cover: Element | null = hit;
+  while (cover && cover !== document.body && getComputedStyle(cover).position !== 'fixed' && getComputedStyle(cover).position !== 'sticky') cover = cover.parentElement;
+  if (!cover || cover === document.body) return false;
+  const over = cover.getBoundingClientRect();
+  // Chrome in the lower half of the screen (the player, the tab bar) sits below; the rest above.
+  const below = over.top + over.height / 2 > innerHeight / 2;
+  const delta = below ? box.bottom - over.top + RING : -(over.bottom - box.top + RING);
+  const page = scroller(element); if (!page) return false;
+  const before = page.scrollTop;
+  page.scrollBy({ top: delta, behavior: 'instant' });
+  return page.scrollTop !== before;
+}
+function scroller(element: HTMLElement) {
+  for (let parent = element.parentElement; parent; parent = parent.parentElement) {
+    const { overflowY } = getComputedStyle(parent);
+    if ((overflowY === 'auto' || overflowY === 'scroll') && parent.scrollHeight > parent.clientHeight) return parent;
+  }
+  return document.scrollingElement as HTMLElement | null;
 }
 
 // Editing: the field that has the arrows. A text field shows no keyboard until it's edited.

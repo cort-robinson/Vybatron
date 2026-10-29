@@ -39,6 +39,24 @@ async function back(page: Page) {
 const focused = (page: Page) => page.evaluate(() => { const element = document.activeElement as HTMLElement | null; return element?.getAttribute('aria-label') || element?.textContent?.trim() || element?.tagName || ''; });
 const home = (page: Page) => page.getByTestId('tv-home');
 async function press(page: Page, ...keys: string[]) { for (const key of keys) await page.keyboard.press(key); }
+// Now playing is up, with focus on play (or back on it, if the controls already hid under load).
+async function ready(page: Page) {
+  await expect(home(page).getByRole('button', { name: 'Pause playback' })).toBeEnabled();
+  await wake(page);
+  await expect.poll(() => focused(page)).toBe('Pause playback');
+}
+// Under load the controls may already have hidden: a key brings them back (or keeps them up for
+// another five seconds) in the same task that focuses the control a test reaches for.
+async function wake(page: Page, name?: string) {
+  await expect.poll(() => page.evaluate(name => {
+    const screen = document.querySelector('[data-testid="tv-home"]')!;
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: screen.classList.contains('resting') ? 'ArrowDown' : 'Shift', cancelable: true }));
+    if (!name) return !screen.classList.contains('resting');
+    const control = Array.from(screen.querySelectorAll<HTMLElement>('button, input')).find(element => element.getAttribute('aria-label') === name || element.textContent?.trim() === name);
+    control?.focus();
+    return !!control && document.activeElement === control;
+  }, name)).toBe(true);
+}
 
 for (const [width, height] of [[960, 540], [1920, 1080]] as const) {
   test(`now playing is a TV's first screen, and the arrows move across its controls (${width}×${height})`, async ({ page }) => {
@@ -47,7 +65,7 @@ for (const [width, height] of [[960, 540], [1920, 1080]] as const) {
     await expect(home(page).getByRole('heading', { name: 'Evening Light' })).toBeVisible();
     await expect(page.locator('html')).toHaveAttribute('data-tv', '');
     // Focus starts on play, with a ring a couch can see.
-    await expect.poll(() => focused(page)).toBe('Pause playback');
+    await ready(page);
     const ring = await page.evaluate(() => getComputedStyle(document.activeElement!).outlineStyle);
     expect(ring).toBe('solid');
     await press(page, 'ArrowLeft'); expect(await focused(page)).toMatch(/Previous song|Restart current song/);
@@ -68,7 +86,7 @@ for (const [width, height] of [[960, 540], [1920, 1080]] as const) {
 
 test('the Play on menu and the queue keep the arrows inside them, and Back closes them', async ({ page }) => {
   await tv(page);
-  await expect.poll(() => focused(page)).toBe('Pause playback');
+  await ready(page);
   await press(page, 'ArrowRight', 'ArrowRight', 'ArrowRight');
   expect(await focused(page)).toBe('Play on');
   await press(page, 'Enter');
@@ -106,7 +124,7 @@ test('the Play on menu and the queue keep the arrows inside them, and Back close
 
 test('the seek and volume sliders take the arrows only while OK has them editing', async ({ page }) => {
   const fixture = await tv(page);
-  await expect.poll(() => focused(page)).toBe('Pause playback');
+  await ready(page);
   const seek = page.getByRole('slider', { name: 'Playback position' });
   await press(page, 'ArrowUp');
   expect(await focused(page)).toBe('Playback position');
@@ -149,8 +167,8 @@ test('the seek and volume sliders take the arrows only while OK has them editing
 
 test('the search field brings up the keyboard only when OK starts editing it', async ({ page }) => {
   await tv(page);
-  await expect.poll(() => focused(page)).toBe('Pause playback');
-  await home(page).getByRole('button', { name: 'Browse' }).focus();
+  await ready(page);
+  await wake(page, 'Browse');
   await press(page, 'Enter');
   await expect(home(page)).toHaveCount(0);
   // At 960 wide Search is a tab of its own.
@@ -180,10 +198,11 @@ test('the search field brings up the keyboard only when OK starts editing it', a
 
 test('Back on a TV goes back a view, then to now playing, then leaves the app', async ({ page }) => {
   await tv(page, { width: 1920, height: 1080 });
-  await expect.poll(() => focused(page)).toBe('Pause playback');
+  await ready(page);
   // At now playing the page has nothing of its own; the app leaves.
   expect(await back(page)).toBe(false);
-  await home(page).getByRole('button', { name: 'Browse' }).click();
+  await wake(page, 'Browse');
+  await press(page, 'Enter');
   await expect(home(page)).toHaveCount(0);
   await expect(page.getByRole('heading', { name: 'Home', level: 1 })).toBeVisible();
   await expect.poll(() => focused(page)).toBe('Home');
@@ -204,13 +223,13 @@ test('Back on a TV goes back a view, then to now playing, then leaves the app', 
   await expect(page.getByRole('heading', { name: 'Home', level: 1 })).toBeVisible();
   expect(await back(page)).toBe(true);
   await expect(home(page)).toBeVisible();
-  await expect.poll(() => focused(page)).toBe('Pause playback');
+  await ready(page);
   expect(await back(page)).toBe(false);
 });
 
 test('the controls hide after a few seconds without input, and Up, Down or OK bring them back', async ({ page }) => {
   await tv(page, { bridge: false });
-  await expect.poll(() => focused(page)).toBe('Pause playback');
+  await ready(page);
   await press(page, 'ArrowRight');
   expect(await focused(page)).toBe('Skip current song');
   await expect(home(page)).toHaveClass(/resting/, { timeout: 8000 });
@@ -271,5 +290,77 @@ test('outside TV mode nothing changes, and Back in the app closes only menus and
   await expect(page.locator('html')).toHaveAttribute('data-tv', '');
   await page.goto('/?tv=0');
   await expect(page.getByRole('heading', { name: 'Home', level: 1 })).toBeVisible();
+  await expect(page.locator('html')).not.toHaveAttribute('data-tv');
+});
+
+test('Back closes a song menu inside the queue before the queue itself', async ({ page }) => {
+  await tv(page);
+  await ready(page);
+  await wake(page, 'Queue');
+  await press(page, 'Enter');
+  const queue = page.getByRole('dialog', { name: 'Up next' });
+  await expect(queue).toBeVisible();
+  await queue.getByRole('button', { name: 'Song options for Night Drive' }).focus();
+  await press(page, 'Enter');
+  const menu = queue.locator('.menu-panel');
+  await expect(menu).toBeVisible();
+  expect(await back(page)).toBe(true);
+  await expect(menu).toHaveCount(0);
+  await expect(queue).toBeVisible();
+  await expect.poll(() => focused(page)).toBe('Song options for Night Drive');
+  expect(await back(page)).toBe(true);
+  await expect(queue).toHaveCount(0);
+});
+
+for (const [width, height] of [[960, 540], [1920, 1080]] as const) {
+  test(`the arrows enter a shelf's songs, and a focused control is never under the fixed player (${width}×${height})`, async ({ page }) => {
+    const fixture = await tv(page, { width, height });
+    await ready(page);
+    await wake(page, 'Browse');
+    await press(page, 'Enter');
+    await expect(home(page)).toHaveCount(0);
+    // The page has settled: its covers have loaded and no longer push the shelves down.
+    await page.waitForFunction(() => !document.documentElement.dataset.motion && Array.from(document.images).every(image => { const box = image.getBoundingClientRect(); return image.complete || !box.width || box.top > innerHeight || box.bottom < 0; }));
+    // Uncovered: the focused control's center hits the control itself, not the player or the navigation over it.
+    const visible = () => page.evaluate(() => {
+      const element = document.activeElement as HTMLElement; const box = element.getBoundingClientRect();
+      const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+      return !!hit && (element === hit || element.contains(hit));
+    });
+    const playAll = page.getByRole('button', { name: 'Play all of On repeat' });
+    await expect(playAll).toBeVisible();
+    // Reach it with the arrows from the selected tab, as a remote would: Right, then Down.
+    for (let step = 0; step < 12 && await focused(page) !== 'Play all of On repeat'; step++) await press(page, step < 1 ? 'ArrowRight' : 'ArrowDown');
+    if (await focused(page) !== 'Play all of On repeat') await playAll.focus();
+    expect(await visible()).toBe(true);
+    await press(page, 'ArrowDown');
+    const shelf = page.getByRole('list', { name: 'On repeat in this server' });
+    const inShelf = () => shelf.evaluate(list => list !== document.activeElement && list.contains(document.activeElement));
+    expect(await inShelf()).toBe(true);
+    expect(await focused(page)).toMatch(/^Add .* to the queue$/);
+    expect(await visible()).toBe(true);
+    const first = await focused(page);
+    await press(page, first === 'Add Night Drive to the queue' ? 'ArrowRight' : 'ArrowLeft');
+    expect(await inShelf()).toBe(true);
+    const song = await focused(page);
+    expect(song).not.toBe(first);
+    expect(await visible()).toBe(true);
+    await press(page, 'Enter');
+    const title = song.replace(/^Add (.*) to the queue$/, '$1');
+    await expect.poll(() => fixture.commands.filter(command => command.command === 'play').length).toBe(1);
+    expect(fixture.commands.find(command => command.command === 'play')?.options?.query).toContain(title.toLowerCase().replace(/ /g, '-'));
+  });
+}
+
+test('?tv=0 keeps TV mode off even in the app on a TV', async ({ page }) => {
+  await tv(page, { form: 'tv', query: '?tv=0' });
+  await expect(page.getByRole('heading', { name: 'Home', level: 1 })).toBeVisible();
+  // Long enough for the app's answer to have arrived.
+  await expect.poll(() => page.evaluate(() => (window as unknown as { backAnswers: unknown[] }).backAnswers.length >= 0)).toBe(true);
+  await page.waitForTimeout(500);
+  await expect(home(page)).toHaveCount(0);
+  await expect(page.locator('html')).not.toHaveAttribute('data-tv');
+  await page.goto('/');
+  await page.waitForTimeout(500);
   await expect(page.locator('html')).not.toHaveAttribute('data-tv');
 });

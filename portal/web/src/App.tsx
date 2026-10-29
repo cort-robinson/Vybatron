@@ -23,7 +23,7 @@ import { holdForSignIn, initialShare } from './share';
 import { holdLinkForSignIn, initialLink } from './link';
 import { CodeSignIn, LinkDialog } from './components/Link';
 import { nativeForm, nativePlayer } from './native';
-import { closeTopLayer, startTvMode, stopEditing, tvFlag } from './tv';
+import { closeTopLayer, startTvMode, stopEditing, tvChoice, tvFlag } from './tv';
 import { TvHome } from './components/TvHome';
 import { transition } from './motion';
 import { longPress } from './longPress';
@@ -63,7 +63,7 @@ export function App() {
   const [tv, setTv] = useState(tvFlag);
   useEffect(() => {
     let active = true;
-    void nativeForm().then(form => { if (active && form === 'tv') { setTv(true); setCodeSignIn(true); } });
+    void nativeForm().then(form => { if (active && form === 'tv' && tvChoice() !== false) { setTv(true); setCodeSignIn(true); } });
     return () => { active = false; };
   }, []);
   useEffect(() => tv ? startTvMode() : undefined, [tv]);

@@ -217,9 +217,47 @@ Unavailable stats return 503 `stats_unavailable`.
 - GET `/health`: credential-free portal responsiveness/readiness, never music data.
 - GET `/auth/discord`: OAuth code flow with state (PKCE when supported), exact
   registered callback `${PORTAL_ORIGIN}/auth/discord/callback`.
-- GET `/auth/discord/callback`: verified Discord identity, establish seven-day
-  device session; redirect `/`. No token/session ids in URLs/logs.
+- GET `/auth/discord/callback`: verified Discord identity, establish a device
+  session; redirect `/`. No token/session ids in URLs/logs.
+- Session lifetime (ADR-0019): a session ends after 30 days without use and in any
+  case 90 days after sign-in. An authenticated `/api/*` request, command or code
+  approval renews it at most once a day: its expiry moves to 30 days from then (never
+  past the 90-day limit), the response resends the session cookie with the new
+  `Max-Age`, and only then is the encrypted store written. Stored records keep
+  `createdAt` and, once renewed, `renewedAt`; the loader keeps records from before
+  renewal (`expiresAt = createdAt + 7 days`) and renewed ones within their bounds
+  (`expiresAt <= renewedAt + 30 days` and `<= createdAt + 90 days`), and drops any
+  other record instead of refusing to start. The 4096-session cap and the
+  replacement of a session signed in over are unchanged.
 - POST `/auth/logout`: same-origin + CSRF checked, destroy this device session.
+
+Signing in with a code (ADR-0019), for a screen without a convenient keyboard. Pending
+sign-ins live in the portal's memory only (a restart loses them), at most 64 at once,
+each for 10 minutes. `start` and `poll` come before any session, so instead of a CSRF
+token they need the exact portal `Origin` and a JSON body (`Content-Type:
+application/json`); anything else is 403 or 400.
+
+- POST `/auth/device/start`, body `{}` -> `{userCode: 'XXXX-XXXX', verificationUri:
+  '${PORTAL_ORIGIN}/link', expiresIn: 600, interval: 5}`. The user code is 8 letters from
+  `BCDFGHJKLMNPQRSTVWXZ`. Sets `__Host-vybertron_device_sign_in` (random device token;
+  `HttpOnly; Secure; SameSite=Lax; Max-Age=600`) and drops the pending sign-in that
+  cookie held before. 20 starts per address per minute, inside the anonymous budget;
+  429 at the pending cap.
+- POST `/auth/device/approve`, body `{code}` (case, spaces and the hyphen ignored):
+  session + same origin + CSRF. Records the approving listener once; a wrong, expired,
+  denied, already approved or malformed code is one 400 `invalid_code`. 10 tries
+  (approve or deny, right or wrong) per session per 10 minutes, then 429.
+- POST `/auth/device/deny`, body `{code}`: as approve; the screen's next poll hears
+  `denied`.
+- POST `/auth/device/poll`, body `{}`, with the device cookie -> `{status: 'pending' |
+  'approved' | 'denied' | 'expired'}` (no cookie or an unknown one is `expired`; 30
+  polls per device per minute). `denied` and `expired` clear the device cookie. On
+  approval the pending sign-in is claimed and removed before anything is awaited, so
+  one approval makes at most one session; then the bot's `/v1/bootstrap` checks the
+  approving listener (as after Discord sign-in, errors as there), a new independent
+  session is created and its cookie set, and the device cookie is cleared.
+- The web app's `/link?code=XXXX-XXXX` shows the approval to a signed-in listener (the
+  code is read once and the address bar reset to `/`).
 - GET `/api/bootstrap` -> Bootstrap. Signed-out: 401 JSON error.
 - GET `/api/guilds/:guildId` -> GuildSnapshot.
 - GET `/api/guilds/:guildId/configuration` -> Configuration (admin only).

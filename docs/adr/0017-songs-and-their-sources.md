@@ -92,7 +92,8 @@ or on a device, the bot fetches its source's Ogg audio from the plugin in the au
 background slot (a device play reuses the download it already has) and stores the song's
 fingerprint. Discord playback itself never goes through the plugin. In the background, rate-limited
 and only in the audio cache's background download slot, it looks for alternates: an ISRC search,
-a YouTube Music search for the title and artist, and Topic uploads. Candidates that pass the
+a YouTube Music search for the title and artist, the same search on YouTube (YouTube Music often
+lists only the song's own upload), and Topic uploads. Candidates that pass the
 length and title checks are downloaded, measured and compared. Those that match become verified
 sources.
 

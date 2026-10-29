@@ -169,7 +169,7 @@ test('the jobs record a device play, fingerprint it, and verify only an alternat
   assert.deepEqual(measured, ['xy3AcmW0lrQ']);
   await jobs.tick();
   assert.deepEqual(measured, ['xy3AcmW0lrQ', 'oXSw8DGjf5E', 'lookalike01']);
-  assert.deepEqual(searches.at(-1), ['Djo end of beginning', 'ytmsearch']);
+  assert.deepEqual(searches.slice(-2), [['Djo end of beginning', 'ytmsearch'], ['Djo end of beginning', 'ytsearch']]);
   const song = songs.songOf(original.info.uri);
   assert.deepEqual(song.sources.map(source => [source.uri.slice(-11), source.verification]).sort(), [['oXSw8DGjf5E', 'audio'], ['xy3AcmW0lrQ', 'first']]);
   // Checked: nothing is due again until the recheck interval.
@@ -306,6 +306,34 @@ test('uploads that agree with each other stand in for a refused YouTube Music so
   assert.equal(songs.agreementDue(), null);
 });
 
+test('when YouTube Music lists only the refused upload, plain YouTube finds the stand-ins', async t => {
+  const { songs, topic } = await refusedSong(t);
+  const search = async (query, source) => ({ loadType: 'search', tracks: source === 'ytmsearch' ? [topic] : ['xy3AcmW0lrQ', 'oXSw8DGjf5E'].map(id => djoUploads[id]) });
+  const jobs = startSongJobs({ songs }, { measure: async id => print(id), search, intervalMs: 3_600_000, logger: quiet });
+  t.after(() => jobs.stop());
+  await jobs.tick(); await jobs.tick(); await jobs.tick();
+  assert.deepEqual(songs.songOf(topic.info.uri).sources.map(source => [source.uri.slice(-11), source.verification]).sort(),
+    [['Kf5pXDhx5Vc', 'first'], ['oXSw8DGjf5E', 'agreement'], ['xy3AcmW0lrQ', 'agreement']]);
+});
+
+test('a version 3 store checks its songs for alternates again', async t => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'vybatron-songs-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const file = path.join(dir, 'songs.sqlite');
+  const { DatabaseSync } = await import('node:sqlite');
+  const old = new DatabaseSync(file);
+  for (const migration of MIGRATIONS.slice(0, 3)) old.exec(migration);
+  old.exec('PRAGMA user_version = 3');
+  const at = Date.now();
+  old.prepare(`INSERT INTO songs (id, title, artist, duration, created_at, used_at, catalog_status, fingerprint_failed_at, alternates_checked_at)
+    VALUES ('song:x', 'End of Beginning', 'Djo - Topic', 159000, ?, ?, 'pending', ?, ?)`).run(at, at, at, at);
+  old.prepare(`INSERT INTO sources (uri, song_id, source_name, identifier, title, author, duration, verification, music, added_at)
+    VALUES ('https://www.youtube.com/watch?v=Kf5pXDhx5Vc', 'song:x', 'youtube', 'Kf5pXDhx5Vc', 'End of Beginning', 'Djo - Topic', 159000, 'first', 1, ?)`).run(at);
+  old.close();
+  const songs = new SongStore(file, { logger: quiet }); await songs.open(); t.after(() => songs.close());
+  assert.equal(songs.agreementDue().id, 'song:x');
+});
+
 test('one measurable upload, or two that disagree, add nothing', async t => {
   const { songs, topic } = await refusedSong(t);
   // VfPdynN2FXw carries the demo's audio under the album title.
@@ -337,6 +365,6 @@ test('a version 2 store keeps its sources on the way to version 3', async t => {
     VALUES ('https://www.youtube.com/watch?v=aaaaaaaaaaa', 'song:x', 'youtube', 'aaaaaaaaaaa', 'Song', 'A', 200000, 'audio', 1, .97, ?, ?)`).run(at, at);
   old.close();
   const songs = new SongStore(file, { logger: quiet }); await songs.open(); t.after(() => songs.close());
-  assert.equal(songs.db.prepare('PRAGMA user_version').get().user_version, 3);
+  assert.equal(songs.db.prepare('PRAGMA user_version').get().user_version, MIGRATIONS.length);
   assert.deepEqual({ ...songs.db.prepare('SELECT verification, music, similarity, last_played_at FROM sources').get() }, { verification: 'audio', music: 1, similarity: .97, last_played_at: at });
 });

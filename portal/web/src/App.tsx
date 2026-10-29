@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import { ArrowClockwiseIcon, ArrowRightIcon, CaretDownIcon, DiscordLogoIcon, GearSixIcon, HeartIcon, HouseIcon, MagnifyingGlassIcon, MusicNotesIcon, PlusIcon, SignOutIcon, UsersIcon, WarningCircleIcon, WaveformIcon, WifiSlashIcon, XIcon } from './icons';
+import { ArrowClockwiseIcon, ArrowRightIcon, CaretDownIcon, DiscordLogoIcon, GearSixIcon, HeartIcon, HouseIcon, MagnifyingGlassIcon, MusicNotesIcon, PlusIcon, SignOutIcon, TelevisionSimpleIcon, UsersIcon, WarningCircleIcon, WaveformIcon, WifiSlashIcon, XIcon } from './icons';
 import type { Bootstrap, GuildSnapshot, Surface } from './types';
 import { usePortal } from './usePortal';
 import { useListening } from './playback';
@@ -20,6 +20,8 @@ import { ServerView, SettingsView, usePrefetchViews } from './views';
 import { Recovery } from './components/Recovery';
 import { ShareDialog } from './components/Share';
 import { holdForSignIn, initialShare } from './share';
+import { holdLinkForSignIn, initialLink } from './link';
+import { CodeSignIn, LinkDialog } from './components/Link';
 import { transition } from './motion';
 import { longPress } from './longPress';
 import { applyPerformance, applySkin, initialPerformance, initialSkin, loadLook, skinLook, type Skin } from './skin';
@@ -50,6 +52,9 @@ export function App() {
   const [installPrompt, setInstallPrompt] = useState<InstallPrompt | null>(null);
   const [update, setUpdate] = useState<ServiceWorker | null>(null);
   const [shared, setShared] = useState(initialShare);
+  // A code from /link to approve for another screen, and signing this screen in with a code (ADR-0019).
+  const [linkRequest, setLinkRequest] = useState(initialLink);
+  const [codeSignIn, setCodeSignIn] = useState(false);
   const navigationState = useRef({ surface, expanded });
   const { bootstrap, snapshot, connection, auth } = portal;
   usePrefetchViews(auth === 'ready');
@@ -141,7 +146,17 @@ export function App() {
   // Sign-in has no session to wait for; the horizon idles there whenever ambient motion is allowed.
   const welcome = <>{scene(!still)}{fps && <FpsMeter />}</>;
   if (auth === 'loading') return <div className="auth-page">{welcome}<Brand /><Loading label="Finding your listening space…" /></div>;
-  if (auth === 'signed-out' || auth === 'error') return <div className="auth-page">{welcome}<Brand /><main className="sign-in"><h1 className="sr-only">Sign in to Vybatron</h1><div className="signin-sleeve"><FallbackCover /></div><Spectrum className="signin-spectrum" seed="vybertron" color={palette.accent} mode="playing" animate={!still} bands={36} /><p>{shared?.link ? 'Sign in with Discord to add the link you shared.' : 'Sign in with Discord to pick songs and control the music in your server.'}</p>{auth === 'error' ? <ErrorState message={portal.authError} retry={() => void portal.loadBootstrap()} /> : <a className="button primary discord-signin" href="/auth/discord" onClick={() => holdForSignIn(shared)}><DiscordLogoIcon size={25} weight="fill" />Continue with Discord<ArrowRightIcon size={20} /></a>}<span className="signin-footnote">Plays in your Discord voice channel, or right here when you’re not in one.</span></main></div>;
+  if (auth === 'signed-out' || auth === 'error') {
+    const invitation = shared?.link ? 'Sign in with Discord to add the link you shared.' : linkRequest ? 'Sign in with Discord to approve the code shown on your other screen.' : 'Sign in with Discord to pick songs and control the music in your server.';
+    return <div className="auth-page">{welcome}<Brand /><main className="sign-in"><h1 className="sr-only">Sign in to Vybatron</h1>
+      {codeSignIn && auth === 'signed-out' ? <CodeSignIn onSignedIn={() => { setCodeSignIn(false); void portal.loadBootstrap(); }} onCancel={() => setCodeSignIn(false)} /> : <>
+        <div className="signin-sleeve"><FallbackCover /></div><Spectrum className="signin-spectrum" seed="vybertron" color={palette.accent} mode="playing" animate={!still} bands={36} /><p>{invitation}</p>
+        {auth === 'error' ? <ErrorState message={portal.authError} retry={() => void portal.loadBootstrap()} /> : <>
+          <a className="button primary discord-signin" href="/auth/discord" onClick={() => { holdForSignIn(shared); holdLinkForSignIn(linkRequest); }}><DiscordLogoIcon size={25} weight="fill" />Continue with Discord<ArrowRightIcon size={20} /></a>
+          <button type="button" className="text-button signin-code" onClick={() => setCodeSignIn(true)}><TelevisionSimpleIcon size={21} />Sign in with a code</button></>}
+        <span className="signin-footnote">Plays in your Discord voice channel, or right here when you’re not in one.</span></>}
+    </main></div>;
+  }
   const noGuilds = !bootstrap!.guilds.length;
   const inviteUrl = bootstrap!.inviteUrl;
   const heading = surface === 'home' ? 'Home' : surface === 'search' ? 'Search' : surface === 'session' ? portal.target === 'local' ? 'Your Queue' : 'Shared Queue' : surface === 'music' ? 'My Music' : surface === 'settings' ? 'Settings' : 'Your Server';
@@ -166,9 +181,10 @@ export function App() {
         <Held held={surface !== 'settings'}><SettingsView portal={portal} active={surface === 'settings'} ambient={ambient} setAmbient={setAmbient} skin={skin} setSkin={setSkin} performance={performance} setPerformance={setPerformance} installPrompt={installPrompt} install={install} /></Held>
       </>}</Held></div>{!noGuilds && <Player portal={portal} expanded={expanded} setExpanded={toggleExpanded} onAdd={openSearch} palette={palette} animate={!still} skin={skin} />}</main>
     </div>
-    {shared && <ShareDialog portal={portal} link={shared.link} onClose={() => setShared(null)} />}
+    {linkRequest && <LinkDialog portal={portal} initialCode={linkRequest.code} onClose={() => setLinkRequest(null)} />}
+    {shared && !linkRequest && <ShareDialog portal={portal} link={shared.link} onClose={() => setShared(null)} />}
     <Search portal={portal} open={searchOpen} onClose={closeSearch} />
-    {portal.notice && !searchOpen && !(surface === 'search' && !expanded) && !shared && <div className={`toast ${portal.notice.kind}`} role={portal.notice.kind === 'error' ? 'alert' : 'status'}><span>{portal.notice.message}</span><IconButton label="Dismiss notification" onClick={portal.dismissNotice}><XIcon size={19} /></IconButton></div>}
+    {portal.notice && !searchOpen && !(surface === 'search' && !expanded) && !shared && !linkRequest && <div className={`toast ${portal.notice.kind}`} role={portal.notice.kind === 'error' ? 'alert' : 'status'}><span>{portal.notice.message}</span><IconButton label="Dismiss notification" onClick={portal.dismissNotice}><XIcon size={19} /></IconButton></div>}
     {update && <div className="update-notice"><span>A fresh version of Vybatron is ready.</span><button className="text-button" onClick={() => { navigator.serviceWorker.addEventListener('controllerchange', () => location.reload(), { once: true }); update.postMessage({ type: 'ACTIVATE' }); }}>Update app</button></div>}
   </div>;
 }

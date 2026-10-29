@@ -11,6 +11,7 @@ code the portal can reach through `window.vybatronNative` and nowhere else. Desi
 | `PortalOrigin.kt` | The one trusted origin, parsed and compared |
 | `NavigationPolicy.kt` | Which top-level pages stay in the app, open outside, or are ignored |
 | `PortalBridge.kt` | The bridge's message format and its named operations |
+| `BackRelay.kt` | Back: asks the page first, then falls back to the app's own Back |
 | `playback/PlaybackService.kt` | The media session: playback with the screen off and the app closed, and the lock-screen, notification and Bluetooth controls |
 | `playback/DevicePlayer.kt` | ExoPlayer and this device's queue: plays the portal's audio route, moves on by itself, looks up songs from other catalogs, retries or skips songs that fail |
 | `playback/DeviceQueue.kt` | The queue rules, the same as `portal/web/src/playback.ts` |
@@ -51,6 +52,16 @@ failing song skipped with the portal's reason, a song from another catalog playe
 search match, and Next and Previous from a media controller. It plays from a local server, so it
 needs only an emulator. `SharedPlayerServiceTest` checks the service with no page: a local
 listener stream makes it the active device and relays a pause, which it carries out and reports.
+
+## Back
+
+Back asks the page first (ADR-0019, `BackRelay.kt`): the app sends the portal page the event
+`app.back` (`{"event": "app.back", "back": n}`), and the page answers with the request `app.back`
+(`{"back": n, "handled": true|false}`) after it stops editing a field, closes its top menu or dialog,
+or, on a TV, goes back a view. When the page didn't handle it, doesn't answer within 500 ms, or no
+portal page is showing, the app does its own Back: the WebView's history, then the system's.
+`BackBridgeTest` checks the three cases in the real activity, with a page on the portal origin
+loaded from a string, so it needs only an emulator.
 
 ## Build
 

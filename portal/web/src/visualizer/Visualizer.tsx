@@ -53,11 +53,12 @@ export function SleeveVisualizer({ animate, onFail, onFull, ...scene }: Scene & 
 }
 
 // The TV's now-playing screen (ADR-0019): the visualizer behind everything, at the frame rate chosen
-// in Settings. The screen draws its own song and controls over it.
-export function BackdropVisualizer({ onFail, ...scene }: Scene & { onFail: () => void }) {
+// in Settings. The screen draws its own song and controls over it, and its look picker reaches the
+// engine (MilkDrop's next preset) and hears the name of the MilkDrop preset showing.
+export function BackdropVisualizer({ onFail, engine, onName, ...scene }: Scene & { onFail: () => void; engine?: RefObject<Visualizer | null>; onName?: (name: string) => void }) {
   const [reduced] = useState(prefersReducedMotion);
   const [lite] = useState(() => document.documentElement.hasAttribute('data-performance'));
-  return <Stage className="visualizer-stage visualizer-backdrop" view={useView(scene, !reduced, true, lite)} onFail={onFail} />;
+  return <Stage className="visualizer-stage visualizer-backdrop" view={useView(scene, !reduced, true, lite)} engine={engine} onFail={onFail} onName={onName} />;
 }
 
 // The takeover: the visualizer fills the screen; the song, its position, the presets and a way out

@@ -309,13 +309,7 @@ REVERT: everything here is scoped to :root[data-skin='fantastic']; Settings → 
     /* In the sleeve the storm starts below Close player instead of crowding it. */
     .app-shell .ambient-scene.immersive .ff-krackle { top: calc(var(--mobile-header) + 56px); }
     .sleeve-main > .player-identity, .sleeve-main > .player-context:has(> p) { padding: 8px 16px 10px; border-radius: 18px; }
-    .sidebar { background: var(--piping-bottom), var(--chrome); }
-    .sidebar::after { display: none; }
     .guild-card { background: none; outline: 0; }
-    .navigation { background: var(--piping), color-mix(in oklab, var(--ff-base) 92%, transparent); }
-    .navigation button { border-radius: 0; }
-    .nav-indicator { background: radial-gradient(60% 90% at 50% 100%, color-mix(in oklab, var(--ff-cream) 10%, transparent), transparent); box-shadow: none; }
-    .nav-indicator::before { top: 9px; right: auto; left: 50%; width: 6px; height: 6px; margin: 0 0 0 -3px; }
     .page-title h1 { font-size: 22px; }
     .home-shelf-header h2 { font-size: 16px; }
     /* The compact deck's hairline is progress; it heats toward flame instead of carrying the piping. */
@@ -326,6 +320,15 @@ REVERT: everything here is scoped to :root[data-skin='fantastic']; Settings → 
     .ff-tv i { width: 8px; height: 8px; bottom: calc(var(--bezel) / 2 - 4px); }
     .ff-tv i:nth-child(2) { right: calc(var(--bezel) + 22px); }
     .ff-tv-glass, .ff-tune, .sleeve-artwork > .artwork, .sleeve-artwork > .artwork-ghost { border-radius: 18px; }
+    /* On a TV the side navigation stays as on a wide screen (tv.ts); these restyle the tab bar. */
+    &:not([data-tv]) {
+      .sidebar { background: var(--piping-bottom), var(--chrome); }
+      .sidebar::after { display: none; }
+      .navigation { background: var(--piping), color-mix(in oklab, var(--ff-base) 92%, transparent); }
+      .navigation button { border-radius: 0; }
+      .nav-indicator { background: radial-gradient(60% 90% at 50% 100%, color-mix(in oklab, var(--ff-cream) 10%, transparent), transparent); box-shadow: none; }
+      .nav-indicator::before { top: 9px; right: auto; left: 50%; width: 6px; height: 6px; margin: 0 0 0 -3px; }
+    }
   }
 }
 @media (max-width: 599px) {

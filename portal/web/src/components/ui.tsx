@@ -122,7 +122,8 @@ export function ActionPopover({ label, trigger, className = '', triggerClassName
   useLayoutEffect(() => {
     if (!open) return;
     const content = panel.current;
-    if (content) (focusableElements(content)[0] || content).focus({ preventScroll: true });
+    // A menu may name the control it opens on (the choice already made); otherwise its first.
+    if (content) (content.querySelector<HTMLElement>('[data-autofocus]:not(:disabled)') || focusableElements(content)[0] || content).focus({ preventScroll: true });
     const outside = (event: PointerEvent) => {
       if (!(event.target instanceof Node) || inside(event.target)) return;
       setOpen(false);

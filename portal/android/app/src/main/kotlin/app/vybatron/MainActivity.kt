@@ -129,7 +129,7 @@ class MainActivity : ComponentActivity() {
             setAcceptThirdPartyCookies(view, false)
         }
 
-        val info = PortalBridge.AppInfo(BuildConfig.VERSION_NAME, BuildConfig.VERSION_CODE)
+        val info = PortalBridge.AppInfo(BuildConfig.VERSION_NAME, BuildConfig.VERSION_CODE, DeviceForm.of(this).form)
         // onCreate already refused to start without it; checked here too, where the call is.
         if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
             WebViewCompat.addWebMessageListener(view, PortalBridge.NAME, setOf(portal.value)) { _, message, origin, isMainFrame, reply ->
@@ -196,7 +196,7 @@ class MainActivity : ComponentActivity() {
             player.addListener(onState)
             player.addNoticeListener(onNotice)
             PlaybackService.link?.addStatusListener(onLink)
-            val info = PortalBridge.AppInfo(BuildConfig.VERSION_NAME, BuildConfig.VERSION_CODE)
+            val info = PortalBridge.AppInfo(BuildConfig.VERSION_NAME, BuildConfig.VERSION_CODE, DeviceForm.of(this).form)
             waiting.toList().also { waiting.clear() }.forEach { (text, reply) -> answer(text, reply, info) }
         }, ContextCompat.getMainExecutor(this))
     }

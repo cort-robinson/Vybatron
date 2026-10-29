@@ -22,7 +22,8 @@ type Showing = { kind: 'starting' } | { kind: 'showing'; start: DeviceStart } | 
 const retryable = (error: unknown) => error instanceof ApiError && (error.status === 0 || error.status === 429 || error.status >= 500);
 
 // Signing in this screen with a code a signed-in listener approves on another device (ADR-0019).
-export function CodeSignIn({ onSignedIn, onCancel }: { onSignedIn: () => void; onCancel: () => void }) {
+// On a TV (`tv`) it is the first sign-in screen, sized to read from across the room.
+export function CodeSignIn({ tv = false, onSignedIn, onCancel }: { tv?: boolean; onSignedIn: () => void; onCancel: () => void }) {
   const [state, setState] = useState<Showing>({ kind: 'starting' });
   const [attempt, setAttempt] = useState(0);
   const signedIn = useRef(onSignedIn); signedIn.current = onSignedIn;
@@ -55,14 +56,15 @@ export function CodeSignIn({ onSignedIn, onCancel }: { onSignedIn: () => void; o
     })();
     return () => { active = false; controller.abort(); clearTimeout(timer); };
   }, [attempt]);
-  const back = <button type="button" className="text-button" onClick={onCancel}>Sign in with Discord instead</button>;
-  if (state.kind === 'starting') return <div className="code-signin"><Loading label="Getting a code…" />{back}</div>;
-  if (state.kind === 'ended') return <div className="code-signin"><p role="alert">{state.message}</p>
+  const back = <button type="button" className="text-button code-signin-back" onClick={onCancel}>Sign in with Discord instead</button>;
+  const className = tv ? 'code-signin tv' : 'code-signin';
+  if (state.kind === 'starting') return <div className={className}><Loading label="Getting a code…" />{back}</div>;
+  if (state.kind === 'ended') return <div className={className}><p role="alert">{state.message}</p>
     <button type="button" className="button primary" onClick={() => setAttempt(value => value + 1)}><ArrowClockwiseIcon size={20} />Get a new code</button>{back}</div>;
   const { userCode, verificationUri } = state.start;
   const address = verificationUri.replace(/^https?:\/\//, '');
-  return <div className="code-signin">
-    <p>On a phone or computer that’s signed in, go to <strong>{address}</strong> and enter this code:</p>
+  return <div className={className}>
+    <p className="code-signin-where">On a phone or computer that’s signed in, go to <strong>{address}</strong> and enter this code:</p>
     <p className="device-code" aria-label={`Code ${userCode.split('').join(' ')}`}>{userCode}</p>
     <QrCode value={`${verificationUri}?code=${userCode}`} label={`QR code for ${address} with this code`} />
     <p className="signin-footnote" role="status"><span className="spinner" />Or scan the QR code. Waiting for approval…</p>

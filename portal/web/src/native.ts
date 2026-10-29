@@ -29,7 +29,9 @@ export type NativeControl = { action: 'play' | 'pause' | 'next' | 'previous' | '
 // What the page hands the app's playback service so it can reach the shared player by itself (ADR-0018).
 export interface NativeSession { csrfToken: string; deviceId: string; name: string; guildId?: string }
 // `features`: 'player.shared' when the app keeps its own connection to the shared player and reports for this device.
-export interface NativeInfo { platform: string; version: string; build: number; features?: string[] }
+// `form`: 'tv' on a TV (ADR-0019); apps before 0.4.0 don't say, and are phones.
+export type NativeForm = 'phone' | 'tv';
+export interface NativeInfo { platform: string; version: string; build: number; features?: string[]; form?: NativeForm }
 export const SHARED_PLAYER = 'player.shared';
 
 export interface NativePlayer {
@@ -47,8 +49,22 @@ export interface NativePlayer {
 
 export class NativeError extends Error {}
 
+// One client per port: request IDs are numbered per client, so two on the same port would take each other's replies.
+const clients = new WeakMap<Port, NativePlayer>();
 export function nativePlayer(port: Port | undefined = typeof window === 'undefined' ? undefined : window.vybatronNative): NativePlayer | null {
   if (!port) return null;
+  let client = clients.get(port);
+  if (!client) clients.set(port, client = connect(port));
+  return client;
+}
+
+/** Whether the page runs in the app on a TV, once the app says (ADR-0019). */
+export function nativeForm(device = nativePlayer()): Promise<NativeForm> {
+  if (!device) return Promise.resolve('phone');
+  return device.info().then(info => info.form === 'tv' ? 'tv' as const : 'phone' as const, () => 'phone' as const);
+}
+
+function connect(port: Port): NativePlayer {
   let next = 1;
   const waiting = new Map<number, { resolve: (value: unknown) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> }>();
   const states = new Set<(state: NativeState) => void>();

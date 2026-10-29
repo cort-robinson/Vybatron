@@ -115,6 +115,44 @@ test('an expired or turned-down code offers a new one, and Discord sign-in stays
   await expect(page.getByRole('link', { name: /Continue with Discord/ })).toBeVisible();
 });
 
+// In the app on a TV (ADR-0019), the signed-out screen leads with the code, sized for the couch.
+test('on a TV, signing in starts with a code readable from across the room, and Discord is a step away', async ({ page }) => {
+  await page.setViewportSize({ width: 960, height: 540 });
+  await page.addInitScript(() => {
+    const listeners: ((event: { data: string }) => void)[] = [];
+    (window as unknown as { vybatronNative: unknown }).vybatronNative = {
+      addEventListener: (_type: string, listener: (event: { data: string }) => void) => listeners.push(listener),
+      postMessage(data: string) {
+        const request = JSON.parse(data);
+        const reply = request.type === 'app.info' ? { id: request.id, ok: true, result: { platform: 'android', version: '0.4.0', build: 4, features: ['player.shared'], form: 'tv' } }
+          : { id: request.id, ok: false, error: 'unavailable' };
+        setTimeout(() => { for (const listener of listeners) listener({ data: JSON.stringify(reply) }); }, 0);
+      },
+    };
+  });
+  await mockPortal(page, { signedOut: true });
+  const flow = await codeSignIn(page, ['pending']); await flow.route(() => undefined);
+  await page.goto('/');
+  const code = page.getByText('BCDF-GHJK', { exact: true });
+  await expect(code).toBeVisible();
+  await expect(page.getByText('portal.example.test/link', { exact: true })).toBeVisible();
+  await expect(page.getByRole('link', { name: /Continue with Discord/ })).toHaveCount(0);
+  expect(flow.starts).toHaveLength(1);
+  // Large enough to read from a couch, and all of it on the screen.
+  const qr = page.getByRole('img', { name: 'QR code for portal.example.test/link with this code' });
+  const box = (await qr.boundingBox())!;
+  expect(box.width).toBeGreaterThanOrEqual(240);
+  expect(box.y + box.height).toBeLessThanOrEqual(540);
+  expect(parseFloat(await code.evaluate(element => getComputedStyle(element).fontSize))).toBeGreaterThanOrEqual(56);
+  const back = page.getByRole('button', { name: 'Sign in with Discord instead' });
+  const backBox = (await back.boundingBox())!;
+  expect(backBox.y + backBox.height).toBeLessThanOrEqual(540);
+  await back.click();
+  await expect(page.getByRole('link', { name: /Continue with Discord/ })).toBeVisible();
+  await page.getByRole('button', { name: 'Sign in with a code' }).click();
+  await expect(page.getByText('MNPQ-RSTV', { exact: true })).toBeVisible();
+});
+
 // The QR code is drawn as SVG elements in the page: the production policy allows it as is.
 const policy = readFileSync(new URL('../../server/src/security.js', import.meta.url), 'utf8').match(/'Content-Security-Policy', "([^"]+)"/)![1];
 test('the code and QR code show under the production CSP without a violation', async ({ page }) => {

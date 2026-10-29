@@ -105,6 +105,12 @@ class PlayerLinkTest {
         stream(Shared.player(generation = generation, active = me, current = Shared.entry("a"), queue = queue.map(Shared::entry), playing = true, repeat = repeat))
     }
 
+    @Test fun connectsAsATvOnATv() {
+        val tv = PlayerLink(FakeLocal(), net, timers, { Shared.NOW }, { Shared.NOW }, kind = app.vybatron.DeviceForm.TV.kind)
+        tv.start(LinkSession("csrf-1", me, "TV", "1"))
+        assertEquals(listOf("device=$me&kind=tv&name=TV&protocol=1"), net.opened)
+    }
+
     @Test fun connectsWithThePagesSessionAsTheAndroidApp() {
         link.start(session)
         assertEquals(listOf("device=$me&kind=android&name=Android+app&protocol=1"), net.opened)

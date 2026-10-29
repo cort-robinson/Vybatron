@@ -22,6 +22,7 @@ import { ShareDialog } from './components/Share';
 import { holdForSignIn, initialShare } from './share';
 import { holdLinkForSignIn, initialLink } from './link';
 import { CodeSignIn, LinkDialog } from './components/Link';
+import { nativeForm } from './native';
 import { transition } from './motion';
 import { longPress } from './longPress';
 import { applyPerformance, applySkin, initialPerformance, initialSkin, loadLook, skinLook, type Skin } from './skin';
@@ -55,6 +56,13 @@ export function App() {
   // A code from /link to approve for another screen, and signing this screen in with a code (ADR-0019).
   const [linkRequest, setLinkRequest] = useState(initialLink);
   const [codeSignIn, setCodeSignIn] = useState(false);
+  // In the app on a TV, signing in leads with a code; Discord stays a step away.
+  const [tv, setTv] = useState(false);
+  useEffect(() => {
+    let active = true;
+    void nativeForm().then(form => { if (active && form === 'tv') { setTv(true); setCodeSignIn(true); } });
+    return () => { active = false; };
+  }, []);
   const navigationState = useRef({ surface, expanded });
   const { bootstrap, snapshot, connection, auth } = portal;
   usePrefetchViews(auth === 'ready');
@@ -149,7 +157,7 @@ export function App() {
   if (auth === 'signed-out' || auth === 'error') {
     const invitation = shared?.link ? 'Sign in with Discord to add the link you shared.' : linkRequest ? 'Sign in with Discord to approve the code shown on your other screen.' : 'Sign in with Discord to pick songs and control the music in your server.';
     return <div className="auth-page">{welcome}<Brand /><main className="sign-in"><h1 className="sr-only">Sign in to Vybatron</h1>
-      {codeSignIn && auth === 'signed-out' ? <CodeSignIn onSignedIn={() => { setCodeSignIn(false); void portal.loadBootstrap(); }} onCancel={() => setCodeSignIn(false)} /> : <>
+      {codeSignIn && auth === 'signed-out' ? <CodeSignIn tv={tv} onSignedIn={() => { setCodeSignIn(tv); void portal.loadBootstrap(); }} onCancel={() => setCodeSignIn(false)} /> : <>
         <div className="signin-sleeve"><FallbackCover /></div><Spectrum className="signin-spectrum" seed="vybertron" color={palette.accent} mode="playing" animate={!still} bands={36} /><p>{invitation}</p>
         {auth === 'error' ? <ErrorState message={portal.authError} retry={() => void portal.loadBootstrap()} /> : <>
           <a className="button primary discord-signin" href="/auth/discord" onClick={() => { holdForSignIn(shared); holdLinkForSignIn(linkRequest); }}><DiscordLogoIcon size={25} weight="fill" />Continue with Discord<ArrowRightIcon size={20} /></a>

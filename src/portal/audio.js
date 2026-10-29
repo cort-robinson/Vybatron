@@ -138,38 +138,42 @@ export function playableAudio(audio, songs, { pinMs = 30 * 60_000, now = Date.no
   // The source chosen for an upload stays its source across range requests, so
   // one URL never serves bytes from two different uploads.
   const pinned = new Map();
-  return {
-    async get(id, options) {
-      if (!validVideoId(id)) return audio.get(id, options);
-      const pin = pinned.get(id);
-      if (pin && pin.until <= now()) pinned.delete(id);
-      const known = Boolean(songs?.songOf?.(watchUrl(id)));
-      let order = (songs?.playbackSources?.(watchUrl(id)) || [])
-        .filter(source => source.sourceName === 'youtube' && validVideoId(source.identifier)).map(source => source.identifier);
-      // A pin holds only while its source is still eligible: one that failed, through any request, lets go.
-      const held = pinned.get(id)?.source;
-      if (held && order.includes(held)) order = [held, ...order.filter(source => source !== held)];
-      // A known song whose every source failed recently waits out the cooldown; an unknown one plays as asked.
-      if (!order.length && known) fail(404, 'audio_unavailable', 'This song can’t be streamed right now. Try another version.');
-      if (!order.length) order.push(id);
-      let failure;
-      for (const source of order) {
-        let entry;
-        try { entry = await audio.get(source, options); }
-        catch (error) {
-          if (error?.status !== 404) throw error;
-          if (pinned.get(id)?.source === source) pinned.delete(id);
-          songs?.sourceResult?.(watchUrl(source), false); failure = error; continue;
-        }
-        pinned.delete(id); pinned.set(id, { source, until: now() + pinMs });
-        while (pinned.size > 500) pinned.delete(pinned.keys().next().value);
-        if (!reported.has(entry)) {
-          reported.add(entry);
-          entry.done.then(() => songs?.sourceResult?.(watchUrl(source), true), () => songs?.sourceResult?.(watchUrl(source), false));
-        }
-        return entry;
+  // The entry and the upload it came from.
+  const pick = async (id, options) => {
+    if (!validVideoId(id)) return { entry: await audio.get(id, options), source: id };
+    const pin = pinned.get(id);
+    if (pin && pin.until <= now()) pinned.delete(id);
+    const known = Boolean(songs?.songOf?.(watchUrl(id)));
+    let order = (songs?.playbackSources?.(watchUrl(id)) || [])
+      .filter(source => source.sourceName === 'youtube' && validVideoId(source.identifier)).map(source => source.identifier);
+    // A pin holds only while its source is still eligible: one that failed, through any request, lets go.
+    const held = pinned.get(id)?.source;
+    if (held && order.includes(held)) order = [held, ...order.filter(source => source !== held)];
+    // A known song whose every source failed recently waits out the cooldown; an unknown one plays as asked.
+    if (!order.length && known) fail(404, 'audio_unavailable', 'This song can’t be streamed right now. Try another version.');
+    if (!order.length) order.push(id);
+    let failure;
+    for (const source of order) {
+      let entry;
+      try { entry = await audio.get(source, options); }
+      catch (error) {
+        if (error?.status !== 404) throw error;
+        if (pinned.get(id)?.source === source) pinned.delete(id);
+        songs?.sourceResult?.(watchUrl(source), false); failure = error; continue;
       }
-      throw failure;
-    },
+      pinned.delete(id); pinned.set(id, { source, until: now() + pinMs });
+      while (pinned.size > 500) pinned.delete(pinned.keys().next().value);
+      if (!reported.has(entry)) {
+        reported.add(entry);
+        entry.done.then(() => songs?.sourceResult?.(watchUrl(source), true), () => songs?.sourceResult?.(watchUrl(source), false));
+      }
+      return { entry, source };
+    }
+    throw failure;
+  };
+  return {
+    async get(id, options) { return (await pick(id, options)).entry; },
+    /** The upload a request for `id` plays from now, its download started. */
+    async source(id, options) { return (await pick(id, options)).source; },
   };
 }

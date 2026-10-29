@@ -97,7 +97,8 @@ export function startPortalBridge(client, {
   const changes = createChangeFeed(client, revisions);
   const audio = createAudioCache(client);
   const analyses = createAnalysisCache(audio);
-  // A device's song plays from its best verified source (ADR-0017); analyses stay on the upload asked for.
+  // A device's song plays from its best verified source (ADR-0017). Analyses are
+  // of exact uploads: fingerprints measure the one asked for, visualizers the one playing.
   const playable = playableAudio(audio, client.songs);
   // Fingerprints and alternates (ADR-0017) measure songs through the same caches.
   const songJobs = client.songs?.available ? startSongJobs(client, {
@@ -219,7 +220,10 @@ export function startPortalBridge(client, {
           const actorId = url.searchParams.get('actorId');
           const context = await policy.guild(actorId, analysisMatch[1], undefined, { channelScope: 'none' });
           if (!context.member) fail(403, 'membership_required', 'Join this server to listen to its music.');
-          return json(response, 200, await analyses.get(analysisMatch[2]), maxResponseBytes);
+          let source;
+          try { source = await playable.source(analysisMatch[2], { background: true }); }
+          catch (error) { if ([404, 413].includes(error?.status)) fail(404, 'analysis_unavailable', 'This song can’t be analysed.'); throw error; }
+          return json(response, 200, await analyses.get(source), maxResponseBytes);
         }
         const userMatch = url.pathname.match(/^\/v1\/users\/(\d{1,22})\/(player|devices)$/);
         if (userMatch) {

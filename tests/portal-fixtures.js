@@ -92,6 +92,7 @@ export async function portalFixture(t, options = {}) {
   library.stopSnapshots = attachSessionSnapshots(client, { intervalMs: 60_000, logger: { error() {} } });
   await library.updateGuild('100', guild => { guild.settings.musicTextChannelId = '400'; });
   const token = 'portal-test-secret-is-long-enough-32';
+  if (options.songs) client.songs = options.songs;
   const bridge = startPortalBridge(client, { token, port: 0, logger: { error() {} }, ...options.bridge });
   await bridge.ready;
   const origin = `http://127.0.0.1:${bridge.server.address().port}`;

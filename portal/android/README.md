@@ -15,6 +15,9 @@ code the portal can reach through `window.vybatronNative` and nowhere else. Desi
 | `playback/DevicePlayer.kt` | ExoPlayer and this device's queue: plays the portal's audio route, moves on by itself, looks up songs from other catalogs, retries or skips songs that fail |
 | `playback/DeviceQueue.kt` | The queue rules, the same as `portal/web/src/playback.ts` |
 | `playback/PlayerRequest.kt` | The player operations the portal may ask for |
+| `playback/PlayerLink.kt` | This device in the shared player (ADR-0018): follows the store, carries out relayed controls and reports while it is the active device |
+| `playback/PortalConnection.kt` | The service's own listener stream and player requests, to the portal origin only |
+| `playback/SharedPlayer.kt` | The shared player, relayed commands and the event-stream format as the portal sends them |
 
 ## Playing on this device
 
@@ -24,10 +27,26 @@ moved on since the page last saw them), `player.control` and `player.subscribe`.
 each with its state and sends `player.state` and `player.notice` events as it plays. A queue the
 page saved reaches the app only when it's played, so nothing appears on the lock screen before.
 
+## The shared player
+
+`app.info` lists the feature `player.shared`: the playback service keeps its own connection to the
+listener's shared player (ADR-0018) while it runs, page or no page. The page hands it the session's
+CSRF token, this device's ID and name, and its server in `player.subscribe` (`session`) whenever it
+loads. The service opens `/api/me/events` with the WebView's session cookie, as audio does, and
+sends `/api/me/player` requests with the portal as `Origin` and the token. While the player's
+active device is this one, under a generation it saw begin, it plays the store's songs, follows
+edits to the queue, carries out relayed controls, and reports song changes, play, pause, seek, the
+position every 15 s, volume and repeat. A newer generation stops it at once. If the portal refuses
+the session, the stream closes and reports wait, the song keeps playing, until the page hands over
+a session again. The page then only shows the player and sends edits and controls, and asks the
+app to `player.control` `stop` to let go of a song. Pages keep driving an app without the feature
+(0.2.0) the old way.
+
 `DevicePlaybackTest` checks the player without the app's screen or the page: songs in a row, a
 failing song skipped with the portal's reason, a song from another catalog played through its
 search match, and Next and Previous from a media controller. It plays from a local server, so it
-needs only an emulator.
+needs only an emulator. `SharedPlayerServiceTest` checks the service with no page: a local
+listener stream makes it the active device and relays a pause, which it carries out and reports.
 
 ## Build
 

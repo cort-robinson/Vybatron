@@ -27,7 +27,14 @@ export const LIMITS = Object.freeze({
   // A quiet stream resends the snapshot once the playback position strays this
   // far from where the page's clock puts it (a stall or a Lavalink correction).
   positionDriftMs: 2000,
-  sessionMs: 7 * 24 * 60 * 60_000, oauthMs: 10 * 60_000,
+  // Sessions (ADR-0019): 30 days without use, and 90 days after sign-in at most.
+  // Use moves the expiry at most once a day. Records stored before renewal
+  // existed expire exactly 7 days after sign-in (legacySessionMs).
+  sessionIdleMs: 30 * 24 * 60 * 60_000, sessionAbsoluteMs: 90 * 24 * 60 * 60_000,
+  sessionRenewMs: 24 * 60 * 60_000, legacySessionMs: 7 * 24 * 60 * 60_000, oauthMs: 10 * 60_000,
+  // Signing in with a code (ADR-0019): pending sign-ins live this long, in memory.
+  pendingDeviceSignIns: 64, deviceSignInMs: 10 * 60_000, deviceStarts: 20,
+  deviceApprovals: 10, deviceApprovalMs: 10 * 60_000, devicePolls: 30,
 });
 
 export function isLoopback(host) {

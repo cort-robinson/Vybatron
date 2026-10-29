@@ -33,14 +33,37 @@ export class SessionStore {
       for (const record of records) {
         if (!record || !/^[a-f0-9]{64}$/.test(record.key) || !/^\d{1,20}$/.test(record.actorId) ||
             !/^[A-Za-z0-9_-]{43}$/.test(record.csrfToken) || !Number.isSafeInteger(record.createdAt) ||
-            !Number.isSafeInteger(record.expiresAt) || record.expiresAt !== record.createdAt + this.limits.sessionMs ||
+            !Number.isSafeInteger(record.expiresAt) || (record.renewedAt !== undefined && !Number.isSafeInteger(record.renewedAt)) ||
             this.sessions.has(record.key)) throw new Error('Invalid auth storage');
-        if (record.expiresAt > this.now()) this.sessions.set(record.key, record);
+        // A record outside its lifetime's bounds is dropped, never trusted and never fatal.
+        if (this.withinBounds(record) && record.expiresAt > this.now()) this.sessions.set(record.key, record);
       }
     } catch (error) {
       // eslint-disable-next-line preserve-caught-error -- the cause can quote stored session data.
       if (error.code !== 'ENOENT') throw new Error('Auth storage cannot be safely opened');
     } finally { await handle?.close(); }
+  }
+
+  // Records from before renewal expire exactly 7 days after sign-in. A renewed
+  // record expires at most 30 days after its last renewal and 90 after sign-in.
+  withinBounds({ createdAt, renewedAt, expiresAt }) {
+    const limits = this.limits;
+    if (renewedAt === undefined) return expiresAt === createdAt + limits.legacySessionMs;
+    return renewedAt >= createdAt && expiresAt > renewedAt && expiresAt <= renewedAt + limits.sessionIdleMs
+      && expiresAt <= createdAt + limits.sessionAbsoluteMs;
+  }
+
+  // Use renews a session at most once a day, up to 90 days after sign-in. The
+  // move is made at once, so a concurrent request doesn't renew it again; only
+  // a renewal writes the store. Returns the new lifetime in seconds, or null.
+  async renew(session) {
+    const now = this.now();
+    if (now - (session.renewedAt ?? session.createdAt) < this.limits.sessionRenewMs) return null;
+    const expiresAt = Math.min(now + this.limits.sessionIdleMs, session.createdAt + this.limits.sessionAbsoluteMs);
+    if (expiresAt <= session.expiresAt) return null;
+    session.renewedAt = now; session.expiresAt = expiresAt;
+    await this.persist();
+    return Math.floor((expiresAt - now) / 1000);
   }
 
   get(token) {
@@ -57,11 +80,11 @@ export class SessionStore {
     const previousKey = previousToken ? tokenHash(previousToken) : null;
     if (this.sessions.size >= this.limits.sessions && !this.sessions.has(previousKey)) throw busy();
     const token = randomToken(); const createdAt = this.now();
-    const session = { key: tokenHash(token), actorId, csrfToken: randomToken(), createdAt, expiresAt: createdAt + this.limits.sessionMs };
+    const session = { key: tokenHash(token), actorId, csrfToken: randomToken(), createdAt, renewedAt: createdAt, expiresAt: createdAt + this.limits.sessionIdleMs };
     if (previousKey) this.sessions.delete(previousKey);
     this.sessions.set(session.key, session);
     await this.persist();
-    return { token, session };
+    return { token, session, maxAge: Math.floor(this.limits.sessionIdleMs / 1000) };
   }
 
   async destroy(token) {

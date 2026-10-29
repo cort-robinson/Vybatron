@@ -27,7 +27,11 @@ class PlaybackService : MediaSessionService() {
     override fun onCreate() {
         super.onCreate()
         val base = testBase ?: PortalOrigin.parse(BuildConfig.PORTAL_ORIGIN)?.value ?: return
-        val cookies = { CookieManager.getInstance().getCookie("$base/") }
+        val cookies = PortalCookies(base, object : PortalCookies.Jar {
+            override fun get(url: String): String? = CookieManager.getInstance().getCookie(url)
+            override fun set(url: String, value: String) = CookieManager.getInstance().setCookie(url, value)
+            override fun flush() = CookieManager.getInstance().flush()
+        })
         val device = DevicePlayer(this, base, cookies)
         // This device's own connection to the shared player, so it stays reachable with its page closed.
         val portal = PortalConnection(base, cookies, "Vybatron-Android/${BuildConfig.VERSION_NAME}")

@@ -116,7 +116,11 @@ Songs are kept in `songs.sqlite` next to the library (ADR-0017): each played upl
 The optional portal uses the existing player and music store. Server members can
 browse permitted sessions and use their allowed music controls. Server owners,
 Manage Server members and the verified bot maintainer can manage configuration;
-playback still follows voice and DJ rules. Sign-in lasts seven days per device.
+playback still follows voice and DJ rules. A device stays signed in while it's used:
+30 days without use or 90 days after sign-in end it. A screen without a keyboard, such
+as a TV, can sign in with a code instead of Discord: it shows the code, the `/link`
+address and a QR code, and a listener approves it on a signed-in phone
+([ADR-0019](docs/adr/0019-the-app-on-android-tv.md)).
 Permissions follow Discord's live Gateway updates, so a removed role or hidden
 channel applies to the next read; the account and bot owner checks are reused
 for up to 30 seconds and five minutes ([ADR-0011](docs/adr/0011-portal-authorization-from-gateway-state.md)).

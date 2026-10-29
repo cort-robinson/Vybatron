@@ -27,6 +27,10 @@ async function request<T>(path: string, init: RequestInit = {}, timeoutMs = 20_0
 }
 
 const guildPath = (id: string) => `/api/guilds/${encodeURIComponent(id)}`;
+export interface DeviceStart { userCode: string; verificationUri: string; expiresIn: number; interval: number }
+export type DevicePoll = { status: 'pending' | 'approved' | 'denied' | 'expired' };
+const jsonPost = (body: object, headers: Record<string, string> = {}): RequestInit => ({ method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(body) });
+
 export const api = {
   bootstrap: (signal?: AbortSignal) => request<Bootstrap>('/api/bootstrap', { signal }),
   snapshot: (id: string, signal?: AbortSignal) => request<GuildSnapshot>(guildPath(id), { signal }),
@@ -85,6 +89,12 @@ export const api = {
   logout: (csrfToken: string) => request<{ ok: boolean }>('/auth/logout', {
     method: 'POST', headers: { 'X-CSRF-Token': csrfToken },
   }),
+  // Signing in with a code (ADR-0019): the screen that shows it starts and polls;
+  // a signed-in listener approves or turns it down.
+  deviceStart: () => request<DeviceStart>('/auth/device/start', jsonPost({})),
+  devicePoll: (signal?: AbortSignal) => request<DevicePoll>('/auth/device/poll', { ...jsonPost({}), signal }),
+  approveDevice: (csrfToken: string, code: string) => request<{ ok: true }>('/auth/device/approve', jsonPost({ code }, { 'X-CSRF-Token': csrfToken })),
+  denyDevice: (csrfToken: string, code: string) => request<{ ok: true }>('/auth/device/deny', jsonPost({ code }, { 'X-CSRF-Token': csrfToken })),
   // Protocol 2 lets the API answer an unchanged read with a short `unchanged` event.
   eventsUrl: (id: string) => `${guildPath(id)}/events?protocol=2`,
   // The listener's shared player (ADR-0018): its clock, its live stream and its changes.

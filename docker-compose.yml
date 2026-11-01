@@ -9,7 +9,7 @@ services:
   # their normal network path, so Discord control traffic and SSH are isolated
   # from WARP. The alias lets the bot reach Lavalink in this shared namespace.
   warp:
-    image: caomingjun/warp@sha256:7b2df2f0d589bdcd3d93c28ccc08cf04d54c81f193682dd1b6da82d7b39e4bb6
+    image: caomingjun/warp@sha256:2891b92420a193a49c74cbd4387bee91f5c35fbc487fca8e8f739baed52c1d2b
     container_name: vybertron-warp
     restart: unless-stopped
     logging: *bounded-logging

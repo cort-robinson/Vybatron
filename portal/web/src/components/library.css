@@ -11,7 +11,7 @@
 .library-search input { min-width: 0; width: 100%; font-size: 14px; }
 .library-search-controls input { flex: 1; padding-left: 40px; }
 .library-search-controls { position: relative; }
-.library-search-icon { position: absolute; left: 14px; top: 50%; translate: 0 -50%; color: var(--muted); pointer-events: none; }
+.library-search-icon { position: absolute; left: 14px; top: 22px; translate: 0 -50%; color: var(--muted); pointer-events: none; }
 @media (min-width: 961px) { .library-view .library-search-controls input { flex: 0 1 420px; } .library-view .library-search-controls > .library-import-toggle { margin-left: auto; } }
 .library-search-controls > .library-import-toggle { display: inline-flex; align-items: center; gap: 7px; }
 .track-length-inline { display: none; }
@@ -82,8 +82,10 @@
 }
 @media (max-width: 960px) {
   /* Phones give the search its own full line; import and the list menu sit under it. */
-  .library-view .library-search-controls { gap: 8px; }
-  .library-view .library-search-controls input { flex: 1 1 0; max-width: none; }
+  /* Phones give the search the full row; Import & manage sits under it, right-aligned. */
+  .library-view .library-search-controls { flex-wrap: wrap; gap: 6px 8px; }
+  .library-view .library-search-controls input { flex: 1 1 100%; max-width: none; }
+  .library-search-controls > .library-options { margin-left: auto; }
   .library-search-controls > .library-import-toggle { display: none; }
   /* Favorites rows keep Add on the row; radio and removing move into the row's menu. */
   .library-view .library-track-list > li:has(> .favorite-row-menu) { grid-template-columns: 44px minmax(0, 1fr) auto 44px; gap: 6px; }

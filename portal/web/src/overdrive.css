@@ -267,7 +267,7 @@ REVERT: everything here is scoped to :root[data-skin='overdrive']; Settings → 
      state note ride a smoked plate. A wide title glow would be clipped by the plate's line clamp. */
   .sleeve-main > .player-identity, .sleeve-main > .player-context:has(> p) { width: fit-content; max-width: min(100%, 560px); padding: 10px 26px 12px; border-radius: 4px 14px 4px 14px; background: color-mix(in oklab, var(--ground) 72%, transparent); backdrop-filter: blur(18px) saturate(1.2); box-shadow: 0 0 0 1px color-mix(in oklab, var(--accent) 18%, transparent), 0 18px 40px -18px rgb(0 0 0 / .8); }
   .sleeve-main > .player-context:has(> p) { padding-block: 8px; }
-  .sleeve-main .player-title-row h2 { text-shadow: 0 2px 0 color-mix(in oklab, var(--neon) 35%, transparent); }
+  .sleeve-main .player-title-row h2 { text-shadow: 0 1px 0 color-mix(in oklab, var(--neon) 20%, transparent); }
   .sleeve-queue { border-radius: 6px 22px 6px 22px; background: var(--rail) top / 100% 1px no-repeat, color-mix(in oklab, var(--ground) 62%, transparent); }
   .expanded .player-footer { border-top-color: transparent; }
 

@@ -154,7 +154,6 @@
   .queue .queue-now .button.queue-now-open { min-height: 44px; width: 32px; min-width: 32px; padding: 0; justify-content: center; border-color: transparent; background: none; box-shadow: none; color: var(--muted); }
   .queue .queue-now .queue-now-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   .queue .queue-now .artwork { width: 48px; height: 48px; }
-  .queue .queue-now .queue-now-open > svg { display: none; }
 }
 .row-duration { display: none; }
 @media (max-width: 1023px) { .row-duration { display: inline; } }

@@ -158,7 +158,7 @@ const ContinueListening = memo(function ContinueListening({ current, paused, whe
       {!canResume && <span className="continue-hint">{saved.voiceChannel ? `Join ${saved.voiceChannel.name} to resume. ` : ''}Resuming needs playback controls; anyone can start fresh.</span>}</div>
     <button type="button" className="button primary" disabled={!canResume || busy} onClick={onResume}><PlayIcon size={18} weight="fill" />Resume session</button>
   </div> : null;
-  return <Shelf id="continue" title="Recently played" detail="" tiles={!resumable}
+  return <Shelf id="continue" title="Recently played" detail=""
     lead={feature}
     empty={!recent.length && !feature && (history ? 'Nothing to pick up yet. Songs played in voice channels you can see show up here, and a saved session appears when one is waiting.' : 'Loading your recent songs…')}>
     {recent.map(entry => <TrackCard key={entry.id} track={entry.track} meta={`Played ${date(entry.playedAt).split(',')[0]}`} disabled={disabled || !entry.track.uri} title={title} onAdd={() => add(entry.track)} />)}
@@ -207,6 +207,7 @@ function PlaylistTile({ list, detail, playing, queued, disabled, title, onPlay, 
       <h3 dir="auto">{empty ? list.title : <button type="button" className="playlist-open" tabIndex={-1} aria-hidden="true" onClick={() => setOpen(true)}>{list.title}</button>}</h3>
       <div className="playlist-meta-row">{empty ? <p className="playlist-meta">{meta}</p> : <button type="button" className="playlist-meta playlist-songs" onClick={() => setOpen(true)}>{meta}<CaretRightIcon size={14} weight="bold" aria-hidden="true" /></button>}</div>
       <p className="playlist-detail">{detail}</p>
+      {repeats > 0 && <p className="playlist-repeats">{repeats === list.tracks.length ? `All ${repeats} already queued` : `${repeats} already queued`}</p>}
       {/* The card keeps one labelled action; the song list holds Add shuffled in words. */}
       <div className="playlist-actions">{addAll()}<IconButton label={`Add ${list.title} shuffled`} title={title || 'Add shuffled'} disabled={disabled || empty} onClick={() => onPlay(true)}><ShuffleIcon size={21} /></IconButton></div>
     </div>
@@ -217,7 +218,7 @@ function PlaylistTile({ list, detail, playing, queued, disabled, title, onPlay, 
         <span className="mix-track-text"><strong dir="auto">{track.title}</strong><span dir="auto">{track.author} · {track.isStream ? 'Live' : time(track.durationMs)}</span></span>
         {/* The queue is shared, so the list says what's already lined up before anyone adds it twice. */}{trackKey(track) === playing ? <span className="mix-track-state">Playing</span> : queuedKeys.has(trackKey(track)) ? <span className="mix-track-state">In queue</span> : null}
         {(() => { const again = trackKey(track) === playing || queuedKeys.has(trackKey(track)); return <IconButton className={again ? 'add-again' : ''} label={again ? `Add ${track.title} to the queue again` : `Add ${track.title} to the queue`} title={title || (again ? 'Add again' : `Add ${track.title} to the queue`)} disabled={disabled || !track.uri} onClick={() => onAdd(track)}><PlusIcon size={21} weight="bold" /></IconButton>; })()}</li>)}</ol>
-      {repeats > 0 && <p className="mix-repeat-note">{repeats === list.tracks.length ? 'Every song here is already playing or queued; Add all queues them again.' : `${repeats} of these ${repeats === 1 ? 'is' : 'are'} already playing or queued; Add all queues ${repeats === 1 ? 'it' : 'them'} again.`}</p>}
+      {repeats > 0 && <p className="mix-repeat-note">{repeats === list.tracks.length ? `All ${repeats} are already queued or playing.` : `${repeats} of ${list.tracks.length} are already queued or playing.`}</p>}
       <div className="form-actions">{addAll(() => setOpen(false))}<button type="button" className="button secondary" disabled={disabled || empty} title={title} aria-label={`Add ${list.title} shuffled`} onClick={() => { onPlay(true); setOpen(false); }}><ShuffleIcon size={18} />Add shuffled</button></div>
     </Dialog>}
   </li>;

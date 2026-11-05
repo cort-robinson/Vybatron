@@ -1379,6 +1379,10 @@ p, .continue-text > span, .section-description, .field-hint { text-wrap: pretty;
 .chip-prefix-short { display: none; color: var(--text-soft); font-weight: 500; }
 .volume-sheet { display: none; }
 .track-queue-state { color: var(--muted); }
+/* Small player-bar text keeps a ground halo so the spectrum behind it never breaks up the letters. */
+:is(.compact-track-meta, .timeline > span) { text-shadow: 0 0 6px var(--ground), 0 0 3px var(--ground), 0 0 1px var(--ground); }
+/* Section headings that scroll over the horizon keep a soft halo. */
+:is(.home-shelf-header, .section-heading) :is(h2, p) { text-shadow: 0 0 14px var(--ground), 0 0 4px var(--ground); }
 /* Phone rows give the queue note its own line so the song's details never cut it short. */
 @media (max-width: 960px) { .library-track-list .track-queue-state { display: block; } .library-track-list .queue-sep { display: none; } }
 /* The narrowest covers keep each song's length: the source and the queue note give way first. */

@@ -208,7 +208,7 @@ export function Player({ portal, expanded, setExpanded, onAdd, palette, animate,
           {bootstrap.filters.map(filter => { const chosen = (session?.filter || bootstrap.filters[0]?.id) === filter.id; return <button key={filter.id} aria-pressed={chosen} disabled={!controllable} onClick={() => { close(); if (!chosen) void control({ command: 'filter', options: { preset: filter.id } }); }}><SpeakerHifiIcon className={filter.id === 'warm' ? 'sound-choice warm' : 'sound-choice'} /><span className="menu-device"><span>{filter.label}</span>{filter.description && <small>{filter.description}</small>}</span>{chosen && <CheckIcon className="menu-check" weight="bold" />}</button>; })}</>}
 
         <button className="danger-text" disabled={!controllable || !session?.queue.length} onClick={() => { close(); setConfirmClear(true); }}><TrashIcon />Clear upcoming queue</button>
-        <button className="danger-text" disabled={!can('control') || !track} onClick={() => { close(); setConfirmStop(true); }}><StopCircleIcon />{local ? 'Stop and clear your queue' : 'Stop and discard session'}</button>
+        <button className="danger-text" disabled={!can('control') || !track} onClick={() => { close(); setConfirmStop(true); }}><StopCircleIcon /><span className="menu-device"><span>{local ? 'Stop and clear your queue' : 'Stop and discard session'}</span>{!local && <small>Ends playback for everyone in voice</small>}</span></button>
       </>}
     </ActionPopover>
   </div>;

@@ -200,7 +200,8 @@ function PlaylistTile({ list, detail, playing, queued, disabled, title, onPlay, 
   const duration = list.tracks.reduce((sum, track) => sum + track.durationMs, 0);
   const meta = empty ? 'No requests in this range' : `${list.tracks.length} ${list.tracks.length === 1 ? 'song' : 'songs'} · ${totalTime(duration)}`;
   const allQueued = repeats > 0 && repeats === list.tracks.length;
-  const addAll = (close?: () => void) => <button type="button" className={`button ${close && !allQueued ? 'primary' : 'secondary'}`} disabled={disabled || empty} title={title} aria-label={allQueued ? `Add all of ${list.title} again` : `Add all of ${list.title}`} onClick={() => { onPlay(false); close?.(); }}><PlusIcon size={18} weight="bold" />{allQueued ? 'Add all again' : 'Add all'}</button>;
+  // The card keeps a short label (its note already says what's queued); the song list spells out the repeat.
+  const addAll = (close?: () => void) => <button type="button" className={`button ${close && !allQueued ? 'primary' : 'secondary'}`} disabled={disabled || empty} title={title} aria-label={allQueued ? `Add all of ${list.title} again` : `Add all of ${list.title}`} onClick={() => { onPlay(false); close?.(); }}><PlusIcon size={18} weight="bold" />{allQueued && close ? 'Add all again' : 'Add all'}</button>;
   // The cover and title open the song list, so a mix can be checked before it lands in the shared queue.
   return <li className="playlist-tile">
     <button type="button" className={`playlist-cover ${covers.length >= 4 ? 'collage' : ''}`} disabled={empty} aria-label={`See the songs in ${list.title}`} onClick={() => setOpen(true)}>{covers.length >= 4 ? covers.map(track => <Artwork key={track.id} track={track} />) : <Artwork track={covers[0] || null} />}</button>
@@ -218,9 +219,9 @@ function PlaylistTile({ list, detail, playing, queued, disabled, title, onPlay, 
       <ol className="mix-tracks" aria-label={`Songs in ${list.title}`}>{list.tracks.map(track => <li key={track.id}><Artwork track={track} />
         <span className="mix-track-text"><strong dir="auto">{track.title}</strong><span dir="auto">{track.author} · {track.isStream ? 'Live' : time(track.durationMs)}</span></span>
         {/* The queue is shared, so the list says what's already lined up before anyone adds it twice. */}{trackKey(track) === playing ? <span className="mix-track-state">Playing</span> : queuedKeys.has(trackKey(track)) ? <span className="mix-track-state">In queue</span> : null}
-        {(() => { const again = trackKey(track) === playing || queuedKeys.has(trackKey(track)); return <IconButton className={again ? 'add-again' : ''} label={again ? `Add ${track.title} to the queue again` : `Add ${track.title} to the queue`} title={title || (again ? 'Add again' : `Add ${track.title} to the queue`)} disabled={disabled || !track.uri} onClick={() => onAdd(track)}><PlusIcon size={18} weight="bold" />{again && <span>Again</span>}</IconButton>; })()}</li>)}</ol>
+        {(() => { const again = trackKey(track) === playing || queuedKeys.has(trackKey(track)); return <IconButton className={again ? 'add-again' : ''} label={again ? `Add ${track.title} to the queue again` : `Add ${track.title} to the queue`} title={title || (again ? 'Add again' : `Add ${track.title} to the queue`)} disabled={disabled || !track.uri} onClick={() => onAdd(track)}><PlusIcon size={21} weight="bold" /></IconButton>; })()}</li>)}</ol>
       {repeats > 0 && <p className="mix-repeat-note">{repeats === list.tracks.length ? `All ${repeats} are already queued or playing.` : `${repeats} of ${list.tracks.length} are already queued or playing.`}</p>}
-      <div className="form-actions">{addAll(() => setOpen(false))}<button type="button" className="button secondary" disabled={disabled || empty} title={title} aria-label={`Add ${list.title} shuffled`} onClick={() => { onPlay(true); setOpen(false); }}><ShuffleIcon size={18} />Add shuffled</button></div>
+      <div className="form-actions">{addAll(() => setOpen(false))}<button type="button" className="button secondary" disabled={disabled || empty} title={title} aria-label={`Add ${list.title} shuffled`} onClick={() => { onPlay(true); setOpen(false); }}><ShuffleIcon size={18} />{allQueued ? 'Add shuffled again' : 'Add shuffled'}</button></div>
     </Dialog>}
   </li>;
 }

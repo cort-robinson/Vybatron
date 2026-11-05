@@ -413,7 +413,7 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
 .metadata-dot { margin: 0 8px; color: var(--muted); }
 .track-source { color: var(--muted); }
 .dock-next { display: none; }
-@media (min-width: 1024px) { .expanded .dock-next { display: grid; grid-template-columns: 56px minmax(0, 1fr); align-items: center; gap: 14px; min-width: 0; max-width: 300px; } .dock-next > .artwork { width: 56px; height: 56px; border-radius: 8px; } .dock-next > p { display: grid; min-width: 0; line-height: 1.35; } .dock-next span { color: var(--muted); font-size: 13px; } .dock-next strong { font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .dock-next small { color: var(--muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } }
+@media (min-width: 1024px) { .expanded .dock-next { display: grid; grid-template-columns: 56px; align-items: center; min-width: 0; } .dock-next > .artwork { width: 56px; height: 56px; border-radius: 8px; } .dock-next > p { display: grid; min-width: 0; line-height: 1.35; } .dock-next span { color: var(--muted); font-size: 13px; } .dock-next strong { font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .dock-next small { color: var(--muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } }
 .compact-destination { display: inline-flex; align-items: center; gap: 5px; color: var(--text-soft); }
 .compact-destination svg { flex: none; color: var(--accent); }
 .player-context { width: min(100%, 560px); display: flex; flex-direction: column; gap: 6px; }

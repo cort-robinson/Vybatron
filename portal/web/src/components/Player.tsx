@@ -275,7 +275,7 @@ export function Volume({ level, disabled, reset, onCommit }: { level: number; di
   useEffect(() => { setDraft(null); }, [reset]);
   const commit = () => { if (draft !== null) { onCommit(draft); setDraft(null); } };
   const value = draft ?? level;
-  return <div className="volume-control"><SpeakerHighIcon size={23} /><input className="range" aria-label="Volume" type="range" min="0" max="100" value={value} disabled={disabled} data-tv-step={5}
+  return <div className={`volume-control ${draft !== null ? 'adjusting' : ''}`}><SpeakerHighIcon size={23} /><input className="range" aria-label="Volume" type="range" min="0" max="100" value={value} disabled={disabled} data-tv-step={5}
     style={{ '--range-progress': `${value}%` } as React.CSSProperties} aria-valuetext={`${value} percent`}
     onChange={event => setDraft(Number(event.target.value))}
     onPointerUp={commit}

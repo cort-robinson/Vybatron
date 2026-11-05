@@ -110,7 +110,7 @@ const StatsShelves = memo(function StatsShelves({ stats, error, statsWindow, onW
         empty={!stats.serverFavorites.onRepeat.length && 'Nothing on repeat yet. Songs collect here after they play in voice channels you can see.'}>
         {stats.serverFavorites.onRepeat.map((entry, index) => <TrackCard key={entry.track.id} track={entry.track} rank={index + 1} meta={`${entry.plays.toLocaleString()} ${entry.plays === 1 ? 'play' : 'plays'}`} disabled={disabled || !entry.track.uri} title={title} onAdd={() => add(entry.track)} />)}
       </Shelf>
-      <Shelf id="your-mixes" title="Your mixes" detail="Made from your requests and hearts. Only you see these."
+      <Shelf id="your-mixes" title="Made for you" detail="From your requests and hearts. Only you see these."
         lead={!mixes.some(list => list.tracks.length) && <p className="home-empty">Your mixes fill in as you request songs in voice or heart them. A few requests are enough to start; try a longer range below if you’ve been away.</p>} wide>
         {mixes.map(list => <PlaylistTile key={list.id} list={list} detail={playlistDetail(list)} disabled={disabled} title={title}
           onPlay={shuffle => run(playlistCommand(list, statsWindow, shuffle), 'add', list.tracks)}
@@ -194,9 +194,11 @@ function PlaylistTile({ list, detail, disabled, title, onPlay, range }: { list: 
   const duration = list.tracks.reduce((sum, track) => sum + track.durationMs, 0);
   return <li className="playlist-tile">
     <div className={`playlist-cover ${covers.length >= 4 ? 'collage' : ''}`} aria-hidden="true">{covers.length >= 4 ? covers.map(track => <Artwork key={track.id} track={track} />) : <Artwork track={covers[0] || null} />}</div>
+    {/* The range sits on the cover so every mix card keeps the same text lines. */}
+    {range && <div className="playlist-range">{range}</div>}
     <div className="playlist-body">
       <h3 dir="auto" title={list.title}>{list.title}</h3>
-      <div className="playlist-meta-row"><p className="playlist-meta">{empty ? 'No requests in this range' : `${list.tracks.length} ${list.tracks.length === 1 ? 'song' : 'songs'} · ${totalTime(duration)}`}</p>{range}</div>
+      <div className="playlist-meta-row"><p className="playlist-meta">{empty ? 'No requests in this range' : `${list.tracks.length} ${list.tracks.length === 1 ? 'song' : 'songs'} · ${totalTime(duration)}`}</p></div>
       <p className="playlist-detail">{detail}</p>
       {/* What the mix holds, from the songs already loaded, so adding it to the shared queue isn't blind. */}
       {list.tracks.length > 0 && <p className="playlist-includes" title={list.tracks.map(track => track.title).join(', ')}>Includes {list.tracks.slice(0, 2).map(track => track.title).join(', ')}{list.tracks.length > 2 ? ` and ${list.tracks.length - 2} more` : ''}</p>}

@@ -113,9 +113,8 @@ export function LibraryView({ portal, active = true }: { portal: Portal; active?
     <div className="library-search"><label className="sr-only" htmlFor={`library-search-${tab}`}>Search {label}</label><div className="library-search-controls">
       <input ref={searchRef} id={`library-search-${tab}`} type="search" dir="auto" value={queries[listTab]} maxLength={200} placeholder={`Search ${label}`} onChange={event => setQuery(event.target.value)} />
       {queries[listTab] && <button type="button" className="text-button" onClick={clearSearch}>Clear search</button>}
-      {tab === 'favorites' && library.favorites.length > 0 && <button type="button" className="text-button library-import-toggle" aria-expanded={importOpen} aria-controls={importOpen ? 'favorites-import' : undefined} onClick={() => setImportOpen(!importOpen)}><DownloadSimpleIcon size={18} />Import a playlist</button>}
       {tab === 'favorites' && library.favorites.length > 0 && <ActionPopover label="Favorites options" className="library-options" trigger={<DotsThreeIcon size={25} weight="bold" />}>
-        {close => <button className="danger-text" disabled={!editable} onClick={() => { close(); setConfirm({ kind: 'favorites' }); }}><TrashIcon />Clear favorites</button>}</ActionPopover>}
+        {close => <><button aria-expanded={importOpen} onClick={() => { close(); setImportOpen(!importOpen); }}><DownloadSimpleIcon />{importOpen ? 'Hide playlist import' : 'Import a playlist'}</button><hr className="menu-divider" /><button className="danger-text" disabled={!editable} onClick={() => { close(); setConfirm({ kind: 'favorites' }); }}><TrashIcon />Clear favorites</button></>}</ActionPopover>}
     </div></div>
     {tab === 'favorites' && <>
       {!library.favorites.length ? <Empty title="A place for your repeat favorites" description="Tap the heart on the current song to keep it here. Only you can see this shelf." icon={<HeartIcon size={30} />} /> : !favorites.length ? noMatches : <ul className="library-track-list" aria-label="Favorite songs">{favorites.slice(offset, offset + pageSize).map(({ track, index }) => <FavoriteRow key={`${track.id}:${index}`}

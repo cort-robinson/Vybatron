@@ -563,6 +563,10 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
 .setting-action { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
 .setting-action select, .setting-action .discord-id-input { min-width: 180px; font-size: 14px; }
 .setting-action:has(.number-input) { gap: 6px; }
+/* Default volume is a slider like the player's, with its level beside it. */
+.setting-action:has(> .range) { gap: 12px; align-items: center; }
+.setting-action > .range { flex: 1; min-width: 0; }
+.setting-readout { min-width: 4ch; color: var(--muted); font-size: 14px; font-variant-numeric: tabular-nums; text-align: right; }
 /* The volume field matches the selects, with its unit inside the field. */
 .setting-action .number-input { flex: 1; max-width: none; padding-right: 36px; }
 .setting-action:has(.number-input) { position: relative; }
@@ -620,6 +624,8 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
 .import-actions.quiet { padding-inline: 0; border-color: transparent; background: none; }
 .import-actions.quiet .text-button { font-size: 14px; color: var(--muted); }
 .import-actions.quiet .text-button:hover:not(:disabled) { color: var(--text); }
+.import-actions.quiet > span { margin-right: 0; flex: none; }
+.import-actions.quiet .text-button { min-width: 0; }
 @media (max-width: 1023px) { .import-actions.quiet { padding-block: 4px; } .import-actions.quiet > span, .import-actions.quiet .text-button { font-size: 13px; } }
 .import-actions .text-button { font-size: 16px; padding: 7px 8px; color: var(--text-soft); }
 .notice-line { color: var(--muted); font-size: 14px; padding: 11px 0; }
@@ -919,6 +925,9 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
   .import-actions { flex-wrap: wrap; gap: 0 12px; margin-top: 12px; padding: 8px 10px 4px 14px; }
   .import-actions > span { width: 100%; font-size: 14px; }
   .import-actions .text-button { font-size: 14px; }
+  .import-actions.quiet { flex-wrap: nowrap; gap: 4px; padding: 4px 0; }
+  .import-actions.quiet > span { width: auto; }
+  .import-actions.quiet .text-button { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; }
   .result-list > li { gap: 10px; }
   .result-list .artwork { width: 44px; height: 44px; }
   .result-list .track-text { min-width: 0; flex: 1 1 0; }
@@ -1331,14 +1340,21 @@ p, .continue-text > span, .section-description, .field-hint { text-wrap: pretty;
 @media (max-width: 1023px) { .setting-row { padding: 12px 0; gap: 10px; } .setting-row p { margin-top: 4px; line-height: 1.45; } }
 /* Phones keep each result on one line: Add plus the row menu, which also holds Play next. */
 .menu-panel > .phone-only-item { display: none; }
+.result-length-inline { display: none; }
 @media (max-width: 600px) {
   .result-list .result-length, .result-list .next-result { display: none; }
   .result-list .add-tail { display: none; }
+  .result-list .result-length-inline { display: inline; }
   .result-actions .add-result { margin-left: 0; padding: 8px 12px; }
   .menu-panel > .phone-only-item { display: flex; }
 }
 /* Wide decks have room for the full "Sound:" pill and a volume readout; tighter ones keep the slider. */
 @media (min-width: 1024px) { .filter-control { width: 164px; } }
-@media (max-width: 1023px) { .volume-readout { display: none; } }
+@media (max-width: 1023px) {
+  .volume-readout { display: none; }
+  /* Narrow players show the level only while it changes. */
+  .volume-control { position: relative; }
+  .volume-control.adjusting .volume-readout { display: block; position: absolute; right: 0; bottom: calc(100% + 4px); padding: 2px 8px; border-radius: 8px; background: var(--surface-raised, #141a2e); color: var(--text); pointer-events: none; }
+}
 .filter-prefix { display: none; position: absolute; left: 32px; color: var(--muted); font-size: 14px; pointer-events: none; }
 @media (min-width: 1024px) { .filter-prefix { display: block; } .filter-control select { padding-left: 82px; } }

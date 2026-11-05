@@ -151,7 +151,7 @@
 .queue-heading-actions .text-button { display: inline-flex; align-items: center; gap: 7px; font-size: 14px; }
 
 @media (max-width: 960px) {
-  .home-view { gap: 36px; }
+  .home-view { gap: 32px; }
   .home-shelf-header h2 { font-size: 21px; }
   .home-shelf-actions { width: 100%; }
   .home-shelf-actions .button { flex: 1; }

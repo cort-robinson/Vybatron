@@ -266,7 +266,7 @@ svg { flex-shrink: 0; }
 .queue-columns { display: grid; grid-template-columns: 28px 40px minmax(230px, 1fr) minmax(130px, 21%) 72px 45px 43px; gap: 12px; align-items: center; color: var(--muted); font-size: 13px; font-weight: 650; font-stretch: var(--wide); letter-spacing: .08em; text-transform: uppercase; padding: 8px 10px 12px; border-bottom: 1px solid var(--line); }
 .queue-columns > :nth-child(5) { text-align: right; }
 .track-list { padding-top: 6px; }
-.track-row { display: grid; grid-template-columns: 28px 40px minmax(230px, 1fr) minmax(130px, 21%) 72px 45px 43px; gap: 12px; min-height: 88px; align-items: center; padding: 8px 10px; border-radius: 14px; position: relative; transition: background-color 160ms; }
+.track-row { display: grid; grid-template-columns: 28px 40px minmax(230px, 1fr) minmax(130px, 21%) 72px 45px 43px; gap: 12px; min-height: 68px; align-items: center; padding: 6px 10px; border-radius: 14px; position: relative; transition: background-color 160ms; }
 .track-row + .track-row::before { content: ''; position: absolute; left: 10px; right: 10px; top: 0; border-top: 1px solid var(--line-soft); }
 .track-row:hover { background: var(--hover-surface); }
 .track-row:hover::before, .track-row:hover + .track-row::before { opacity: 0; }
@@ -570,7 +570,7 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
 .setting-action:has(.number-input):has(> .button) > span { right: calc(14px + 12px + var(--save-width, 84px)); }
 .switch { min-height: 44px; display: flex; gap: 13px; align-items: center; padding: 8px 10px; color: var(--text-soft); background: none; font-size: 16px; border-radius: 10px; }
 .switch > span { width: 38px; height: 22px; border-radius: 22px; background: var(--range-track); box-shadow: inset 0 0 0 1px var(--line-strong); position: relative; transition: background-color 200ms; }
-.switch > span::after { content: ''; height: 16px; width: 16px; border-radius: 50%; background: var(--text-soft); position: absolute; top: 3px; left: 3px; transition: transform 240ms var(--ease-out), background-color 200ms; }
+.switch > span::after { content: ''; height: 16px; width: 16px; border-radius: 50% !important; background: var(--text-soft); position: absolute; top: 3px; left: 3px; transition: transform 240ms var(--ease-out), background-color 200ms; }
 .switch[aria-checked='true'] > span { background: var(--accent); }
 .switch[aria-checked='true'] > span::after { transform: translateX(16px); background: var(--primary-ink); }
 .personal-settings { margin-top: 42px; }
@@ -1328,3 +1328,7 @@ p, .continue-text > span, .section-description, .field-hint { text-wrap: pretty;
 .volume-readout { min-width: 3ch; color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; text-align: right; }
 @media (max-width: 1023px) { .chip-prefix { display: none; } }
 .chip-prefix { color: var(--text-soft); font-weight: 500; }
+/* Desktop queue rows stay compact so a long queue scans in one screen. */
+@media (min-width: 1024px) { .queue:not(.queue-compact) .track-row .artwork { width: 48px; height: 48px; } }
+/* Phones: settings rows sit tighter; the explanation stays readable. */
+@media (max-width: 1023px) { .setting-row { padding: 12px 0; gap: 10px; } .setting-row p { margin-top: 4px; line-height: 1.45; } }

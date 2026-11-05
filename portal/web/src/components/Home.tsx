@@ -155,21 +155,21 @@ const ContinueListening = memo(function ContinueListening({ current, paused, whe
       {!canResume && <span className="continue-hint">{saved.voiceChannel ? `Join ${saved.voiceChannel.name} to resume. ` : ''}Resuming needs playback controls; anyone can start fresh.</span>}</div>
     <button type="button" className="button primary" disabled={!canResume || busy} onClick={onResume}><PlayIcon size={18} weight="fill" />Resume session</button>
   </div> : null;
-  return <Shelf id="continue" title="Continue listening" detail={current ? <><span className="wide-only">Playing now, and what played recently.</span><span className="narrow-only">What played recently.</span></> : 'What played recently.'}
+  return <Shelf id="continue" title={current ? <><span className="wide-only">Continue listening</span><span className="narrow-only">Recently played</span></> : 'Continue listening'} detail={current ? <><span className="wide-only">Playing now, and what played recently.</span><span className="narrow-only">What played recently.</span></> : 'What played recently.'}
     lead={feature}
     empty={!recent.length && !feature && (history ? 'Nothing to pick up yet. Songs played in voice channels you can see show up here, and a saved session appears when one is waiting.' : 'Loading your recent songs…')}>
     {recent.map(entry => <TrackCard key={entry.id} track={entry.track} meta={`Played ${date(entry.playedAt).split(',')[0]}`} disabled={disabled || !entry.track.uri} title={title} onAdd={() => add(entry.track)} />)}
   </Shelf>;
 });
 
-function Shelf({ id, title, detail, actions, empty, lead, wide = false, children }: { id: string; title: string; detail: ReactNode; actions?: ReactNode; empty?: string | false; lead?: ReactNode; wide?: boolean; children?: ReactNode }) {
+function Shelf({ id, title, detail, actions, empty, lead, wide = false, children }: { id: string; title: ReactNode; detail: ReactNode; actions?: ReactNode; empty?: string | false; lead?: ReactNode; wide?: boolean; children?: ReactNode }) {
   const headingId = `home-${id}`;
   return <section className="home-shelf" aria-labelledby={headingId}>
     <header className="home-shelf-header"><div><h2 id={headingId}>{title}</h2><p>{detail}</p></div>{actions && <div className="home-shelf-actions">{actions}</div>}</header>
     {lead}
     {/* A sideways shelf is itself a tab stop, so the keyboard can scroll it even when its cards' buttons are disabled. */}
     {/* One or two songs read as a short list instead of a nearly empty sideways row. */}
-    {empty ? <p className="home-empty">{empty}</p> : <ol ref={dragScroll} tabIndex={0} data-tv-group className={`shelf-row ${wide ? 'shelf-row-wide' : Children.count(children) <= 2 ? 'shelf-row-sparse' : ''}`} aria-label={title}>{children}</ol>}
+    {empty ? <p className="home-empty">{empty}</p> : <ol ref={dragScroll} tabIndex={0} data-tv-group className={`shelf-row ${wide ? 'shelf-row-wide' : Children.count(children) <= 2 ? 'shelf-row-sparse' : ''}`} aria-labelledby={headingId}>{children}</ol>}
   </section>;
 }
 

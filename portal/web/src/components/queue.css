@@ -144,4 +144,4 @@
 .queue-now-open { flex: none; min-height: 40px; padding: 8px 16px; font-size: 14px; }
 .queue-now-open::after { content: ''; position: absolute; inset: 0; border-radius: inherit; }
 /* Phones: the strip itself opens the player, so the caret stays out of the way of the mini player's own. */
-@media (max-width: 1023px) { .queue-now-open { width: 1px; min-width: 0; min-height: 0; height: 1px; padding: 0; border: 0; background: none; overflow: visible; } .queue-now-open > :is(svg, span) { display: none; } }
+@media (max-width: 1023px) { .queue .queue-now .button.queue-now-open { width: 44px; min-width: 44px; min-height: 44px; padding: 0; justify-content: center; } .queue .queue-now .queue-now-open > span { display: none; } }

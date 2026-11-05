@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { ArrowBendUpRightIcon, DotsThreeIcon, LinkIcon, MagnifyingGlassIcon, PlusIcon, RadioIcon, SparkleIcon } from '../icons';
+import { ArrowBendUpRightIcon, DotsThreeIcon, HeartIcon, LinkIcon, MagnifyingGlassIcon, PlusIcon, RadioIcon, SparkleIcon } from '../icons';
 import { api, errorMessage } from '../api';
 import type { Track } from '../types';
 import type { Portal } from '../usePortal';
 import { time } from '../format';
+import { saveByLink } from '../favorites';
 import { isLink, libraryMatches, suggestArtists, suggestTracks } from '../suggestions';
 import { ActionPopover, Artwork, Dialog, Empty, ErrorState, IconButton, Loading } from './ui';
 
@@ -26,14 +27,15 @@ const useSearchDraft = () => useSyncExternalStore(subscribeDraft, () => draft);
 // Admin pages show the plain placeholder; the draft still comes back when search opens.
 export function SearchDraft({ placeholder, quiet = false }: { placeholder: string; quiet?: boolean }) { const value = useSearchDraft(); return value && !quiet ? <><span className="search-draft-label">Continue search:</span> <span className="search-draft">{value}</span></> : placeholder; }
 
-function ResultRow({ track, detail, enabled, nextEnabled, radioEnabled, blockedReason, onAdd, onNext, onRadio }: { track: Track; detail: string; enabled: boolean; nextEnabled: boolean; radioEnabled: boolean | null; blockedReason: string; onAdd: (track: Track) => void; onNext: (track: Track) => void; onRadio: (uri: string) => void }) {
+function ResultRow({ track, detail, enabled, nextEnabled, radioEnabled, blockedReason, onAdd, onNext, onRadio, onSave }: { track: Track; detail: string; enabled: boolean; nextEnabled: boolean; radioEnabled: boolean | null; blockedReason: string; onAdd: (track: Track) => void; onNext: (track: Track) => void; onRadio: (uri: string) => void; onSave: (track: Track) => void }) {
   return <li><Artwork track={track} /><div className="track-text"><strong>{track.title}</strong><span>{track.author} · {detail}</span></div><span className="result-length">{track.isStream ? 'Live' : time(track.durationMs)}</span>
     {/* Phones give the song its own line and put the actions under it. */}
     <div className="result-actions"><IconButton className="next-result" label={`Play ${track.title} next`} disabled={!nextEnabled || !track.uri} title={!nextEnabled ? blockedReason : `Play ${track.title} next`} onClick={() => onNext(track)}><ArrowBendUpRightIcon size={21} /><span className="result-action-label" aria-hidden="true">Play next</span></IconButton><button className="button primary add-result" aria-label={`Add ${track.title} to queue`} disabled={!enabled || !track.uri} title={!track.uri ? 'This result has no public source reference' : !enabled ? blockedReason : undefined} onClick={() => { if (track.uri) onAdd(track); }}><PlusIcon size={19} /><span>Add to queue</span></button>
     {/* Autoplay changes what follows the shared queue, so it lives in the row menu with a word of explanation. */}
-    {radioEnabled !== null && <ActionPopover className="row-menu" label={`More options for ${track.title}`} trigger={<DotsThreeIcon size={25} weight="bold" />}>
-      {close => <><p>{track.title}</p><button disabled={!radioEnabled || !track.uri} onClick={() => { close(); if (track.uri) onRadio(track.uri); }}><RadioIcon />Autoplay from this song</button><small>{radioEnabled ? 'Related songs play after the queue.' : blockedReason}</small></>}
-    </ActionPopover>}</div></li>;
+    <ActionPopover className="row-menu" label={`More options for ${track.title}`} trigger={<DotsThreeIcon size={25} weight="bold" />}>
+      {close => <><p>{track.title}</p><button disabled={!track.uri} onClick={() => { close(); onSave(track); }}><HeartIcon />Save to favorites</button>
+        {radioEnabled !== null && <><button disabled={!radioEnabled || !track.uri} onClick={() => { close(); if (track.uri) onRadio(track.uri); }}><RadioIcon />Autoplay from this song</button><small>{radioEnabled ? 'Related songs play after the queue.' : blockedReason}</small></>}</>}
+    </ActionPopover></div></li>;
 }
 
 export function Search({ portal, open, onClose, page = false }: { portal: Portal; open: boolean; onClose: () => void; page?: boolean }) {
@@ -105,14 +107,14 @@ export function Search({ portal, open, onClose, page = false }: { portal: Portal
   const enabled = portal.can('add');
   const controllable = portal.can('control');
   const radio = (uri: string) => portal.run({ command: 'radio', subcommand: 'on', options: { track: uri } }, 'control');
-  const row = (track: Track, detail: string, key: string) => <ResultRow key={key} track={track} detail={detail} enabled={enabled} radioEnabled={portal.target === 'local' ? null : controllable} blockedReason={portal.blockedReason} nextEnabled={controllable} onAdd={track => void add(false, track.uri!, track)} onNext={track => void add(true, track.uri!, track)} onRadio={uri => void radio(uri)} />;
+  const row = (track: Track, detail: string, key: string) => <ResultRow key={key} track={track} detail={detail} enabled={enabled} radioEnabled={portal.target === 'local' ? null : controllable} blockedReason={portal.blockedReason} nextEnabled={controllable} onAdd={track => void add(false, track.uri!, track)} onNext={track => void add(true, track.uri!, track)} onRadio={uri => void radio(uri)} onSave={track => void saveByLink(portal, track.uri)} />;
   const stale = searching || (!!lastQuery && lastQuery !== typed);
   if (!open) return null;
   // A pasted link is added as-is, so its actions lead; for words, the best-match shortcut follows the results.
   const direct = <div className={`import-actions ${!isLink(typed) && tracks?.length ? 'quiet' : ''}`}><span>{isLink(typed) ? <><LinkIcon size={18} />Add this link</> : <><SparkleIcon size={17} />{tracks?.length ? 'Not listed? Add' : 'Add'} “{typed}” as typed</>}</span><button className="text-button" disabled={!controllable || !typed} title={!controllable ? portal.blockedReason : undefined} onClick={() => void add(true, typed)}><ArrowBendUpRightIcon size={17} />Play next</button><button className="text-button" disabled={!enabled || !typed} onClick={() => void add(false, typed)}><PlusIcon size={17} />Add to queue</button></div>;
   const body = <>
     <form onSubmit={event => { event.preventDefault(); void search(); }} className="search-form" role="search"><label className="search-field"><MagnifyingGlassIcon size={22} /><span className="sr-only">Music search</span><input ref={input} type="search" aria-label="Music search" aria-describedby="search-hint" value={query} maxLength={maxLength} onChange={event => setQuery(event.target.value)} placeholder="Song, artist or link…" autoComplete="off" spellCheck={false} /></label>
-      <button type="submit" className={`button ${tracks?.length && lastQuery === typed ? 'secondary' : 'primary'}`} disabled={searching || !typed || portal.connection !== 'live'}>{searching ? <span className="spinner" /> : <MagnifyingGlassIcon size={20} />}Search</button></form>
+      <button type="submit" className={`button ${tracks?.length && lastQuery === typed ? 'secondary' : 'primary'}`} disabled={searching || !typed || portal.connection !== 'live'}>{searching ? <span className="spinner" /> : <MagnifyingGlassIcon size={20} />}<span className="search-submit-label">Search</span></button></form>
     <p id="search-hint" className="sr-only">Results update as you type. Links load when you choose Search or add them directly.</p>
     {!portal.can('add') && <p className="permission-note">{portal.blockedReason}</p>}
     {typed && isLink(typed) && direct}

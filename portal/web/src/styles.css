@@ -1323,3 +1323,8 @@ p, .continue-text > span, .section-description, .field-hint { text-wrap: pretty;
 .sleeve-queue { transition: opacity 180ms; }
 .persistent-player.expanded:has(.player-more > .menu-panel) .sleeve-queue { opacity: .3; }
 .signin-footnote { line-height: 1.5; text-wrap: balance; }
+/* Phones: results arrive as you type, so the submit button shrinks to its icon (its name stays). */
+@media (max-width: 600px) { .search-page .search-form .button { padding-inline: 14px; min-width: 52px; justify-content: center; } .search-page .search-form .button > svg { display: block; } .search-page .search-submit-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; } }
+.volume-readout { min-width: 3ch; color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; text-align: right; }
+@media (max-width: 1023px) { .chip-prefix { display: none; } }
+.chip-prefix { color: var(--text-soft); font-weight: 500; }

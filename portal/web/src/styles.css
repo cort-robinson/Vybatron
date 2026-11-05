@@ -1377,6 +1377,8 @@ p, .continue-text > span, .section-description, .field-hint { text-wrap: pretty;
 .chip-prefix { color: var(--text-soft); font-weight: 500; }
 .chip-prefix-short { display: none; color: var(--text-soft); font-weight: 500; }
 @media (max-width: 599px) { .chip-prefix { display: none; } .chip-prefix-short { display: inline; } }
+/* The narrowest covers (older Fold cover screens) keep Lyrics and the destination on one line. */
+@media (max-width: 360px) { .chip-prefix-short { display: none; } .sleeve-main .player-chips { flex-wrap: nowrap; } }
 /* Desktop queue rows stay compact so a long queue scans in one screen. */
 @media (min-width: 1024px) { .queue:not(.queue-compact) .track-row .artwork { width: 48px; height: 48px; } }
 /* Phones: settings rows sit tighter; the explanation stays readable. */
@@ -1403,5 +1405,3 @@ p, .continue-text > span, .section-description, .field-hint { text-wrap: pretty;
 }
 .filter-prefix { display: none; position: absolute; left: 32px; color: var(--muted); font-size: 14px; pointer-events: none; }
 @media (min-width: 1024px) { .filter-prefix { display: block; } .filter-control select { padding-left: 82px; } }
-/* Phones swap the speaker glyph for the word, so the pill says what it changes. */
-@media (max-width: 599px) { :root { --expanded-controls: 304px; } .expanded .player-extras { margin-top: 8px; } .sleeve-artwork { --spectrum: 22px; } .expanded .player-extras { flex-wrap: wrap; row-gap: 4px; } .expanded .volume-control { flex: 1 1 100%; } .expanded .filter-control { width: 148px; } .filter-control .filter-dot { display: none; } .filter-prefix { display: block; left: 14px; } .filter-control select { padding-left: 66px; } }

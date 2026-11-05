@@ -149,6 +149,8 @@
 .queue-now-open { flex: none; min-height: 40px; padding: 8px 16px; font-size: 14px; }
 .queue-now-open::after { content: ''; position: absolute; inset: 0; border-radius: inherit; }
 /* Phones: the strip itself opens the player, so the caret stays out of the way of the mini player's own. */
-@media (max-width: 1023px) { .queue .queue-now .button.queue-now-open { width: 44px; min-width: 44px; min-height: 44px; padding: 0; justify-content: center; } .queue .queue-now .queue-now-open > span { display: none; } }
+.queue-now-short { display: none; }
+/* Phones say Open in a word; the button's name stays View now playing. */
+@media (max-width: 1023px) { .queue .queue-now .button.queue-now-open { min-height: 44px; padding: 0 14px; gap: 6px; justify-content: center; } .queue .queue-now .queue-now-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; } .queue .queue-now .queue-now-short { display: inline; } }
 .row-duration { display: none; }
 @media (max-width: 1023px) { .row-duration { display: inline; } }

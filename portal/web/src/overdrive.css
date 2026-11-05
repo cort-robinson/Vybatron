@@ -304,6 +304,8 @@ REVERT: everything here is scoped to :root[data-skin='overdrive']; Settings → 
 }
 @media (max-width: 1023px) {
   :root[data-skin='overdrive'] .sleeve-main > :is(.player-identity, .player-context:has(> p)) { padding: 6px 16px 8px; }
+  /* Phones: the plate spans the cover's width so the sun's slats end behind it instead of poking out at its sides. */
+  :root[data-skin='overdrive'] .sleeve-main > .player-identity.player-identity { width: 100%; }
 }
 @media (max-width: 1023px) and (min-width: 600px) and (max-height: 500px) {
   :root[data-skin='overdrive'] :is(.od-cover-hud, .od-cover-scan, .od-cover-plate) { display: none; }

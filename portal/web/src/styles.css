@@ -410,6 +410,8 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
 .menu-panel > p.menu-section:first-of-type { border-top: 0; margin-top: 0; padding-top: 6px; }
 .metadata-dot { margin: 0 8px; color: var(--muted); }
 .track-source { color: var(--muted); }
+.compact-destination { display: inline-flex; align-items: center; gap: 5px; color: var(--text-soft); }
+.compact-destination svg { flex: none; color: var(--accent); }
 .player-context { width: min(100%, 560px); display: flex; flex-direction: column; gap: 6px; }
 .player-permission { display: flex; align-items: flex-start; gap: 8px; font-size: 14px; color: var(--text-soft); line-height: 1.5; }
 .player-permission svg { margin-top: 2px; color: var(--amber); }
@@ -557,6 +559,8 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
 .mix-track-list .track-text { flex: 1; }
 .mix-track-list > li > span { font-size: 14px; color: var(--muted); font-stretch: var(--wide); font-variant-numeric: tabular-nums; }
 .settings-list { max-width: 760px; }
+/* On phones the Defaults tab already names the section, so only its one-line summary stays. */
+@media (max-width: 600px) { .server-intro h2 { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; } .server-intro .section-description { margin-top: 0; } }
 .settings-footnote { max-width: 760px; margin-top: 14px; color: var(--muted); font-size: 13px; }
 .setting-row { display: flex; align-items: center; justify-content: space-between; gap: 35px; padding: 16px 0; border-bottom: 1px solid var(--line); }
 .setting-row > div:first-child { min-width: 0; max-width: 55ch; }
@@ -968,7 +972,8 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
   .search-dialog .search-form { position: sticky; top: 0; z-index: 1; margin-inline: -16px; padding: 8px 16px; background: color-mix(in oklab, var(--ground), white 5%); }
   .search-results .section-heading, .search-suggestions .section-heading { margin-top: 16px; }
   /* Compact deck: title and artist only; the source shows in the expanded player. */
-  .compact-track-meta .metadata-dot, .compact-track-meta .track-source { display: none; }
+  /* Phones show where it plays in the header ("Playing · General"), so the deck keeps just the artist. */
+  .compact-track-meta .metadata-dot, .compact-track-meta .track-source, .compact-track-meta .compact-destination { display: none; }
   /* The waveform mark carries the brand; the wordmark yields its width to the server name. */
   .sidebar { gap: 10px; }
   .sidebar > .brand span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }

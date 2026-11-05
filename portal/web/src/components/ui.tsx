@@ -173,7 +173,13 @@ export function ActionPopover({ label, trigger, className = '', triggerClassName
     <button ref={button} type="button" className={triggerClassName} aria-label={label} title={label} aria-expanded={open} aria-controls={id} onClick={() => setOpen(value => !value)}>{trigger}</button>
     {open && !sheet && <div ref={panel} id={id} className={`menu-panel ${panelClassName}`} tabIndex={-1}>{children(close)}</div>}
     {open && sheet && createPortal(<div className="menu-sheet-layer"><div className="menu-sheet-scrim" aria-hidden="true" />
-      <div ref={panel} id={id} className={`menu-panel menu-sheet ${panelClassName}`} role="group" aria-label={label} tabIndex={-1}><span className="sheet-grabber" aria-hidden="true" />{children(close)}</div></div>, document.body)}
+      <div ref={panel} id={id} className={`menu-panel menu-sheet ${panelClassName}`} role="dialog" aria-modal="true" aria-label={label} tabIndex={-1} onKeyDown={event => {
+        // A sheet covers the page, so Tab cycles within it like a dialog.
+        if (event.key !== 'Tab') return;
+        const actions = focusableElements(event.currentTarget); const first = actions[0]; const last = actions[actions.length - 1];
+        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+      }}><span className="sheet-grabber" aria-hidden="true" />{children(close)}</div></div>, document.body)}
   </div>;
 }
 

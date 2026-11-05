@@ -16,8 +16,9 @@ const windows: { id: StatsWindow; label: string }[] = [
 ];
 const weekday = (at: number) => new Intl.DateTimeFormat(undefined, { weekday: 'long' }).format(at);
 
-function playlistDetail(list: AutoPlaylist) {
-  if (list.kind === 'mix') return `Songs you asked for and favorites · new ${list.refreshesAt ? weekday(list.refreshesAt) : 'weekly'}`;
+// Cards carry a short line; the song list adds when a mix refreshes.
+function playlistDetail(list: AutoPlaylist, full = false) {
+  if (list.kind === 'mix') return full ? `From your requests and favorites. New every ${list.refreshesAt ? weekday(list.refreshesAt) : 'week'}.` : 'From your requests and favorites';
   if (list.kind === 'top') return 'Your most requested here';
   return `${list.artist}, from your favorites and this server`;
 }
@@ -67,13 +68,18 @@ export function Home({ portal, active, onOpenPlayer }: { portal: Portal; active:
   const disabledTitle = addable ? undefined : blockedReason;
   const session = snapshot?.session;
 
+  // With a song or two of history, Home leads with the server's favorites and keeps Recently played lower.
+  const shortHistory = (library?.history?.length || 0) <= 2 && !(snapshot?.savedSession?.exists && !session?.current);
+  const continueListening = <ContinueListening current={session?.current || null} paused={session?.status === 'paused'} where={portal.target === 'local' ? ' on this device' : session?.voiceChannel ? ` in ${session.voiceChannel.name}` : ''}
+      upNext={session?.queue.length || 0} saved={snapshot?.savedSession} history={library?.history} canResume={can('resume')} busy={portal.pending.includes('session:resume')}
+      onResume={resume} onOpenPlayer={onOpenPlayer} add={add} disabled={!addable} title={disabledTitle} />;
+
   return <div className="home-view">
     {/* Offline, the connection banner above already explains why controls wait. */}
     {ready && !can('add') && portal.connection === 'live' && <div className="permission-note"><WarningCircleIcon size={20} aria-hidden="true" /><span>{blockedReason} You can still browse; Play, Shuffle and Add unlock once you can add music.</span></div>}
-    <ContinueListening current={session?.current || null} paused={session?.status === 'paused'} where={portal.target === 'local' ? ' on this device' : session?.voiceChannel ? ` in ${session.voiceChannel.name}` : ''}
-      upNext={session?.queue.length || 0} saved={snapshot?.savedSession} history={library?.history} canResume={can('resume')} busy={portal.pending.includes('session:resume')}
-      onResume={resume} onOpenPlayer={onOpenPlayer} add={add} disabled={!addable} title={disabledTitle} />
+    {!shortHistory && continueListening}
     <StatsShelves stats={stats} playing={session?.current ? trackKey(session.current) : ''} queued={(session?.queue || []).map(trackKey).join('\n')} error={error} statsWindow={statsWindow} onWindow={setWindow} hasFavorites={!!library?.favorites.length} disabled={!addable} title={disabledTitle} run={act} add={add} retry={retry} />
+    {shortHistory && continueListening}
     {ready && viewer && <ListeningRecap viewer={viewer} guildId={guildId} range={recapWindow} onRange={setRecapWindow} />}
     <section className="home-privacy" aria-labelledby="home-privacy-title">
       <div><h2 id="home-privacy-title">Your request stats</h2>
@@ -117,7 +123,7 @@ const StatsShelves = memo(function StatsShelves({ stats, playing, queued, error,
         actions={<label className="mix-range"><span aria-hidden="true">Your top tracks:</span>
           <select aria-label="Time range for Your top tracks" value={statsWindow} onChange={event => onWindow(event.target.value as StatsWindow)}>{windows.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>}
         lead={!mixes.some(list => list.tracks.length) && <p className="home-empty">Your mixes fill in as you request songs in voice or heart them. A few requests are enough to start; try a longer range below if you’ve been away.</p>} wide>
-        {mixes.map(list => <PlaylistTile key={list.id} list={list} detail={list.kind === 'top' ? `${playlistDetail(list)} · ${windows.find(item => item.id === statsWindow)?.label.toLowerCase() || ''}` : playlistDetail(list)} playing={playing} queued={queued} disabled={disabled} title={title} onAdd={add}
+        {mixes.map(list => <PlaylistTile key={list.id} list={list} detail={playlistDetail(list)} fullDetail={list.kind === 'top' ? `${playlistDetail(list)}, ${windows.find(item => item.id === statsWindow)?.label.toLowerCase() || ''}.` : playlistDetail(list, true)} playing={playing} queued={queued} disabled={disabled} title={title} onAdd={add}
           onPlay={shuffle => run(playlistCommand(list, statsWindow, shuffle), 'add', list.tracks)} />)}
       </Shelf>
       <Shelf id="rediscover" title="Rediscover" detail="Favorites you haven’t requested in a month."
@@ -191,7 +197,7 @@ function TrackCard({ track, meta, rank, disabled, title, onAdd }: { track: Track
   </li>;
 }
 
-function PlaylistTile({ list, detail, playing, queued, disabled, title, onPlay, onAdd }: { list: AutoPlaylist; detail: string; playing: string; queued: string; disabled: boolean; title?: string; onPlay: (shuffle: boolean) => void; onAdd: (track: Track) => void }) {
+function PlaylistTile({ list, detail, fullDetail, playing, queued, disabled, title, onPlay, onAdd }: { list: AutoPlaylist; detail: string; fullDetail: string; playing: string; queued: string; disabled: boolean; title?: string; onPlay: (shuffle: boolean) => void; onAdd: (track: Track) => void }) {
   const [open, setOpen] = useState(false);
   const queuedKeys = new Set(queued.split('\n'));
   const repeats = list.tracks.filter(track => trackKey(track) === playing || queuedKeys.has(trackKey(track))).length;
@@ -215,7 +221,7 @@ function PlaylistTile({ list, detail, playing, queued, disabled, title, onPlay, 
     </div>
     {open && <Dialog title={list.title} onClose={() => setOpen(false)} className="confirm-dialog mix-dialog" sheet>
       <span className="sheet-grabber" aria-hidden="true" />
-      <div className="mix-sheet-head"><div className={`playlist-cover ${covers.length >= 4 ? 'collage' : ''}`} aria-hidden="true">{covers.length >= 4 ? covers.map(track => <Artwork key={track.id} track={track} />) : <Artwork track={covers[0] || null} />}</div><div><p className="mix-sheet-meta">{meta}</p><p className="mix-sheet-detail">{detail}</p></div></div>
+      <div className="mix-sheet-head"><div className={`playlist-cover ${covers.length >= 4 ? 'collage' : ''}`} aria-hidden="true">{covers.length >= 4 ? covers.map(track => <Artwork key={track.id} track={track} />) : <Artwork track={covers[0] || null} />}</div><div><p className="mix-sheet-meta">{meta}</p><p className="mix-sheet-detail">{fullDetail}</p></div></div>
       <ol className="mix-tracks" aria-label={`Songs in ${list.title}`}>{list.tracks.map(track => <li key={track.id}><Artwork track={track} />
         <span className="mix-track-text"><strong dir="auto">{track.title}</strong><span dir="auto">{track.author} · {track.isStream ? 'Live' : time(track.durationMs)}</span></span>
         {/* The queue is shared, so the list says what's already lined up before anyone adds it twice. */}{trackKey(track) === playing ? <span className="mix-track-state">Playing</span> : queuedKeys.has(trackKey(track)) ? <span className="mix-track-state">In queue</span> : null}

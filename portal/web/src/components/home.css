@@ -109,7 +109,7 @@
 .mix-tracks li { display: grid; grid-template-columns: 44px minmax(0, 1fr) auto minmax(44px, auto); align-items: center; gap: 12px; padding: 4px 0; }
 .mix-tracks .artwork { width: 44px; height: 44px; border-radius: 8px; }
 .mix-tracks .add-again { color: var(--text-soft); }
-.shelf-card-body .icon-button.add-again { color: var(--text-soft); }
+.shelf-card-body .icon-button.add-again, .mix-tracks .icon-button.add-again { color: var(--muted); }
 .dialog.mix-dialog .form-actions .button { flex: 1 1 0; }
 .playlist-actions .button.all-queued { color: var(--text-soft); border-color: var(--line); }
 .mix-sheet-head { margin-bottom: 8px; }
@@ -206,7 +206,8 @@
   .home-shelf-actions .button { flex: 1 1 0; min-width: 0; padding-inline: 10px; }
   .shelf-row { --card: 136px; gap: 14px; margin-inline: -16px; padding-inline: 16px; scroll-padding-inline: 16px; }
   .shelf-row-wide { --card: clamp(164px, (100vw - 32px) / 2.15, 248px); }
-  @media (max-width: 360px) { .shelf-row-wide { --card: calc((100vw - 32px) / 1.6); } }
+  @media (max-width: 360px) { .shelf-row-wide { --card: min(248px, 76vw); } }
+  .playlist-detail { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 1; overflow: hidden; min-height: 0; }
   .shelf-row { scrollbar-width: none; }
   @keyframes shelf-fade { 0% { --shelf-fade-start: 0px; --shelf-fade-end: 24px; } 6% { --shelf-fade-start: 24px; } 94% { --shelf-fade-end: 24px; } 100% { --shelf-fade-start: 24px; --shelf-fade-end: 0px; } }
   .shelf-row::-webkit-scrollbar { display: none; }

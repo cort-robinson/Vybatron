@@ -570,7 +570,7 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
 .search-form .search-submit { width: 48px; min-width: 48px; padding: 0; justify-content: center; }
 /* The first result keeps the filled Add; later rows use the quieter outline so a long list doesn't become a column of slabs. */
 .result-list > li + li .button.primary.add-result { background: none; color: var(--accent); border: 1px solid var(--field-line); box-shadow: none; }
-.mix-tracks .icon-button.add-again { color: var(--text-soft); opacity: .75; }
+.mix-tracks .icon-button.add-again { color: var(--muted); }
 .mix-tracks .icon-button, :is(.library-track-list, .history-list) .icon-button:has(.result-action-label) { color: var(--accent); }
 .search-field { position: relative; }
 .search-clear { display: grid; place-items: center; flex: none; width: 36px; height: 36px; margin-right: 4px; border-radius: 50%; color: var(--muted); background: none; }
@@ -1381,8 +1381,10 @@ p, .continue-text > span, .section-description, .field-hint { text-wrap: pretty;
 .track-queue-state { color: var(--muted); }
 /* Small player-bar text keeps a ground halo so the spectrum behind it never breaks up the letters. */
 :is(.compact-track-meta, .timeline > span) { text-shadow: 0 0 6px var(--ground), 0 0 3px var(--ground), 0 0 1px var(--ground); }
-/* Section headings that scroll over the horizon keep a soft halo. */
-:is(.home-shelf-header, .section-heading) :is(h2, p) { text-shadow: 0 0 14px var(--ground), 0 0 4px var(--ground); }
+/* Section headings that scroll over the horizon sit on a soft backing, so the skyline never runs through them. */
+:is(.home-shelf-header, .section-heading) > div:first-child { width: fit-content; max-width: 100%; padding: 4px 12px 6px; margin: -4px -12px -6px; border-radius: 10px; background: color-mix(in oklab, var(--ground) 70%, transparent); }
+/* The player bar's song name and artist sit on a backing too; the spectrum keeps running around them. */
+.collapsed .compact-title { padding: 2px 8px; margin: -2px -8px; border-radius: 8px; background: color-mix(in oklab, var(--ground) 72%, transparent); }
 /* Phone rows give the queue note its own line so the song's details never cut it short. */
 @media (max-width: 960px) { .library-track-list .track-queue-state { display: block; } .library-track-list .queue-sep { display: none; } }
 /* The narrowest covers keep each song's length: the source and the queue note give way first. */

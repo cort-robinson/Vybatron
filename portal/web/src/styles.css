@@ -921,9 +921,7 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
   .import-actions .text-button { font-size: 14px; }
   .result-list > li { gap: 10px; }
   .result-list .artwork { width: 44px; height: 44px; }
-  .result-list > li { flex-wrap: wrap; row-gap: 4px; }
   .result-list .track-text { min-width: 0; flex: 1 1 0; }
-  .result-actions { width: 100%; justify-content: flex-start; padding-left: 54px; }
   .result-actions .add-result { margin-left: auto; }
   .result-list .icon-button:has(.result-action-label) { padding: 0 10px; font-size: 13px; }
   .result-list .track-text strong { font-size: 16px; }
@@ -1332,3 +1330,11 @@ p, .continue-text > span, .section-description, .field-hint { text-wrap: pretty;
 @media (min-width: 1024px) { .queue:not(.queue-compact) .track-row .artwork { width: 48px; height: 48px; } }
 /* Phones: settings rows sit tighter; the explanation stays readable. */
 @media (max-width: 1023px) { .setting-row { padding: 12px 0; gap: 10px; } .setting-row p { margin-top: 4px; line-height: 1.45; } }
+/* Phones keep each result on one line: Add plus the row menu, which also holds Play next. */
+.menu-panel > .phone-only-item { display: none; }
+@media (max-width: 600px) {
+  .result-list .result-length, .result-list .next-result { display: none; }
+  .result-list .add-tail { display: none; }
+  .result-actions .add-result { margin-left: 0; padding: 8px 12px; }
+  .menu-panel > .phone-only-item { display: flex; }
+}

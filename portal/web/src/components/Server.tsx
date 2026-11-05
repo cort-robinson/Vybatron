@@ -78,7 +78,7 @@ export function ServerView({ portal, active = true }: { active?: boolean; portal
           </form>
           <div className="setting-row" role="group" aria-label="Channel and role options">
             <div><h3>Channel and role options</h3>{configuration.loading ? <p role="status"><span className="spinner" aria-hidden="true" /> Loading channel and role options…</p> : configuration.error ? <p role="alert">{configuration.error}</p> : <p>Refresh after adding channels or roles in Discord.</p>}</div>
-            <button type="button" className="button secondary" disabled={configuration.loading} onClick={configuration.reload}><ArrowClockwiseIcon size={18} />{configuration.error ? 'Try again' : 'Refresh options'}</button>
+            <button type="button" className="text-button setting-refresh" disabled={configuration.loading} onClick={configuration.reload}><ArrowClockwiseIcon size={18} />{configuration.error ? 'Try again' : 'Refresh options'}</button>
           </div>
           <div className="setting-row"><div><h3>Reset listening defaults</h3><p>Restore default volume, open controls, and normal queue order.</p></div><button className="text-button danger-text" disabled={!editable} onClick={() => setReset(true)}>Reset defaults</button></div>
         </div>}

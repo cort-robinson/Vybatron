@@ -117,7 +117,7 @@ const StatsShelves = memo(function StatsShelves({ stats, playing, queued, error,
         actions={<label className="mix-range"><span aria-hidden="true">Your top tracks:</span>
           <select aria-label="Time range for Your top tracks" value={statsWindow} onChange={event => onWindow(event.target.value as StatsWindow)}>{windows.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>}
         lead={!mixes.some(list => list.tracks.length) && <p className="home-empty">Your mixes fill in as you request songs in voice or heart them. A few requests are enough to start; try a longer range below if you’ve been away.</p>} wide>
-        {mixes.map(list => <PlaylistTile key={list.id} list={list} detail={playlistDetail(list)} playing={playing} queued={queued} disabled={disabled} title={title} onAdd={add}
+        {mixes.map(list => <PlaylistTile key={list.id} list={list} detail={list.kind === 'top' ? `${playlistDetail(list)} · ${windows.find(item => item.id === statsWindow)?.label.toLowerCase() || ''}` : playlistDetail(list)} playing={playing} queued={queued} disabled={disabled} title={title} onAdd={add}
           onPlay={shuffle => run(playlistCommand(list, statsWindow, shuffle), 'add', list.tracks)} />)}
       </Shelf>
       <Shelf id="rediscover" title="Rediscover" detail="Favorites you haven’t requested in a month."

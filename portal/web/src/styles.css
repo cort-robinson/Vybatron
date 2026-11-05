@@ -576,6 +576,7 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
 .search-clear:hover { color: var(--text); background: var(--hover-surface); }
 .search-field input::-webkit-search-cancel-button { display: none; }
 .signin-footnote { padding: 6px 14px; border-radius: 999px; color: var(--text-soft); background: color-mix(in oklab, var(--ground) 78%, transparent); }
+.setting-row > .setting-refresh { display: inline-flex; align-items: center; gap: 6px; flex: none; min-height: 44px; font-size: 14px; color: var(--accent); }
 .settings-footnote { max-width: 760px; margin-top: 14px; color: var(--muted); font-size: 14px; }
 .setting-row { display: flex; align-items: center; justify-content: space-between; gap: 35px; padding: 16px 0; border-bottom: 1px solid var(--line); }
 .setting-row > div:first-child { min-width: 0; max-width: 55ch; }
@@ -958,9 +959,10 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
   .import-actions { flex-wrap: wrap; gap: 0 12px; margin-top: 12px; padding: 8px 10px 4px 14px; }
   .import-actions > span { width: 100%; font-size: 14px; }
   .import-actions .text-button { font-size: 14px; }
-  .import-actions.quiet { flex-wrap: nowrap; gap: 4px; padding: 4px 0; }
+  /* Phones put the fallback under its question, so the whole query stays readable. */
+  .import-actions.quiet { flex-direction: column; align-items: flex-start; gap: 2px; padding: 4px 0; }
   .import-actions.quiet > span { width: auto; }
-  .import-actions.quiet .text-button { overflow: hidden; white-space: nowrap; }
+  .import-actions.quiet .text-button { white-space: normal; text-align: left; }
   .result-list > li { gap: 10px; }
   .result-list .artwork { width: 44px; height: 44px; }
   .result-list .track-text { min-width: 0; flex: 1 1 0; }

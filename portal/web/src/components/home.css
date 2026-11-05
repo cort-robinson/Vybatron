@@ -158,6 +158,7 @@
   .shelf-row { --card: 136px; gap: 14px; margin-inline: -16px; padding-inline: 16px; scroll-padding-inline: 16px; }
   .shelf-row-wide { --card: calc((100vw - 32px) / 1.6); }
   .shelf-row { scrollbar-width: none; }
+  @keyframes shelf-fade { 0% { --shelf-fade-start: 0px; --shelf-fade-end: 24px; } 6% { --shelf-fade-start: 24px; } 94% { --shelf-fade-end: 24px; } 100% { --shelf-fade-start: 24px; --shelf-fade-end: 0px; } }
   .shelf-row::-webkit-scrollbar { display: none; }
   .playlist-detail { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
   .playlist-meta-row { flex-wrap: wrap; gap: 4px 8px; }

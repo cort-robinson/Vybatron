@@ -549,7 +549,7 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
 .mix-track-list .artwork { width: 44px; height: 44px; border-radius: 6px; }
 .mix-track-list .track-text { flex: 1; }
 .mix-track-list > li > span { font-size: 14px; color: var(--muted); font-stretch: var(--wide); font-variant-numeric: tabular-nums; }
-.settings-list { max-width: none; }
+.settings-list { max-width: 880px; }
 .setting-row { display: flex; align-items: center; justify-content: space-between; gap: 35px; padding: 22px 0; border-bottom: 1px solid var(--line); }
 .setting-row > div:first-child { min-width: 0; max-width: 55ch; }
 .setting-row label, .setting-row h3 { font-size: 16px; font-weight: 700; }
@@ -615,7 +615,7 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
 .import-actions > span { font-size: 14px; color: var(--muted); display: flex; align-items: center; gap: 7px; margin-right: auto; }
 .import-actions > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* Under real results the typed-text shortcut steps back to a plain line. */
-.import-actions.quiet { padding-left: 0; border-color: transparent; background: none; }
+.import-actions.quiet { padding-inline: 0; border-color: transparent; background: none; }
 .import-actions.quiet .text-button { font-size: 14px; color: var(--muted); }
 .import-actions.quiet .text-button:hover:not(:disabled) { color: var(--text); }
 @media (max-width: 1023px) { .import-actions.quiet { padding-block: 4px; } .import-actions.quiet > span, .import-actions.quiet .text-button { font-size: 13px; } }
@@ -1315,6 +1315,9 @@ p, .continue-text > span, .section-description, .field-hint { text-wrap: pretty;
 /* Long list rows read as one unit under the pointer. */
 @media (pointer: fine) { .library-track-list > li:hover, .history-list > li:hover { background: var(--hover-surface); border-radius: 12px; } }
 .setting-status { color: var(--muted); font-size: 14px; }
-.chip-prefix { color: var(--text-soft); font-weight: 500; }
 /* Desktop keeps search and Add music in reach while a long page scrolls. */
 @media (min-width: 1024px) { .topbar:not(.sleeve-topbar) { position: sticky; top: 0; z-index: 25; background: color-mix(in oklab, var(--ground) 82%, transparent); backdrop-filter: var(--chrome-blur); } }
+/* Opening More over the open player's queue sets the queue back so the menu reads on its own. */
+.sleeve-queue { transition: opacity 180ms; }
+.persistent-player.expanded:has(.player-more > .menu-panel) .sleeve-queue { opacity: .3; }
+.signin-footnote { line-height: 1.5; text-wrap: balance; }

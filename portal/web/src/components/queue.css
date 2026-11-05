@@ -143,3 +143,5 @@
 .queue-now:has(.queue-now-open) { position: relative; cursor: pointer; }
 .queue-now-open { flex: none; }
 .queue-now-open::after { content: ''; position: absolute; inset: 0; border-radius: inherit; }
+/* Phones: the strip itself opens the player, so the caret stays out of the way of the mini player's own. */
+@media (max-width: 1023px) { .queue-now-open { width: 1px; min-width: 0; height: 1px; padding: 0; overflow: visible; } .queue-now-open svg { display: none; } }

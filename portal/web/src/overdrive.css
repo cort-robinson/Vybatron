@@ -275,7 +275,7 @@ REVERT: everything here is scoped to :root[data-skin='overdrive']; Settings → 
 
 /* Plated corners where the browser can draw true bevels (outline and focus follow them). */
 @supports (corner-shape: bevel) {
-  :root[data-skin='overdrive'] :is(.button, .guild-card, .navigation button, .header-search, .track-row, .menu-panel, .dialog, .sleeve-queue, .continue-feature, .toast, .pill, .shelf-row-sparse .shelf-card, .playlist-actions .icon-button, .queue-now, .library-tools, .mobile-add) { corner-shape: bevel; }
+  :root[data-skin='overdrive'] :is(.button, .guild-card, .navigation button, .header-search, .track-row, .menu-panel, .dialog, .sleeve-queue, .continue-feature, .toast, .pill, .search-field, .shelf-row-sparse .shelf-card, .playlist-actions .icon-button, .queue-now, .library-tools, .mobile-add) { corner-shape: bevel; }
 }
 
 /* ── Phone and tablet ───────────────────────────────────────────────────── */

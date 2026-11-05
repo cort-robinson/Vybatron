@@ -120,7 +120,7 @@ const StatsShelves = memo(function StatsShelves({ stats, playing, queued, error,
     ? <div className="home-unavailable" role="alert"><WarningCircleIcon size={24} aria-hidden="true" /><div><strong>Your mixes and server favorites can’t load right now</strong><p>{error} Recently played above still works.</p></div>
       <button className="button secondary" onClick={retry}><ArrowClockwiseIcon size={18} />Try again</button></div>
     : !stats ? <Loading label="Loading your mixes and server favorites…" /> : <>
-      <Shelf id="on-repeat" title="On repeat in this server" detail="Most played here, from sessions you can see."
+      <Shelf id="on-repeat" title={<><span className="wide-only">On repeat in this server</span><span className="narrow-only">On repeat here</span></>} detail="Most played here, from sessions you can see."
         actions={stats.serverFavorites.onRepeat.length > 0 && <PlayShuffle label="On repeat" tracks={stats.serverFavorites.onRepeat.map(entry => entry.track)} disabled={disabled} title={title}
           onPlay={shuffle => run({ command: 'top', subcommand: 'play', options: { list: 'on-repeat', shuffle } }, 'add', stats.serverFavorites.onRepeat.map(entry => entry.track))} />}
         empty={!stats.serverFavorites.onRepeat.length && 'Nothing on repeat yet. Songs collect here after they play in voice channels you can see.'}>
@@ -180,22 +180,22 @@ const ContinueListening = memo(function ContinueListening({ current, paused, whe
 
 function Shelf({ id, title, detail, actions, empty, lead, wide = false, tiles = false, children }: { id: string; title: ReactNode; detail: ReactNode; actions?: ReactNode; empty?: string | false; lead?: ReactNode; wide?: boolean; tiles?: boolean; children?: ReactNode }) {
   const headingId = `home-${id}`;
-  return <section className="home-shelf" aria-label={typeof title === 'string' ? title : id === 'continue' ? 'Recently played' : undefined}>
+  return <section className="home-shelf" aria-label={typeof title === 'string' ? title : id === 'continue' ? 'Recently played' : id === 'on-repeat' ? 'On repeat in this server' : undefined}>
     <header className="home-shelf-header"><div><h2 id={headingId}>{title}</h2><p>{detail}</p></div>{actions && <div className="home-shelf-actions">{actions}</div>}</header>
     {lead}
     {/* A sideways shelf is itself a tab stop, so the keyboard can scroll it even when its cards' buttons are disabled. */}
     {/* One or two songs read as a short list instead of a nearly empty sideways row. */}
-    {empty ? <p className="home-empty">{empty}</p> : <ol ref={dragScroll} tabIndex={0} data-tv-group className={`shelf-row ${wide ? 'shelf-row-wide' : !tiles && Children.count(children) <= 2 ? 'shelf-row-sparse' : ''}`} aria-label={typeof title === 'string' ? title : id === 'continue' ? 'Recently played' : undefined}>{children}</ol>}
+    {empty ? <p className="home-empty">{empty}</p> : <ol ref={dragScroll} tabIndex={0} data-tv-group className={`shelf-row ${wide ? 'shelf-row-wide' : !tiles && Children.count(children) <= 2 ? 'shelf-row-sparse' : ''}`} aria-label={typeof title === 'string' ? title : id === 'continue' ? 'Recently played' : id === 'on-repeat' ? 'On repeat in this server' : undefined}>{children}</ol>}
   </section>;
 }
 
 function PlayShuffle({ label, tracks, disabled, title, onPlay }: { label: string; tracks: Track[]; disabled: boolean; title?: string; onPlay: (shuffle: boolean) => void }) {
   const { playing, queued } = useContext(QueueState);
   const again = tracks.length > 0 && tracks.every(track => trackKey(track) === playing || queued.has(trackKey(track)));
-  // Labels stay short at every width; a note under them says when the whole list is already lined up.
+  // When the whole list is already lined up, the buttons say so ("again"), as mix cards and favorites do.
   return <>
-    <button type="button" className="button secondary" disabled={disabled} title={title} aria-label={`Add all of ${label}${again ? ' again' : ''}`} onClick={() => onPlay(false)}><PlusIcon size={18} weight="bold" />Add all</button>
-    <button type="button" className="button secondary" disabled={disabled} title={title} aria-label={`Add ${label} shuffled${again ? ' again' : ''}`} onClick={() => onPlay(true)}><ShuffleIcon size={18} />Add shuffled</button>
+    <button type="button" className="button secondary" disabled={disabled} title={title} aria-label={`Add all of ${label}${again ? ' again' : ''}`} onClick={() => onPlay(false)}><PlusIcon size={18} weight="bold" />{again ? 'Add again' : 'Add all'}</button>
+    <button type="button" className="button secondary" disabled={disabled} title={title} aria-label={`Add ${label} shuffled${again ? ' again' : ''}`} onClick={() => onPlay(true)}><ShuffleIcon size={18} />{again ? 'Shuffle again' : 'Add shuffled'}</button>
     {again && <p className="shelf-queued-note"><CheckIcon size={14} weight="bold" aria-hidden="true" />All {tracks.length} queued or playing</p>}
   </>;
 }
@@ -204,7 +204,7 @@ function TrackCard({ track, meta, rank, disabled, title, onAdd }: { track: Track
   const state = useQueued(track);
   return <li className="shelf-card">
     <div className="shelf-art"><Artwork track={track} />{rank !== undefined && <span className={`shelf-rank ${rank <= 3 ? 'lead' : ''}`} aria-label={`Rank ${rank}`}>{rank}</span>}</div>
-    <div className="shelf-card-body"><div className="track-text"><strong dir="auto" title={track.title}>{track.title}</strong><span dir="auto" title={track.author}>{track.author}</span><small>{state === 'playing' ? 'Playing now' : state === 'queued' ? 'In queue' : meta}</small></div>
+    <div className="shelf-card-body"><div className="track-text"><strong dir="auto" title={track.title}>{track.title}</strong><span dir="auto" title={track.author}>{track.author}</span><small className={state ? 'queue-state' : undefined}>{state === 'playing' ? 'Playing' : state === 'queued' ? 'In queue' : meta}</small></div>
       <IconButton className={state ? 'add-again' : ''} label={state ? `Add ${track.title} to the queue again` : `Add ${track.title} to the queue`} title={title || (state ? 'Add again' : `Add ${track.title} to the queue`)} disabled={disabled} onClick={onAdd}><PlusIcon size={21} weight="bold" /></IconButton></div>
   </li>;
 }

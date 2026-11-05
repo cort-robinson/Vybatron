@@ -1377,7 +1377,7 @@ p, .continue-text > span, .section-description, .field-hint { text-wrap: pretty;
 .chip-prefix { color: var(--text-soft); font-weight: 500; }
 .chip-prefix-short { display: none; color: var(--text-soft); font-weight: 500; }
 .volume-sheet { display: none; }
-.track-queue-state { color: var(--accent); }
+.track-queue-state { color: var(--muted); }
 /* Phone rows give the queue note its own line so the song's details never cut it short. */
 @media (max-width: 960px) { .library-track-list .track-queue-state { display: block; } .library-track-list .queue-sep { display: none; } }
 /* The narrowest covers keep each song's length: the source and the queue note give way first. */
@@ -1385,7 +1385,7 @@ p, .continue-text > span, .section-description, .field-hint { text-wrap: pretty;
   .result-list .result-source { display: none; }
 }
 /* Phones set settings on the same backed panel as desktop, so the skyline never runs through a field. */
-@media (max-width: 360px) { .tabs { gap: 14px; } .tabs button { font-size: 14px; } }
+@media (max-width: 360px) { .setting-row > .switch { margin-inline-start: -10px; } .tabs { gap: 14px; } .tabs button { font-size: 14px; } }
 @media (max-width: 1023px) { .settings-list { padding: 0 14px; border: 1px solid var(--line); border-radius: 14px; background: color-mix(in oklab, var(--ground) 82%, transparent); } .settings-list > .setting-row:last-child { border-bottom: 0; } }
 .menu-panel .volume-control { display: flex; width: 100%; padding: 6px 10px 12px; }
 /* Phones: the open player's volume and More buttons sit in its top-right corner, across from Close player. */

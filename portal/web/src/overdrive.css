@@ -289,6 +289,9 @@ REVERT: everything here is scoped to :root[data-skin='overdrive']; Settings → 
 @media (max-width: 1023px) {
   :root[data-skin='overdrive'] {
     .ambient-scene.immersive { --horizon: 64%; --sun: clamp(260px, 88vw, 520px); --sun-x: 50%; }
+    /* Phones stack the open player's title card a fixed 334px above the bottom, so the horizon lands just above it
+       and the whole skyline shows instead of two rooftops poking out past the card's corners. */
+    @media (max-width: 600px) { .ambient-scene.immersive { --horizon: calc(100% - 342px); } }
     .guild-card { background: none; }
     /* The deck and the tabs are solid over the floor. As glass they blurred the rolling grid behind
        them again on every frame, yet showed only a faint neon cast of it, which these grounds carry. */

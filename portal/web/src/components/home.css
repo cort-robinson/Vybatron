@@ -13,7 +13,7 @@
 .shelf-queued-note { flex: 0 0 auto; align-self: center; display: flex; align-items: center; gap: 5px; margin: 0; color: var(--muted); font-size: 13px; }
 .home-shelf-actions .button { min-height: 44px; padding: 9px 16px; font-size: 14px; }
 /* The top-tracks range only shapes one mix, so on wide screens it sits at the header's end instead of above the first card. */
-@media (min-width: 961px) { .home-shelf-header:has(.mix-range) { flex-direction: row; justify-content: space-between; align-items: flex-end; } }
+@media (min-width: 961px) { .home-shelf-header:has(.mix-range) { flex-direction: row; align-items: flex-end; column-gap: 40px; } }
 .home-empty { max-width: 64ch; padding: 18px 0 4px; border-top: 1px solid var(--line); color: var(--muted); font-size: 14px; line-height: 1.65; }
 
 .shelf-row {
@@ -133,7 +133,8 @@
   .dialog.mix-dialog[open] { display: flex; flex-direction: column; }
   .mix-dialog > .sheet-grabber { display: block; order: -1; margin: 0 auto 6px; }
   /* Phone-width sheets stack the two collection actions so their longer "again" labels keep the gutters. */
-  .mix-dialog .form-actions { flex-direction: column; align-items: stretch; }
+  .mix-dialog .form-actions { flex-direction: row; align-items: stretch; }
+  @media (max-width: 360px) { .mix-dialog .form-actions { flex-direction: column; } }
   .mix-dialog .form-actions .button { justify-content: center; }
 }
 .playlist-body { display: flex; flex-direction: column; flex: 1; margin-top: 14px; }
@@ -208,7 +209,7 @@
   .home-shelf-actions .button { flex: 1 1 0; min-width: 0; padding-inline: 10px; }
   .shelf-row { --card: 136px; gap: 14px; margin-inline: -16px; padding-inline: 16px; scroll-padding-inline: 16px; }
   .shelf-row-wide { --card: clamp(164px, (100vw - 32px) / 2.15, 248px); }
-  @media (max-width: 360px) { .shelf-row-wide { --card: 200px; } }
+  @media (max-width: 360px) { .shelf-row-wide { --card: 228px; } }
   .playlist-detail { min-height: 3em; }
   .shelf-row { scrollbar-width: none; }
   @keyframes shelf-fade { 0% { --shelf-fade-start: 0px; --shelf-fade-end: 24px; } 6% { --shelf-fade-start: 24px; } 94% { --shelf-fade-end: 24px; } 100% { --shelf-fade-start: 24px; --shelf-fade-end: 0px; } }

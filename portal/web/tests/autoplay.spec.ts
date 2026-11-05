@@ -55,18 +55,21 @@ test('start radio from a queued song, a favorite, a history entry, or a search r
 
   await page.getByRole('link', { name: 'My Music' }).or(page.getByRole('button', { name: 'My Music' })).first().click();
   const favorite = fixture.state.library.favorites[0];
-  await page.getByRole('button', { name: `Autoplay from ${favorite.title}` }).click();
+  await page.getByRole('button', { name: `Favorite options for ${favorite.title}` }).click();
+  await page.getByRole('button', { name: 'Autoplay from this song' }).click();
   await expect.poll(() => fixture.commands.at(-1)).toEqual({ command: 'radio', subcommand: 'on', options: { track: favorite.uri } });
 
   await page.getByRole('tab', { name: /History/ }).click();
   const played = fixture.state.library.history[0].track;
-  await page.getByRole('button', { name: `Autoplay from ${played.title}` }).click();
+  await page.getByRole('button', { name: `History options for ${played.title}` }).click();
+  await page.getByRole('button', { name: 'Autoplay from this song' }).click();
   await expect.poll(() => fixture.commands.at(-1)).toEqual({ command: 'radio', subcommand: 'on', options: { track: played.uri } });
 
   await page.getByRole('button', { name: 'Add music', exact: true }).first().click();
   const dialog = page.getByRole('dialog');
   await dialog.getByRole('searchbox', { name: 'Music search' }).fill('Midnight');
-  await dialog.getByRole('button', { name: 'Autoplay from Midnight City' }).click();
+  await dialog.getByRole('button', { name: 'More options for Midnight City' }).click();
+  await page.getByRole('button', { name: 'Autoplay from this song' }).click();
   await expect.poll(() => fixture.commands.at(-1)?.options).toMatchObject({ track: expect.stringContaining('midnight-city') });
 });
 

@@ -155,8 +155,8 @@ export function Player({ portal, expanded, setExpanded, onAdd, palette, animate,
   const destinationChip = expanded && !!track && !!destination;
   const identity = <div className="player-identity" data-glass><div className="player-title-row">{favorite && <span className="title-balance" aria-hidden="true" />}<h2 ref={headingRef} tabIndex={-1} title={track?.title}>{track?.title || 'Nothing playing'}</h2>{favorite}</div><p title={track ? `${track.author} · ${track.source}` : undefined}>{metadata}</p>
     {/* Where the sound comes out, and the shortest way to change it (More › Play on has it too). */}
-    {track && <div className="player-chips">{lyricsToggle}{destinationChip && <ActionPopover label={`Playing on ${destination}. Choose where it plays`} className="player-destination" triggerClassName="player-destination-trigger"
-      trigger={<>{local ? <DesktopIcon size={16} aria-hidden="true" /> : <DiscordLogoIcon size={16} weight="fill" aria-hidden="true" />}<span>{destination}</span><CaretDownIcon size={14} aria-hidden="true" /></>}>
+    {track && <div className="player-chips">{lyricsToggle}{destinationChip && <ActionPopover label={`Play on ${destination}. Choose where it plays`} className="player-destination" triggerClassName="player-destination-trigger"
+      trigger={<>{local ? <DesktopIcon size={16} aria-hidden="true" /> : <DiscordLogoIcon size={16} weight="fill" aria-hidden="true" />}<span><span className="chip-prefix">Play on </span>{destination}</span><CaretDownIcon size={14} aria-hidden="true" /></>}>
       {close => <><PlayOnChoices portal={portal} close={close} onMoveHere={() => setConfirmHere(true)} />
         {portal.devices.length > 0 && <button onClick={() => { close(); setRenaming(true); }}><PencilSimpleIcon />Rename this device</button>}</>}</ActionPopover>}</div>}
   </div>;

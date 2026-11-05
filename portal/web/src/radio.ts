@@ -5,5 +5,3 @@ import type { Command, Track } from './types';
 export function startRadioCommand(track: Track): Command | null {
   return track.uri ? { command: 'radio', subcommand: 'on', options: { track: track.uri } } : null;
 }
-// Song-seeded radio is the session's autoplay: related songs play after the human queue.
-export const radioLabel = (track: Track) => `Autoplay from ${track.title}`;

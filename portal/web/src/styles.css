@@ -645,7 +645,6 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
 :is(.result-list, .library-track-list) .icon-button:has(.result-action-label):hover:not(:disabled) { color: var(--text); }
 .result-length { font-size: 14px; color: var(--muted); font-stretch: var(--wide); font-variant-numeric: tabular-nums; }
 .add-result { min-height: 44px; padding: 8px 14px; font-size: 14px; }
-.result-list .radio-start { color: var(--muted); }
 .toast { position: fixed; bottom: calc(var(--player) + var(--nav) + 17px); left: calc(var(--sidebar) + 28px); display: flex; align-items: center; gap: 16px; padding: 8px 10px 8px 18px; background: var(--raised); border: 1px solid var(--line-strong); border-radius: 14px; max-width: min(510px, calc(100vw - 40px)); z-index: 90; box-shadow: var(--shadow-menu); pointer-events: none; animation: toast-in 320ms var(--ease-out); }
 @keyframes toast-in { from { opacity: 0; transform: translateY(8px); } }
 .toast button { pointer-events: auto; }
@@ -923,7 +922,6 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
   .result-list > li { flex-wrap: wrap; row-gap: 4px; }
   .result-list .track-text { min-width: 0; flex: 1 1 0; }
   .result-actions { width: 100%; justify-content: flex-start; padding-left: 54px; }
-  .result-list .radio-start { padding: 0 10px; }
   .result-actions .add-result { margin-left: auto; }
   .result-list .icon-button:has(.result-action-label) { padding: 0 10px; font-size: 13px; }
   .result-list .track-text strong { font-size: 16px; }
@@ -1317,3 +1315,6 @@ p, .continue-text > span, .section-description, .field-hint { text-wrap: pretty;
 /* Long list rows read as one unit under the pointer. */
 @media (pointer: fine) { .library-track-list > li:hover, .history-list > li:hover { background: var(--hover-surface); border-radius: 12px; } }
 .setting-status { color: var(--muted); font-size: 14px; }
+.chip-prefix { color: var(--text-soft); font-weight: 500; }
+/* Desktop keeps search and Add music in reach while a long page scrolls. */
+@media (min-width: 1024px) { .topbar:not(.sleeve-topbar) { position: sticky; top: 0; z-index: 25; background: color-mix(in oklab, var(--ground) 82%, transparent); backdrop-filter: var(--chrome-blur); } }

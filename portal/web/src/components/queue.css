@@ -140,3 +140,6 @@
   .queue:not(.queue-compact) .queue-heading-actions .text-button { display: none; }
 }
 .queue-now .track-text small.queue-now-by { display: none; color: var(--muted); font-size: 13px; font-weight: 400; letter-spacing: 0; text-transform: none; }
+.queue-now:has(.queue-now-open) { position: relative; cursor: pointer; }
+.queue-now-open { flex: none; }
+.queue-now-open::after { content: ''; position: absolute; inset: 0; border-radius: inherit; }

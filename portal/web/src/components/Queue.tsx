@@ -1,5 +1,5 @@
 import { memo, useEffect, useId, useMemo, useRef, useState } from 'react';
-import { ArrowDownIcon, ArrowLineUpIcon, ArrowUpIcon, DotsThreeIcon, HeartIcon, ListNumbersIcon, PlayIcon, PlusIcon, RadioIcon, ThumbsDownIcon, TrashIcon, DotsSixVerticalIcon, VinylRecordIcon, XIcon } from '../icons';
+import { ArrowDownIcon, ArrowLineUpIcon, ArrowUpIcon, DotsThreeIcon, HeartIcon, ListNumbersIcon, PlayIcon, PlusIcon, RadioIcon, ThumbsDownIcon, TrashIcon, DotsSixVerticalIcon, VinylRecordIcon, XIcon, CaretUpIcon } from '../icons';
 import type { Track } from '../types';
 import type { Portal } from '../usePortal';
 import { time, totalTime } from '../format';
@@ -11,7 +11,7 @@ import { startRadioCommand } from '../radio';
 import { useEvent } from '../stable';
 import './queue.css';
 
-export function Queue({ portal, compact = false, onAdd }: { portal: Portal; compact?: boolean; onAdd: () => void }) {
+export function Queue({ portal, compact = false, onAdd, onOpenPlayer }: { portal: Portal; compact?: boolean; onAdd: () => void; onOpenPlayer?: () => void }) {
   const { snapshot, library, run, can } = portal;
   const queue = snapshot?.session.queue || [];
   // Older bots omit suggestions; treat that as none.
@@ -117,7 +117,9 @@ export function Queue({ portal, compact = false, onAdd }: { portal: Portal; comp
   return <section className={`queue ${compact ? 'queue-compact' : ''}`} aria-label={local ? 'Queue on this device' : 'Shared queue'}>
     {/* The queue page leads with what's playing, so "up next" reads as what follows it. */}
     {current && <div className="queue-now"><Artwork track={current} /><div className="track-text"><small>Now playing</small><strong title={current.title}>{current.title}</strong><span title={current.author}>{current.author}</span>{current.requestedBy && <small className="queue-now-by">Added by {current.requestedBy.displayName}</small>}</div>
-      {current.requestedBy && <div className="requester"><Avatar url={current.requestedBy.avatarUrl} name={current.requestedBy.displayName} /><span>Added by {current.requestedBy.displayName}</span></div>}</div>}
+      {current.requestedBy && <div className="requester"><Avatar url={current.requestedBy.avatarUrl} name={current.requestedBy.displayName} /><span>Added by {current.requestedBy.displayName}</span></div>}
+      {/* Like Home's playing card, the whole strip opens the player. */}
+      {onOpenPlayer && <IconButton className="queue-now-open" label="Show now playing" onClick={onOpenPlayer}><CaretUpIcon size={20} weight="bold" /></IconButton>}</div>}
     <div className="section-heading"><div className="heading-line"><h2>Up Next</h2>{queue.length > 0 && <span className="count">{queue.length} {queue.length === 1 ? 'song' : 'songs'}{queue.length ? ` · ${totalTime(duration)}${queue.some(t => t.isStream) ? ' + live' : ''}` : ''}</span>}</div>
       {!compact && (snapshot?.session.fairQueue || snapshot?.session.current) && <div className="queue-heading-actions">
         {snapshot?.session.fairQueue && <span className="pill"><ListNumbersIcon size={16} />Taking turns</span>}

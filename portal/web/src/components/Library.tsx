@@ -9,7 +9,7 @@ import { ServerFavorites } from './ServerFavorites';
 import { PlaylistImport } from './PlaylistImport';
 import { fromList } from '../favorites';
 import { transition } from '../motion';
-import { radioLabel, startRadioCommand } from '../radio';
+import { startRadioCommand } from '../radio';
 import { useEvent } from '../stable';
 import './library.css';
 
@@ -174,11 +174,10 @@ const FavoriteRow = memo(function FavoriteRow({ track, index, addable, editable,
   return <li>
     <Artwork track={track} /><div className="track-text"><strong dir="auto" title={track.title}>{track.title}</strong><span dir="auto">{track.author}<span className="track-source"> · {track.source}</span></span></div><span className="track-duration">{track.isStream ? 'Live' : time(track.durationMs)}</span>
     <IconButton label={`Queue favorite ${track.title}`} disabled={!addable} title={!addable ? blockedReason : undefined} onClick={() => act(fromList({ command: 'favorite', subcommand: 'play', options: { index: index + 1 }, expectedTrackId: track.id }), 'add')}><PlusIcon size={23} /><span className="result-action-label" aria-hidden="true">Add</span></IconButton>
-    <RadioButton track={track} enabled={radio} blockedReason={blockedReason} act={act} />
     <IconButton className="favorite active" label={`Remove favorite ${track.title}`} disabled={!editable} onClick={() => unfavorite(track)}><HeartIcon size={23} weight="fill" /></IconButton>
     <ActionPopover className="row-menu favorite-row-menu" label={`Favorite options for ${track.title}`} trigger={<DotsThreeIcon size={25} weight="bold" />}>
       {close => <><p>{track.title}</p>
-        {radio !== null && <button disabled={!radio || !startRadioCommand(track)} onClick={() => { close(); const command = startRadioCommand(track); if (command) act(command, 'control'); }}><RadioIcon />Autoplay from this song</button>}
+        {radio !== null && <><button disabled={!radio || !startRadioCommand(track)} onClick={() => { close(); const command = startRadioCommand(track); if (command) act(command, 'control'); }}><RadioIcon />Autoplay from this song</button><small>{radio ? 'Related songs play after the queue.' : blockedReason}</small></>}
         <button className="danger-text" disabled={!editable} onClick={() => { close(); unfavorite(track); }}><HeartIcon />Remove from favorites</button></>}
     </ActionPopover>
   </li>;
@@ -188,16 +187,18 @@ const HistoryRow = memo(function HistoryRow({ entry, index, controllable, radio,
   return <li>
     <Artwork track={entry.track} /><div className="track-text"><strong dir="auto" title={entry.track.title}>{entry.track.title}</strong><span dir="auto">{entry.track.author}{entry.voiceChannel ? ` · ${entry.voiceChannel.name}` : ''}</span></div><time dateTime={new Date(entry.playedAt).toISOString()}>{date(entry.playedAt)}</time>
     <IconButton label={`Replay ${entry.track.title}`} disabled={!controllable} title={!controllable ? blockedReason : undefined} onClick={() => act({ command: 'replay', options: { index: index + 1 }, expectedHistoryId: entry.id, expectedRevision: revision }, 'control')}><PlusIcon size={23} /><span className="result-action-label" aria-hidden="true">Replay</span></IconButton>
-    <RadioButton track={entry.track} enabled={radio} blockedReason={blockedReason} act={act} />
+    <RadioMenu track={entry.track} enabled={radio} blockedReason={blockedReason} act={act} />
   </li>;
 });
 
 // Seeds autoplay from a saved song. Needs a live session and playback control; `enabled` is null
 // on this device's own playback, which has no autoplay.
-function RadioButton({ track, enabled, blockedReason, act }: { track: Track; enabled: boolean | null; blockedReason: string; act: Act }) {
+function RadioMenu({ track, enabled, blockedReason, act }: { track: Track; enabled: boolean | null; blockedReason: string; act: Act }) {
   if (enabled === null) return null;
   const command = startRadioCommand(track);
   const allowed = !!command && enabled;
-  return <IconButton className="radio-start" label={radioLabel(track)} disabled={!allowed} title={!command ? 'This song has no public source reference' : !allowed ? blockedReason : `${radioLabel(track)}: related songs play after the queue`}
-    onClick={() => { if (command) act(command, 'control'); }}><RadioIcon size={22} /><span className="result-action-label" aria-hidden="true">Autoplay</span></IconButton>;
+  return <ActionPopover className="row-menu" label={`History options for ${track.title}`} trigger={<DotsThreeIcon size={25} weight="bold" />}>
+    {close => <><p>{track.title}</p><button disabled={!allowed} onClick={() => { close(); if (command) act(command, 'control'); }}><RadioIcon />Autoplay from this song</button>
+      <small>{!command ? 'This song has no public source reference.' : !allowed ? blockedReason : 'Related songs play after the queue.'}</small></>}
+  </ActionPopover>;
 }

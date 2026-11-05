@@ -69,6 +69,8 @@ REVERT: everything here is scoped to :root[data-skin='overdrive']; Settings → 
 }
 .ambient-scene:not(.immersive) .od-sun { top: calc(var(--horizon) - var(--sun) * .52); opacity: 0; mix-blend-mode: screen; transition-duration: 160ms; transition-delay: 0ms; }
 .auth-page .ambient-scene .od-sun { opacity: .78; mix-blend-mode: normal; }
+/* A phone's cover fills the width and hides the disc, leaving only cut-off slats; the open player there drops the sun. */
+@media (max-width: 599px) { .ambient-scene.immersive .od-sun { opacity: 0; } }
 .od-skyline { position: absolute; left: 0; bottom: calc(100% - var(--horizon)); width: 100%; height: clamp(72px, 14vh, 156px); overflow: visible; transition: opacity 500ms var(--ease-out); }
 .od-skyline-far { fill: color-mix(in oklab, var(--glow-2) 55%, var(--ground)); opacity: .85; }
 .od-skyline-near { fill: color-mix(in oklab, var(--ground), black 30%); stroke: color-mix(in oklab, var(--accent) 55%, transparent); stroke-width: 1; vector-effect: non-scaling-stroke; stroke-linejoin: bevel; }
@@ -272,6 +274,9 @@ REVERT: everything here is scoped to :root[data-skin='overdrive']; Settings → 
   .signin-sleeve { border-radius: 6px 22px 6px 22px; box-shadow: var(--shadow-sleeve), 0 0 0 1px color-mix(in oklab, var(--accent) 35%, transparent), 0 30px 80px -24px color-mix(in oklab, var(--neon) 80%, transparent); }
   .discord-signin { border-radius: 4px 16px 4px 16px; }
   .sign-in > p, .signin-footnote { text-shadow: 0 1px 12px rgb(0 0 0 / .9); }
+  /* The skyline already sits where the resting spectrum would, so sign-in shows the sleeve over the sun alone. */
+  .signin-spectrum { display: none; }
+  .sign-in > p { margin-top: 100px; }
 }
 
 /* Plated corners where the browser can draw true bevels (outline and focus follow them). */

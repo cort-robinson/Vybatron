@@ -98,6 +98,8 @@
 .playlist-open { all: unset; cursor: pointer; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
 .playlist-open:hover { text-decoration: underline; text-underline-offset: 3px; }
 .mix-dialog { width: 520px; }
+.dialog.mix-dialog .dialog-heading { margin-bottom: 0; }
+.dialog.mix-dialog > p { margin-top: 2px; }
 .mix-tracks { max-height: min(52vh, 420px); overflow-y: auto; margin: 16px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 8px; }
 .mix-tracks li { display: grid; grid-template-columns: 44px minmax(0, 1fr) 44px; align-items: center; gap: 12px; padding: 4px 0; }
 .mix-tracks .artwork { width: 44px; height: 44px; border-radius: 8px; }

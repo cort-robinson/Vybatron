@@ -82,10 +82,10 @@
 }
 @media (max-width: 960px) {
   /* Phones give the search its own full line; import and the list menu sit under it. */
-  /* Phones give the search the full row; Import & manage sits under it, right-aligned. */
-  .library-view .library-search-controls { flex-wrap: wrap; gap: 6px 8px; }
-  .library-view .library-search-controls input { flex: 1 1 100%; max-width: none; }
-  .library-search-controls > .library-options { margin-left: auto; }
+  /* Phones keep search and the Import menu (import a playlist, clear favorites) on one row. */
+  .library-view .library-search-controls { flex-wrap: nowrap; gap: 8px; }
+  .library-view .library-search-controls input { flex: 1 1 0; min-width: 0; max-width: none; }
+  .library-search-controls > .library-options { flex: none; }
   .library-view .library-search { margin-bottom: 8px; }
   .library-search-controls > .library-import-toggle { display: none; }
   /* Favorites rows keep Add on the row; radio and removing move into the row's menu. */

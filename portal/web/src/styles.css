@@ -1383,16 +1383,16 @@ p, .continue-text > span, .section-description, .field-hint { text-wrap: pretty;
 /* The narrowest covers keep each song's length: the source and the queue note give way first. */
 @media (max-width: 360px) {
   .result-list .result-source { display: none; }
-  .home-shelf-actions .again { display: none; }
-  .home-shelf-actions { flex-wrap: nowrap; }
-  .home-shelf-actions .button { flex: 1 1 0; min-width: 0; padding-inline: 10px; }
 }
 /* Phones set settings on the same backed panel as desktop, so the skyline never runs through a field. */
+@media (max-width: 360px) { .tabs { gap: 14px; } .tabs button { font-size: 14px; } }
 @media (max-width: 1023px) { .settings-list { padding: 0 14px; border: 1px solid var(--line); border-radius: 14px; background: color-mix(in oklab, var(--ground) 82%, transparent); } .settings-list > .setting-row:last-child { border-bottom: 0; } }
 .menu-panel .volume-control { display: flex; width: 100%; padding: 6px 10px 12px; }
 /* Phones: the open player's volume and More buttons sit in its top-right corner, across from Close player. */
 @media (max-width: 599px) {
   .sleeve-content > .sleeve-corner, .sleeve-content > .mobile-collapse { grid-row: 1; grid-column: 1; }
+  /* Tall phones keep the song card next to the controls; spare height sits above the cover. */
+  .persistent-player.expanded:not(.queue-open) .sleeve-main { align-self: end; }
   .sleeve-content > .sleeve-corner { justify-self: end; align-self: center; }
   .persistent-player.expanded .sleeve-corner .player-extras { width: auto; max-width: none; gap: 4px; }
   .sleeve-corner .player-extras > .volume-control { display: none; }

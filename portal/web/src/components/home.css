@@ -181,3 +181,10 @@
 @media (prefers-reduced-motion: reduce) {
   .shelf-row { scroll-behavior: auto; scroll-snap-type: none; }
 }
+/* Wide screens set a short recent list beside the playing strip instead of under it. */
+@media (min-width: 1200px) {
+  .home-shelf:has(> .continue-feature):has(> .shelf-row-sparse) { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); column-gap: 20px; align-items: start; }
+  .home-shelf:has(> .continue-feature):has(> .shelf-row-sparse) > .home-shelf-header { grid-column: 1 / -1; }
+  .home-shelf:has(> .shelf-row-sparse) > .continue-feature { margin-bottom: 0; }
+  .home-shelf:has(> .continue-feature) > .shelf-row.shelf-row-sparse { grid-template-columns: minmax(0, 1fr); padding: 0; margin: 0; }
+}

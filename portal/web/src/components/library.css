@@ -10,7 +10,7 @@
 .library-search-controls { display: flex; align-items: center; gap: 12px; }
 .library-search input { min-width: 0; width: 100%; font-size: 14px; }
 .library-search-controls input { flex: 1; max-width: 620px; }
-.library-search-controls > .library-import-toggle { margin-left: auto; display: inline-flex; align-items: center; gap: 7px; }
+.library-search-controls > .library-import-toggle { display: inline-flex; align-items: center; gap: 7px; }
 .library-search-controls .text-button { flex-shrink: 0; font-size: 14px; }
 .library-view .tabs { gap: clamp(14px, 3vw, 28px); }
 .library-view .tabs button { font-size: 14px; }

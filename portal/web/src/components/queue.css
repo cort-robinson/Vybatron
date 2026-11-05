@@ -123,10 +123,19 @@
 .queue-now .track-text strong { font-size: 19px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .queue-now .track-text span { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .queue-now .requester { display: flex; align-items: center; gap: 10px; color: var(--text-soft); }
-@media (max-width: 1023px) { .queue-now { margin-bottom: 20px; padding: 10px 12px 10px 10px; } .queue-now .artwork { width: 52px; height: 52px; } .queue-now .requester { display: flex; } .queue-now .requester span { display: none; } }
+@media (max-width: 1023px) { .queue-now { margin-bottom: 20px; padding: 10px 12px 10px 10px; } .queue-now .artwork { width: 52px; height: 52px; } }
 .row-requester { display: none; }
-@media (max-width: 1023px) { .row-requester { display: block; color: var(--muted); font-size: 13px; line-height: 1.4; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } }
+.track-byline { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.track-byline > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 1023px) {
+  .row-requester { display: inline-flex; flex: none; align-items: center; gap: 5px; color: var(--muted); font-size: 13px; white-space: nowrap; }
+  .row-requester .avatar { width: 16px; height: 16px; }
+  /* The now-playing card names its requester in words too, like the rows below it. */
+  .queue-now .requester { display: none; }
+  .queue .queue-now .track-text small.queue-now-by { display: block; }
+}
 /* Phones: saving the session lives in the player's More menu, and the drag grip stays quieter than the row menu. */
 @media (max-width: 1023px) {
   .queue:not(.queue-compact) .queue-heading-actions .text-button { display: none; }
 }
+.queue-now .track-text small.queue-now-by { display: none; color: var(--muted); font-size: 13px; font-weight: 400; letter-spacing: 0; text-transform: none; }

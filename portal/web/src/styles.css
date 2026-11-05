@@ -263,10 +263,10 @@ svg { flex-shrink: 0; }
 .count { color: var(--muted); font-size: 14px; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .pill { display: inline-flex; gap: 7px; align-items: center; padding: 6px 11px; border-radius: 999px; border: 1px solid var(--line-strong); color: var(--text-soft); font-size: 14px; white-space: nowrap; }
 .section-description { color: var(--muted); font-size: 14px; margin-top: 7px; max-width: 70ch; }
-.queue-columns { display: grid; grid-template-columns: 35px 54px minmax(230px, 1fr) minmax(130px, 21%) 128px 45px 43px; gap: 12px; align-items: center; color: var(--muted); font-size: 13px; font-weight: 650; font-stretch: var(--wide); letter-spacing: .08em; text-transform: uppercase; padding: 8px 10px 12px; border-bottom: 1px solid var(--line); }
-.queue-columns > :nth-child(5) { text-align: center; }
+.queue-columns { display: grid; grid-template-columns: 28px 40px minmax(230px, 1fr) minmax(130px, 21%) 72px 45px 43px; gap: 12px; align-items: center; color: var(--muted); font-size: 13px; font-weight: 650; font-stretch: var(--wide); letter-spacing: .08em; text-transform: uppercase; padding: 8px 10px 12px; border-bottom: 1px solid var(--line); }
+.queue-columns > :nth-child(5) { text-align: right; }
 .track-list { padding-top: 6px; }
-.track-row { display: grid; grid-template-columns: 35px 54px minmax(230px, 1fr) minmax(130px, 21%) 128px 45px 43px; gap: 12px; min-height: 88px; align-items: center; padding: 8px 10px; border-radius: 14px; position: relative; transition: background-color 160ms; }
+.track-row { display: grid; grid-template-columns: 28px 40px minmax(230px, 1fr) minmax(130px, 21%) 72px 45px 43px; gap: 12px; min-height: 88px; align-items: center; padding: 8px 10px; border-radius: 14px; position: relative; transition: background-color 160ms; }
 .track-row + .track-row::before { content: ''; position: absolute; left: 10px; right: 10px; top: 0; border-top: 1px solid var(--line-soft); }
 .track-row:hover { background: var(--hover-surface); }
 .track-row:hover::before, .track-row:hover + .track-row::before { opacity: 0; }
@@ -285,7 +285,7 @@ picture.artwork { display: block; overflow: hidden; }
 .requester { display: flex; align-items: center; gap: 12px; min-width: 0; font-size: 14px; color: var(--text-soft); }
 .requester .avatar { width: 30px; height: 30px; }
 .requester > span:not(.avatar) { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.track-duration { text-align: center; font-size: 14px; font-stretch: var(--wide); font-variant-numeric: tabular-nums; color: var(--muted); }
+.track-duration { text-align: right; font-size: 14px; font-stretch: var(--wide); font-variant-numeric: tabular-nums; color: var(--muted); }
 .row-menu { position: relative; }
 .menu-panel { position: absolute; z-index: 70; min-width: 210px; right: 0; top: 47px; background: var(--raised); border: 1px solid var(--line-strong); border-radius: 14px; box-shadow: var(--shadow-menu); padding: 6px; animation: menu-in 180ms var(--ease-out); }
 @keyframes menu-in { from { opacity: 0; transform: translateY(-4px) scale(.98); } }
@@ -512,7 +512,7 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
   .sleeve-visuals .icon-button { width: 32px; height: 32px; }
   .sleeve-visuals svg { width: 18px; height: 18px; }
 }
-.sleeve-queue { align-self: start; max-height: 100%; min-width: 0; min-height: 0; overflow-y: auto; padding: 18px 16px 18px; background: color-mix(in oklab, var(--ground) 62%, transparent); backdrop-filter: var(--chrome-blur); --glass: var(--chrome-blur); border: 1px solid var(--line); border-radius: 20px; }
+.sleeve-queue { align-self: center; max-height: 100%; min-width: 0; min-height: 0; overflow-y: auto; padding: 18px 16px 18px; background: color-mix(in oklab, var(--ground) 62%, transparent); backdrop-filter: var(--chrome-blur); --glass: var(--chrome-blur); border: 1px solid var(--line); border-radius: 20px; }
 .sleeve-queue .section-heading { padding-inline: 8px; }
 /* The open sleeve keeps the same deck, so the transport never moves; the sleeve carries identity. */
 .expanded .player-footer { background: var(--chrome); backdrop-filter: var(--chrome-blur); --glass: var(--chrome-blur); border-top: 1px solid var(--line-strong); }
@@ -559,6 +559,8 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
   .setting-row > select, .setting-action { flex: 0 0 300px; width: 300px; }
   .setting-action { justify-content: flex-end; }
   .setting-action select { flex: 1; min-width: 0; }
+  .setting-action .number-input { flex: 1; max-width: none; }
+  .setting-row > .button { flex: 0 0 300px; justify-content: center; }
 }
 .setting-action { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
 .setting-action select, .setting-action .discord-id-input { min-width: 180px; font-size: 14px; }
@@ -920,13 +922,15 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
   .result-list .artwork { width: 44px; height: 44px; }
   .result-list > li { flex-wrap: wrap; row-gap: 4px; }
   .result-list .track-text { min-width: 0; flex: 1 1 0; }
-  .result-actions { width: 100%; justify-content: flex-end; }
+  .result-actions { width: 100%; justify-content: flex-start; padding-left: 54px; }
+  .result-list .radio-start .result-action-label { display: none; }
+  .result-list .radio-start { padding: 0 10px; }
+  .result-actions .add-result { margin-left: auto; }
   .result-list .icon-button:has(.result-action-label) { padding: 0 10px; font-size: 13px; }
   .result-list .track-text strong { font-size: 16px; }
   .result-list .track-text > span { font-size: 14px; }
 .result-actions { display: flex; align-items: center; gap: 4px; flex: none; }
   .add-result { min-height: 44px; padding: 8px 14px; }
-  .add-tail { display: none; }
   .toast { left: 12px; right: 12px; top: auto; bottom: calc(var(--player) + var(--nav) + 10px); max-width: none; padding-left: 14px; gap: 8px; }
   /* A pending-confirmation pill floats above the compact deck; toasts clear it. */
   .app-shell:has(.collapsed .player-confirmation:not(:empty)) .toast { bottom: calc(var(--player) + var(--nav) + 56px); }
@@ -1295,7 +1299,7 @@ p, .continue-text > span, .section-description, .field-hint { text-wrap: pretty;
   .app-shell.player-open .navigation .nav-indicator { opacity: 0; }
 }
 .search-draft-label { color: var(--muted); }
-.search-draft { color: var(--text); }
+.search-draft { color: var(--text-soft); }
 .mobile-page-heading { display: none; }
 @media (max-width: 1023px) { .mobile-page-heading { display: block; margin: 4px 0 18px; font-size: 26px; font-weight: 800; font-stretch: var(--wide); letter-spacing: -0.02em; } }
 /* The More menu names the song it acts on, so it never reads as a menu for a queue row. */
@@ -1303,3 +1307,11 @@ p, .continue-text > span, .section-description, .field-hint { text-wrap: pretty;
 /* Small player text stays legible where the spectrum runs behind it. */
 .collapsed :is(.compact-title, .timeline > span) { text-shadow: 0 1px 2px var(--ground), 0 0 10px var(--ground), 0 0 18px var(--ground); }
 .menu-panel > p.menu-title + p.menu-section { border-top: 0; margin-top: 0; padding-top: 6px; }
+/* Phones: page title, section title and row labels step down clearly, and forms sit tighter. */
+@media (max-width: 1023px) {
+  .page-content :is(.settings-view, .server-view) :is(h2, .section-heading h2) { font-size: 19px; }
+  .personal-settings + .personal-settings { margin-top: 28px; }
+  .library-view .tabs { margin-bottom: 16px; }
+  .library-view .section-heading { margin-bottom: 12px; }
+  .library-view .library-search { margin-bottom: 14px; }
+}

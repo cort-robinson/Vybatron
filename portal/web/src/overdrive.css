@@ -63,7 +63,7 @@ REVERT: everything here is scoped to :root[data-skin='overdrive']; Settings → 
      once so it never shows uncovered while it travels back down. */
   opacity: .78; transition: opacity 700ms var(--ease-out) 260ms;
 }
-.ambient-scene:not(.immersive) .od-sun { top: calc(var(--horizon) - var(--sun) * .52); opacity: .34; mix-blend-mode: screen; transition-duration: 160ms; transition-delay: 0ms; }
+.ambient-scene:not(.immersive) .od-sun { top: calc(var(--horizon) - var(--sun) * .52); opacity: .14; mix-blend-mode: screen; transition-duration: 160ms; transition-delay: 0ms; }
 .auth-page .ambient-scene .od-sun { opacity: .78; mix-blend-mode: normal; }
 .od-skyline { position: absolute; left: 0; bottom: calc(100% - var(--horizon)); width: 100%; height: clamp(72px, 14vh, 156px); overflow: visible; transition: opacity 500ms var(--ease-out); }
 .od-skyline-far { fill: color-mix(in oklab, var(--glow-2) 55%, var(--ground)); opacity: .85; }
@@ -173,12 +173,17 @@ REVERT: everything here is scoped to :root[data-skin='overdrive']; Settings → 
   .switch[aria-checked='true'] > span { background: linear-gradient(90deg, var(--accent), color-mix(in oklab, var(--accent), var(--neon) 45%)); box-shadow: 0 0 14px -2px var(--accent); }
   .spinner { border-color: var(--accent); border-right-color: transparent; border-left-color: var(--neon); }
   .menu-panel { border-radius: 6px 16px 6px 16px; background: var(--raised); --hud-c: color-mix(in oklab, var(--accent) 45%, transparent); }
+  /* Over the open player's queue, the More menu needs a firmer edge to read as its own layer. */
+  .player-more > .menu-panel { border-color: color-mix(in oklab, var(--accent) 34%, var(--line-strong)); box-shadow: var(--shadow-menu), 0 24px 60px -12px rgb(0 0 0 / .7); }
   .toast, .update-notice { border-radius: 4px 14px 4px 14px; }
   .toast.success { border-color: color-mix(in oklab, var(--accent) 40%, transparent); box-shadow: var(--shadow-menu), 0 0 30px -14px var(--accent); }
   .dialog { border-radius: 8px 24px 8px 24px; background: var(--rail) top / 100% 1px no-repeat, color-mix(in oklab, var(--ground), white 5%); }
   .search-field { border-radius: 4px 12px 4px 12px; }
   .suggestion-chip { border-radius: 4px 12px 4px 12px; }
   .continue-feature { border-radius: 6px 18px 6px 18px; background: linear-gradient(100deg, color-mix(in oklab, var(--accent) 14%, transparent), color-mix(in oklab, var(--neon) 7%, transparent) 60%, transparent), var(--surface); box-shadow: 0 18px 38px -26px color-mix(in oklab, var(--accent) 55%, black), 0 0 0 1px color-mix(in oklab, var(--accent) 14%, transparent); }
+  /* Content cards share the plate's cut corners; chips, fields and selects stay round. */
+  :is(.shelf-row-sparse .shelf-card, .queue-now, .library-tools) { border-radius: 6px 16px 6px 16px; }
+  .playlist-actions .icon-button { border-radius: 4px 12px 4px 12px; }
   .continue-art { border-radius: 4px 10px 4px 10px; }
   .recap-tiles > div { border-radius: 4px 12px 4px 12px; background: var(--hud), var(--surface); box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--accent) 14%, transparent); }
   .recap-list .recap-art { border-radius: 3px 8px 3px 8px; }
@@ -268,7 +273,7 @@ REVERT: everything here is scoped to :root[data-skin='overdrive']; Settings → 
 
 /* Plated corners where the browser can draw true bevels (outline and focus follow them). */
 @supports (corner-shape: bevel) {
-  :root[data-skin='overdrive'] :is(.button, .guild-card, .navigation button, .header-search, .track-row, .menu-panel, .dialog, .sleeve-queue, .continue-feature, .toast, .pill, .mobile-add) { corner-shape: bevel; }
+  :root[data-skin='overdrive'] :is(.button, .guild-card, .navigation button, .header-search, .track-row, .menu-panel, .dialog, .sleeve-queue, .continue-feature, .toast, .pill, .shelf-row-sparse .shelf-card, .playlist-actions .icon-button, .queue-now, .library-tools, .mobile-add) { corner-shape: bevel; }
 }
 
 /* ── Phone and tablet ───────────────────────────────────────────────────── */

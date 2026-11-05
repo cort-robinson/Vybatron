@@ -178,7 +178,7 @@ const FavoriteRow = memo(function FavoriteRow({ track, index, addable, editable,
     <IconButton className="favorite active" label={`Remove favorite ${track.title}`} disabled={!editable} onClick={() => unfavorite(track)}><HeartIcon size={23} weight="fill" /></IconButton>
     <ActionPopover className="row-menu favorite-row-menu" label={`Favorite options for ${track.title}`} trigger={<DotsThreeIcon size={25} weight="bold" />}>
       {close => <><p>{track.title}</p>
-        {radio !== null && <button disabled={!radio || !startRadioCommand(track)} onClick={() => { close(); const command = startRadioCommand(track); if (command) act(command, 'control'); }}><RadioIcon />Start radio</button>}
+        {radio !== null && <button disabled={!radio || !startRadioCommand(track)} onClick={() => { close(); const command = startRadioCommand(track); if (command) act(command, 'control'); }}><RadioIcon />Autoplay from this song</button>}
         <button className="danger-text" disabled={!editable} onClick={() => { close(); unfavorite(track); }}><HeartIcon />Remove from favorites</button></>}
     </ActionPopover>
   </li>;
@@ -198,6 +198,6 @@ function RadioButton({ track, enabled, blockedReason, act }: { track: Track; ena
   if (enabled === null) return null;
   const command = startRadioCommand(track);
   const allowed = !!command && enabled;
-  return <IconButton className="radio-start" label={radioLabel(track)} disabled={!allowed} title={!command ? 'This song has no public source reference' : !allowed ? blockedReason : radioLabel(track)}
-    onClick={() => { if (command) act(command, 'control'); }}><RadioIcon size={22} /><span className="result-action-label" aria-hidden="true">Start radio</span></IconButton>;
+  return <IconButton className="radio-start" label={radioLabel(track)} disabled={!allowed} title={!command ? 'This song has no public source reference' : !allowed ? blockedReason : `${radioLabel(track)}: related songs play after the queue`}
+    onClick={() => { if (command) act(command, 'control'); }}><RadioIcon size={22} /><span className="result-action-label" aria-hidden="true">Autoplay</span></IconButton>;
 }

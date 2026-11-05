@@ -17,7 +17,7 @@ const windows: { id: StatsWindow; label: string }[] = [
 const weekday = (at: number) => new Intl.DateTimeFormat(undefined, { weekday: 'long' }).format(at);
 
 function playlistDetail(list: AutoPlaylist) {
-  if (list.kind === 'mix') return `Your most-requested songs from the past 3 months blended with your favorites. New picks ${list.refreshesAt ? weekday(list.refreshesAt) : 'every week'}.`;
+  if (list.kind === 'mix') return `Your recent requests and favorites. New picks ${list.refreshesAt ? weekday(list.refreshesAt) : 'every week'}.`;
   if (list.kind === 'top') return 'What you’ve requested most in this server.';
   return `Your favorites by ${list.artist} and what this server plays most by them.`;
 }
@@ -158,7 +158,7 @@ const ContinueListening = memo(function ContinueListening({ current, paused, whe
   return <Shelf id="continue" title="Continue listening" detail="Playing now, and what played recently."
     lead={feature}
     empty={!recent.length && !feature && (history ? 'Nothing to pick up yet. Songs played in voice channels you can see show up here, and a saved session appears when one is waiting.' : 'Loading your recent songs…')}>
-    {recent.map(entry => <TrackCard key={entry.id} track={entry.track} meta={date(entry.playedAt).split(',')[0]} disabled={disabled || !entry.track.uri} title={title} onAdd={() => add(entry.track)} />)}
+    {recent.map(entry => <TrackCard key={entry.id} track={entry.track} meta={`Played ${date(entry.playedAt).split(',')[0]}`} disabled={disabled || !entry.track.uri} title={title} onAdd={() => add(entry.track)} />)}
   </Shelf>;
 });
 

@@ -48,6 +48,11 @@ export function LibraryView({ portal, active = true }: { portal: Portal; active?
   const searchRef = useRef<HTMLInputElement>(null);
   const mixSearchRef = useRef<HTMLInputElement>(null);
   const { library, libraryError, run, can, pending, snapshot } = portal;
+  // Favorites say what the shared queue already holds, as Home does, so a repeat add is a choice.
+  const queueKey = (track: Track) => track.uri || track.id;
+  const playingKey = snapshot?.session.current ? queueKey(snapshot.session.current) : '';
+  const queuedKeys = new Set((snapshot?.session.queue || []).map(queueKey));
+  const queueState = (track: Track) => queueKey(track) === playingKey ? 'playing' : queuedKeys.has(queueKey(track)) ? 'queued' : null;
   const addable = can('add');
   const controllable = can('control');
   const editable = can('library');
@@ -118,7 +123,7 @@ export function LibraryView({ portal, active = true }: { portal: Portal; active?
         {close => <>{/* Phones fold Import into this menu so search keeps the row. */}<button className="menu-import" onClick={() => { close(); setImportOpen(true); }}><DownloadSimpleIcon />Import a playlist</button><button className="danger-text" disabled={!editable} onClick={() => { close(); setConfirm({ kind: 'favorites' }); }}><TrashIcon />Clear favorites</button></>}</ActionPopover>}
     </div></div>
     {tab === 'favorites' && <>
-      {!library.favorites.length ? <Empty title="A place for your repeat favorites" description="Tap the heart on the current song to keep it here. Only you can see this shelf." icon={<HeartIcon size={30} />} /> : !favorites.length ? noMatches : <ul className="library-track-list" aria-label="Favorite songs">{favorites.slice(offset, offset + pageSize).map(({ track, index }) => <FavoriteRow key={`${track.id}:${index}`}
+      {!library.favorites.length ? <Empty title="A place for your repeat favorites" description="Tap the heart on the current song to keep it here. Only you can see this shelf." icon={<HeartIcon size={30} />} /> : !favorites.length ? noMatches : <ul className="library-track-list" aria-label="Favorite songs">{favorites.slice(offset, offset + pageSize).map(({ track, index }) => <FavoriteRow key={`${track.id}:${index}`} state={queueState(track)}
         track={track} index={index} addable={addable} editable={editable} radio={radio} blockedReason={portal.blockedReason} act={act} unfavorite={unfavorite} />)}</ul>}
       <Pagination label="favorites" page={currentPage} total={favorites.length} pageSize={pageSize} onPageChange={page => setPages(previous => ({ ...previous, favorites: page }))} />
       {/* Importing is occasional, so it opens on request, or on its own while the shelf is empty. */}
@@ -170,10 +175,10 @@ export function LibraryView({ portal, active = true }: { portal: Portal; active?
 
 type Act = (body: Command, capability: Capability) => void;
 // Library rows render again when their song, place or permissions change, not on every live frame.
-const FavoriteRow = memo(function FavoriteRow({ track, index, addable, editable, radio, blockedReason, act, unfavorite }: { track: Track; index: number; addable: boolean; editable: boolean; radio: boolean | null; blockedReason: string; act: Act; unfavorite: (track: Track) => void }) {
+const FavoriteRow = memo(function FavoriteRow({ track, state, index, addable, editable, radio, blockedReason, act, unfavorite }: { track: Track; state: 'playing' | 'queued' | null; index: number; addable: boolean; editable: boolean; radio: boolean | null; blockedReason: string; act: Act; unfavorite: (track: Track) => void }) {
   return <li>
-    <Artwork track={track} /><div className="track-text"><strong dir="auto" title={track.title}>{track.title}</strong><span dir="auto">{track.author}<span className="track-source"> · {track.source}</span><span className="track-length-inline"> · {track.isStream ? 'Live' : time(track.durationMs)}</span></span></div><span className="track-duration">{track.isStream ? 'Live' : time(track.durationMs)}</span>
-    <IconButton label={`Queue favorite ${track.title}`} disabled={!addable} title={!addable ? blockedReason : undefined} onClick={() => act(fromList({ command: 'favorite', subcommand: 'play', options: { index: index + 1 }, expectedTrackId: track.id }), 'add')}><PlusIcon size={23} /><span className="result-action-label" aria-hidden="true">Add</span></IconButton>
+    <Artwork track={track} /><div className="track-text"><strong dir="auto" title={track.title}>{track.title}</strong><span dir="auto">{track.author}<span className="track-source"> · {track.source}</span><span className="track-length-inline"> · {track.isStream ? 'Live' : time(track.durationMs)}</span>{state && <span className="track-queue-state"><span className="queue-sep"> · </span>{state === 'playing' ? 'Playing' : 'In queue'}</span>}</span></div><span className="track-duration">{track.isStream ? 'Live' : time(track.durationMs)}</span>
+    <IconButton className={state ? 'add-again' : ''} label={state ? `Queue favorite ${track.title} again` : `Queue favorite ${track.title}`} disabled={!addable} title={!addable ? blockedReason : undefined} onClick={() => act(fromList({ command: 'favorite', subcommand: 'play', options: { index: index + 1 }, expectedTrackId: track.id }), 'add')}><PlusIcon size={23} /><span className="result-action-label" aria-hidden="true">Add</span></IconButton>
     <IconButton className="favorite active" label={`Remove favorite ${track.title}`} disabled={!editable} onClick={() => unfavorite(track)}><HeartIcon size={23} weight="fill" /></IconButton>
     <ActionPopover className="row-menu favorite-row-menu" label={`Favorite options for ${track.title}`} trigger={<DotsThreeIcon size={25} weight="bold" />}>
       {close => <><p>{track.title}</p>

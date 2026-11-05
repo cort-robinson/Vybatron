@@ -193,8 +193,8 @@ function PlayShuffle({ label, tracks, disabled, title, onPlay }: { label: string
   const { playing, queued } = useContext(QueueState);
   const again = tracks.length > 0 && tracks.every(track => trackKey(track) === playing || queued.has(trackKey(track)));
   return <>
-    <button type="button" className="button secondary" disabled={disabled} title={title} aria-label={`Add all of ${label}${again ? ' again' : ''}`} onClick={() => onPlay(false)}><PlusIcon size={18} weight="bold" />{again ? 'Add all again' : 'Add all'}</button>
-    <button type="button" className="button secondary" disabled={disabled} title={title} aria-label={`Add ${label} shuffled${again ? ' again' : ''}`} onClick={() => onPlay(true)}><ShuffleIcon size={18} />{again ? 'Add shuffled again' : 'Add shuffled'}</button>
+    <button type="button" className="button secondary" disabled={disabled} title={title} aria-label={`Add all of ${label}${again ? ' again' : ''}`} onClick={() => onPlay(false)}><PlusIcon size={18} weight="bold" />Add all{again && <span className="again"> again</span>}</button>
+    <button type="button" className="button secondary" disabled={disabled} title={title} aria-label={`Add ${label} shuffled${again ? ' again' : ''}`} onClick={() => onPlay(true)}><ShuffleIcon size={18} />Add shuffled{again && <span className="again"> again</span>}</button>
   </>;
 }
 

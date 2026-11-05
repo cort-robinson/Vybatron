@@ -86,6 +86,7 @@
   .library-view .library-search-controls { flex-wrap: wrap; gap: 6px 8px; }
   .library-view .library-search-controls input { flex: 1 1 100%; max-width: none; }
   .library-search-controls > .library-options { margin-left: auto; }
+  .library-view .library-search { margin-bottom: 8px; }
   .library-search-controls > .library-import-toggle { display: none; }
   /* Favorites rows keep Add on the row; radio and removing move into the row's menu. */
   .library-view .library-track-list > li:has(> .favorite-row-menu) { grid-template-columns: 44px minmax(0, 1fr) auto 44px; gap: 6px; }

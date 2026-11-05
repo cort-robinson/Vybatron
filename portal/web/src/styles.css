@@ -567,7 +567,7 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
 @media (min-width: 0px) { .server-intro h2 { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; } .server-intro .section-description { margin-top: 0; } }
 .setting-row > .button.setting-link { flex: none; width: auto; min-height: 44px; }
 /* Results arrive as you type, so the submit is a quiet icon for Enter-less searches and links. */
-.search-form .search-submit { width: 48px; min-width: 48px; padding: 0; justify-content: center; }
+.search-form .search-submit { min-width: 84px; padding-inline: 16px; justify-content: center; }
 /* The first result keeps the filled Add; later rows use the quieter outline so a long list doesn't become a column of slabs. */
 .result-list > li + li .button.primary.add-result { background: none; color: var(--accent); border: 1px solid var(--field-line); box-shadow: none; }
 .mix-tracks .icon-button.add-again { color: var(--muted); }
@@ -1388,7 +1388,13 @@ p, .continue-text > span, .section-description, .field-hint { text-wrap: pretty;
 :is(.home-shelf-header, .section-heading) :is(h2, p) { text-shadow: 0 0 18px var(--ground), 0 0 8px var(--ground), 0 0 3px var(--ground); }
 /* The player bar's song name and artist sit on a backing too; the spectrum keeps running around them. */
 .collapsed .timeline > span { padding: 0 4px; border-radius: 6px; background: color-mix(in oklab, var(--ground) 72%, transparent); }
-.collapsed .compact-title { padding: 2px 8px; margin: -2px -8px; border-radius: 8px; background: color-mix(in oklab, var(--ground) 72%, transparent); }
+/* The backing fades out on the right so it melts into the spectrum instead of ending on a hard edge. */
+.collapsed .compact-title { padding: 2px 28px 2px 8px; margin: -2px -28px -2px -8px; border-radius: 8px 0 0 8px; background: linear-gradient(to right, color-mix(in oklab, var(--ground) 72%, transparent) calc(100% - 28px), transparent); }
+/* Sound presets are a choice of one, so they read as radio options with the mark where the eye starts. */
+.sound-radio { flex: none; width: 18px; height: 18px; margin-inline: 1px; border-radius: 50%; border: 2px solid var(--muted); }
+.sound-radio.chosen { border-color: var(--accent); background: radial-gradient(circle, var(--accent) 0 4px, transparent 5px); }
+/* Tall phones give the open player's spare height to the space under the cover, so the cover sits higher. */
+@media (max-width: 600px) and (max-aspect-ratio: 1/2) { .persistent-player.expanded .sleeve-artwork { padding-bottom: clamp(0px, 100dvh - 205vw, 110px); } }
 /* Phone rows give the queue note its own line so the song's details never cut it short. */
 @media (max-width: 960px) { .library-track-list .track-queue-state { display: block; } .library-track-list .queue-sep { display: none; } }
 /* The narrowest covers keep each song's length: the source and the queue note give way first. */

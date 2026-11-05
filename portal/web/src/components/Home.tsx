@@ -155,7 +155,7 @@ const ContinueListening = memo(function ContinueListening({ current, paused, whe
       {!canResume && <span className="continue-hint">{saved.voiceChannel ? `Join ${saved.voiceChannel.name} to resume. ` : ''}Resuming needs playback controls; anyone can start fresh.</span>}</div>
     <button type="button" className="button primary" disabled={!canResume || busy} onClick={onResume}><PlayIcon size={18} weight="fill" />Resume session</button>
   </div> : null;
-  return <Shelf id="continue" title="Recently played" detail={current ? <><span className="wide-only">Playing now, and what played recently.</span><span className="narrow-only">What played recently.</span></> : 'What played recently.'}
+  return <Shelf id="continue" title="Recently played" detail="What played recently."
     lead={feature}
     empty={!recent.length && !feature && (history ? 'Nothing to pick up yet. Songs played in voice channels you can see show up here, and a saved session appears when one is waiting.' : 'Loading your recent songs…')}>
     {recent.map(entry => <TrackCard key={entry.id} track={entry.track} meta={`Played ${date(entry.playedAt).split(',')[0]}`} disabled={disabled || !entry.track.uri} title={title} onAdd={() => add(entry.track)} />)}
@@ -207,7 +207,7 @@ function PlaylistTile({ list, detail, disabled, title, onPlay, onAdd }: { list: 
     </div>
     {open && <Dialog title={list.title} onClose={() => setOpen(false)} className="confirm-dialog mix-dialog" sheet>
       <span className="sheet-grabber" aria-hidden="true" />
-      <p>{meta} · {detail}</p>
+      <div className="mix-sheet-head"><div className={`playlist-cover ${covers.length >= 4 ? 'collage' : ''}`} aria-hidden="true">{covers.length >= 4 ? covers.map(track => <Artwork key={track.id} track={track} />) : <Artwork track={covers[0] || null} />}</div><div><p className="mix-sheet-meta">{meta}</p><p className="mix-sheet-detail">{detail}</p></div></div>
       <ol className="mix-tracks" aria-label={`Songs in ${list.title}`}>{list.tracks.map(track => <li key={track.id}><Artwork track={track} />
         <span className="mix-track-text"><strong dir="auto">{track.title}</strong><span dir="auto">{track.author} · {track.isStream ? 'Live' : time(track.durationMs)}</span></span>
         <IconButton label={`Add ${track.title} to the queue`} title={title || `Add ${track.title} to the queue`} disabled={disabled || !track.uri} onClick={() => onAdd(track)}><PlusIcon size={21} weight="bold" /></IconButton></li>)}</ol>

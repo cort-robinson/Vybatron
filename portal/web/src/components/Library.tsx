@@ -1,5 +1,5 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowClockwiseIcon, CaretDownIcon, DotsThreeIcon, DownloadSimpleIcon, HeartIcon, PlayIcon, PlusIcon, RadioIcon, TrashIcon, VinylRecordIcon } from '../icons';
+import { ArrowClockwiseIcon, CaretDownIcon, DotsThreeIcon, DownloadSimpleIcon, HeartIcon, MagnifyingGlassIcon, PlayIcon, PlusIcon, RadioIcon, TrashIcon, VinylRecordIcon } from '../icons';
 import type { Portal } from '../usePortal';
 import type { Capability, Command, Library, Track } from '../types';
 import { date, time, totalTime } from '../format';
@@ -111,7 +111,7 @@ export function LibraryView({ portal, active = true }: { portal: Portal; active?
 
     </div>
     <div className="library-search"><label className="sr-only" htmlFor={`library-search-${tab}`}>Search {label}</label><div className="library-search-controls">
-      <input ref={searchRef} id={`library-search-${tab}`} type="search" dir="auto" value={queries[listTab]} maxLength={200} placeholder={`Search ${label}`} onChange={event => setQuery(event.target.value)} />
+      <MagnifyingGlassIcon className="library-search-icon" size={18} aria-hidden="true" /><input ref={searchRef} id={`library-search-${tab}`} type="search" dir="auto" value={queries[listTab]} maxLength={200} placeholder={`Search ${label}`} onChange={event => setQuery(event.target.value)} />
       {queries[listTab] && <button type="button" className="text-button" onClick={clearSearch}>Clear search</button>}
       {tab === 'favorites' && library.favorites.length > 0 && <button type="button" className="text-button library-import-toggle" aria-expanded={importOpen} aria-controls={importOpen ? 'favorites-import' : undefined} onClick={() => setImportOpen(!importOpen)}><DownloadSimpleIcon size={18} /><span>Import<span className="wide-label"> a playlist</span></span></button>}
       {tab === 'favorites' && library.favorites.length > 0 && <ActionPopover label="Import and manage favorites" className="library-options" triggerClassName="text-button library-manage" trigger={<><span className="narrow-label">Import &amp; manage</span><span className="wide-label">Manage</span><CaretDownIcon size={16} weight="bold" aria-hidden="true" /></>}>

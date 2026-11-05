@@ -192,7 +192,7 @@ svg { flex-shrink: 0; }
 .guild-status.paused .status-dot, .guild-status.recovering .status-dot { background: var(--amber); }
 .guild-status.unavailable .status-dot { background: var(--red); }
 .guild-status-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.guild-listeners { display: none; }
+.guild-listeners { display: inline; }
 /* The desktop sidebar has the height to wrap the status, so the voice room is never cut short. */
 @media (min-width: 1024px) {
   .guild-status { white-space: normal; align-items: flex-start; }
@@ -210,7 +210,7 @@ svg { flex-shrink: 0; }
 .navigation button { isolation: isolate; }
 .nav-indicator { position: absolute; inset: 0; z-index: -1; border-radius: inherit; background: var(--selected-surface); pointer-events: none; }
 .nav-indicator::before { content: ''; position: absolute; left: 0; top: 50%; height: 22px; margin-top: -11px; width: 3px; border-radius: 3px; background: var(--accent); }
-.sidebar-session { margin-top: 30px; padding: 16px 12px 0; border-top: 1px solid var(--line); color: var(--muted); font-size: 14px; display: flex; flex-direction: column; gap: 9px; }
+.sidebar-session { display: none; margin-top: 30px; padding: 16px 12px 0; border-top: 1px solid var(--line); color: var(--muted); font-size: 14px; flex-direction: column; gap: 9px; }
 .sidebar-session > strong { display: flex; gap: 8px; align-items: center; font-size: 15px; color: var(--text); font-weight: 700; }
 .listeners { display: flex; flex-direction: column; gap: 8px; }
 .listeners > div { display: flex; padding-left: 4px; }
@@ -1255,7 +1255,7 @@ p, .continue-text > span, .section-description, .field-hint { text-wrap: pretty;
   [data-tv] .sidebar > .brand { margin: 0 6px 12px; font-size: 14px; }
   [data-tv] .sidebar > .brand svg { width: 22px; }
   [data-tv] .guild-card { width: auto; max-width: none; padding: 0 4px; }
-  [data-tv] .guild-icon, [data-tv] .guild-listeners { display: none; }
+  [data-tv] .guild-icon, [data-tv] .guild-listeners { display: inline; }
   [data-tv] .guild-info select { font-size: 14px; min-height: 40px; }
   [data-tv] .guild-status { font-size: 12px; line-height: 16px; }
   [data-tv] .navigation { position: static; height: auto; flex-direction: column; justify-content: flex-start; align-items: stretch; margin: 12px 0 0; padding: 0; gap: 2px; border: 0; background: none; backdrop-filter: none; z-index: auto; }
@@ -1356,8 +1356,8 @@ p, .continue-text > span, .section-description, .field-hint { text-wrap: pretty;
 /* Phones: results arrive as you type, so the submit button shrinks to its icon (its name stays). */
 @media (max-width: 600px) { .search-page .search-form .button { padding-inline: 14px; min-width: 52px; justify-content: center; } .search-page .search-form .button > svg { display: block; } .search-page .search-submit-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; } }
 .volume-readout { min-width: 3ch; color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; text-align: right; }
-@media (max-width: 1023px) { .chip-prefix { display: none; } }
 .chip-prefix { color: var(--text-soft); font-weight: 500; }
+@media (max-width: 599px) { .chip-prefix { display: none; } }
 /* Desktop queue rows stay compact so a long queue scans in one screen. */
 @media (min-width: 1024px) { .queue:not(.queue-compact) .track-row .artwork { width: 48px; height: 48px; } }
 /* Phones: settings rows sit tighter; the explanation stays readable. */

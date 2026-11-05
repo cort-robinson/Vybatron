@@ -99,7 +99,10 @@
 .playlist-open:hover { text-decoration: underline; text-underline-offset: 3px; }
 .mix-dialog { width: 520px; }
 .dialog.mix-dialog .dialog-heading { margin-bottom: 0; }
-.dialog.mix-dialog > p { margin-top: 2px; }
+.mix-sheet-head { display: grid; grid-template-columns: 72px minmax(0, 1fr); align-items: center; gap: 14px; margin-top: 8px; }
+.mix-sheet-head .playlist-cover { width: 72px; border-radius: 10px; cursor: default; }
+.mix-sheet-meta { color: var(--text-soft); font-size: 15px; font-weight: 600; }
+.mix-sheet-detail { margin-top: 2px; color: var(--muted); font-size: 14px; }
 .mix-tracks { max-height: min(52vh, 420px); overflow-y: auto; margin: 16px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 8px; }
 .mix-tracks li { display: grid; grid-template-columns: 44px minmax(0, 1fr) 44px; align-items: center; gap: 12px; padding: 4px 0; }
 .mix-tracks .artwork { width: 44px; height: 44px; border-radius: 8px; }
@@ -230,7 +233,8 @@
 .home-view .playlist-tile .mix-range select { border-radius: 999px; corner-shape: round; }
 @media (max-width: 600px) {
   /* The mini player already shows the song in progress, so phones lead Continue listening with what played before. */
-  .home-shelf > .continue-feature:has(.continue-open) { display: none; }
 }
+/* The player bar already shows the song in progress, so Recently played leads with what played before. */
+.home-shelf > .continue-feature:has(.continue-open) { display: none; }
 .narrow-only { display: none; }
 @media (max-width: 600px) { .wide-only { display: none; } .narrow-only { display: inline; } }

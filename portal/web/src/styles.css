@@ -1379,11 +1379,15 @@ p, .continue-text > span, .section-description, .field-hint { text-wrap: pretty;
 .chip-prefix-short { display: none; color: var(--text-soft); font-weight: 500; }
 .volume-sheet { display: none; }
 .track-queue-state { color: var(--muted); }
+/* Queue state reads as a status, not a second artist line: a small marker leads it. */
+:is(.queue-state, .track-queue-state, .mix-track-state)::before { content: '\25B8\00A0'; color: var(--accent); }
+.library-track-list .track-queue-state .queue-sep { display: none; }
 /* Small player-bar text keeps a ground halo so the spectrum behind it never breaks up the letters. */
 :is(.compact-track-meta, .timeline > span) { text-shadow: 0 0 6px var(--ground), 0 0 3px var(--ground), 0 0 1px var(--ground); }
 /* Section headings that scroll over the horizon sit on a soft backing, so the skyline never runs through them. */
-:is(.home-shelf-header, .section-heading) > div:first-child { width: fit-content; max-width: 100%; padding: 4px 12px 6px; margin: -4px -12px -6px; border-radius: 10px; background: color-mix(in oklab, var(--ground) 70%, transparent); }
+:is(.home-shelf-header, .section-heading) > div:first-child { padding: 6px 40px 8px 12px; margin: -6px -40px -8px -12px; background: radial-gradient(ellipse 100% 100% at 0% 50%, color-mix(in oklab, var(--ground) 78%, transparent) 55%, transparent 100%); }
 /* The player bar's song name and artist sit on a backing too; the spectrum keeps running around them. */
+.collapsed .timeline > span { padding: 0 4px; border-radius: 6px; background: color-mix(in oklab, var(--ground) 72%, transparent); }
 .collapsed .compact-title { padding: 2px 8px; margin: -2px -8px; border-radius: 8px; background: color-mix(in oklab, var(--ground) 72%, transparent); }
 /* Phone rows give the queue note its own line so the song's details never cut it short. */
 @media (max-width: 960px) { .library-track-list .track-queue-state { display: block; } .library-track-list .queue-sep { display: none; } }
@@ -1412,7 +1416,7 @@ p, .continue-text > span, .section-description, .field-hint { text-wrap: pretty;
 @media (max-width: 599px) { .chip-prefix { display: none; } .chip-prefix-short { display: inline; } }
 /* The narrowest covers (older Fold cover screens) keep Lyrics and the destination on one line. */
 @media (max-width: 360px) { .chip-prefix-short { display: none; } .sleeve-main .player-chips { flex-wrap: nowrap; } .sleeve-main .player-chips :is(button, .player-destination-trigger) { white-space: nowrap; padding-inline: 10px; } }
-.menu-panel .sound-choice.warm { color: var(--amber); }
+
 /* Desktop queue rows stay compact so a long queue scans in one screen. */
 @media (min-width: 1024px) { .queue:not(.queue-compact) .track-row .artwork { width: 48px; height: 48px; } }
 /* Phones: settings rows sit tighter; the explanation stays readable. */

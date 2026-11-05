@@ -161,3 +161,6 @@
 
 .queue-now-go { display: none; }
 @media (max-width: 1023px) { .queue-now-go { display: block; } }
+.queue-now .queue-now-by { align-items: center; gap: 5px; }
+.queue-now .queue-now-by .avatar { width: 16px; height: 16px; }
+@media (max-width: 1023px) { .queue .queue-now .track-text small.queue-now-by { display: flex; } }

@@ -116,7 +116,7 @@ export function Queue({ portal, compact = false, onAdd, onOpenPlayer }: { portal
   const current = !compact ? snapshot?.session.current : null;
   return <section className={`queue ${compact ? 'queue-compact' : ''}`} aria-label={local ? 'Queue on this device' : 'Shared queue'}>
     {/* The queue page leads with what's playing, so "up next" reads as what follows it. */}
-    {current && <div className="queue-now"><Artwork track={current} /><div className="track-text"><small>Now playing</small><strong title={current.title}>{current.title}</strong><span title={current.author}>{current.author}</span>{current.requestedBy && <small className="queue-now-by">Added by {current.requestedBy.displayName}</small>}</div>
+    {current && <div className="queue-now"><Artwork track={current} /><div className="track-text"><small>Now playing</small><strong title={current.title}>{current.title}</strong><span title={current.author}>{current.author}</span>{current.requestedBy && <small className="queue-now-by"><Avatar url={current.requestedBy.avatarUrl} name={current.requestedBy.displayName} />Added by {current.requestedBy.displayName}</small>}</div>
       {current.requestedBy && <div className="requester"><Avatar url={current.requestedBy.avatarUrl} name={current.requestedBy.displayName} /><span>Added by {current.requestedBy.displayName}</span></div>}
       {/* Like Home's playing card, the whole strip opens the player. */}
       {onOpenPlayer && <button type="button" className="button secondary queue-now-open" onClick={onOpenPlayer}><CaretUpIcon className="queue-now-up" size={18} weight="bold" /><CaretRightIcon className="queue-now-go" size={20} weight="bold" aria-hidden="true" /><span className="queue-now-label">View now playing</span></button>}</div>}

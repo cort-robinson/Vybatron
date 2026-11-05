@@ -239,7 +239,7 @@ function PlaylistTile({ list, detail, fullDetail, playing, queued, disabled, tit
         {/* The queue is shared, so the list says what's already lined up before anyone adds it twice. */}{trackKey(track) === playing ? <span className="mix-track-state">Playing</span> : queuedKeys.has(trackKey(track)) ? <span className="mix-track-state">In queue</span> : null}
         {(() => { const again = trackKey(track) === playing || queuedKeys.has(trackKey(track)); return <IconButton className={again ? 'add-again' : ''} label={again ? `Add ${track.title} to the queue again` : `Add ${track.title} to the queue`} title={title || (again ? 'Add again' : `Add ${track.title} to the queue`)} disabled={disabled || !track.uri} onClick={() => onAdd(track)}><PlusIcon size={21} weight="bold" /></IconButton>; })()}</li>)}</ol>
       {repeats > 0 && repeats < list.tracks.length && <p className="mix-repeat-note">{repeats === list.tracks.length ? `All ${repeats} are already queued or playing.` : `${repeats} of ${list.tracks.length} are already queued or playing.`}</p>}
-      <div className="form-actions">{addAll(() => setOpen(false))}<button type="button" className="button secondary" disabled={disabled || empty} title={title} aria-label={`Add ${list.title} shuffled`} onClick={() => { onPlay(true); setOpen(false); }}><ShuffleIcon size={18} />{allQueued ? 'Add shuffled again' : 'Add shuffled'}</button></div>
+      <div className="form-actions">{addAll(() => setOpen(false))}<button type="button" className="button secondary" disabled={disabled || empty} title={title} aria-label={`Add ${list.title} shuffled`} onClick={() => { onPlay(true); setOpen(false); }}><ShuffleIcon size={18} />{allQueued ? 'Shuffle again' : 'Add shuffled'}</button></div>
     </Dialog>}
   </li>;
 }

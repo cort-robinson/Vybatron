@@ -931,7 +931,7 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
   .mix-open h3 { font-size: 16px; margin-top: 12px; }
   .mix-open p, .mix-actions .text-button { font-size: 14px; }
   .setting-row { flex-wrap: wrap; gap: 12px; padding: 16px 0; }
-  .setting-row > div:first-child { flex: 1; min-width: min(100%, 200px); }
+  .setting-row > div:first-child { flex: 1; min-width: min(100%, 180px); }
   .setting-row label, .setting-row h3 { font-size: 16px; }
   .setting-row p { font-size: 14px; }
   .setting-action { width: 100%; gap: 12px; }
@@ -963,6 +963,7 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
   .import-actions .text-button { font-size: 14px; }
   /* Phones put the fallback under its question, so the whole query stays readable. */
   .import-actions.quiet { flex-direction: column; align-items: flex-start; gap: 2px; padding: 4px 0; }
+  .import-actions.quiet .text-button { padding-inline: 0; }
   .import-actions.quiet > span { width: auto; }
   .import-actions.quiet .text-button { white-space: normal; text-align: left; }
   .result-list > li { gap: 10px; }
@@ -1385,8 +1386,11 @@ p, .continue-text > span, .section-description, .field-hint { text-wrap: pretty;
   .result-list .result-source { display: none; }
 }
 /* Phones set settings on the same backed panel as desktop, so the skyline never runs through a field. */
-@media (max-width: 360px) { .setting-row > .switch { margin-inline-start: -10px; } .tabs { gap: 14px; } .tabs button { font-size: 14px; } }
-@media (max-width: 1023px) { .settings-list { padding: 0 14px; border: 1px solid var(--line); border-radius: 14px; background: color-mix(in oklab, var(--ground) 82%, transparent); } .settings-list > .setting-row:last-child { border-bottom: 0; } }
+@media (max-width: 360px) { .library-track-list .result-action-label { display: none; } .library-track-list .icon-button:has(.result-action-label) { padding-inline: 0; width: 44px; justify-content: center; } .setting-row > .switch { margin-inline-start: -10px; } .tabs { gap: 14px; } .tabs button { font-size: 14px; } }
+/* Fields and their panel stay solid over the scenery on every width. */
+.settings-list :is(select, input:not([type='range'])) { background-color: var(--ground); }
+@media (min-width: 1024px) { .settings-list { background: color-mix(in oklab, var(--ground) 92%, transparent); } }
+@media (max-width: 1023px) { .settings-list { padding: 0 14px; border: 1px solid var(--line); border-radius: 14px; background: color-mix(in oklab, var(--ground) 92%, transparent); } .settings-list > .setting-row:last-child { border-bottom: 0; } }
 .menu-panel .volume-control { display: flex; width: 100%; padding: 6px 10px 12px; }
 /* Phones: the open player's volume and More buttons sit in its top-right corner, across from Close player. */
 @media (max-width: 599px) {

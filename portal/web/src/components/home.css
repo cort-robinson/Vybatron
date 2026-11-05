@@ -92,6 +92,19 @@
 .playlist-cover { aspect-ratio: 1; border-radius: 14px; overflow: hidden; background: var(--surface); }
 .playlist-cover .artwork { display: block; width: 100%; height: 100%; border-radius: 0; object-fit: cover; }
 .playlist-cover.collage { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 2px; }
+.playlist-cover { display: block; width: 100%; padding: 0; border: 0; color: inherit; cursor: pointer; transition: transform 160ms var(--ease-out), box-shadow 160ms; }
+.playlist-cover:disabled { cursor: default; }
+.playlist-cover:not(:disabled):hover { transform: translateY(-2px); box-shadow: 0 10px 28px -12px rgb(0 0 0 / .7); }
+.playlist-open { all: unset; cursor: pointer; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.playlist-open:hover { text-decoration: underline; text-underline-offset: 3px; }
+.mix-dialog { width: 520px; }
+.mix-tracks { max-height: min(52vh, 420px); overflow-y: auto; margin: 16px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; }
+.mix-tracks li { display: grid; grid-template-columns: 44px minmax(0, 1fr) 44px; align-items: center; gap: 12px; padding: 4px 0; }
+.mix-tracks .artwork { width: 44px; height: 44px; border-radius: 8px; }
+.mix-track-text { display: flex; flex-direction: column; min-width: 0; }
+.mix-track-text strong { font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mix-track-text span { color: var(--muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mix-dialog .form-actions .button { flex: 1; }
 .playlist-body { display: flex; flex-direction: column; flex: 1; margin-top: 14px; }
 .playlist-body h3 { font-size: 18px; font-stretch: var(--wide); letter-spacing: -0.02em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .playlist-meta { margin-top: 3px; color: var(--text-soft); font-size: 14px; font-variant-numeric: tabular-nums; }
@@ -102,6 +115,8 @@
 .mix-range select { min-height: 30px; padding: 3px 30px 3px 11px; border-radius: 999px; font-size: 13px; background-position: calc(100% - 18px) 50%, calc(100% - 12px) 50%; }
 .playlist-actions { display: flex; align-items: center; gap: 8px; margin-top: auto; padding-top: 14px; }
 .playlist-actions .button { flex: 1; min-height: 44px; padding: 9px 14px; font-size: 14px; }
+/* A phone-width card can't hold two labelled buttons side by side, so they stack. */
+@media (max-width: 600px) { .playlist-actions { flex-direction: column; align-items: stretch; gap: 6px; } .playlist-actions .button { flex: none; justify-content: center; } }
 .playlist-actions .button { min-width: 0; }
 
 .home-unavailable { display: flex; align-items: flex-start; gap: 14px; flex-wrap: wrap; padding: 18px 20px; border-radius: 16px; background: var(--surface); }

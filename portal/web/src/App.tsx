@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import { ArrowClockwiseIcon, ArrowRightIcon, CaretDownIcon, CaretLeftIcon, DiscordLogoIcon, GearSixIcon, HeartIcon, HouseIcon, MagnifyingGlassIcon, MusicNotesIcon, PlusIcon, SignOutIcon, TelevisionSimpleIcon, UsersIcon, WarningCircleIcon, WaveformIcon, WifiSlashIcon, XIcon } from './icons';
+import { ArrowClockwiseIcon, ArrowRightIcon, CaretDownIcon, CaretLeftIcon, DiscordLogoIcon, GearSixIcon, HeartIcon, HouseIcon, MagnifyingGlassIcon, MusicNotesIcon, PlusIcon, SignOutIcon, DevicesIcon, UsersIcon, WarningCircleIcon, WaveformIcon, WifiSlashIcon, XIcon } from './icons';
 import type { Bootstrap, GuildSnapshot, Surface } from './types';
 import { usePortal } from './usePortal';
 import { useListening } from './playback';
@@ -200,7 +200,7 @@ export function App() {
         <div className="signin-sleeve"><FallbackCover /></div><Spectrum className="signin-spectrum" seed="vybertron" color={palette.accent} mode="playing" animate={!still} bands={36} /><p>{invitation}</p>
         {auth === 'error' ? <ErrorState message={portal.authError} retry={() => void portal.loadBootstrap()} /> : <>
           <a className="button primary discord-signin" href="/auth/discord" onClick={() => { holdForSignIn(shared); holdLinkForSignIn(linkRequest); }}><DiscordLogoIcon size={25} weight="fill" />Continue with Discord<ArrowRightIcon size={20} /></a>
-          <button type="button" className="text-button signin-code" onClick={() => setCodeSignIn(true)}><TelevisionSimpleIcon size={21} />Sign in with a code</button></>}
+          <button type="button" className="text-button signin-code" onClick={() => setCodeSignIn(true)}><DevicesIcon size={21} />Sign in using another device</button></>}
         <span className="signin-footnote">Plays in your Discord voice channel, or right here when you’re not in one.</span></>}
     </main></div>;
   }

@@ -4,8 +4,8 @@ import type { Portal } from '../usePortal';
 import type { AutoPlaylist, Capability, Command, GuildSnapshot, Library, RecapWindow, Stats, StatsWindow, Track } from '../types';
 import { api, errorMessage } from '../api';
 import { clearReads, loadRead, statsRead, useRead } from '../reads';
-import { date, totalTime } from '../format';
-import { Artwork, Confirm, IconButton, Loading } from './ui';
+import { date, time, totalTime } from '../format';
+import { Artwork, Confirm, Dialog, IconButton, Loading } from './ui';
 import { dragScroll } from '../dragScroll';
 import { ListeningRecap } from './Recap';
 import { useEvent } from '../stable';
@@ -114,7 +114,7 @@ const StatsShelves = memo(function StatsShelves({ stats, error, statsWindow, onW
         actions={<label className="mix-range"><span aria-hidden="true">Top tracks from</span>
           <select aria-label="Time range for Your top tracks" value={statsWindow} onChange={event => onWindow(event.target.value as StatsWindow)}>{windows.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>}
         lead={!mixes.some(list => list.tracks.length) && <p className="home-empty">Your mixes fill in as you request songs in voice or heart them. A few requests are enough to start; try a longer range below if you’ve been away.</p>} wide>
-        {mixes.map(list => <PlaylistTile key={list.id} list={list} detail={playlistDetail(list)} disabled={disabled} title={title}
+        {mixes.map(list => <PlaylistTile key={list.id} list={list} detail={playlistDetail(list)} disabled={disabled} title={title} onAdd={add}
           onPlay={shuffle => run(playlistCommand(list, statsWindow, shuffle), 'add', list.tracks)} />)}
       </Shelf>
       <Shelf id="rediscover" title="Rediscover" detail="Favorites you haven’t requested in a month."
@@ -188,20 +188,31 @@ function TrackCard({ track, meta, rank, disabled, title, onAdd }: { track: Track
   </li>;
 }
 
-function PlaylistTile({ list, detail, disabled, title, onPlay }: { list: AutoPlaylist; detail: string; disabled: boolean; title?: string; onPlay: (shuffle: boolean) => void }) {
+function PlaylistTile({ list, detail, disabled, title, onPlay, onAdd }: { list: AutoPlaylist; detail: string; disabled: boolean; title?: string; onPlay: (shuffle: boolean) => void; onAdd: (track: Track) => void }) {
+  const [open, setOpen] = useState(false);
   const covers = list.tracks.slice(0, 4);
   const empty = !list.tracks.length;
   const duration = list.tracks.reduce((sum, track) => sum + track.durationMs, 0);
+  const meta = empty ? 'No requests in this range' : `${list.tracks.length} ${list.tracks.length === 1 ? 'song' : 'songs'} · ${totalTime(duration)}`;
+  const actions = (close?: () => void) => <>
+    <button type="button" className="button secondary" disabled={disabled || empty} title={title} aria-label={`Add all of ${list.title}`} onClick={() => { onPlay(false); close?.(); }}><PlusIcon size={18} weight="bold" />Add all</button>
+    <button type="button" className="button secondary" disabled={disabled || empty} title={title} aria-label={`Add ${list.title} shuffled`} onClick={() => { onPlay(true); close?.(); }}><ShuffleIcon size={18} />Add shuffled</button>
+  </>;
+  // The cover and title open the song list, so a mix can be checked before it lands in the shared queue.
   return <li className="playlist-tile">
-    <div className={`playlist-cover ${covers.length >= 4 ? 'collage' : ''}`} aria-hidden="true">{covers.length >= 4 ? covers.map(track => <Artwork key={track.id} track={track} />) : <Artwork track={covers[0] || null} />}</div>
+    <button type="button" className={`playlist-cover ${covers.length >= 4 ? 'collage' : ''}`} disabled={empty} aria-label={`See the songs in ${list.title}`} onClick={() => setOpen(true)}>{covers.length >= 4 ? covers.map(track => <Artwork key={track.id} track={track} />) : <Artwork track={covers[0] || null} />}</button>
     <div className="playlist-body">
-      <h3 dir="auto" title={list.tracks.length ? `${list.title}: ${list.tracks.map(track => track.title).join(', ')}` : list.title}>{list.title}</h3>
-      <div className="playlist-meta-row"><p className="playlist-meta">{empty ? 'No requests in this range' : `${list.tracks.length} ${list.tracks.length === 1 ? 'song' : 'songs'} · ${totalTime(duration)}`}</p></div>
+      <h3 dir="auto">{empty ? list.title : <button type="button" className="playlist-open" tabIndex={-1} aria-hidden="true" onClick={() => setOpen(true)}>{list.title}</button>}</h3>
+      <div className="playlist-meta-row"><p className="playlist-meta">{meta}</p></div>
       <p className="playlist-detail">{detail}</p>
-      <div className="playlist-actions">
-        <button type="button" className="button secondary" disabled={disabled || empty} title={title} aria-label={`Add all of ${list.title}`} onClick={() => onPlay(false)}><PlusIcon size={18} weight="bold" />Add all</button>
-        <button type="button" className="button secondary" disabled={disabled || empty} title={title || `Add ${list.title} in a random order`} aria-label={`Add ${list.title} shuffled`} onClick={() => onPlay(true)}><ShuffleIcon size={18} />Shuffle</button>
-      </div>
+      <div className="playlist-actions">{actions()}</div>
     </div>
+    {open && <Dialog title={list.title} onClose={() => setOpen(false)} className="confirm-dialog mix-dialog">
+      <p>{meta} · {detail}</p>
+      <ol className="mix-tracks" aria-label={`Songs in ${list.title}`}>{list.tracks.map(track => <li key={track.id}><Artwork track={track} />
+        <span className="mix-track-text"><strong dir="auto">{track.title}</strong><span dir="auto">{track.author} · {track.isStream ? 'Live' : time(track.durationMs)}</span></span>
+        <IconButton label={`Add ${track.title} to the queue`} title={title || `Add ${track.title} to the queue`} disabled={disabled || !track.uri} onClick={() => onAdd(track)}><PlusIcon size={21} weight="bold" /></IconButton></li>)}</ol>
+      <div className="form-actions">{actions(() => setOpen(false))}</div>
+    </Dialog>}
   </li>;
 }

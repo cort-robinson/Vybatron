@@ -11,6 +11,7 @@
 .library-search input { min-width: 0; width: 100%; font-size: 14px; }
 .library-search-controls input { flex: 1; }
 .library-search-controls > .library-import-toggle { display: inline-flex; align-items: center; gap: 7px; }
+.track-length-inline { display: none; }
 .library-search-controls .text-button { flex-shrink: 0; font-size: 14px; }
 .library-view .tabs { gap: clamp(14px, 3vw, 28px); }
 .library-view .tabs button { font-size: 14px; }
@@ -84,6 +85,8 @@
   /* Favorites rows keep Add on the row; radio and removing move into the row's menu. */
   .library-view .library-track-list > li:has(> .favorite-row-menu) { grid-template-columns: 44px minmax(0, 1fr) auto 44px; gap: 6px; }
   .library-view .library-track-list > li > .favorite { display: none; }
+  .library-view .library-track-list .track-length-inline { display: inline; }
+  .library-search-controls .wide-label { display: none; }
   .library-view .library-track-list .icon-button:has(.result-action-label) { flex-direction: row; gap: 6px; width: auto; padding: 0 12px; font-size: 14px; }
   .server-list-actions { width: 100%; }
   .server-list-actions .button { flex: 1; }

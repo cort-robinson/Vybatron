@@ -49,9 +49,9 @@ REVERT: everything here is scoped to :root[data-skin='overdrive']; Settings → 
 .auth-page .ambient-scene { --horizon: calc(50% + 28px); --sun: clamp(300px, 58vmin, 640px); --sun-x: 50%; }
 @media (max-width: 1023px), (max-height: 760px) { .auth-page .ambient-scene { --horizon: calc(50% + 4px); } }
 .auth-page .ambient-scene .od-skyline { height: clamp(72px, 14vh, 156px); opacity: 1; }
-/* On wide players the Up Next panel covers the right side, so the skyline fades out before it
-   instead of poking out past the panel's edge. */
-@media (min-width: 1024px) { .ambient-scene.immersive .od-skyline { mask-image: linear-gradient(to right, #000 0 58%, transparent 78%); } }
+/* The open player keeps the sun and floor but drops the skyline: buildings poking out around the
+   caption plate and Up Next panel competed with the song's name. Sign-in keeps the full scene. */
+.ambient-scene.immersive .od-skyline { opacity: 0; }
 .auth-page .od-horizon { opacity: .92; }
 
 .od-sky { position: absolute; left: 0; right: 0; top: 0; height: var(--horizon); background: var(--od-scanlines),

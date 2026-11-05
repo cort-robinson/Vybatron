@@ -1388,13 +1388,9 @@ p, .continue-text > span, .section-description, .field-hint { text-wrap: pretty;
 :is(.home-shelf-header, .section-heading) :is(h2, p) { text-shadow: 0 0 18px var(--ground), 0 0 8px var(--ground), 0 0 3px var(--ground); }
 /* The player bar's song name and artist sit on a backing too; the spectrum keeps running around them. */
 .collapsed .timeline > span { padding: 0 4px; border-radius: 6px; background: color-mix(in oklab, var(--ground) 72%, transparent); }
-/* The backing fades out on the right so it melts into the spectrum instead of ending on a hard edge. */
-.collapsed .compact-title { padding: 2px 28px 2px 8px; margin: -2px -28px -2px -8px; border-radius: 8px 0 0 8px; background: linear-gradient(to right, color-mix(in oklab, var(--ground) 72%, transparent) calc(100% - 28px), transparent); }
 /* Sound presets are a choice of one, so they read as radio options with the mark where the eye starts. */
 .sound-radio { flex: none; width: 18px; height: 18px; margin-inline: 1px; border-radius: 50%; border: 2px solid var(--muted); }
 .sound-radio.chosen { border-color: var(--accent); background: radial-gradient(circle, var(--accent) 0 4px, transparent 5px); }
-/* Tall phones give the open player's spare height to the space under the cover, so the cover sits higher. */
-@media (max-width: 600px) and (max-aspect-ratio: 1/2) { .persistent-player.expanded .sleeve-artwork { padding-bottom: clamp(0px, 100dvh - 205vw, 110px); } }
 /* Phone rows give the queue note its own line so the song's details never cut it short. */
 @media (max-width: 960px) { .library-track-list .track-queue-state { display: block; } .library-track-list .queue-sep { display: none; } }
 /* The narrowest covers keep each song's length: the source and the queue note give way first. */

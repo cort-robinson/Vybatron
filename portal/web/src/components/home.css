@@ -206,7 +206,7 @@
   .home-shelf-actions .button { flex: 1 1 0; min-width: 0; padding-inline: 10px; }
   .shelf-row { --card: 136px; gap: 14px; margin-inline: -16px; padding-inline: 16px; scroll-padding-inline: 16px; }
   .shelf-row-wide { --card: clamp(164px, (100vw - 32px) / 2.15, 248px); }
-  @media (max-width: 360px) { .shelf-row-wide { --card: min(248px, 76vw); } }
+  @media (max-width: 360px) { .shelf-row-wide { --card: 200px; } }
   .playlist-detail { min-height: 3em; }
   .shelf-row { scrollbar-width: none; }
   @keyframes shelf-fade { 0% { --shelf-fade-start: 0px; --shelf-fade-end: 24px; } 6% { --shelf-fade-start: 24px; } 94% { --shelf-fade-end: 24px; } 100% { --shelf-fade-start: 24px; --shelf-fade-end: 0px; } }

@@ -1376,6 +1376,17 @@ p, .continue-text > span, .section-description, .field-hint { text-wrap: pretty;
 .volume-readout { min-width: 3ch; color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; text-align: right; }
 .chip-prefix { color: var(--text-soft); font-weight: 500; }
 .chip-prefix-short { display: none; color: var(--text-soft); font-weight: 500; }
+.volume-sheet { display: none; }
+.menu-panel .volume-control { display: flex; width: 100%; padding: 6px 10px 12px; }
+/* Phones: the open player's volume and More buttons sit in its top-right corner, across from Close player. */
+@media (max-width: 599px) {
+  .sleeve-content > .sleeve-corner, .sleeve-content > .mobile-collapse { grid-row: 1; grid-column: 1; }
+  .sleeve-content > .sleeve-corner { justify-self: end; align-self: center; }
+  .persistent-player.expanded .sleeve-corner .player-extras { width: auto; max-width: none; gap: 4px; }
+  .sleeve-corner .player-extras > .volume-control { display: none; }
+  .persistent-player.expanded .volume-sheet { display: block; }
+  :root:root { --expanded-controls: 164px; }
+}
 @media (max-width: 599px) { .chip-prefix { display: none; } .chip-prefix-short { display: inline; } }
 /* The narrowest covers (older Fold cover screens) keep Lyrics and the destination on one line. */
 @media (max-width: 360px) { .chip-prefix-short { display: none; } .sleeve-main .player-chips { flex-wrap: nowrap; } .sleeve-main .player-chips :is(button, .player-destination-trigger) { white-space: nowrap; padding-inline: 10px; } }

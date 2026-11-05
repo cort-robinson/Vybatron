@@ -7,7 +7,7 @@ import { usePosition, type Clock } from '../position';
 import { publicUrl } from '../api';
 import { time, timestamp } from '../format';
 import { RESTART_AFTER_MS } from '../playback';
-import { ActionPopover, Artwork, Confirm, Dialog, IconButton } from './ui';
+import { ActionPopover, Artwork, Confirm, Dialog, IconButton, useSheet } from './ui';
 import { SaveSessionDialog, StopDialog } from './SessionMix';
 import { SleepDialog, useSleepText } from './SleepTimer';
 import { Queue } from './Queue';
@@ -178,8 +178,16 @@ export function Player({ portal, expanded, setExpanded, onAdd, palette, animate,
     <IconButton label={`Repeat: ${session?.repeat || 'off'}. Change repeat mode`} className={`repeat-control ${session?.repeat !== 'off' && session?.repeat ? 'active-control' : ''}`} disabled={!controllable || !track} title={blockedTitle}
       onClick={() => void control({ command: 'loop', options: { mode: session?.repeat === 'off' ? 'track' : session?.repeat === 'track' ? 'queue' : 'off' } })}>{session?.repeat === 'track' ? <RepeatOnceIcon size={25} /> : <RepeatIcon size={25} />}</IconButton>
   </div>;
+  // Phones with the player open keep volume and More in the stage's top corner, not under the transport.
+  const phone = useSheet();
+  const volumeScope = local ? 'Volume on this device' : `Volume for everyone${session?.voiceChannel ? ` in ${session.voiceChannel.name}` : ''}`;
+  const volume = <Volume level={session?.volume ?? 100} disabled={!controllable} reset={`${track?.id}:${snapshot?.guild.id}`} scope={volumeScope} onCommit={level => void control({ command: 'volume', options: { level } })} />;
   const extras = <div className="player-extras">
-    <Volume level={session?.volume ?? 100} disabled={!controllable} reset={`${track?.id}:${snapshot?.guild.id}`} scope={local ? 'Volume on this device' : `Volume for everyone${session?.voiceChannel ? ` in ${session.voiceChannel.name}` : ''}`} onCommit={level => void control({ command: 'volume', options: { level } })} />
+    {volume}
+    {/* Phones keep volume behind a button in the open player's top corner, so it never takes a row of its own. */}
+    <ActionPopover label="Volume" className="volume-sheet" trigger={<SpeakerHighIcon size={23} />} triggerClassName="icon-button">
+      {() => <><p className="menu-title">{volumeScope}</p>{volume}</>}
+    </ActionPopover>
     <ActionPopover label="More playback controls" trigger={<DotsThreeIcon size={27} weight="bold" />} className="player-more" triggerClassName="icon-button">
       {/* Where it plays leads the menu, unless the open player's destination chip already offers it;
           the playback extras follow, then the destructive pair. */}
@@ -207,7 +215,7 @@ export function Player({ portal, expanded, setExpanded, onAdd, palette, animate,
   const upcoming = session?.queue.length || 0;
   return <section ref={playerRef} className={`persistent-player ${expanded ? 'expanded' : 'collapsed'} ${queueOpen ? 'queue-open' : ''} ${session?.status || 'idle'}`} aria-label="Music player" data-testid="player" data-tv-region>
     {!expanded && spectrum('player-spectrum', 56, 0)}
-    {expanded && <div className="sleeve-content"><button className="mobile-collapse text-button" onClick={() => setExpanded(false)}><CaretDownIcon size={22} />Close player</button>
+    {expanded && <div className="sleeve-content"><button className="mobile-collapse text-button" onClick={() => setExpanded(false)}><CaretDownIcon size={22} />Close player</button>{phone && <div className="sleeve-corner">{extras}</div>}
       <div className="sleeve-main">{lyricsOpen ? <div className="sleeve-artwork showing-lyrics"><LyricsView id={lyricsId} clock={clock} guildId={snapshot?.guild.id} track={track} local={local} /></div>
         : <div className="sleeve-artwork" onPointerMove={look?.tilt} onPointerLeave={look?.untilt}>{visualsOpen && visuals ? <visuals.SleeveVisualizer clock={clock} palette={palette} skin={skin} guildId={snapshot?.guild.id ?? null} local={local} animate={animate} onFail={visualsFailed} onFull={() => setVisualsFull(true)} /> : <Artwork track={track} large />}{spectrum('sleeve-spectrum', 40)}{look && <look.Sleeve track={track?.id || 'idle'} />}{visualsSwitch}</div>}{identity}<div className="player-context" data-glass>{permissionReason && <p className="player-permission" id={reasonId}><WarningCircleIcon size={18} aria-hidden="true" /><span>{permissionReason}</span></p>}{connection === 'live' && session?.status === 'recovering' && <p className="player-state warm-text" role="status">Recovering your place. Playback controls will return when it’s ready.</p>}{sleep && <p className="player-state sleep-state"><MoonIcon size={16} aria-hidden="true" /><span>Sleep timer · {sleep}</span></p>}{connection !== 'live' && session?.status === 'paused' && <p className="player-state warm-text">Last known: paused</p>}</div></div>
       <div ref={sheetRef} id={queueId} className="sleeve-queue" data-glass>{queueOpen && <div className="queue-sheet-now"><span className="sheet-grabber" aria-hidden="true" /><Artwork track={track} /><span className="sheet-now-text"><strong>{track?.title || 'Nothing playing'}</strong><span>{track?.author}</span></span></div>}{queue}</div>
@@ -215,7 +223,7 @@ export function Player({ portal, expanded, setExpanded, onAdd, palette, animate,
     <div className="player-footer" data-glass>{!expanded && <CompactProgress clock={clock} track={track} duration={duration} />}{!expanded && <div className="compact-identity"><button ref={identityTriggerRef} type="button" className="player-expand-trigger" aria-label={track ? `Open player for ${track.title}` : 'Open player details'} aria-expanded={false} onClick={() => { openedFromIdentity.current = true; setExpanded(true); }}><Artwork track={track} /><span className="compact-title"><span className="compact-track-title" title={track?.title}>{track?.title || 'Nothing playing'}</span><span className="compact-track-meta" title={track ? `${track.author} · ${where ? `playing on ${local ? where : `Discord · ${where}`}` : track.source}` : undefined}>{compactMetadata}</span></span></button><span className="compact-favorite">{favorite}</span></div>}
       
       <div className="playback-cluster">{controls}{timeline}</div>
-      {extras}
+      {!(expanded && phone) && extras}
       {expanded && <button ref={handleRef} type="button" className="up-next-handle" aria-expanded={queueOpen} aria-controls={queueId} onClick={() => setQueueOpen(!queueOpen)}><span className="sheet-grabber" aria-hidden="true" />{queueOpen ? <CaretDownIcon size={16} aria-hidden="true" /> : <CaretUpIcon size={16} aria-hidden="true" />}<span>{queueOpen ? 'Hide queue' : 'Up next'}</span>{!queueOpen && upcoming > 0 && <span className="count">{upcoming} {upcoming === 1 ? 'song' : 'songs'}</span>}</button>}
       {!expanded && permissionReason && <span className="sr-only" id={reasonId}>{permissionReason}</span>}
       <button ref={expandTriggerRef} className="expand-button" aria-expanded={expanded} aria-label={expanded ? 'Close player' : 'Open player'} title={expanded ? 'Close player' : 'Open player'} onClick={() => { openedFromIdentity.current = false; setExpanded(!expanded); }}>{expanded ? <CaretDownIcon size={29} /> : <CaretUpIcon size={29} />}<span>{expanded ? 'Close player' : 'Open player'}</span></button>

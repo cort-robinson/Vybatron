@@ -95,7 +95,7 @@ function focusableElements(container: ParentNode) {
 
 // Phones get menus as bottom sheets, within thumb reach, as music apps present them.
 const sheetQuery = '(max-width: 599px)';
-function useSheet() {
+export function useSheet() {
   const [sheet, setSheet] = useState(() => matchMedia(sheetQuery).matches);
   useEffect(() => {
     const media = matchMedia(sheetQuery); const change = () => setSheet(media.matches);

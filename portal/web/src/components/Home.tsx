@@ -111,7 +111,7 @@ const StatsShelves = memo(function StatsShelves({ stats, error, statsWindow, onW
         {stats.serverFavorites.onRepeat.map((entry, index) => <TrackCard key={entry.track.id} track={entry.track} rank={index + 1} meta={`${entry.plays.toLocaleString()} ${entry.plays === 1 ? 'play' : 'plays'}`} disabled={disabled || !entry.track.uri} title={title} onAdd={() => add(entry.track)} />)}
       </Shelf>
       <Shelf id="your-mixes" title="Made for you" detail="From your requests and hearts. Only you see these."
-        actions={<label className="mix-range"><span aria-hidden="true">Top tracks from</span>
+        actions={<label className="mix-range"><span aria-hidden="true">Your top tracks:</span>
           <select aria-label="Time range for Your top tracks" value={statsWindow} onChange={event => onWindow(event.target.value as StatsWindow)}>{windows.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>}
         lead={!mixes.some(list => list.tracks.length) && <p className="home-empty">Your mixes fill in as you request songs in voice or heart them. A few requests are enough to start; try a longer range below if you’ve been away.</p>} wide>
         {mixes.map(list => <PlaylistTile key={list.id} list={list} detail={playlistDetail(list)} disabled={disabled} title={title} onAdd={add}
@@ -194,7 +194,7 @@ function PlaylistTile({ list, detail, disabled, title, onPlay, onAdd }: { list: 
   const empty = !list.tracks.length;
   const duration = list.tracks.reduce((sum, track) => sum + track.durationMs, 0);
   const meta = empty ? 'No requests in this range' : `${list.tracks.length} ${list.tracks.length === 1 ? 'song' : 'songs'} · ${totalTime(duration)}`;
-  const addAll = (close?: () => void) => <button type="button" className="button secondary" disabled={disabled || empty} title={title} aria-label={`Add all of ${list.title}`} onClick={() => { onPlay(false); close?.(); }}><PlusIcon size={18} weight="bold" />Add all</button>;
+  const addAll = (close?: () => void) => <button type="button" className={`button ${close ? 'primary' : 'secondary'}`} disabled={disabled || empty} title={title} aria-label={`Add all of ${list.title}`} onClick={() => { onPlay(false); close?.(); }}><PlusIcon size={18} weight="bold" />Add all</button>;
   // The cover and title open the song list, so a mix can be checked before it lands in the shared queue.
   return <li className="playlist-tile">
     <button type="button" className={`playlist-cover ${covers.length >= 4 ? 'collage' : ''}`} disabled={empty} aria-label={`See the songs in ${list.title}`} onClick={() => setOpen(true)}>{covers.length >= 4 ? covers.map(track => <Artwork key={track.id} track={track} />) : <Artwork track={covers[0] || null} />}</button>
@@ -205,7 +205,7 @@ function PlaylistTile({ list, detail, disabled, title, onPlay, onAdd }: { list: 
       {/* The card keeps one labelled action; the song list holds Add shuffled in words. */}
       <div className="playlist-actions">{addAll()}<IconButton label={`Add ${list.title} shuffled`} title={title || 'Add shuffled'} disabled={disabled || empty} onClick={() => onPlay(true)}><ShuffleIcon size={21} /></IconButton></div>
     </div>
-    {open && <Dialog title={list.title} onClose={() => setOpen(false)} className="confirm-dialog mix-dialog">
+    {open && <Dialog title={list.title} onClose={() => setOpen(false)} className="confirm-dialog mix-dialog" sheet>
       <span className="sheet-grabber" aria-hidden="true" />
       <p>{meta} · {detail}</p>
       <ol className="mix-tracks" aria-label={`Songs in ${list.title}`}>{list.tracks.map(track => <li key={track.id}><Artwork track={track} />

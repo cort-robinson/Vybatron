@@ -106,8 +106,8 @@
 .mix-track-text span { color: var(--muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mix-dialog .form-actions .button { flex: 1; }
 .mix-dialog > .sheet-grabber { display: none; }
-/* On phones the song list is a bottom sheet, like the other phone menus. */
-@media (max-width: 600px) {
+/* On phones the song list is a bottom sheet, like the other phone menus (ui.tsx sheetQuery). */
+@media (max-width: 599px) {
   .dialog.mix-dialog { width: 100%; max-width: 100%; margin: auto 0 0; padding-top: 10px; padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px)); border-bottom: 0; border-radius: 22px 22px 0 0; animation: sheet-in 260ms var(--ease-out) both; }
   .dialog.mix-dialog[open] { display: flex; flex-direction: column; }
   .mix-dialog > .sheet-grabber { display: block; order: -1; margin: 0 auto 6px; }

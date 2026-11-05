@@ -126,11 +126,14 @@
 .queue-now .requester { display: flex; align-items: center; gap: 10px; color: var(--text-soft); }
 @media (max-width: 1023px) { .queue-now { margin-bottom: 20px; padding: 10px 12px 10px 10px; } .queue-now .artwork { width: 52px; height: 52px; } }
 .row-requester { display: none; }
+.row-rank { display: none; }
 .track-byline { display: flex; flex-wrap: wrap; align-items: center; gap: 0 8px; min-width: 0; }
 .track-byline > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @media (max-width: 1023px) {
   .row-requester { display: inline-flex; flex: none; align-items: center; gap: 5px; color: var(--muted); font-size: 13px; white-space: nowrap; }
   .row-requester .avatar { width: 16px; height: 16px; }
+  .queue .track-row > .track-main:has(> .row-rank) { position: relative; }
+  .queue .track-row:has(> .drag-handle) .row-rank { display: grid; place-items: center; position: absolute; left: 3px; bottom: 3px; z-index: 1; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 6px; background: rgb(0 0 0 / .72); color: #fff; font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; }
   .track-byline:has(> .row-requester) { flex-direction: column; align-items: flex-start; gap: 1px; }
   .track-byline:has(> .row-requester) > span:first-child { max-width: 100%; }
   /* The now-playing card names its requester in words too, like the rows below it. */

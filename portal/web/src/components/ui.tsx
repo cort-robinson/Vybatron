@@ -177,8 +177,12 @@ export function ActionPopover({ label, trigger, className = '', triggerClassName
   </div>;
 }
 
-export function Dialog({ title, children, onClose, className = '', initialFocusRef }: { title: string; children: ReactNode; onClose: () => void; className?: string; initialFocusRef?: RefObject<HTMLElement | null> }) {
+export function Dialog({ title, children, onClose, className = '', initialFocusRef, sheet = false }: { title: string; children: ReactNode; onClose: () => void; className?: string; initialFocusRef?: RefObject<HTMLElement | null>; sheet?: boolean }) {
   const ref = useRef<HTMLDialogElement>(null);
+  // A dialog drawn as a phone bottom sheet closes with a pull down, like the menu sheets.
+  const phone = useSheet();
+  const latestClose = useRef(onClose); latestClose.current = onClose;
+  useEffect(() => sheet && phone ? swipe(ref.current, 'down', (_, settle) => { settle(); latestClose.current(); }) : undefined, [sheet, phone]);
   useLayoutEffect(() => {
     const dialog = ref.current; if (!dialog) return;
     const previous = document.activeElement as HTMLElement | null;

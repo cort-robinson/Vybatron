@@ -139,5 +139,5 @@ export function Search({ portal, open, onClose, page = false }: { portal: Portal
     </>}
   </>;
   // On a phone, Search is a page in the bottom navigation; on desktop it opens over the current page.
-  return page ? <div className="search-page">{body}</div> : <Dialog title="Add music" onClose={onClose} className="search-dialog" initialFocusRef={input}>{body}</Dialog>;
+  return page ? <div className="search-page">{body}</div> : <Dialog title="Add music" onClose={onClose} className="search-dialog" initialFocusRef={input}>{portal.snapshot?.guild && <p className="search-destination">{portal.target === 'local' ? 'To the queue on this device' : `To ${portal.snapshot.guild.name}’s shared queue`}</p>}{body}</Dialog>;
 }

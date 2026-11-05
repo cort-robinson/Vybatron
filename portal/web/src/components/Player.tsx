@@ -179,7 +179,7 @@ export function Player({ portal, expanded, setExpanded, onAdd, palette, animate,
       onClick={() => void control({ command: 'loop', options: { mode: session?.repeat === 'off' ? 'track' : session?.repeat === 'track' ? 'queue' : 'off' } })}>{session?.repeat === 'track' ? <RepeatOnceIcon size={25} /> : <RepeatIcon size={25} />}</IconButton>
   </div>;
   const extras = <div className="player-extras">
-    <Volume level={session?.volume ?? 100} disabled={!controllable} reset={`${track?.id}:${snapshot?.guild.id}`} onCommit={level => void control({ command: 'volume', options: { level } })} />
+    <Volume level={session?.volume ?? 100} disabled={!controllable} reset={`${track?.id}:${snapshot?.guild.id}`} scope={local ? 'Volume on this device' : `Volume for everyone${session?.voiceChannel ? ` in ${session.voiceChannel.name}` : ''}`} onCommit={level => void control({ command: 'volume', options: { level } })} />
     {!local && <label className={`filter-control ${session?.filter === 'warm' ? 'warm' : ''}`} title="Audio filter"><SpeakerHifiIcon className="filter-dot" size={17} aria-hidden="true" /><span className="filter-prefix" aria-hidden="true">Sound:</span><span className="sr-only">Audio filter</span><select aria-label="Audio filter" value={session?.filter || bootstrap?.filters[0]?.id || ''} disabled={!controllable} onChange={event => void control({ command: 'filter', options: { preset: event.target.value } })}>
       {bootstrap?.filters.map(filter => <option key={filter.id} value={filter.id}>{filter.label}</option>)}
     </select><CaretDownIcon size={16} /></label>}
@@ -276,12 +276,12 @@ export function MoveHereDialog({ portal, onClose }: { portal: Portal; onClose: (
   </Dialog>;
 }
 // The volume slider: it moves at once and sends the level when let go. On a TV remote it steps by five.
-export function Volume({ level, disabled, reset, onCommit }: { level: number; disabled: boolean; reset?: string; onCommit: (level: number) => void }) {
+export function Volume({ level, disabled, reset, scope, onCommit }: { level: number; disabled: boolean; reset?: string; scope?: string; onCommit: (level: number) => void }) {
   const [draft, setDraft] = useState<number | null>(null);
   useEffect(() => { setDraft(null); }, [reset]);
   const commit = () => { if (draft !== null) { onCommit(draft); setDraft(null); } };
   const value = draft ?? level;
-  return <div className={`volume-control ${draft !== null ? 'adjusting' : ''}`}><SpeakerHighIcon size={23} /><input className="range" aria-label="Volume" type="range" min="0" max="100" value={value} disabled={disabled} data-tv-step={5}
+  return <div className={`volume-control ${draft !== null ? 'adjusting' : ''}`}><SpeakerHighIcon size={23} /><input className="range" aria-label="Volume" title={scope} aria-description={scope} type="range" min="0" max="100" value={value} disabled={disabled} data-tv-step={5}
     style={{ '--range-progress': `${value}%` } as React.CSSProperties} aria-valuetext={`${value} percent`}
     onChange={event => setDraft(Number(event.target.value))}
     onPointerUp={commit}

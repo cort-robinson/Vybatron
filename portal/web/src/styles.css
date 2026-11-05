@@ -570,6 +570,7 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
 .search-form .search-submit { width: 48px; min-width: 48px; padding: 0; justify-content: center; }
 /* The first result keeps the filled Add; later rows use the quieter outline so a long list doesn't become a column of slabs. */
 .result-list > li + li .button.primary.add-result { background: none; color: var(--accent); border: 1px solid var(--field-line); box-shadow: none; }
+.mix-tracks .icon-button.add-again { color: var(--text-soft); opacity: .75; }
 .mix-tracks .icon-button, :is(.library-track-list, .history-list) .icon-button:has(.result-action-label) { color: var(--accent); }
 .search-field { position: relative; }
 .search-clear { display: grid; place-items: center; flex: none; width: 36px; height: 36px; margin-right: 4px; border-radius: 50%; color: var(--muted); background: none; }
@@ -577,6 +578,7 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
 .search-field input::-webkit-search-cancel-button { display: none; }
 .signin-footnote { padding: 6px 14px; border-radius: 999px; color: var(--text-soft); background: color-mix(in oklab, var(--ground) 78%, transparent); }
 .setting-row > .setting-refresh { display: inline-flex; align-items: center; gap: 6px; flex: none; min-height: 44px; font-size: 14px; color: var(--accent); }
+.search-destination { margin: -4px 0 12px; color: var(--muted); font-size: 14px; }
 .settings-footnote { max-width: 760px; margin-top: 14px; color: var(--muted); font-size: 14px; }
 .setting-row { display: flex; align-items: center; justify-content: space-between; gap: 35px; padding: 16px 0; border-bottom: 1px solid var(--line); }
 .setting-row > div:first-child { min-width: 0; max-width: 55ch; }
@@ -695,7 +697,7 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
 
 /* Sign-in: the receiver warming up. */
 .auth-page { min-height: 100dvh; isolation: isolate; display: flex; flex-direction: column; align-items: center; padding: 35px 25px 20px; }
-.auth-page > .brand { align-self: flex-start; }
+.auth-page > .brand { align-self: center; }
 /* Wide screens centre a large wordmark over the sleeve, so sign-in leads with the name, as on phones. */
 @media (min-width: 961px) { .auth-page > .brand { align-self: center; font-size: 34px; gap: 14px; margin-top: 12px; } }
 .sign-in { margin: auto 0; text-align: center; display: flex; flex-direction: column; align-items: center; padding: 45px 20px 55px; }

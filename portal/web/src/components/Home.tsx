@@ -134,7 +134,7 @@ const StatsShelves = memo(function StatsShelves({ stats, playing, queued, error,
           disabled={disabled} title={title} onAdd={() => run({ command: 'favorite', subcommand: 'play', options: { index: entry.index }, expectedTrackId: entry.track.id }, 'add')} />)}
       </Shelf>
       <Shelf id="forgotten-gems" title="Forgotten gems" detail="Played a lot here two to four months ago, quiet since."
-        actions={stats.serverFavorites.forgottenGems.length > 0 && <PlayShuffle label="Forgotten gems" disabled={disabled} title={title}
+        actions={stats.serverFavorites.forgottenGems.length > 1 && <PlayShuffle label="Forgotten gems" disabled={disabled} title={title}
           onPlay={shuffle => run({ command: 'top', subcommand: 'play', options: { list: 'forgotten-gems', shuffle } }, 'add', stats.serverFavorites.forgottenGems.map(entry => entry.track))} />}
         empty={!stats.serverFavorites.forgottenGems.length && 'No forgotten gems yet. Songs that were popular two to four months ago, with no plays since, appear here.'}>
         {stats.serverFavorites.forgottenGems.map(entry => <TrackCard key={entry.track.id} track={entry.track} meta={`${entry.plays.toLocaleString()} ${entry.plays === 1 ? 'play' : 'plays'} then`} disabled={disabled || !entry.track.uri} title={title} onAdd={() => add(entry.track)} />)}
@@ -207,7 +207,7 @@ function PlaylistTile({ list, detail, fullDetail, playing, queued, disabled, tit
   const meta = empty ? 'No requests in this range' : `${list.tracks.length} ${list.tracks.length === 1 ? 'song' : 'songs'} · ${totalTime(duration)}`;
   const allQueued = repeats > 0 && repeats === list.tracks.length;
   // The card keeps a short label (its note already says what's queued); the song list spells out the repeat.
-  const addAll = (close?: () => void) => <button type="button" className={`button ${close && !allQueued ? 'primary' : 'secondary'}`} disabled={disabled || empty} title={title} aria-label={allQueued ? `Add all of ${list.title} again` : `Add all of ${list.title}`} onClick={() => { onPlay(false); close?.(); }}><PlusIcon size={18} weight="bold" />{allQueued && close ? 'Add all again' : 'Add all'}</button>;
+  const addAll = (close?: () => void) => <button type="button" className={`button ${close && !allQueued ? 'primary' : 'secondary'} ${allQueued ? 'all-queued' : ''}`} disabled={disabled || empty} title={title} aria-label={allQueued ? `Add all of ${list.title} again` : `Add all of ${list.title}`} onClick={() => { onPlay(false); close?.(); }}><PlusIcon size={18} weight="bold" />{allQueued && close ? 'Add all again' : 'Add all'}</button>;
   // The cover and title open the song list, so a mix can be checked before it lands in the shared queue.
   return <li className="playlist-tile">
     <button type="button" className={`playlist-cover ${covers.length >= 4 ? 'collage' : ''}`} disabled={empty} aria-label={`See the songs in ${list.title}`} onClick={() => setOpen(true)}>{covers.length >= 4 ? covers.map(track => <Artwork key={track.id} track={track} />) : <Artwork track={covers[0] || null} />}</button>

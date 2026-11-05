@@ -153,8 +153,10 @@ export function Player({ portal, expanded, setExpanded, onAdd, palette, animate,
     <IconButton className={visualsOpen ? 'active-control' : ''} label={visualsOpen ? 'Hide visualizer' : 'Show visualizer'} aria-pressed={visualsOpen} onClick={() => setVisualsOpen(!visualsOpen)}><WaveformIcon size={21} weight={visualsOpen ? 'bold' : 'regular'} /></IconButton></div>;
   const destination = local ? `Playing on ${portal.playingOn || 'this device'}` : session?.voiceChannel ? `Playing in ${session.voiceChannel.name} on Discord` : '';
   const identity = <div className="player-identity" data-glass><div className="player-title-row">{lyricsToggle}<h2 ref={headingRef} tabIndex={-1} title={track?.title}>{track?.title || 'Nothing playing'}</h2>{favorite}</div><p title={track ? `${track.author} · ${track.source}` : undefined}>{metadata}</p>
-    {/* Where the sound comes out; More › Play on changes it. */}
-    {expanded && track && destination && <p className="player-destination">{local ? <DesktopIcon size={16} aria-hidden="true" /> : <DiscordLogoIcon size={16} weight="fill" aria-hidden="true" />}{destination}</p>}
+    {/* Where the sound comes out, and the shortest way to change it (More › Play on has it too). */}
+    {expanded && track && destination && <ActionPopover label={`${destination}. Choose where it plays`} className="player-destination" triggerClassName="player-destination-trigger"
+      trigger={<>{local ? <DesktopIcon size={16} aria-hidden="true" /> : <DiscordLogoIcon size={16} weight="fill" aria-hidden="true" />}<span>{destination}</span><CaretDownIcon size={14} aria-hidden="true" /></>}>
+      {close => <PlayOnChoices portal={portal} close={close} onMoveHere={() => setConfirmHere(true)} />}</ActionPopover>}
   </div>;
   const spectrumMode = track && active && live ? 'playing' : 'standby';
   const look = skinLook(skin);
@@ -177,16 +179,17 @@ export function Player({ portal, expanded, setExpanded, onAdd, palette, animate,
       {bootstrap?.filters.map(filter => <option key={filter.id} value={filter.id}>{filter.label}</option>)}
     </select><CaretDownIcon size={16} /></label>}
     <ActionPopover label="More playback controls" trigger={<DotsThreeIcon size={27} weight="bold" />} className="player-more" triggerClassName="icon-button">
-      {close => <>{expanded && <button disabled={!track} onClick={() => { close(); setVisualsFull(true); }}><CornersOutIcon />Full-screen visualizer</button>}
+      {/* Where it plays leads the menu; the playback extras follow, then the destructive pair. */}
+      {close => <><PlayOnChoices portal={portal} close={close} onMoveHere={() => setConfirmHere(true)} />
+        {portal.devices.length > 0 && <button onClick={() => { close(); setRenaming(true); }}><PencilSimpleIcon />Rename this device</button>}
+        <hr className="menu-divider" />
+        {expanded && <button disabled={!track} onClick={() => { close(); setVisualsFull(true); }}><CornersOutIcon />Full-screen visualizer</button>}
         {!local && <><button disabled={!can('vote') || pending.includes('voteskip:') || !track} onClick={() => { close(); void run({ command: 'voteskip', expectedRevision: snapshot?.revision }, 'vote'); }}><HandPalmIcon />Vote to skip</button>
         <button disabled={!controllable || !track} onClick={() => { close(); void control({ command: 'radio', subcommand: session?.radio ? 'off' : 'on' }); }}><RadioIcon />Turn autoplay {session?.radio ? 'off' : 'on'}</button>
         <button disabled={!controllable || !track && !sleep} onClick={() => { close(); setSleepOpen(true); }}><MoonIcon />{sleep ? `Sleep timer · ${sleep}` : 'Sleep timer'}</button></>}
         {!local && track?.suggested && <button disabled={!controllable} onClick={() => { close(); void run({ command: 'radio', subcommand: 'less', expectedTrackId: track.id }, 'control'); }}><ThumbsDownIcon />Less like this</button>}
         {sourceUrl && <a href={sourceUrl} target="_blank" rel="noreferrer" onClick={close}><ArrowSquareOutIcon />Open original track</a>}
         {!local && <button disabled={!can('library') || !track} onClick={() => { close(); setSaveSession(true); }}><VinylRecordIcon />Save session as mix</button>}
-        <PlayOnChoices portal={portal} close={close} onMoveHere={() => setConfirmHere(true)} />
-        {portal.devices.length > 0 && <button onClick={() => { close(); setRenaming(true); }}><PencilSimpleIcon />Rename this device</button>}
-        <hr className="menu-divider" />
         <button className="danger-text" disabled={!controllable || !session?.queue.length} onClick={() => { close(); setConfirmClear(true); }}><TrashIcon />Clear upcoming queue</button>
         <button className="danger-text" disabled={!can('control') || !track} onClick={() => { close(); setConfirmStop(true); }}><StopIcon />{local ? 'Stop and clear your queue' : 'Stop and discard session'}</button>
       </>}

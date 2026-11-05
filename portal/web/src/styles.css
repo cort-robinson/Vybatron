@@ -80,7 +80,7 @@ button, a, input, select { -webkit-tap-highlight-color: transparent; }
 button, select { cursor: pointer; }
 button { color: inherit; border: 0; }
 button:disabled, input:disabled, select:disabled { cursor: not-allowed; }
-button:disabled { opacity: .4; }
+button:disabled { opacity: .5; }
 input, select { font-size: 16px; color: var(--text); background: var(--field); border: 1px solid var(--field-line); border-radius: 10px; padding: 11px 13px; min-height: 44px; caret-color: var(--accent); transition: border-color 160ms, background-color 160ms; }
 input:hover:not(:disabled), select:hover:not(:disabled) { border-color: rgb(255 255 255 / .24); }
 input::placeholder { color: var(--muted); opacity: 1; }
@@ -390,8 +390,12 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
 .sleeve-main .player-permission { justify-content: center; }
 .player-title-row h2 { min-width: 0; flex: 1; font-size: clamp(28px, 2.8vw, 42px); line-height: 1.12; font-weight: 800; font-stretch: var(--wide); letter-spacing: -.03em; white-space: normal; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; text-wrap: initial; padding-bottom: .06em; }
 .player-identity p { color: var(--text-soft); font-size: 16px; line-height: 1.5; margin-top: 8px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.player-identity p.player-destination { display: flex; align-items: center; justify-content: center; gap: 7px; margin-top: 6px; color: var(--accent); font-size: 14px; font-weight: 600; }
-.player-destination svg { flex: none; }
+.player-destination { position: relative; display: flex; justify-content: center; margin-top: 6px; }
+.player-destination-trigger { display: inline-flex; align-items: center; gap: 7px; min-height: 32px; padding: 4px 12px; border-radius: 999px; background: color-mix(in oklab, var(--accent) 12%, transparent); color: var(--accent); font-size: 14px; font-weight: 600; }
+.player-destination-trigger:hover { background: color-mix(in oklab, var(--accent) 20%, transparent); }
+.player-destination-trigger svg { flex: none; }
+.player-destination > .menu-panel { top: auto; bottom: calc(100% + 8px); right: auto; left: 50%; translate: -50% 0; width: 288px; text-align: left; }
+.menu-panel > p.menu-section:first-of-type { border-top: 0; margin-top: 0; padding-top: 6px; }
 .metadata-dot { margin: 0 8px; color: var(--muted); }
 .track-source { color: var(--muted); }
 .player-context { width: min(100%, 560px); display: flex; flex-direction: column; gap: 6px; }
@@ -456,7 +460,7 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
 .expand-button:hover { color: var(--accent); background: var(--hover-surface); }
 .expand-button svg { width: 24px; height: 24px; }
 .expand-button span { display: none; }
-.sleeve-topbar .page-title { visibility: hidden; }
+.sleeve-topbar .page-title h1 { visibility: hidden; }
 /* Over the open player's lit cover the search field needs a firmer ground to stay legible. */
 .sleeve-topbar { --field: color-mix(in oklab, var(--ground) 72%, transparent); }
 .sleeve-topbar { border-bottom-color: transparent; }
@@ -589,6 +593,10 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
 .search-field input { background: none; padding: 13px 0; border: none; width: 100%; outline-offset: 4px; font-size: 16px; min-width: 0; }
 .import-actions { display: flex; align-items: center; gap: 7px; margin: 18px 0 6px; padding: 6px 8px 6px 14px; border: 1px solid var(--line); border-radius: 12px; background: color-mix(in oklab, var(--surface, #0b1020) 60%, transparent); }
 .import-actions > span { font-size: 14px; color: var(--muted); display: flex; align-items: center; gap: 7px; margin-right: auto; }
+.import-actions > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Under real results the typed-text shortcut steps back to a plain line. */
+.import-actions.quiet { padding-left: 0; border-color: transparent; background: none; }
+.import-actions.quiet .text-button { font-size: 14px; color: var(--muted); }
 .import-actions .text-button { font-size: 16px; padding: 7px 8px; color: var(--text-soft); }
 .notice-line { color: var(--muted); font-size: 14px; padding: 11px 0; }
 .search-dialog .empty-state { min-height: 255px; }
@@ -827,13 +835,14 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
   .connection-banner span:not(.spinner) { font-size: 14px; line-height: 1.4; }
   .connection-banner .text-button { padding: 8px; font-size: 14px; }
   .player-open .connection-banner { position: fixed; left: 0; right: 0; top: var(--mobile-header); z-index: 45; }
-  .tabs { gap: 24px; margin-bottom: 24px; overflow-x: auto; scrollbar-width: none; }
+  .tabs { gap: 18px; margin-bottom: 24px; overflow-x: auto; scrollbar-width: none; }
   .tabs::-webkit-scrollbar { display: none; }
   /* Overflowing tabs fade at the trailing edge until scrolled to the end. */
   @supports (animation-timeline: scroll()) {
     .tabs { mask-image: linear-gradient(to right, #000 calc(100% - var(--tabs-fade)), transparent); animation: tabs-fade linear both; animation-timeline: scroll(self inline); }
   }
-  .tabs button { font-size: 16px; gap: 6px; white-space: nowrap; }
+  .tabs button { font-size: 15px; gap: 6px; white-space: nowrap; }
+  .tabs button > span { padding: 1px 6px; font-size: 13px; }
   .tabs button > span { font-size: 14px; }
   .library-track-list > li, .history-list > li { gap: 12px; min-height: 88px; }
   /* On a phone the artist keeps the line; the catalog is in the row's menu and the player. */
@@ -883,8 +892,8 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
   .result-list > li { gap: 10px; }
   .result-list .artwork { width: 44px; height: 44px; }
   .result-length { display: none; }
-  .result-action-label { display: none; }
-  :is(.result-list, .library-track-list) .icon-button:has(.result-action-label) { width: 44px; padding: 0; }
+  /* Phones caption the icon instead of setting the word beside it. */
+  :is(.result-list, .library-track-list) .icon-button:has(.result-action-label) { flex-direction: column; gap: 1px; width: 48px; height: auto; min-height: 48px; padding: 2px 0; font-size: 11px; font-weight: 600; }
   .result-list .track-text strong { font-size: 16px; }
   .result-list .track-text > span { font-size: 14px; }
   .add-result { padding: 8px 10px; min-width: 44px; justify-content: center; }
@@ -917,7 +926,7 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
   .sidebar > .brand span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   .guild-card { width: auto; max-width: none; flex: 1; }
   .guild-icon { display: none; }
-  .guild-status { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .guild-status { min-width: 0; white-space: nowrap; }
   .guild-info { gap: 0; }
   .guild-info select { font-size: 16px; }
   .guild-status { font-size: 14px; }
@@ -1245,3 +1254,14 @@ p, .continue-text > span, .section-description, .field-hint { text-wrap: pretty;
 [data-tv] .tv-home :is(.icon-button, .tv-action):focus { outline-color: var(--text); outline-width: .6vmin; outline-offset: .6vmin; transform: scale(1.08); }
 [data-tv] .tv-home .menu-panel button:focus { outline-color: var(--text); background: var(--secondary-hover); color: var(--text); }
 .tv-queue.dialog { width: min(1100px, 86vw); max-width: 86vw; }
+
+/* Desktop: the open player names the page it returns to, and the nav stops claiming that page. */
+.sleeve-back { display: inline-flex; align-items: center; gap: 8px; font-size: 16px; font-weight: 650; color: var(--text-soft); }
+.sleeve-back:hover { color: var(--text); }
+@media (min-width: 1024px) {
+  .app-shell.player-open .navigation button.selected { color: var(--muted); }
+  .app-shell.player-open .navigation button.selected svg { color: inherit; filter: none; }
+  .app-shell.player-open .navigation .nav-indicator { opacity: 0; }
+}
+.search-draft-label { color: var(--muted); }
+.search-draft { color: var(--text); }

@@ -23,7 +23,8 @@ const drafts = new Set<() => void>();
 export function setSearchDraft(value: string) { if (value !== draft) { draft = value; drafts.forEach(listener => listener()); } }
 const subscribeDraft = (listener: () => void) => { drafts.add(listener); return () => { drafts.delete(listener); }; };
 const useSearchDraft = () => useSyncExternalStore(subscribeDraft, () => draft);
-export function SearchDraft({ placeholder }: { placeholder: string }) { return useSearchDraft() || placeholder; }
+// A kept draft reads as one to pick back up, not as a placeholder or a filter on the page.
+export function SearchDraft({ placeholder }: { placeholder: string }) { const value = useSearchDraft(); return value ? <><span className="search-draft-label">Continue search:</span> <span className="search-draft">{value}</span></> : placeholder; }
 
 function ResultRow({ track, detail, enabled, nextEnabled, radioEnabled, blockedReason, onAdd, onNext, onRadio }: { track: Track; detail: string; enabled: boolean; nextEnabled: boolean; radioEnabled: boolean | null; blockedReason: string; onAdd: (track: Track) => void; onNext: (track: Track) => void; onRadio: (uri: string) => void }) {
   return <li><Artwork track={track} /><div className="track-text"><strong>{track.title}</strong><span>{track.author} · {detail}</span></div><span className="result-length">{track.isStream ? 'Live' : time(track.durationMs)}</span>
@@ -103,7 +104,7 @@ export function Search({ portal, open, onClose, page = false }: { portal: Portal
   const stale = searching || (!!lastQuery && lastQuery !== typed);
   if (!open) return null;
   // A pasted link is added as-is, so its actions lead; for words, the best-match shortcut follows the results.
-  const direct = <div className="import-actions"><span>{isLink(typed) ? <><LinkIcon size={18} />Add this link</> : <><SparkleIcon size={17} />Quick add the best match</>}</span><button className="text-button" disabled={!enabled || !typed} onClick={() => void add(false, typed)}><PlusIcon size={17} />Add to queue</button><button className="text-button" disabled={!controllable || !typed} title={!controllable ? portal.blockedReason : undefined} onClick={() => void add(true, typed)}><ArrowBendUpRightIcon size={17} />Play next</button></div>;
+  const direct = <div className={`import-actions ${!isLink(typed) && tracks?.length ? 'quiet' : ''}`}><span>{isLink(typed) ? <><LinkIcon size={18} />Add this link</> : <><SparkleIcon size={17} />{tracks?.length ? 'Not listed? Add' : 'Add'} “{typed}” as typed</>}</span><button className="text-button" disabled={!enabled || !typed} onClick={() => void add(false, typed)}><PlusIcon size={17} />Add to queue</button><button className="text-button" disabled={!controllable || !typed} title={!controllable ? portal.blockedReason : undefined} onClick={() => void add(true, typed)}><ArrowBendUpRightIcon size={17} />Play next</button></div>;
   const body = <>
     <form onSubmit={event => { event.preventDefault(); void search(); }} className="search-form" role="search"><label className="search-field"><MagnifyingGlassIcon size={22} /><span className="sr-only">Music search</span><input ref={input} type="search" aria-label="Music search" aria-describedby="search-hint" value={query} maxLength={maxLength} onChange={event => setQuery(event.target.value)} placeholder="Song, artist or link…" autoComplete="off" spellCheck={false} /></label>
       <button type="submit" className="button primary" disabled={searching || !typed || portal.connection !== 'live'}>{searching ? <span className="spinner" /> : <MagnifyingGlassIcon size={20} />}Search</button></form>

@@ -3,8 +3,9 @@
 
 /* Shelves: a heading line, then one row that scrolls sideways. */
 .home-shelf { min-width: 0; }
-.home-shelf-header { display: flex; align-items: flex-end; justify-content: space-between; gap: 14px 28px; flex-wrap: wrap; margin-bottom: 18px; }
-.home-shelf-header > div:first-child { min-width: 0; flex: 1 1 320px; }
+/* A shelf's Play all and Shuffle sit under its title, next to the songs they play. */
+.home-shelf-header { display: flex; flex-direction: column; align-items: flex-start; gap: 14px; margin-bottom: 18px; }
+.home-shelf-header > div:first-child { min-width: 0; }
 .home-shelf-header h2 { font-size: 24px; font-stretch: var(--wide); letter-spacing: -0.02em; text-wrap: balance; }
 .home-shelf-header p { margin-top: 6px; max-width: 64ch; color: var(--muted); font-size: 14px; line-height: 1.6; }
 .home-shelf-actions { display: flex; gap: 10px; flex-shrink: 0; }
@@ -151,19 +152,22 @@
 .queue-heading-actions .text-button { display: inline-flex; align-items: center; gap: 7px; font-size: 14px; }
 
 @media (max-width: 960px) {
-  .home-view { gap: 40px; }
+  .home-view { gap: 36px; }
   .home-shelf-header h2 { font-size: 21px; }
   .home-shelf-actions { width: 100%; }
   .home-shelf-actions .button { flex: 1; }
   .shelf-row { --card: 136px; gap: 14px; margin-inline: -16px; padding-inline: 16px; scroll-padding-inline: 16px; }
   .shelf-row-wide { --card: 220px; }
+  .playlist-meta-row { flex-direction: column; align-items: flex-start; gap: 6px; }
+  /* Room for the title beside the add button on narrow cards. */
+  .shelf-row:not(.shelf-row-wide):not(.shelf-row-sparse) { --card: 152px; }
   .shelf-row.shelf-row-sparse { grid-template-columns: minmax(0, 1fr); margin-inline: 0; padding-inline: 0; }
-  .continue-feature { grid-template-columns: 64px minmax(0, 1fr); gap: 14px; padding: 14px; }
-  .continue-art { width: 64px; height: 64px; }
+  .continue-feature { grid-template-columns: 52px minmax(0, 1fr); gap: 12px; padding: 10px 12px 10px 10px; margin-bottom: 14px; }
+  .continue-art { width: 52px; height: 52px; }
   .continue-text strong { font-size: 17px; white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow-wrap: anywhere; }
   .continue-feature .button { grid-column: 1 / -1; }
   /* The mini player already names the song, so the phone card stays one row and opens the player from a caret. */
-  .continue-feature:has(.continue-open) { grid-template-columns: 64px minmax(0, 1fr) 44px; }
+  .continue-feature:has(.continue-open) { grid-template-columns: 52px minmax(0, 1fr) 44px; }
   .continue-feature .continue-open { grid-column: auto; width: 44px; min-width: 44px; padding: 0; justify-content: center; }
   .continue-open > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   .recap-grid { grid-template-columns: minmax(0, 1fr); gap: 32px; }

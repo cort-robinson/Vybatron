@@ -123,4 +123,6 @@
 .queue-now .track-text strong { font-size: 19px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .queue-now .track-text span { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .queue-now .requester { display: flex; align-items: center; gap: 10px; color: var(--text-soft); }
-@media (max-width: 1023px) { .queue-now { margin-bottom: 20px; padding: 10px 12px 10px 10px; } .queue-now .artwork { width: 52px; height: 52px; } .queue-now .requester span { display: none; } }
+@media (max-width: 1023px) { .queue-now { margin-bottom: 20px; padding: 10px 12px 10px 10px; } .queue-now .artwork { width: 52px; height: 52px; } .queue-now .requester { display: flex; } .queue-now .requester span { display: none; } }
+.row-requester { display: none; }
+@media (max-width: 1023px) { .row-requester { display: inline; } }

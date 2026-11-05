@@ -17,6 +17,8 @@ const sections = ['favorites', 'mixes', 'history', 'server'] as const;
 type Section = typeof sections[number];
 type ListSection = Exclude<Section, 'server'>;
 const sectionLabels: Record<Section, string> = { favorites: 'Favorites', mixes: 'Shared mixes', history: 'History', server: 'Server favorites' };
+// Tabs show the short word so all four fit a phone; the full name stays their accessible name.
+const shortLabels: Partial<Record<Section, string>> = { mixes: 'Mixes', server: 'Server' };
 const pageSize = 50;
 const initialQueries = { favorites: '', mixes: '', history: '' };
 const initialPages = { favorites: 0, mixes: 0, history: 0 };
@@ -92,19 +94,20 @@ export function LibraryView({ portal, active = true }: { portal: Portal; active?
   // A paused cache keeps drafts and filters, but mounts no heavy list or modal.
   if (!active) return <div className="library-view" hidden />;
   return <div className="library-view"><div className="tabs" role="tablist" aria-label="My music sections">
-    {sections.map(section => <button type="button" key={section} role="tab" id={`tab-${section}`} aria-selected={tab === section} aria-controls={`panel-${section}`} tabIndex={tab === section ? 0 : -1}
+    {sections.map(section => <button type="button" key={section} role="tab" id={`tab-${section}`} aria-selected={tab === section} aria-controls={`panel-${section}`} tabIndex={tab === section ? 0 : -1} aria-label={shortLabels[section] && `${sectionLabels[section]}${library && section !== 'server' ? ` ${library[section].length.toLocaleString()}` : ''}`}
       onKeyDown={event => {
         if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
         event.preventDefault(); const index = sections.indexOf(tab);
         const next = event.key === 'Home' ? sections[0] : event.key === 'End' ? sections[sections.length - 1] : sections[(index + (event.key === 'ArrowRight' ? 1 : sections.length - 1)) % sections.length];
         selectTab(next); document.getElementById(`tab-${next}`)?.focus();
-      }} onClick={() => selectTab(section)}>{tab === section && <span className="tab-indicator" aria-hidden="true" />}{sectionLabels[section]}{library && section !== 'server' && <span>{library[section].length.toLocaleString()}</span>}</button>)}
+      }} onClick={() => selectTab(section)}>{tab === section && <span className="tab-indicator" aria-hidden="true" />}{shortLabels[section] || sectionLabels[section]}{library && section !== 'server' && <span>{library[section].length.toLocaleString()}</span>}</button>)}
   </div>
   {tab === 'server' ? <section role="tabpanel" id="panel-server" aria-labelledby="tab-server"><ServerFavorites portal={portal} /></section>
   : libraryError ? <ErrorState message={libraryError} retry={() => void portal.refreshLibrary()} /> : !library ? <Loading label="Loading your music…" /> : <section role="tabpanel" id={`panel-${tab}`} aria-labelledby={`tab-${tab}`}>
     <div className="section-heading"><div><h2 className="sr-only">{tab === 'favorites' ? 'Favorites' : tab === 'mixes' ? 'Shared mixes' : 'Listening history'}</h2>
       <p className="section-description">{tab === 'favorites' ? 'Your private songs, across every server.' : tab === 'mixes' ? `Saved for ${snapshot?.guild.name || 'this server'}. Up to 100 songs per mix.` : 'The latest 100 songs from the past 30 days, from sessions you can see.'}</p></div>
       {tab === 'history' && <IconButton label="Refresh listening history" onClick={() => void portal.refreshLibrary()}><ArrowClockwiseIcon size={21} /></IconButton>}
+      {tab === 'favorites' && library.favorites.length > 0 && <button type="button" className="text-button danger-text library-clear" disabled={!editable} onClick={() => setConfirm({ kind: 'favorites' })}>Clear favorites</button>}
     </div>
     <div className="library-search"><label className="sr-only" htmlFor={`library-search-${tab}`}>Search {label}</label><div className="library-search-controls">
       <input ref={searchRef} id={`library-search-${tab}`} type="search" dir="auto" value={queries[listTab]} maxLength={200} placeholder={`Search ${label}`} onChange={event => setQuery(event.target.value)} />
@@ -114,9 +117,9 @@ export function LibraryView({ portal, active = true }: { portal: Portal; active?
       {!library.favorites.length ? <Empty title="A place for your repeat favorites" description="Tap the heart on the current song to keep it here. Only you can see this shelf." icon={<HeartIcon size={30} />} /> : !favorites.length ? noMatches : <ul className="library-track-list" aria-label="Favorite songs">{favorites.slice(offset, offset + pageSize).map(({ track, index }) => <FavoriteRow key={`${track.id}:${index}`}
         track={track} index={index} addable={addable} editable={editable} radio={radio} blockedReason={portal.blockedReason} act={act} unfavorite={unfavorite} />)}</ul>}
       <Pagination label="favorites" page={currentPage} total={favorites.length} pageSize={pageSize} onPageChange={page => setPages(previous => ({ ...previous, favorites: page }))} />
-      {/* Bringing songs in sits apart from the list; clearing it sits apart from both. */}
+      {/* Bringing songs in sits apart from the list; clearing it lives with the list's heading. */}
       <div className="library-tools"><PlaylistImport portal={portal} target="favorites" /></div>
-      {library.favorites.length > 0 && <div className="library-danger"><button type="button" className="text-button danger-text library-clear" disabled={!editable} onClick={() => setConfirm({ kind: 'favorites' })}>Clear favorites</button></div>}
+
       {library.favorites.length >= 1000 && <p className="library-note">Your shelf is full. Remove a favorite to make room for another song.</p>}
       {!addable && <p className="library-note">{portal.blockedReason}</p>}
     </>}

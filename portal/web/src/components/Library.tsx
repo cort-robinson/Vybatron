@@ -18,7 +18,7 @@ type Section = typeof sections[number];
 type ListSection = Exclude<Section, 'server'>;
 const sectionLabels: Record<Section, string> = { favorites: 'Favorites', mixes: 'Shared mixes', history: 'History', server: 'Popular' };
 // Shared mixes shows one word so all four tabs fit a phone; the full name stays its accessible name.
-const shortLabels: Partial<Record<Section, string>> = { mixes: 'Shared' };
+const shortLabels: Partial<Record<Section, string>> = { mixes: 'Mixes' };
 const pageSize = 50;
 const initialQueries = { favorites: '', mixes: '', history: '' };
 const initialPages = { favorites: 0, mixes: 0, history: 0 };

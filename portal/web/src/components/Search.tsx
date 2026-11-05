@@ -24,7 +24,8 @@ export function setSearchDraft(value: string) { if (value !== draft) { draft = v
 const subscribeDraft = (listener: () => void) => { drafts.add(listener); return () => { drafts.delete(listener); }; };
 const useSearchDraft = () => useSyncExternalStore(subscribeDraft, () => draft);
 // A kept draft reads as one to pick back up, not as a placeholder or a filter on the page.
-export function SearchDraft({ placeholder }: { placeholder: string }) { const value = useSearchDraft(); return value ? <><span className="search-draft-label">Continue search:</span> <span className="search-draft">{value}</span></> : placeholder; }
+// Admin pages show the plain placeholder; the draft still comes back when search opens.
+export function SearchDraft({ placeholder, quiet = false }: { placeholder: string; quiet?: boolean }) { const value = useSearchDraft(); return value && !quiet ? <><span className="search-draft-label">Continue search:</span> <span className="search-draft">{value}</span></> : placeholder; }
 
 function ResultRow({ track, detail, enabled, nextEnabled, radioEnabled, blockedReason, onAdd, onNext, onRadio }: { track: Track; detail: string; enabled: boolean; nextEnabled: boolean; radioEnabled: boolean | null; blockedReason: string; onAdd: (track: Track) => void; onNext: (track: Track) => void; onRadio: (uri: string) => void }) {
   return <li><Artwork track={track} /><div className="track-text"><strong>{track.title}</strong><span>{track.author} · {detail}</span></div><span className="result-length">{track.isStream ? 'Live' : time(track.durationMs)}</span>

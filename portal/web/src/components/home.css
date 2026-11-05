@@ -156,13 +156,13 @@
   .home-shelf-actions { width: 100%; }
   .home-shelf-actions .button { flex: 1; }
   .shelf-row { --card: 136px; gap: 14px; margin-inline: -16px; padding-inline: 16px; scroll-padding-inline: 16px; }
-  .shelf-row-wide { --card: 196px; }
+  .shelf-row-wide { --card: calc((100vw - 32px) / 1.6); }
   .shelf-row { scrollbar-width: none; }
   .shelf-row::-webkit-scrollbar { display: none; }
   .playlist-detail { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
   .playlist-meta-row { flex-wrap: wrap; gap: 4px 8px; }
   /* Room for the title beside the add button on narrow cards. */
-  .shelf-row:not(.shelf-row-wide):not(.shelf-row-sparse) { --card: 152px; }
+  .shelf-row:not(.shelf-row-wide):not(.shelf-row-sparse) { --card: calc((100vw - 60px) / 2.3); }
   .shelf-row.shelf-row-sparse { grid-template-columns: minmax(0, 1fr); margin-inline: 0; padding-inline: 0; }
   .continue-feature { grid-template-columns: 52px minmax(0, 1fr); gap: 12px; padding: 10px 12px 10px 10px; margin-bottom: 14px; }
   .continue-art { width: 52px; height: 52px; }
@@ -183,8 +183,11 @@
 }
 /* Wide screens set a short recent list beside the playing strip instead of under it. */
 @media (min-width: 1200px) {
-  .home-shelf:has(> .continue-feature):has(> .shelf-row-sparse) { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); column-gap: 20px; align-items: start; }
+  .home-shelf:has(> .continue-feature):has(> .shelf-row-sparse) { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); column-gap: 20px; align-items: stretch; }
   .home-shelf:has(> .continue-feature):has(> .shelf-row-sparse) > .home-shelf-header { grid-column: 1 / -1; }
-  .home-shelf:has(> .shelf-row-sparse) > .continue-feature { margin-bottom: 0; }
+  /* The playing strip and the recent cards match: same cover, padding and height. */
+  .home-shelf:has(> .shelf-row-sparse) > .continue-feature { margin-bottom: 0; grid-template-columns: 64px minmax(0, 1fr) auto; padding: 12px 16px 12px 12px; }
+  .home-shelf:has(> .shelf-row-sparse) > .continue-feature .continue-art { width: 64px; height: 64px; }
+  .home-shelf:has(> .continue-feature) > .shelf-row-sparse > li:only-child { height: 100%; }
   .home-shelf:has(> .continue-feature) > .shelf-row.shelf-row-sparse { grid-template-columns: minmax(0, 1fr); padding: 0; margin: 0; }
 }

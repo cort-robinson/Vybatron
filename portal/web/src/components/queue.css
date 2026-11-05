@@ -107,7 +107,8 @@
 
 /* Phones put the reorder grip at the row's start, apart from its menu; touch reorder lifts the row under the finger (Queue.tsx). */
 @media (max-width: 1023px) {
-  .queue .track-list > .track-row:has(> .drag-handle) { grid-template-columns: 36px 18px minmax(0, 1fr) 44px; padding-left: 2px; }
+  .queue .track-list > .track-row:has(> .drag-handle) { grid-template-columns: 36px minmax(0, 1fr) 44px; padding-left: 2px; }
+  .queue .track-list > .track-row:has(> .drag-handle) > .track-index { display: none; }
   .queue .track-row > .drag-handle { order: -1; width: 36px; }
 }
 @media (min-width: 1024px) { .queue-compact .drag-handle { display: none; } }

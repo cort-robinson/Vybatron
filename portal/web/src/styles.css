@@ -549,7 +549,7 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
 .mix-track-list .artwork { width: 44px; height: 44px; border-radius: 6px; }
 .mix-track-list .track-text { flex: 1; }
 .mix-track-list > li > span { font-size: 14px; color: var(--muted); font-stretch: var(--wide); font-variant-numeric: tabular-nums; }
-.settings-list { max-width: 950px; }
+.settings-list { max-width: none; }
 .setting-row { display: flex; align-items: center; justify-content: space-between; gap: 35px; padding: 22px 0; border-bottom: 1px solid var(--line); }
 .setting-row > div:first-child { min-width: 0; max-width: 55ch; }
 .setting-row label, .setting-row h3 { font-size: 16px; font-weight: 700; }
@@ -559,7 +559,7 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
   .setting-row > select, .setting-action { flex: 0 0 300px; width: 300px; }
   .setting-action { justify-content: flex-end; }
   .setting-action select { flex: 1; min-width: 0; }
-  .setting-action .number-input { flex: 1; max-width: none; }
+  .setting-action .number-input { flex: 0 0 120px; max-width: 120px; }
   .setting-row > .button { flex: 0 0 300px; justify-content: center; }
 }
 .setting-action { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
@@ -567,7 +567,7 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
 .setting-action:has(.number-input) { gap: 6px; }
 .number-input { max-width: 90px; }
 .switch { min-height: 44px; display: flex; gap: 13px; align-items: center; padding: 8px 10px; color: var(--text-soft); background: none; font-size: 16px; border-radius: 10px; }
-.switch > span { width: 38px; height: 22px; border-radius: 22px; background: var(--range-track); position: relative; transition: background-color 200ms; }
+.switch > span { width: 38px; height: 22px; border-radius: 22px; background: var(--range-track); box-shadow: inset 0 0 0 1px var(--line-strong); position: relative; transition: background-color 200ms; }
 .switch > span::after { content: ''; height: 16px; width: 16px; border-radius: 50%; background: var(--text-soft); position: absolute; top: 3px; left: 3px; transition: transform 240ms var(--ease-out), background-color 200ms; }
 .switch[aria-checked='true'] > span { background: var(--accent); }
 .switch[aria-checked='true'] > span::after { transform: translateX(16px); background: var(--primary-ink); }
@@ -831,7 +831,7 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
   .player-context { gap: 4px; }
   .sleeve-queue { display: none; }
   /* Up next: a handle under the controls opens the queue as a sheet over the cover; the transport stays put. */
-  .up-next-handle { display: flex; align-items: center; justify-content: center; gap: 8px; position: relative; width: 100%; max-width: 480px; min-height: 44px; padding: 14px 12px 2px; background: none; color: var(--text-soft); font-size: 15px; font-weight: 650; touch-action: none; }
+  .up-next-handle { display: flex; align-items: center; justify-content: center; gap: 8px; position: relative; width: 100%; max-width: 480px; min-height: 44px; margin-top: 8px; padding: 14px 12px 4px; background: none; color: var(--text-soft); font-size: 15px; font-weight: 650; touch-action: none; }
   .up-next-handle > .sheet-grabber { position: absolute; top: 4px; left: 50%; translate: -50% 0; }
   .up-next-handle > .count { font-weight: 450; }
   .queue-open .sleeve-main { display: none; }
@@ -923,7 +923,6 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
   .result-list > li { flex-wrap: wrap; row-gap: 4px; }
   .result-list .track-text { min-width: 0; flex: 1 1 0; }
   .result-actions { width: 100%; justify-content: flex-start; padding-left: 54px; }
-  .result-list .radio-start .result-action-label { display: none; }
   .result-list .radio-start { padding: 0 10px; }
   .result-actions .add-result { margin-left: auto; }
   .result-list .icon-button:has(.result-action-label) { padding: 0 10px; font-size: 13px; }
@@ -1315,3 +1314,6 @@ p, .continue-text > span, .section-description, .field-hint { text-wrap: pretty;
   .library-view .section-heading { margin-bottom: 12px; }
   .library-view .library-search { margin-bottom: 14px; }
 }
+/* Long list rows read as one unit under the pointer. */
+@media (pointer: fine) { .library-track-list > li:hover, .history-list > li:hover { background: var(--hover-surface); border-radius: 12px; } }
+.setting-status { color: var(--muted); font-size: 14px; }

@@ -571,7 +571,8 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
 /* The first result keeps the filled Add; later rows use the quieter outline so a long list doesn't become a column of slabs. */
 .result-list > li + li .button.primary.add-result { background: none; color: var(--accent); border: 1px solid var(--field-line); box-shadow: none; }
 .mix-tracks .icon-button.add-again { color: var(--muted); }
-.mix-tracks .icon-button, :is(.library-track-list, .history-list) .icon-button:has(.result-action-label) { color: var(--accent); }
+.mix-tracks .icon-button:not(.add-again) { color: var(--accent); }
+:is(.library-track-list, .history-list) .icon-button:has(.result-action-label) { color: var(--accent); }
 .search-field { position: relative; }
 .search-clear { display: grid; place-items: center; flex: none; width: 36px; height: 36px; margin-right: 4px; border-radius: 50%; color: var(--muted); background: none; }
 .search-clear:hover { color: var(--text); background: var(--hover-surface); }
@@ -1380,7 +1381,7 @@ p, .continue-text > span, .section-description, .field-hint { text-wrap: pretty;
 .volume-sheet { display: none; }
 .track-queue-state { color: var(--muted); }
 /* Queue state reads as a status, not a second artist line: a small marker leads it. */
-:is(.queue-state, .track-queue-state .queue-label, .mix-track-state)::before { content: '\25B8\00A0'; color: var(--accent); }
+:is(.queue-state, .track-queue-state .queue-label, .mix-track-state)::before { content: '\2713\00A0'; color: var(--accent); }
 :is(.queue-state, .mix-track-state).is-playing::before, .track-queue-state.is-playing .queue-label::before { content: '\266A\00A0'; }
 /* Small player-bar text keeps a ground halo so the spectrum behind it never breaks up the letters. */
 :is(.compact-track-meta, .timeline > span) { text-shadow: 0 0 6px var(--ground), 0 0 3px var(--ground), 0 0 1px var(--ground); }

@@ -39,7 +39,7 @@
 @keyframes shelf-fade { 0% { --shelf-fade-start: 0px; --shelf-fade-end: 56px; } 6% { --shelf-fade-start: 56px; } 94% { --shelf-fade-end: 56px; } 100% { --shelf-fade-start: 56px; --shelf-fade-end: 0px; } }
 .shelf-row > li { scroll-snap-align: start; min-width: 0; }
 /* A shelf with one or two songs lists them as compact rows. */
-.shelf-row.shelf-row-sparse { grid-auto-flow: row; grid-template-columns: repeat(auto-fill, minmax(300px, 440px)); gap: 12px; overflow: visible; mask-image: none; animation: none; }
+.shelf-row.shelf-row-sparse { grid-auto-flow: row; grid-template-columns: repeat(auto-fill, minmax(300px, 360px)); gap: 12px; overflow: visible; mask-image: none; animation: none; }
 .shelf-row-sparse .shelf-card { display: grid; grid-template-columns: 64px minmax(0, 1fr); align-items: center; gap: 16px; padding: 12px 16px 12px 12px; border-radius: 16px; background: color-mix(in oklab, var(--surface), var(--ground) 40%); }
 .shelf-row-sparse .shelf-art .artwork { border-radius: 8px; }
 .shelf-row-sparse .shelf-rank { left: 4px; bottom: 4px; min-width: 22px; padding: 0 6px; font-size: 12px; }

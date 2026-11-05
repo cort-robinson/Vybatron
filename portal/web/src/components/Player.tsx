@@ -1,5 +1,5 @@
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { CaretDownIcon, CheckIcon, DesktopIcon, DeviceMobileIcon, DiscordLogoIcon, PencilSimpleIcon, TelevisionSimpleIcon, CaretUpIcon, DotsThreeIcon, HeartIcon, PauseIcon, PlayIcon, RepeatIcon, RepeatOnceIcon, ShuffleIcon, SkipBackIcon, SkipForwardIcon, SpeakerHighIcon, StopCircleIcon, RadioIcon, HandPalmIcon, ArrowSquareOutIcon, TrashIcon, WarningCircleIcon, ThumbsDownIcon, VinylRecordIcon, MoonIcon, MicrophoneStageIcon, WaveformIcon, CornersOutIcon } from '../icons';
+import { CaretDownIcon, CheckIcon, DesktopIcon, DeviceMobileIcon, DiscordLogoIcon, PencilSimpleIcon, TelevisionSimpleIcon, CaretUpIcon, DotsThreeIcon, HeartIcon, PauseIcon, PlayIcon, RepeatIcon, RepeatOnceIcon, ShuffleIcon, SkipBackIcon, SkipForwardIcon, SpeakerHighIcon, SpeakerLowIcon, SpeakerXIcon, StopCircleIcon, RadioIcon, HandPalmIcon, ArrowSquareOutIcon, TrashIcon, WarningCircleIcon, ThumbsDownIcon, VinylRecordIcon, MoonIcon, MicrophoneStageIcon, WaveformIcon, CornersOutIcon } from '../icons';
 import type { Portal } from '../usePortal';
 import { saveByLink, useSavingFavorite } from '../favorites';
 import type { Command, Track } from '../types';
@@ -185,7 +185,7 @@ export function Player({ portal, expanded, setExpanded, onAdd, palette, animate,
   const extras = <div className="player-extras">
     {volume}
     {/* Phones keep volume behind a button in the open player's top corner, so it never takes a row of its own. */}
-    <ActionPopover label="Volume" className="volume-sheet" trigger={<SpeakerHighIcon size={23} />} triggerClassName="icon-button">
+    <ActionPopover label="Volume" className="volume-sheet" trigger={(session?.volume ?? 100) === 0 ? <SpeakerXIcon size={23} /> : (session?.volume ?? 100) < 50 ? <SpeakerLowIcon size={23} /> : <SpeakerHighIcon size={23} />} triggerClassName="icon-button">
       {() => <><p className="menu-title">{volumeScope}</p>{volume}</>}
     </ActionPopover>
     <ActionPopover label="More playback controls" trigger={<DotsThreeIcon size={27} weight="bold" />} className="player-more" triggerClassName="icon-button">

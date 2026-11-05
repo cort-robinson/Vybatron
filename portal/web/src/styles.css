@@ -192,7 +192,7 @@ svg { flex-shrink: 0; }
 .guild-status.paused .status-dot, .guild-status.recovering .status-dot { background: var(--amber); }
 .guild-status.unavailable .status-dot { background: var(--red); }
 .guild-status-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.guild-listeners { display: inline; }
+.guild-listeners { display: block; }
 /* The desktop sidebar has the height to wrap the status, so the voice room is never cut short. */
 @media (min-width: 1024px) {
   .guild-status { white-space: normal; align-items: flex-start; }
@@ -568,6 +568,8 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
 .setting-row > .button.setting-link { flex: none; width: auto; min-height: 44px; }
 /* Results arrive as you type, so the submit is a quiet icon for Enter-less searches and links. */
 .search-form .search-submit { width: 48px; min-width: 48px; padding: 0; justify-content: center; }
+/* The first result keeps the filled Add; later rows use the quieter outline so a long list doesn't become a column of slabs. */
+.result-list > li + li .button.primary.add-result { background: none; color: var(--accent); border: 1px solid var(--field-line); box-shadow: none; }
 .mix-tracks .icon-button, :is(.library-track-list, .history-list) .icon-button:has(.result-action-label) { color: var(--accent); }
 .settings-footnote { max-width: 760px; margin-top: 14px; color: var(--muted); font-size: 14px; }
 .setting-row { display: flex; align-items: center; justify-content: space-between; gap: 35px; padding: 16px 0; border-bottom: 1px solid var(--line); }
@@ -775,7 +777,7 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
   .mobile-add.blocked:hover:not(:disabled) { background: var(--secondary-hover); }
   .guild-card { border: 0; background: none; padding: 0; }
   .guild-card:hover { border-color: transparent; }
-  .guild-listeners { display: inline; }
+  .guild-listeners { display: block; }
   .page-title { min-width: 0; }
   h1 { font-size: 26px; }
   .header-search { display: none; }
@@ -1255,7 +1257,7 @@ p, .continue-text > span, .section-description, .field-hint { text-wrap: pretty;
   [data-tv] .sidebar > .brand { margin: 0 6px 12px; font-size: 14px; }
   [data-tv] .sidebar > .brand svg { width: 22px; }
   [data-tv] .guild-card { width: auto; max-width: none; padding: 0 4px; }
-  [data-tv] .guild-icon, [data-tv] .guild-listeners { display: inline; }
+  [data-tv] .guild-icon, [data-tv] .guild-listeners { display: block; }
   [data-tv] .guild-info select { font-size: 14px; min-height: 40px; }
   [data-tv] .guild-status { font-size: 12px; line-height: 16px; }
   [data-tv] .navigation { position: static; height: auto; flex-direction: column; justify-content: flex-start; align-items: stretch; margin: 12px 0 0; padding: 0; gap: 2px; border: 0; background: none; backdrop-filter: none; z-index: auto; }
@@ -1388,4 +1390,4 @@ p, .continue-text > span, .section-description, .field-hint { text-wrap: pretty;
 .filter-prefix { display: none; position: absolute; left: 32px; color: var(--muted); font-size: 14px; pointer-events: none; }
 @media (min-width: 1024px) { .filter-prefix { display: block; } .filter-control select { padding-left: 82px; } }
 /* Phones swap the speaker glyph for the word, so the pill says what it changes. */
-@media (max-width: 599px) { :root { --expanded-controls: 296px; } .sleeve-artwork { --spectrum: 22px; } .expanded .player-extras { flex-wrap: wrap; row-gap: 4px; } .expanded .volume-control { flex: 1 1 100%; } .expanded .filter-control { width: 148px; } .filter-control .filter-dot { display: none; } .filter-prefix { display: block; left: 14px; } .filter-control select { padding-left: 66px; } }
+@media (max-width: 599px) { :root { --expanded-controls: 304px; } .expanded .player-extras { margin-top: 8px; } .sleeve-artwork { --spectrum: 22px; } .expanded .player-extras { flex-wrap: wrap; row-gap: 4px; } .expanded .volume-control { flex: 1 1 100%; } .expanded .filter-control { width: 148px; } .filter-control .filter-dot { display: none; } .filter-prefix { display: block; left: 14px; } .filter-control select { padding-left: 66px; } }

@@ -136,7 +136,8 @@ REVERT: everything here is scoped to :root[data-skin='overdrive']; Settings → 
   .listeners .avatar { box-shadow: 0 0 0 1px color-mix(in oklab, var(--accent) 40%, transparent); }
 
   /* ── Page frame ─────────────────────────────────────────────────────── */
-  .topbar { border-bottom-color: transparent; background: var(--rail) bottom / 100% 1px no-repeat; }
+  /* The sticky header keeps a dark tint under its rail, so covers scrolling beneath it don't smear behind the title. */
+  .topbar { border-bottom-color: transparent; background: var(--rail) bottom / 100% 1px no-repeat, color-mix(in oklab, var(--ground) 92%, transparent); }
   .sleeve-topbar { background: none; }
   .page-title h1 { text-shadow: 0 0 34px color-mix(in oklab, var(--accent) 35%, transparent); }
   .header-search { border-radius: 4px 14px 4px 14px; background: var(--field); --hud-c: color-mix(in oklab, var(--accent) 40%, transparent); }

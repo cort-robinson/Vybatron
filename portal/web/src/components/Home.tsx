@@ -19,7 +19,7 @@ const weekday = (at: number) => new Intl.DateTimeFormat(undefined, { weekday: 'l
 function playlistDetail(list: AutoPlaylist) {
   if (list.kind === 'mix') return `Songs you asked for and favorites · new ${list.refreshesAt ? weekday(list.refreshesAt) : 'weekly'}`;
   if (list.kind === 'top') return 'Your most requested here';
-  return `${list.artist}, from your hearts and this server`;
+  return `${list.artist}, from your favorites and this server`;
 }
 // Songs from different lists match on their source link, falling back to the id.
 const trackKey = (track: Track) => track.uri || track.id;
@@ -194,6 +194,7 @@ function TrackCard({ track, meta, rank, disabled, title, onAdd }: { track: Track
 function PlaylistTile({ list, detail, playing, queued, disabled, title, onPlay, onAdd }: { list: AutoPlaylist; detail: string; playing: string; queued: string; disabled: boolean; title?: string; onPlay: (shuffle: boolean) => void; onAdd: (track: Track) => void }) {
   const [open, setOpen] = useState(false);
   const queuedKeys = new Set(queued.split('\n'));
+  const repeats = list.tracks.filter(track => trackKey(track) === playing || queuedKeys.has(trackKey(track))).length;
   const covers = list.tracks.slice(0, 4);
   const empty = !list.tracks.length;
   const duration = list.tracks.reduce((sum, track) => sum + track.durationMs, 0);
@@ -215,7 +216,8 @@ function PlaylistTile({ list, detail, playing, queued, disabled, title, onPlay, 
       <ol className="mix-tracks" aria-label={`Songs in ${list.title}`}>{list.tracks.map(track => <li key={track.id}><Artwork track={track} />
         <span className="mix-track-text"><strong dir="auto">{track.title}</strong><span dir="auto">{track.author} · {track.isStream ? 'Live' : time(track.durationMs)}</span></span>
         {/* The queue is shared, so the list says what's already lined up before anyone adds it twice. */}{trackKey(track) === playing ? <span className="mix-track-state">Playing</span> : queuedKeys.has(trackKey(track)) ? <span className="mix-track-state">In queue</span> : null}
-        <IconButton label={`Add ${track.title} to the queue`} title={title || `Add ${track.title} to the queue`} disabled={disabled || !track.uri} onClick={() => onAdd(track)}><PlusIcon size={21} weight="bold" /></IconButton></li>)}</ol>
+        {(() => { const again = trackKey(track) === playing || queuedKeys.has(trackKey(track)); return <IconButton className={again ? 'add-again' : ''} label={again ? `Add ${track.title} to the queue again` : `Add ${track.title} to the queue`} title={title || (again ? 'Add again' : `Add ${track.title} to the queue`)} disabled={disabled || !track.uri} onClick={() => onAdd(track)}><PlusIcon size={21} weight="bold" /></IconButton>; })()}</li>)}</ol>
+      {repeats > 0 && <p className="mix-repeat-note">{repeats === list.tracks.length ? 'Every song here is already playing or queued; Add all queues them again.' : `${repeats} of these ${repeats === 1 ? 'is' : 'are'} already playing or queued; Add all queues ${repeats === 1 ? 'it' : 'them'} again.`}</p>}
       <div className="form-actions">{addAll(() => setOpen(false))}<button type="button" className="button secondary" disabled={disabled || empty} title={title} aria-label={`Add ${list.title} shuffled`} onClick={() => { onPlay(true); setOpen(false); }}><ShuffleIcon size={18} />Add shuffled</button></div>
     </Dialog>}
   </li>;

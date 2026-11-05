@@ -98,7 +98,7 @@
 .playlist-meta-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 3px; min-height: 30px; }
 .playlist-meta-row .playlist-meta { margin-top: 0; }
 .mix-range { flex: none; }
-.mix-range select { min-height: 30px; padding: 3px 30px 3px 11px; border-radius: 999px; font-size: 13px; background-position: calc(100% - 17px) 50%, calc(100% - 12px) 50%; }
+.mix-range select { min-height: 30px; padding: 3px 30px 3px 11px; border-radius: 999px; font-size: 13px; background-position: calc(100% - 18px) 50%, calc(100% - 12px) 50%; }
 .playlist-actions { display: flex; align-items: center; gap: 8px; margin-top: auto; padding-top: 14px; }
 .playlist-actions .button { flex: 1; min-height: 44px; padding: 9px 14px; font-size: 14px; }
 .playlist-actions .icon-button { width: 44px; min-width: 44px; min-height: 44px; border: 1px solid var(--field-line); border-radius: 12px; }
@@ -192,3 +192,7 @@
   .home-shelf:has(> .continue-feature) > .shelf-row-sparse > li:only-child { height: 100%; }
   .home-shelf:has(> .continue-feature) > .shelf-row.shelf-row-sparse { grid-template-columns: minmax(0, 1fr); padding: 0; margin: 0; }
 }
+/* A song card is one target: anywhere on it adds the song, the + is its visible cue. */
+.shelf-card { position: relative; }
+.shelf-card-body .icon-button::after { content: ''; position: absolute; inset: 0; border-radius: 10px; }
+.shelf-card:has(.icon-button:not(:disabled)):hover .shelf-art .artwork { filter: brightness(1.08); }

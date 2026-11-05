@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import { ArrowClockwiseIcon, ArrowRightIcon, CaretDownIcon, DiscordLogoIcon, GearSixIcon, HeartIcon, HouseIcon, MagnifyingGlassIcon, MusicNotesIcon, PlusIcon, SignOutIcon, TelevisionSimpleIcon, UsersIcon, WarningCircleIcon, WaveformIcon, WifiSlashIcon, XIcon } from './icons';
+import { ArrowClockwiseIcon, ArrowRightIcon, CaretDownIcon, CaretLeftIcon, DiscordLogoIcon, GearSixIcon, HeartIcon, HouseIcon, MagnifyingGlassIcon, MusicNotesIcon, PlusIcon, SignOutIcon, TelevisionSimpleIcon, UsersIcon, WarningCircleIcon, WaveformIcon, WifiSlashIcon, XIcon } from './icons';
 import type { Bootstrap, GuildSnapshot, Surface } from './types';
 import { usePortal } from './usePortal';
 import { useListening } from './playback';
@@ -71,6 +71,9 @@ export function App() {
   const [tvHome, setTvHome] = useState(true);
   const tvViews = useRef<Surface[]>([]);
   const navigationState = useRef({ surface, expanded });
+  // Server and Settings open from the account menu on a phone; their Back returns to the last main page.
+  const lastPrimary = useRef<Surface>('home');
+  if (surface !== 'server' && surface !== 'settings') lastPrimary.current = surface;
   const { bootstrap, snapshot, connection, auth } = portal;
   const tvHomeShown = tv && tvHome && auth === 'ready' && !!bootstrap?.guilds.length;
   usePrefetchViews(auth === 'ready');
@@ -222,7 +225,7 @@ export function App() {
         <Held held={surface !== 'music'}><LibraryView portal={portal} active={surface === 'music'} /></Held>
         {surface === 'search' && <Search portal={portal} page open onClose={() => navigate('home')} />}
         {/* Phones hide the top bar, and Server and Settings have no tab of their own, so they name themselves. */}
-        {(surface === 'server' || surface === 'settings') && <p className="mobile-page-heading" aria-hidden="true">{heading}</p>}
+        {(surface === 'server' || surface === 'settings') && <div className="mobile-page-heading"><IconButton label={`Back to ${surfaces.find(item => item.id === lastPrimary.current)?.label || 'Home'}`} onClick={() => navigate(lastPrimary.current, true)}><CaretLeftIcon size={24} /></IconButton><span aria-hidden="true">{heading}</span></div>}
         <Held held={surface !== 'server'}><ServerView portal={portal} active={surface === 'server'} /></Held>
         <Held held={surface !== 'settings'}><SettingsView portal={portal} active={surface === 'settings'} ambient={ambient} setAmbient={setAmbient} skin={skin} setSkin={setSkin} performance={performance} setPerformance={setPerformance} installPrompt={installPrompt} install={install} /></Held>
       </>}</Held></div>{!noGuilds && <Player portal={portal} expanded={expanded} setExpanded={toggleExpanded} onAdd={openSearch} palette={palette} animate={!still} skin={skin} />}</main>

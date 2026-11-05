@@ -119,7 +119,7 @@ export function Queue({ portal, compact = false, onAdd, onOpenPlayer }: { portal
     {current && <div className="queue-now"><Artwork track={current} /><div className="track-text"><small>Now playing</small><strong title={current.title}>{current.title}</strong><span title={current.author}>{current.author}</span>{current.requestedBy && <small className="queue-now-by">Added by {current.requestedBy.displayName}</small>}</div>
       {current.requestedBy && <div className="requester"><Avatar url={current.requestedBy.avatarUrl} name={current.requestedBy.displayName} /><span>Added by {current.requestedBy.displayName}</span></div>}
       {/* Like Home's playing card, the whole strip opens the player. */}
-      {onOpenPlayer && <IconButton className="queue-now-open" label="Show now playing" onClick={onOpenPlayer}><CaretUpIcon size={20} weight="bold" /></IconButton>}</div>}
+      {onOpenPlayer && <button type="button" className="button secondary queue-now-open" onClick={onOpenPlayer}><CaretUpIcon size={18} weight="bold" /><span>View now playing</span></button>}</div>}
     <div className="section-heading"><div className="heading-line"><h2>Up Next</h2>{queue.length > 0 && <span className="count">{queue.length} {queue.length === 1 ? 'song' : 'songs'}{queue.length ? ` · ${totalTime(duration)}${queue.some(t => t.isStream) ? ' + live' : ''}` : ''}</span>}</div>
       {!compact && (snapshot?.session.fairQueue || snapshot?.session.current) && <div className="queue-heading-actions">
         {snapshot?.session.fairQueue && <span className="pill"><ListNumbersIcon size={16} />Taking turns</span>}

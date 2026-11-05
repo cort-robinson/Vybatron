@@ -204,7 +204,7 @@ REVERT: everything here is scoped to :root[data-skin='overdrive']; Settings → 
   .player-footer::after { content: ''; position: absolute; left: 0; top: -1px; width: 180px; height: 3px; border-radius: 3px; pointer-events: none; opacity: 0;
     background: linear-gradient(90deg, transparent, var(--neon), white, var(--accent), transparent); filter: blur(.5px); box-shadow: 0 0 14px 2px color-mix(in oklab, var(--neon) 55%, transparent); }
   .motion-live .player-footer::after { animation: od-pulse 6s cubic-bezier(.45, 0, .2, 1) infinite; }
-  .player-spectrum { opacity: .34; }
+  .player-spectrum { opacity: .2; }
   .compact-track-title { transition: color 160ms, text-shadow 160ms; }
   .player-expand-trigger:hover .compact-track-title { text-shadow: 0 0 16px color-mix(in oklab, var(--accent) 60%, transparent); }
   .player-expand-trigger > .artwork { border-radius: 4px 12px 4px 12px; box-shadow: 0 12px 26px -12px color-mix(in oklab, var(--glow-1), black 20%), 0 0 0 1px color-mix(in oklab, var(--accent) 22%, transparent); }

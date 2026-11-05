@@ -88,8 +88,8 @@ input:disabled, select:disabled { opacity: .65; }
 input[type='search']::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none; width: 16px; height: 16px; background: var(--muted); /* Drawn with gradients: the CSP forbids data: URLs. */ --cross: linear-gradient(45deg, transparent calc(50% - 1px), #000 calc(50% - 1px) calc(50% + 1px), transparent calc(50% + 1px)), linear-gradient(-45deg, transparent calc(50% - 1px), #000 calc(50% - 1px) calc(50% + 1px), transparent calc(50% + 1px)); -webkit-mask: var(--cross); mask: var(--cross); cursor: pointer; }
 input[type='search']::-webkit-search-cancel-button:hover { background: var(--text); }
 /* One themed select everywhere: a drawn chevron (no data: URLs; the production CSP forbids them). */
-select { appearance: none; padding-right: 38px; background-image: linear-gradient(45deg, transparent 50%, var(--text-soft) 50%), linear-gradient(135deg, var(--text-soft) 50%, transparent 50%);
-  background-position: calc(100% - 21px) 50%, calc(100% - 16px) 50%; background-size: 5px 5px; background-repeat: no-repeat; text-overflow: ellipsis; }
+select { appearance: none; padding-right: 38px; background-image: linear-gradient(45deg, transparent calc(50% - 1px), var(--text-soft) calc(50% - 1px) calc(50% + 1px), transparent calc(50% + 1px)), linear-gradient(135deg, transparent calc(50% - 1px), var(--text-soft) calc(50% - 1px) calc(50% + 1px), transparent calc(50% + 1px));
+  background-position: calc(100% - 22px) 50%, calc(100% - 16px) 50%; background-size: 6px 6px; background-repeat: no-repeat; text-overflow: ellipsis; }
 select option { background: var(--surface); color: var(--text); }
 a { color: var(--accent); text-underline-offset: 4px; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
@@ -374,6 +374,7 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
 .player-confirmation .spinner { width: 14px; height: 14px; flex-shrink: 0; }
 .compact-progress, .mobile-add { display: none; }
 /* Glide the passive progress hairline between clock ticks instead of stepping. */
+.compact-progress { background: rgb(255 255 255 / .12); }
 .compact-progress::before { content: ''; position: absolute; inset: 0; background: var(--progress-fill, var(--accent)); transform-origin: left; transform: scaleX(var(--progress-scale, 0)); transition: transform 500ms linear; }
 .compact-identity { grid-column: 1; grid-row: 1; display: flex; align-items: center; gap: 8px; min-width: 0; }
 .player-expand-trigger { display: flex; align-items: center; gap: 14px; padding: 0; min-width: 0; min-height: 44px; flex: 0 1 auto; text-align: left; background: transparent; border-radius: 10px; }
@@ -559,13 +560,14 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
   .setting-row > select, .setting-action { flex: 0 0 300px; width: 300px; }
   .setting-action { justify-content: flex-end; }
   .setting-action select { flex: 1; min-width: 0; }
-  .setting-action .number-input { flex: 0 0 120px; max-width: 120px; }
   .setting-row > .button { flex: 0 0 300px; justify-content: center; }
 }
 .setting-action { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
 .setting-action select, .setting-action .discord-id-input { min-width: 180px; font-size: 14px; }
 .setting-action:has(.number-input) { gap: 6px; }
-.number-input { max-width: 90px; }
+/* The volume field matches the selects, with its unit inside the field. */
+.setting-action .number-input { flex: 1; max-width: none; padding-right: 36px; }
+.setting-action:has(.number-input) > span { margin-left: -40px; width: 28px; color: var(--muted); pointer-events: none; }
 .switch { min-height: 44px; display: flex; gap: 13px; align-items: center; padding: 8px 10px; color: var(--text-soft); background: none; font-size: 16px; border-radius: 10px; }
 .switch > span { width: 38px; height: 22px; border-radius: 22px; background: var(--range-track); box-shadow: inset 0 0 0 1px var(--line-strong); position: relative; transition: background-color 200ms; }
 .switch > span::after { content: ''; height: 16px; width: 16px; border-radius: 50%; background: var(--text-soft); position: absolute; top: 3px; left: 3px; transition: transform 240ms var(--ease-out), background-color 200ms; }
@@ -725,7 +727,7 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
   .guild-caret { top: 14px; right: 8px; }
   /* The switcher's chevron follows the server name, so the name reads as the control. */
   @supports (field-sizing: content) {
-    .guild-info select { field-sizing: content; width: auto; max-width: 100%; align-self: flex-start; padding-right: 24px; background-image: linear-gradient(45deg, transparent 50%, var(--text-soft) 50%), linear-gradient(135deg, var(--text-soft) 50%, transparent 50%); background-position: calc(100% - 13px) 55%, calc(100% - 8px) 55%; background-size: 5px 5px; background-repeat: no-repeat; }
+    .guild-info select { field-sizing: content; width: auto; max-width: 100%; align-self: flex-start; padding-right: 24px; background-image: linear-gradient(45deg, transparent calc(50% - 1px), var(--text-soft) calc(50% - 1px) calc(50% + 1px), transparent calc(50% + 1px)), linear-gradient(135deg, transparent calc(50% - 1px), var(--text-soft) calc(50% - 1px) calc(50% + 1px), transparent calc(50% + 1px)); background-position: calc(100% - 14px) 55%, calc(100% - 8px) 55%; background-size: 6px 6px; background-repeat: no-repeat; }
     .guild-caret { display: none; }
   }
   .navigation { position: fixed; bottom: 0; left: 0; right: 0; height: var(--nav); display: flex; flex-direction: row; justify-content: space-around; align-items: stretch; margin: 0; padding: 0 max(8px, env(safe-area-inset-right, 0px)) env(safe-area-inset-bottom, 0px) max(8px, env(safe-area-inset-left, 0px)); border-top: 1px solid var(--line); background: var(--chrome); backdrop-filter: var(--chrome-blur); z-index: 60; }
@@ -1298,7 +1300,7 @@ p, .continue-text > span, .section-description, .field-hint { text-wrap: pretty;
 .search-draft-label { color: var(--muted); }
 .search-draft { color: var(--text-soft); }
 .mobile-page-heading { display: none; }
-@media (max-width: 1023px) { .mobile-page-heading { display: block; margin: 4px 0 18px; font-size: 26px; font-weight: 800; font-stretch: var(--wide); letter-spacing: -0.02em; } }
+@media (max-width: 1023px) { .mobile-page-heading { display: flex; align-items: center; gap: 4px; margin: 0 0 14px -10px; font-size: 26px; font-weight: 800; font-stretch: var(--wide); letter-spacing: -0.02em; } }
 /* The More menu names the song it acts on, so it never reads as a menu for a queue row. */
 .menu-panel > p.menu-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-soft); font-weight: 650; }
 /* Small player text stays legible where the spectrum runs behind it. */

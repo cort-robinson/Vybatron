@@ -149,8 +149,11 @@
 .queue-now-open { flex: none; min-height: 40px; padding: 8px 16px; font-size: 14px; }
 .queue-now-open::after { content: ''; position: absolute; inset: 0; border-radius: inherit; }
 /* Phones: the strip itself opens the player, so the caret stays out of the way of the mini player's own. */
-.queue-now-short { display: none; }
-/* Phones say Open in a word; the button's name stays View now playing. */
-@media (max-width: 1023px) { .queue .queue-now .button.queue-now-open { min-height: 44px; padding: 0 14px; gap: 6px; justify-content: center; } .queue .queue-now .queue-now-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; } .queue .queue-now .queue-now-short { display: inline; } }
+/* Phones: the whole card opens the player (the button's ::after covers it), so only a quiet chevron marks it. */
+@media (max-width: 1023px) {
+  .queue .queue-now .button.queue-now-open { min-height: 44px; width: 32px; min-width: 32px; padding: 0; justify-content: center; border-color: transparent; background: none; box-shadow: none; color: var(--muted); }
+  .queue .queue-now .queue-now-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .queue .queue-now .artwork { width: 48px; height: 48px; }
+}
 .row-duration { display: none; }
 @media (max-width: 1023px) { .row-duration { display: inline; } }

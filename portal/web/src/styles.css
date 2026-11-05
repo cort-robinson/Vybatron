@@ -566,7 +566,7 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
 .setting-row > .button.setting-link { flex: none; width: auto; min-height: 44px; }
 /* Results arrive as you type, so the submit is a quiet icon for Enter-less searches and links. */
 .search-form .search-submit { width: 48px; min-width: 48px; padding: 0; justify-content: center; }
-.settings-footnote { max-width: 760px; margin-top: 14px; color: var(--muted); font-size: 13px; }
+.settings-footnote { max-width: 760px; margin-top: 14px; color: var(--muted); font-size: 14px; }
 .setting-row { display: flex; align-items: center; justify-content: space-between; gap: 35px; padding: 16px 0; border-bottom: 1px solid var(--line); }
 .setting-row > div:first-child { min-width: 0; max-width: 55ch; }
 .setting-row label, .setting-row h3 { font-size: 16px; font-weight: 700; }
@@ -574,6 +574,8 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
 /* Every page lines its controls up in one right-hand column. */
 @media (min-width: 1024px) {
   .setting-row > select, .setting-action { flex: 0 0 300px; width: 300px; }
+  /* Switches start where the selects do, so the control column keeps one left edge. */
+  .setting-row > .switch { flex: 0 0 300px; width: 300px; }
   .setting-action { justify-content: flex-end; }
   .setting-action select { flex: 1; min-width: 0; }
   .setting-row > .button { flex: 0 0 300px; justify-content: center; }

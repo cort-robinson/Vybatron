@@ -195,6 +195,8 @@ export function Player({ portal, expanded, setExpanded, onAdd, palette, animate,
         <button disabled={!controllable || !track && !sleep} onClick={() => { close(); setSleepOpen(true); }}><MoonIcon />{sleep ? `Sleep timer · ${sleep}` : 'Sleep timer'}</button></>}
         {!local && track?.suggested && <button disabled={!controllable} onClick={() => { close(); void run({ command: 'radio', subcommand: 'less', expectedTrackId: track.id }, 'control'); }}><ThumbsDownIcon />Less like this</button>}
         {sourceUrl && <a href={sourceUrl} target="_blank" rel="noreferrer" onClick={close}><ArrowSquareOutIcon />Open original track</a>}
+        {/* What follows acts on the whole session, not the song named at the top. */}
+        <p className="menu-section">Session</p>
         {!local && <button disabled={!can('library') || !track} onClick={() => { close(); setSaveSession(true); }}><VinylRecordIcon />Save session as mix</button>}
         <button className="danger-text" disabled={!controllable || !session?.queue.length} onClick={() => { close(); setConfirmClear(true); }}><TrashIcon />Clear upcoming queue</button>
         <button className="danger-text" disabled={!can('control') || !track} onClick={() => { close(); setConfirmStop(true); }}><StopCircleIcon />{local ? 'Stop and clear your queue' : 'Stop and discard session'}</button>

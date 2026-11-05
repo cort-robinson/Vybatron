@@ -136,7 +136,7 @@
 .playlist-meta-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 3px; min-height: 30px; }
 .playlist-meta-row .playlist-meta { margin-top: 0; }
 .mix-range { flex: none; }
-.mix-range select { min-height: 30px; padding: 3px 30px 3px 11px; border-radius: 999px; font-size: 13px; background-position: calc(100% - 18px) 50%, calc(100% - 12px) 50%; }
+.mix-range select { min-height: 36px; padding: 3px 30px 3px 11px; border-radius: 999px; font-size: 13px; background-position: calc(100% - 18px) 50%, calc(100% - 12px) 50%; }
 .playlist-actions { display: flex; align-items: center; gap: 8px; margin-top: auto; padding-top: 14px; }
 .playlist-actions .button { flex: 1; min-height: 44px; padding: 9px 14px; font-size: 14px; }
 .playlist-actions .button { min-width: 0; }
@@ -250,4 +250,4 @@
 .home-shelf > .continue-feature:has(.continue-open) { display: none; }
 .home-shelf-header p:empty { display: none; }
 .narrow-only { display: none; }
-@media (max-width: 600px) { .wide-only { display: none; } .narrow-only { display: inline; } }
+@media (max-width: 600px) { .mix-range select { min-height: 44px; } .wide-only { display: none; } .narrow-only { display: inline; } }

@@ -576,7 +576,7 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
 .search-clear { display: grid; place-items: center; flex: none; width: 36px; height: 36px; margin-right: 4px; border-radius: 50%; color: var(--muted); background: none; }
 .search-clear:hover { color: var(--text); background: var(--hover-surface); }
 .search-field input::-webkit-search-cancel-button { display: none; }
-.signin-footnote { padding: 6px 14px; border-radius: 999px; color: var(--text-soft); background: color-mix(in oklab, var(--ground) 78%, transparent); }
+.signin-footnote { padding: 10px 28px; color: var(--text-soft); background: radial-gradient(closest-side, color-mix(in oklab, var(--ground) 85%, transparent), transparent); }
 .setting-row > .setting-refresh { display: inline-flex; align-items: center; gap: 6px; flex: none; min-height: 44px; font-size: 14px; color: var(--accent); }
 .search-destination { margin: -4px 0 12px; color: var(--muted); font-size: 14px; }
 .settings-footnote { max-width: 760px; margin-top: 14px; color: var(--muted); font-size: 14px; }
@@ -1353,8 +1353,6 @@ p, .continue-text > span, .section-description, .field-hint { text-wrap: pretty;
 .menu-panel > p.menu-section { color: var(--text-soft); font-weight: 650; }
 /* Small player text stays legible where the spectrum runs behind it. */
 .collapsed :is(.compact-title, .timeline > span) { text-shadow: 0 1px 2px var(--ground), 0 0 10px var(--ground), 0 0 18px var(--ground); }
-/* The open desktop player already shows the title in large type, so its More menu skips the header. */
-@media (min-width: 1024px) { .expanded .player-more .menu-panel > p.menu-title { display: none; } }
 .menu-panel > p.menu-title + p.menu-section { border-top: 0; margin-top: 0; padding-top: 6px; }
 /* Phones: page title, section title and row labels step down clearly, and forms sit tighter. */
 @media (max-width: 1023px) {

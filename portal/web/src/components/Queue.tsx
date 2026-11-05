@@ -1,5 +1,5 @@
 import { memo, useEffect, useId, useMemo, useRef, useState } from 'react';
-import { ArrowDownIcon, ArrowLineUpIcon, ArrowUpIcon, DotsThreeIcon, HeartIcon, ListNumbersIcon, PlayIcon, PlusIcon, RadioIcon, ThumbsDownIcon, TrashIcon, DotsSixVerticalIcon, VinylRecordIcon, XIcon, CaretUpIcon } from '../icons';
+import { ArrowDownIcon, ArrowLineUpIcon, ArrowUpIcon, CaretRightIcon, CaretUpIcon, DotsSixVerticalIcon, DotsThreeIcon, HeartIcon, ListNumbersIcon, PlayIcon, PlusIcon, RadioIcon, ThumbsDownIcon, TrashIcon, VinylRecordIcon, XIcon } from '../icons';
 import type { Track } from '../types';
 import type { Portal } from '../usePortal';
 import { time, totalTime } from '../format';
@@ -119,7 +119,7 @@ export function Queue({ portal, compact = false, onAdd, onOpenPlayer }: { portal
     {current && <div className="queue-now"><Artwork track={current} /><div className="track-text"><small>Now playing</small><strong title={current.title}>{current.title}</strong><span title={current.author}>{current.author}</span>{current.requestedBy && <small className="queue-now-by">Added by {current.requestedBy.displayName}</small>}</div>
       {current.requestedBy && <div className="requester"><Avatar url={current.requestedBy.avatarUrl} name={current.requestedBy.displayName} /><span>Added by {current.requestedBy.displayName}</span></div>}
       {/* Like Home's playing card, the whole strip opens the player. */}
-      {onOpenPlayer && <button type="button" className="button secondary queue-now-open" onClick={onOpenPlayer}><CaretUpIcon size={18} weight="bold" /><span className="queue-now-label">View now playing</span></button>}</div>}
+      {onOpenPlayer && <button type="button" className="button secondary queue-now-open" onClick={onOpenPlayer}><CaretUpIcon className="queue-now-up" size={18} weight="bold" /><CaretRightIcon className="queue-now-go" size={20} weight="bold" aria-hidden="true" /><span className="queue-now-label">View now playing</span></button>}</div>}
     <div className="section-heading"><div className="heading-line"><h2>Up Next</h2>{queue.length > 0 && <span className="count">{queue.length} {queue.length === 1 ? 'song' : 'songs'}{queue.length ? ` · ${totalTime(duration)}${queue.some(t => t.isStream) ? ' + live' : ''}` : ''}</span>}</div>
       {!compact && (snapshot?.session.fairQueue || snapshot?.session.current) && <div className="queue-heading-actions">
         {snapshot?.session.fairQueue && <span className="pill"><ListNumbersIcon size={16} />Taking turns</span>}

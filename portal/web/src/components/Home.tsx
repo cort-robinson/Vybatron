@@ -207,7 +207,7 @@ function PlaylistTile({ list, detail, fullDetail, playing, queued, disabled, tit
   const meta = empty ? 'No requests in this range' : `${list.tracks.length} ${list.tracks.length === 1 ? 'song' : 'songs'} · ${totalTime(duration)}`;
   const allQueued = repeats > 0 && repeats === list.tracks.length;
   // The card keeps a short label (its note already says what's queued); the song list spells out the repeat.
-  const addAll = (close?: () => void) => <button type="button" className={`button ${close && !allQueued ? 'primary' : 'secondary'} ${allQueued ? 'all-queued' : ''}`} disabled={disabled || empty} title={title} aria-label={allQueued ? `Add all of ${list.title} again` : `Add all of ${list.title}`} onClick={() => { onPlay(false); close?.(); }}><PlusIcon size={18} weight="bold" />{allQueued && close ? 'Add all again' : 'Add all'}</button>;
+  const addAll = (close?: () => void) => <button type="button" className={`button ${close && !allQueued ? 'primary' : 'secondary'} ${allQueued ? 'all-queued' : ''}`} disabled={disabled || empty} title={title} aria-label={allQueued ? `Add all of ${list.title} again` : `Add all of ${list.title}`} onClick={() => { onPlay(false); close?.(); }}><PlusIcon size={18} weight="bold" />{allQueued ? (close ? 'Add all again' : 'Add again') : 'Add all'}</button>;
   // The cover and title open the song list, so a mix can be checked before it lands in the shared queue.
   return <li className="playlist-tile">
     <button type="button" className={`playlist-cover ${covers.length >= 4 ? 'collage' : ''}`} disabled={empty} aria-label={`See the songs in ${list.title}`} onClick={() => setOpen(true)}>{covers.length >= 4 ? covers.map(track => <Artwork key={track.id} track={track} />) : <Artwork track={covers[0] || null} />}</button>

@@ -30,7 +30,6 @@ REVERT: everything here is scoped to :root[data-skin='overdrive']; Settings → 
   ::selection { color: var(--primary-ink); background: color-mix(in oklab, var(--accent), var(--neon) 30%); }
 }
 
-/* HUD corner brackets frame the cover and small tiles only; panels, menus and dialogs keep clean bevels. */
 /* ── Horizon ─────────────────────────────────────────────────────────────── */
 .od-horizon { position: absolute; inset: 0; opacity: .6; transition: opacity 900ms var(--ease-out); animation: od-floor-in 700ms var(--ease-out);
   /* CRT scanlines, painted into the sky, sun, and floor themselves. As a separate full-screen layer
@@ -41,17 +40,12 @@ REVERT: everything here is scoped to :root[data-skin='overdrive']; Settings → 
 .ambient-scene.subtle.immersive .od-horizon { opacity: .62; }
 .ambient-scene.disabled .od-horizon { opacity: .42; }
 .ambient-scene:not(.immersive) { --horizon: calc(100% - var(--player) - var(--nav)); --sun: clamp(220px, 34vmin, 400px); }
-/* Browsing pages keep the sky and cover glow but leave the skyline and sun to sign-in and the open player,
-   so lists and forms never scroll over scenery. */
-.ambient-scene:not(.immersive) .od-skyline { height: clamp(56px, 11vh, 124px); opacity: 0; }
+.ambient-scene:not(.immersive) .od-skyline { height: clamp(56px, 11vh, 124px); }
 .ambient-scene.immersive { --horizon: 70%; --sun: clamp(300px, 66vmin, 760px); --sun-x: calc(var(--sidebar) + 32px + (100vw - var(--sidebar) - 96px) * .26); }
 /* Sign-in: the cover and spectrum stand on the horizon and the sign-in copy sits on the clear floor below. */
 .auth-page .ambient-scene { --horizon: calc(50% + 28px); --sun: clamp(300px, 58vmin, 640px); --sun-x: 50%; }
 @media (max-width: 1023px), (max-height: 760px) { .auth-page .ambient-scene { --horizon: calc(50% + 4px); } }
 .auth-page .ambient-scene .od-skyline { height: clamp(72px, 14vh, 156px); opacity: 1; }
-/* The open player keeps the sun and floor but drops the skyline: buildings poking out around the
-   caption plate and Up Next panel competed with the song's name. Sign-in keeps the full scene. */
-.ambient-scene.immersive .od-skyline { opacity: 0; }
 .auth-page .od-horizon { opacity: .92; }
 
 .od-sky { position: absolute; left: 0; right: 0; top: 0; height: var(--horizon); background: var(--od-scanlines),
@@ -67,7 +61,7 @@ REVERT: everything here is scoped to :root[data-skin='overdrive']; Settings → 
      once so it never shows uncovered while it travels back down. */
   opacity: .78; transition: opacity 700ms var(--ease-out) 260ms;
 }
-.ambient-scene:not(.immersive) .od-sun { top: calc(var(--horizon) - var(--sun) * .52); opacity: 0; mix-blend-mode: screen; transition-duration: 160ms; transition-delay: 0ms; }
+.ambient-scene:not(.immersive) .od-sun { top: calc(var(--horizon) - var(--sun) * .52); opacity: .34; mix-blend-mode: screen; transition-duration: 160ms; transition-delay: 0ms; }
 .auth-page .ambient-scene .od-sun { opacity: .78; mix-blend-mode: normal; }
 /* A phone's cover fills the width and hides the disc, leaving only cut-off slats; the open player there drops the sun. */
 @media (max-width: 599px) { .ambient-scene.immersive .od-sun { opacity: 0; } }
@@ -122,7 +116,7 @@ REVERT: everything here is scoped to :root[data-skin='overdrive']; Settings → 
 
   .sidebar { border-right-color: transparent; background: linear-gradient(to bottom, transparent, color-mix(in oklab, var(--neon) 5%, transparent)), var(--chrome); }
   .sidebar::after { content: ''; position: absolute; top: 0; bottom: 0; right: -1px; width: 1px; pointer-events: none; background: linear-gradient(to bottom, transparent, color-mix(in oklab, var(--accent) 45%, transparent) 30%, color-mix(in oklab, var(--neon) 55%, transparent) 75%, transparent); }
-  .guild-card { border-color: var(--line-soft); border-radius: 6px 16px 6px 16px; background: linear-gradient(135deg, color-mix(in oklab, var(--accent) 7%, transparent), rgb(255 255 255 / .02) 60%); }
+  .guild-card { border-color: var(--line-soft); border-radius: 6px 16px 6px 16px; background: var(--hud), linear-gradient(135deg, color-mix(in oklab, var(--accent) 7%, transparent), rgb(255 255 255 / .02) 60%); }
   .guild-card:hover { border-color: color-mix(in oklab, var(--accent) 35%, transparent); }
   .guild-icon { border-radius: 4px 11px; }
   .guild-status.playing .status-dot { box-shadow: 0 0 0 3px var(--accent-soft), 0 0 10px var(--accent); }
@@ -140,7 +134,7 @@ REVERT: everything here is scoped to :root[data-skin='overdrive']; Settings → 
   .topbar { border-bottom-color: transparent; background: var(--rail) bottom / 100% 1px no-repeat, color-mix(in oklab, var(--ground) 92%, transparent); }
   .sleeve-topbar { background: none; }
   .page-title h1 { text-shadow: 0 0 34px color-mix(in oklab, var(--accent) 35%, transparent); }
-  .header-search { border-radius: 4px 14px 4px 14px; background: var(--field); --hud-c: color-mix(in oklab, var(--accent) 40%, transparent); }
+  .header-search { border-radius: 4px 14px 4px 14px; background: var(--hud), var(--field); --hud-c: color-mix(in oklab, var(--accent) 40%, transparent); }
   .header-search:hover { box-shadow: 0 0 0 1px color-mix(in oklab, var(--accent) 25%, transparent), 0 10px 30px -18px var(--accent); }
 
   .button, .text-button, .icon-button, .menu-panel, .toast, .update-notice, input, select { --plate: 4px 12px 4px 12px; }
@@ -178,15 +172,15 @@ REVERT: everything here is scoped to :root[data-skin='overdrive']; Settings → 
   .switch > span { border-radius: 4px 11px; }
   .switch[aria-checked='true'] > span { background: linear-gradient(90deg, var(--accent), color-mix(in oklab, var(--accent), var(--neon) 45%)); box-shadow: 0 0 14px -2px var(--accent); }
   .spinner { border-color: var(--accent); border-right-color: transparent; border-left-color: var(--neon); }
-  .menu-panel { border-radius: 6px 16px 6px 16px; background: var(--raised); --hud-c: color-mix(in oklab, var(--accent) 45%, transparent); }
+  .menu-panel { border-radius: 6px 16px 6px 16px; background: var(--hud), var(--raised); --hud-c: color-mix(in oklab, var(--accent) 45%, transparent); }
   /* Over the open player's queue, the More menu needs a firmer edge to read as its own layer. */
   .player-more > .menu-panel { border-color: color-mix(in oklab, var(--accent) 34%, var(--line-strong)); box-shadow: var(--shadow-menu), 0 24px 60px -12px rgb(0 0 0 / .7); }
   .toast, .update-notice { border-radius: 4px 14px 4px 14px; }
   .toast.success { border-color: color-mix(in oklab, var(--accent) 40%, transparent); box-shadow: var(--shadow-menu), 0 0 30px -14px var(--accent); }
-  .dialog { border-radius: 8px 24px 8px 24px; background: var(--rail) top / 100% 1px no-repeat, color-mix(in oklab, var(--ground), white 5%); }
+  .dialog { border-radius: 8px 24px 8px 24px; background: var(--hud), var(--rail) top / 100% 1px no-repeat, color-mix(in oklab, var(--ground), white 5%); }
   .search-field { border-radius: 4px 12px 4px 12px; }
   .suggestion-chip { border-radius: 4px 12px 4px 12px; }
-  .continue-feature { border-radius: 6px 18px 6px 18px; background: linear-gradient(100deg, color-mix(in oklab, var(--accent) 14%, transparent), color-mix(in oklab, var(--neon) 7%, transparent) 60%, transparent), var(--surface); box-shadow: 0 18px 38px -26px color-mix(in oklab, var(--accent) 55%, black), 0 0 0 1px color-mix(in oklab, var(--accent) 14%, transparent); }
+  .continue-feature { border-radius: 6px 18px 6px 18px; background: var(--hud), linear-gradient(100deg, color-mix(in oklab, var(--accent) 14%, transparent), color-mix(in oklab, var(--neon) 7%, transparent) 60%, transparent), var(--surface); box-shadow: 0 18px 38px -26px color-mix(in oklab, var(--accent) 55%, black), 0 0 0 1px color-mix(in oklab, var(--accent) 14%, transparent); }
   /* Content cards share the plate's cut corners; chips, fields and selects stay round. */
   :is(.shelf-row-sparse .shelf-card, .queue-now, .library-tools) { border-radius: 6px 16px 6px 16px; }
   .playlist-actions .icon-button { border-radius: 4px 12px 4px 12px; }
@@ -210,7 +204,7 @@ REVERT: everything here is scoped to :root[data-skin='overdrive']; Settings → 
   .player-footer::after { content: ''; position: absolute; left: 0; top: -1px; width: 180px; height: 3px; border-radius: 3px; pointer-events: none; opacity: 0;
     background: linear-gradient(90deg, transparent, var(--neon), white, var(--accent), transparent); filter: blur(.5px); box-shadow: 0 0 14px 2px color-mix(in oklab, var(--neon) 55%, transparent); }
   .motion-live .player-footer::after { animation: od-pulse 6s cubic-bezier(.45, 0, .2, 1) infinite; }
-  .player-spectrum { opacity: .12; }
+  .player-spectrum { opacity: .34; }
   .compact-track-title { transition: color 160ms, text-shadow 160ms; }
   .player-expand-trigger:hover .compact-track-title { text-shadow: 0 0 16px color-mix(in oklab, var(--accent) 60%, transparent); }
   .player-expand-trigger > .artwork { border-radius: 4px 12px 4px 12px; box-shadow: 0 12px 26px -12px color-mix(in oklab, var(--glow-1), black 20%), 0 0 0 1px color-mix(in oklab, var(--accent) 22%, transparent); }
@@ -268,7 +262,7 @@ REVERT: everything here is scoped to :root[data-skin='overdrive']; Settings → 
   .sleeve-main > .player-identity, .sleeve-main > .player-context:has(> p) { width: fit-content; max-width: min(100%, 560px); padding: 10px 26px 12px; border-radius: 4px 14px 4px 14px; background: color-mix(in oklab, var(--ground) 72%, transparent); backdrop-filter: blur(18px) saturate(1.2); box-shadow: 0 0 0 1px color-mix(in oklab, var(--accent) 18%, transparent), 0 18px 40px -18px rgb(0 0 0 / .8); }
   .sleeve-main > .player-context:has(> p) { padding-block: 8px; }
   .sleeve-main .player-title-row h2 { text-shadow: 0 1px 0 color-mix(in oklab, var(--neon) 20%, transparent); }
-  .sleeve-queue { border-radius: 6px 22px 6px 22px; background: var(--rail) top / 100% 1px no-repeat, color-mix(in oklab, var(--ground) 62%, transparent); }
+  .sleeve-queue { border-radius: 6px 22px 6px 22px; background: var(--hud), var(--rail) top / 100% 1px no-repeat, color-mix(in oklab, var(--ground) 62%, transparent); }
   .expanded .player-footer { border-top-color: transparent; }
 
   /* ── Sign-in ────────────────────────────────────────────────────────── */

@@ -1,5 +1,5 @@
 import { Children, memo, useEffect, useRef, useState, type ReactNode } from 'react';
-import { ArrowClockwiseIcon, ArrowCounterClockwiseIcon, CaretUpIcon, PlayIcon, PlusIcon, ShuffleIcon, WarningCircleIcon } from '../icons';
+import { ArrowClockwiseIcon, ArrowCounterClockwiseIcon, CaretRightIcon, CaretUpIcon, PlayIcon, PlusIcon, ShuffleIcon, WarningCircleIcon } from '../icons';
 import type { Portal } from '../usePortal';
 import type { AutoPlaylist, Capability, Command, GuildSnapshot, Library, RecapWindow, Stats, StatsWindow, Track } from '../types';
 import { api, errorMessage } from '../api';
@@ -194,25 +194,24 @@ function PlaylistTile({ list, detail, disabled, title, onPlay, onAdd }: { list: 
   const empty = !list.tracks.length;
   const duration = list.tracks.reduce((sum, track) => sum + track.durationMs, 0);
   const meta = empty ? 'No requests in this range' : `${list.tracks.length} ${list.tracks.length === 1 ? 'song' : 'songs'} · ${totalTime(duration)}`;
-  const actions = (close?: () => void) => <>
-    <button type="button" className="button secondary" disabled={disabled || empty} title={title} aria-label={`Add all of ${list.title}`} onClick={() => { onPlay(false); close?.(); }}><PlusIcon size={18} weight="bold" />Add all</button>
-    <button type="button" className="button secondary" disabled={disabled || empty} title={title} aria-label={`Add ${list.title} shuffled`} onClick={() => { onPlay(true); close?.(); }}><ShuffleIcon size={18} />Add shuffled</button>
-  </>;
+  const addAll = (close?: () => void) => <button type="button" className="button secondary" disabled={disabled || empty} title={title} aria-label={`Add all of ${list.title}`} onClick={() => { onPlay(false); close?.(); }}><PlusIcon size={18} weight="bold" />Add all</button>;
   // The cover and title open the song list, so a mix can be checked before it lands in the shared queue.
   return <li className="playlist-tile">
     <button type="button" className={`playlist-cover ${covers.length >= 4 ? 'collage' : ''}`} disabled={empty} aria-label={`See the songs in ${list.title}`} onClick={() => setOpen(true)}>{covers.length >= 4 ? covers.map(track => <Artwork key={track.id} track={track} />) : <Artwork track={covers[0] || null} />}</button>
     <div className="playlist-body">
       <h3 dir="auto">{empty ? list.title : <button type="button" className="playlist-open" tabIndex={-1} aria-hidden="true" onClick={() => setOpen(true)}>{list.title}</button>}</h3>
-      <div className="playlist-meta-row"><p className="playlist-meta">{meta}</p></div>
+      <div className="playlist-meta-row">{empty ? <p className="playlist-meta">{meta}</p> : <button type="button" className="playlist-meta playlist-songs" onClick={() => setOpen(true)}>{meta}<CaretRightIcon size={14} weight="bold" aria-hidden="true" /></button>}</div>
       <p className="playlist-detail">{detail}</p>
-      <div className="playlist-actions">{actions()}</div>
+      {/* The card keeps one labelled action; the song list holds Add shuffled in words. */}
+      <div className="playlist-actions">{addAll()}<IconButton label={`Add ${list.title} shuffled`} title={title || 'Add shuffled'} disabled={disabled || empty} onClick={() => onPlay(true)}><ShuffleIcon size={21} /></IconButton></div>
     </div>
     {open && <Dialog title={list.title} onClose={() => setOpen(false)} className="confirm-dialog mix-dialog">
+      <span className="sheet-grabber" aria-hidden="true" />
       <p>{meta} · {detail}</p>
       <ol className="mix-tracks" aria-label={`Songs in ${list.title}`}>{list.tracks.map(track => <li key={track.id}><Artwork track={track} />
         <span className="mix-track-text"><strong dir="auto">{track.title}</strong><span dir="auto">{track.author} · {track.isStream ? 'Live' : time(track.durationMs)}</span></span>
         <IconButton label={`Add ${track.title} to the queue`} title={title || `Add ${track.title} to the queue`} disabled={disabled || !track.uri} onClick={() => onAdd(track)}><PlusIcon size={21} weight="bold" /></IconButton></li>)}</ol>
-      <div className="form-actions">{actions(() => setOpen(false))}</div>
+      <div className="form-actions">{addAll(() => setOpen(false))}<button type="button" className="button secondary" disabled={disabled || empty} title={title} aria-label={`Add ${list.title} shuffled`} onClick={() => { onPlay(true); setOpen(false); }}><ShuffleIcon size={18} />Add shuffled</button></div>
     </Dialog>}
   </li>;
 }

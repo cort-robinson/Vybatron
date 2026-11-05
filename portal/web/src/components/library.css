@@ -80,7 +80,7 @@
 @media (max-width: 960px) {
   /* Phones give the search its own full line; import and the list menu sit under it. */
   .library-view .library-search-controls { flex-wrap: wrap; gap: 6px 8px; }
-  .library-view .library-search-controls input { flex-basis: 0; max-width: none; }
+  .library-view .library-search-controls input { flex: 1 1 100%; max-width: none; }
   .library-search-controls > .library-import-toggle { margin-left: 0; margin-right: auto; }
   /* Favorites rows keep Add on the row; radio and removing move into the row's menu. */
   .library-view .library-track-list > li:has(> .favorite-row-menu) { grid-template-columns: 44px minmax(0, 1fr) auto 44px; gap: 6px; }

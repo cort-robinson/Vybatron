@@ -151,7 +151,10 @@ export function Player({ portal, expanded, setExpanded, onAdd, palette, animate,
   const visualsFailed = () => { setVisualsOpen(false); portal.notify('The visualizer isn’t available on this device.', 'error'); };
   const visualsSwitch = track && <div className="sleeve-visuals">{visualsOpen && <IconButton label="Full-screen visualizer" onClick={() => setVisualsFull(true)}><CornersOutIcon size={21} /></IconButton>}
     <IconButton className={visualsOpen ? 'active-control' : ''} label={visualsOpen ? 'Hide visualizer' : 'Show visualizer'} aria-pressed={visualsOpen} onClick={() => setVisualsOpen(!visualsOpen)}><WaveformIcon size={21} weight={visualsOpen ? 'bold' : 'regular'} /></IconButton></div>;
+  const destination = local ? `Playing on ${portal.playingOn || 'this device'}` : session?.voiceChannel ? `Playing in ${session.voiceChannel.name} on Discord` : '';
   const identity = <div className="player-identity" data-glass><div className="player-title-row">{lyricsToggle}<h2 ref={headingRef} tabIndex={-1} title={track?.title}>{track?.title || 'Nothing playing'}</h2>{favorite}</div><p title={track ? `${track.author} · ${track.source}` : undefined}>{metadata}</p>
+    {/* Where the sound comes out; More › Play on changes it. */}
+    {expanded && track && destination && <p className="player-destination">{local ? <DesktopIcon size={16} aria-hidden="true" /> : <DiscordLogoIcon size={16} weight="fill" aria-hidden="true" />}{destination}</p>}
   </div>;
   const spectrumMode = track && active && live ? 'playing' : 'standby';
   const look = skinLook(skin);
@@ -183,6 +186,7 @@ export function Player({ portal, expanded, setExpanded, onAdd, palette, animate,
         {!local && <button disabled={!can('library') || !track} onClick={() => { close(); setSaveSession(true); }}><VinylRecordIcon />Save session as mix</button>}
         <PlayOnChoices portal={portal} close={close} onMoveHere={() => setConfirmHere(true)} />
         {portal.devices.length > 0 && <button onClick={() => { close(); setRenaming(true); }}><PencilSimpleIcon />Rename this device</button>}
+        <hr className="menu-divider" />
         <button className="danger-text" disabled={!controllable || !session?.queue.length} onClick={() => { close(); setConfirmClear(true); }}><TrashIcon />Clear upcoming queue</button>
         <button className="danger-text" disabled={!can('control') || !track} onClick={() => { close(); setConfirmStop(true); }}><StopIcon />{local ? 'Stop and clear your queue' : 'Stop and discard session'}</button>
       </>}

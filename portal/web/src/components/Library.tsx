@@ -114,8 +114,9 @@ export function LibraryView({ portal, active = true }: { portal: Portal; active?
       {!library.favorites.length ? <Empty title="A place for your repeat favorites" description="Tap the heart on the current song to keep it here. Only you can see this shelf." icon={<HeartIcon size={30} />} /> : !favorites.length ? noMatches : <ul className="library-track-list" aria-label="Favorite songs">{favorites.slice(offset, offset + pageSize).map(({ track, index }) => <FavoriteRow key={`${track.id}:${index}`}
         track={track} index={index} addable={addable} editable={editable} radio={radio} blockedReason={portal.blockedReason} act={act} unfavorite={unfavorite} />)}</ul>}
       <Pagination label="favorites" page={currentPage} total={favorites.length} pageSize={pageSize} onPageChange={page => setPages(previous => ({ ...previous, favorites: page }))} />
-      <PlaylistImport portal={portal} target="favorites" />
-      {library.favorites.length > 0 && <button type="button" className="text-button danger-text library-clear" disabled={!editable} onClick={() => setConfirm({ kind: 'favorites' })}>Clear favorites</button>}
+      {/* Bringing songs in sits apart from the list; clearing it sits apart from both. */}
+      <div className="library-tools"><PlaylistImport portal={portal} target="favorites" /></div>
+      {library.favorites.length > 0 && <div className="library-danger"><button type="button" className="text-button danger-text library-clear" disabled={!editable} onClick={() => setConfirm({ kind: 'favorites' })}>Clear favorites</button></div>}
       {library.favorites.length >= 1000 && <p className="library-note">Your shelf is full. Remove a favorite to make room for another song.</p>}
       {!addable && <p className="library-note">{portal.blockedReason}</p>}
     </>}
@@ -165,7 +166,7 @@ type Act = (body: Command, capability: Capability) => void;
 const FavoriteRow = memo(function FavoriteRow({ track, index, addable, editable, radio, blockedReason, act, unfavorite }: { track: Track; index: number; addable: boolean; editable: boolean; radio: boolean | null; blockedReason: string; act: Act; unfavorite: (track: Track) => void }) {
   return <li>
     <Artwork track={track} /><div className="track-text"><strong dir="auto" title={track.title}>{track.title}</strong><span dir="auto">{track.author}<span className="track-source"> · {track.source}</span></span></div><span className="track-duration">{track.isStream ? 'Live' : time(track.durationMs)}</span>
-    <IconButton label={`Queue favorite ${track.title}`} disabled={!addable} title={!addable ? blockedReason : undefined} onClick={() => act(fromList({ command: 'favorite', subcommand: 'play', options: { index: index + 1 }, expectedTrackId: track.id }), 'add')}><PlusIcon size={23} /></IconButton>
+    <IconButton label={`Queue favorite ${track.title}`} disabled={!addable} title={!addable ? blockedReason : undefined} onClick={() => act(fromList({ command: 'favorite', subcommand: 'play', options: { index: index + 1 }, expectedTrackId: track.id }), 'add')}><PlusIcon size={23} /><span className="result-action-label" aria-hidden="true">Add</span></IconButton>
     <RadioButton track={track} enabled={radio} blockedReason={blockedReason} act={act} />
     <IconButton className="favorite active" label={`Remove favorite ${track.title}`} disabled={!editable} onClick={() => unfavorite(track)}><HeartIcon size={23} weight="fill" /></IconButton>
   </li>;
@@ -174,7 +175,7 @@ const FavoriteRow = memo(function FavoriteRow({ track, index, addable, editable,
 const HistoryRow = memo(function HistoryRow({ entry, index, controllable, radio, revision, blockedReason, act }: { entry: Library['history'][number]; index: number; controllable: boolean; radio: boolean | null; revision?: string; blockedReason: string; act: Act }) {
   return <li>
     <Artwork track={entry.track} /><div className="track-text"><strong dir="auto" title={entry.track.title}>{entry.track.title}</strong><span dir="auto">{entry.track.author}{entry.voiceChannel ? ` · ${entry.voiceChannel.name}` : ''}</span></div><time dateTime={new Date(entry.playedAt).toISOString()}>{date(entry.playedAt)}</time>
-    <IconButton label={`Replay ${entry.track.title}`} disabled={!controllable} title={!controllable ? blockedReason : undefined} onClick={() => act({ command: 'replay', options: { index: index + 1 }, expectedHistoryId: entry.id, expectedRevision: revision }, 'control')}><PlusIcon size={23} /></IconButton>
+    <IconButton label={`Replay ${entry.track.title}`} disabled={!controllable} title={!controllable ? blockedReason : undefined} onClick={() => act({ command: 'replay', options: { index: index + 1 }, expectedHistoryId: entry.id, expectedRevision: revision }, 'control')}><PlusIcon size={23} /><span className="result-action-label" aria-hidden="true">Replay</span></IconButton>
     <RadioButton track={entry.track} enabled={radio} blockedReason={blockedReason} act={act} />
   </li>;
 });
@@ -186,5 +187,5 @@ function RadioButton({ track, enabled, blockedReason, act }: { track: Track; ena
   const command = startRadioCommand(track);
   const allowed = !!command && enabled;
   return <IconButton className="radio-start" label={radioLabel(track)} disabled={!allowed} title={!command ? 'This song has no public source reference' : !allowed ? blockedReason : radioLabel(track)}
-    onClick={() => { if (command) act(command, 'control'); }}><RadioIcon size={22} /></IconButton>;
+    onClick={() => { if (command) act(command, 'control'); }}><RadioIcon size={22} /><span className="result-action-label" aria-hidden="true">Radio</span></IconButton>;
 }

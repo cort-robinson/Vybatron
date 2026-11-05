@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, useState, type ReactNode } from 'react';
+import { Children, memo, useEffect, useRef, useState, type ReactNode } from 'react';
 import { ArrowClockwiseIcon, ArrowCounterClockwiseIcon, CaretUpIcon, PlayIcon, PlusIcon, ShuffleIcon, WarningCircleIcon } from '../icons';
 import type { Portal } from '../usePortal';
 import type { AutoPlaylist, Capability, Command, GuildSnapshot, Library, RecapWindow, Stats, StatsWindow, Track } from '../types';
@@ -16,9 +16,9 @@ const windows: { id: StatsWindow; label: string }[] = [
 ];
 const weekday = (at: number) => new Intl.DateTimeFormat(undefined, { weekday: 'long' }).format(at);
 
-function playlistDetail(list: AutoPlaylist, statsWindow: StatsWindow) {
+function playlistDetail(list: AutoPlaylist) {
   if (list.kind === 'mix') return `Your most-requested songs from the past 3 months blended with your favorites. New picks ${list.refreshesAt ? weekday(list.refreshesAt) : 'every week'}.`;
-  if (list.kind === 'top') return `What you’ve requested most here · ${windows.find(item => item.id === statsWindow)?.label.toLowerCase()}.`;
+  if (list.kind === 'top') return 'What you’ve requested most in this server.';
   return `Your favorites by ${list.artist} and what this server plays most by them.`;
 }
 function playlistCommand(list: AutoPlaylist, statsWindow: StatsWindow, shuffle: boolean): Command {
@@ -103,27 +103,27 @@ const StatsShelves = memo(function StatsShelves({ stats, error, statsWindow, onW
     ? <div className="home-unavailable" role="alert"><WarningCircleIcon size={24} aria-hidden="true" /><div><strong>Your mixes and server favorites can’t load right now</strong><p>{error} Continue listening above still works.</p></div>
       <button className="button secondary" onClick={retry}><ArrowClockwiseIcon size={18} />Try again</button></div>
     : !stats ? <Loading label="Loading your mixes and server favorites…" /> : <>
-      <Shelf id="on-repeat" title="On repeat in this server" detail="What this server keeps coming back to, from sessions you can see."
+      <Shelf id="on-repeat" title="On repeat in this server" detail="What this server plays most."
         actions={stats.serverFavorites.onRepeat.length > 0 && <PlayShuffle label="On repeat" disabled={disabled} title={title}
           onPlay={shuffle => run({ command: 'top', subcommand: 'play', options: { list: 'on-repeat', shuffle } }, 'add', stats.serverFavorites.onRepeat.map(entry => entry.track))} />}
         empty={!stats.serverFavorites.onRepeat.length && 'Nothing on repeat yet. Songs collect here after they play in voice channels you can see.'}>
         {stats.serverFavorites.onRepeat.map((entry, index) => <TrackCard key={entry.track.id} track={entry.track} rank={index + 1} meta={`${entry.plays.toLocaleString()} ${entry.plays === 1 ? 'play' : 'plays'}`} disabled={disabled || !entry.track.uri} title={title} onAdd={() => add(entry.track)} />)}
       </Shelf>
-      <Shelf id="your-mixes" title="Your mixes" detail="Built from the songs you request and the ones you heart. Only you see these."
+      <Shelf id="your-mixes" title="Your mixes" detail="Made from your requests and hearts. Only you see these."
         lead={!mixes.some(list => list.tracks.length) && <p className="home-empty">Your mixes fill in as you request songs in voice or heart them. A few requests are enough to start; try a longer range below if you’ve been away.</p>} wide>
-        {mixes.map(list => <PlaylistTile key={list.id} list={list} detail={playlistDetail(list, statsWindow)} disabled={disabled} title={title}
+        {mixes.map(list => <PlaylistTile key={list.id} list={list} detail={playlistDetail(list)} disabled={disabled} title={title}
           onPlay={shuffle => run(playlistCommand(list, statsWindow, shuffle), 'add', list.tracks)}
           range={list.kind === 'top' ? <label className="mix-range"><span className="sr-only">Time range for Your top tracks</span>
             <select value={statsWindow} onChange={event => onWindow(event.target.value as StatsWindow)}>{windows.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label> : null} />)}
       </Shelf>
-      <Shelf id="rediscover" title="Rediscover" detail="Favorites you haven’t requested in a month, songs you used to request first."
+      <Shelf id="rediscover" title="Rediscover" detail="Favorites you haven’t requested in a month."
         actions={rediscover.length > 0 && <PlayShuffle label="Rediscover" disabled={disabled} title={title}
           onPlay={shuffle => run({ command: 'mymix', subcommand: 'play', options: { playlist: 'rediscover', shuffle } }, 'add', rediscover.map(entry => entry.track))} />}
         empty={!rediscover.length && (hasFavorites ? 'You’ve requested every favorite this month. Favorites come back here after 30 days without a request.' : 'Heart songs you love. Once a month passes without requesting one, it comes back here.')}>
         {rediscover.map(entry => <TrackCard key={`${entry.index}:${entry.track.id}`} track={entry.track} meta={entry.lastRequestedAt ? `Requested ${date(entry.lastRequestedAt).split(",")[0]}` : 'Never requested'}
           disabled={disabled} title={title} onAdd={() => run({ command: 'favorite', subcommand: 'play', options: { index: entry.index }, expectedTrackId: entry.track.id }, 'add')} />)}
       </Shelf>
-      <Shelf id="forgotten-gems" title="Forgotten gems" detail="Popular in this server two to four months ago, and quiet since."
+      <Shelf id="forgotten-gems" title="Forgotten gems" detail="Big here two to four months ago, quiet since."
         actions={stats.serverFavorites.forgottenGems.length > 0 && <PlayShuffle label="Forgotten gems" disabled={disabled} title={title}
           onPlay={shuffle => run({ command: 'top', subcommand: 'play', options: { list: 'forgotten-gems', shuffle } }, 'add', stats.serverFavorites.forgottenGems.map(entry => entry.track))} />}
         empty={!stats.serverFavorites.forgottenGems.length && 'No forgotten gems yet. Songs that were popular two to four months ago, with no plays since, appear here.'}>
@@ -154,7 +154,7 @@ const ContinueListening = memo(function ContinueListening({ current, paused, whe
       {!canResume && <span className="continue-hint">{saved.voiceChannel ? `Join ${saved.voiceChannel.name} to resume. ` : ''}Resuming needs playback controls; anyone can start fresh.</span>}</div>
     <button type="button" className="button primary" disabled={!canResume || busy} onClick={onResume}><PlayIcon size={18} weight="fill" />Resume session</button>
   </div> : null;
-  return <Shelf id="continue" title="Continue listening" detail="What’s playing now, and songs played recently in voice channels you can see."
+  return <Shelf id="continue" title="Continue listening" detail="Playing now, and recently played in voice channels you can see."
     lead={feature}
     empty={!recent.length && !feature && (history ? 'Nothing to pick up yet. Songs played in voice channels you can see show up here, and a saved session appears when one is waiting.' : 'Loading your recent songs…')}>
     {recent.map(entry => <TrackCard key={entry.id} track={entry.track} meta={date(entry.playedAt).split(',')[0]} disabled={disabled || !entry.track.uri} title={title} onAdd={() => add(entry.track)} />)}
@@ -167,7 +167,8 @@ function Shelf({ id, title, detail, actions, empty, lead, wide = false, children
     <header className="home-shelf-header"><div><h2 id={headingId}>{title}</h2><p>{detail}</p></div>{actions && <div className="home-shelf-actions">{actions}</div>}</header>
     {lead}
     {/* A sideways shelf is itself a tab stop, so the keyboard can scroll it even when its cards' buttons are disabled. */}
-    {empty ? <p className="home-empty">{empty}</p> : <ol ref={dragScroll} tabIndex={0} data-tv-group className={`shelf-row ${wide ? 'shelf-row-wide' : ''}`} aria-label={title}>{children}</ol>}
+    {/* One or two songs read as a short list instead of a nearly empty sideways row. */}
+    {empty ? <p className="home-empty">{empty}</p> : <ol ref={dragScroll} tabIndex={0} data-tv-group className={`shelf-row ${wide ? 'shelf-row-wide' : Children.count(children) <= 2 ? 'shelf-row-sparse' : ''}`} aria-label={title}>{children}</ol>}
   </section>;
 }
 
@@ -194,9 +195,8 @@ function PlaylistTile({ list, detail, disabled, title, onPlay, range }: { list: 
     <div className={`playlist-cover ${covers.length >= 4 ? 'collage' : ''}`} aria-hidden="true">{covers.length >= 4 ? covers.map(track => <Artwork key={track.id} track={track} />) : <Artwork track={covers[0] || null} />}</div>
     <div className="playlist-body">
       <h3 dir="auto" title={list.title}>{list.title}</h3>
-      <p className="playlist-meta">{empty ? 'No requests in this range' : `${list.tracks.length} ${list.tracks.length === 1 ? 'song' : 'songs'} · ${totalTime(duration)}`}</p>
+      <div className="playlist-meta-row"><p className="playlist-meta">{empty ? 'No requests in this range' : `${list.tracks.length} ${list.tracks.length === 1 ? 'song' : 'songs'} · ${totalTime(duration)}`}</p>{range}</div>
       <p className="playlist-detail">{detail}</p>
-      {range}
       <div className="playlist-actions">
         <button type="button" className="button primary" disabled={disabled || empty} title={title} aria-label={`Play ${list.title}`} onClick={() => onPlay(false)}><PlayIcon size={18} weight="fill" />Play</button>
         <IconButton label={`Shuffle ${list.title}`} title={title || `Shuffle ${list.title}`} disabled={disabled || empty} onClick={() => onPlay(true)}><ShuffleIcon size={21} /></IconButton>

@@ -113,7 +113,11 @@ export function Queue({ portal, compact = false, onAdd }: { portal: Portal; comp
     }
   });
   const radioButton = (track: Track, close: () => void) => local ? null : <button disabled={!controllable || !track.uri} onClick={() => { close(); startRadio(track); }}><RadioIcon />Start radio from this song</button>;
+  const current = !compact ? snapshot?.session.current : null;
   return <section className={`queue ${compact ? 'queue-compact' : ''}`} aria-label={local ? 'Queue on this device' : 'Shared queue'}>
+    {/* The queue page leads with what's playing, so "up next" reads as what follows it. */}
+    {current && <div className="queue-now"><Artwork track={current} /><div className="track-text"><small>Now playing</small><strong title={current.title}>{current.title}</strong><span title={current.author}>{current.author}</span></div>
+      {current.requestedBy && <div className="requester"><Avatar url={current.requestedBy.avatarUrl} name={current.requestedBy.displayName} /><span>{current.requestedBy.displayName}</span></div>}</div>}
     <div className="section-heading"><div className="heading-line"><h2>Up Next</h2>{queue.length > 0 && <span className="count">{queue.length} {queue.length === 1 ? 'song' : 'songs'}{queue.length ? ` · ${totalTime(duration)}${queue.some(t => t.isStream) ? ' + live' : ''}` : ''}</span>}</div>
       {!compact && (snapshot?.session.fairQueue || snapshot?.session.current) && <div className="queue-heading-actions">
         {snapshot?.session.fairQueue && <span className="pill"><ListNumbersIcon size={16} />Taking turns</span>}

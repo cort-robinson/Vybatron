@@ -92,6 +92,10 @@
 
 /* Playlist import: a link form and a preview dialog with counts. */
 .library-view .playlist-import-form { margin-top: 36px; padding: 0; border-bottom: 0; }
+.library-tools { margin-top: 36px; padding: 18px 20px 6px; border: 1px solid var(--line); border-radius: 14px; background: color-mix(in oklab, var(--surface) 55%, transparent); }
+.library-tools .playlist-import-form { margin-top: 0; }
+.library-danger { display: flex; justify-content: flex-end; margin-top: 14px; }
+.library-danger .library-clear { margin-top: 0; font-size: 14px; }
 /* Importing is its own task under the list: a titled field with its help right beneath it. */
 .library-view .playlist-import-form > label { color: var(--text); font-size: 15px; font-weight: 650; }
 .library-view .playlist-import-form input { font-weight: 400; }

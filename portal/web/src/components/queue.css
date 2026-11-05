@@ -115,3 +115,12 @@
 .queue .track-row.lifted::before, .queue .track-row.lifted + .track-row::before { opacity: 0; }
 /* Holding a row opens its menu (longPress.ts), so a hold must not select text or raise the system callout. */
 @media (pointer: coarse) { .queue .track-row { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; } }
+
+.queue-now { display: flex; align-items: center; gap: 16px; margin-bottom: 28px; padding: 14px 18px 14px 14px; border: 1px solid var(--line); border-radius: 14px; background: color-mix(in oklab, var(--accent) 9%, transparent); }
+.queue-now .artwork { width: 64px; height: 64px; flex: none; }
+.queue-now .track-text { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.queue-now .track-text small { color: var(--accent); font-size: 13px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+.queue-now .track-text strong { font-size: 19px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.queue-now .track-text span { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.queue-now .requester { display: flex; align-items: center; gap: 10px; color: var(--text-soft); }
+@media (max-width: 1023px) { .queue-now { margin-bottom: 20px; padding: 10px 12px 10px 10px; } .queue-now .artwork { width: 52px; height: 52px; } .queue-now .requester span { display: none; } }

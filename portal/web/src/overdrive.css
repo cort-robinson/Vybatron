@@ -40,12 +40,13 @@ REVERT: everything here is scoped to :root[data-skin='overdrive']; Settings → 
 .ambient-scene.subtle.immersive .od-horizon { opacity: .62; }
 .ambient-scene.disabled .od-horizon { opacity: .42; }
 .ambient-scene:not(.immersive) { --horizon: calc(100% - var(--player) - var(--nav)); --sun: clamp(220px, 34vmin, 400px); }
-.ambient-scene:not(.immersive) .od-skyline { height: clamp(56px, 11vh, 124px); }
+/* On the browsing pages content scrolls over the skyline, so it recedes enough to keep rows and fields legible. */
+.ambient-scene:not(.immersive) .od-skyline { height: clamp(56px, 11vh, 124px); opacity: .45; }
 .ambient-scene.immersive { --horizon: 70%; --sun: clamp(300px, 66vmin, 760px); --sun-x: calc(var(--sidebar) + 32px + (100vw - var(--sidebar) - 96px) * .26); }
 /* Sign-in: the cover and spectrum stand on the horizon and the sign-in copy sits on the clear floor below. */
 .auth-page .ambient-scene { --horizon: calc(50% + 28px); --sun: clamp(300px, 58vmin, 640px); --sun-x: 50%; }
 @media (max-width: 1023px), (max-height: 760px) { .auth-page .ambient-scene { --horizon: calc(50% + 4px); } }
-.auth-page .ambient-scene .od-skyline { height: clamp(72px, 14vh, 156px); }
+.auth-page .ambient-scene .od-skyline { height: clamp(72px, 14vh, 156px); opacity: 1; }
 .auth-page .od-horizon { opacity: .92; }
 
 .od-sky { position: absolute; left: 0; right: 0; top: 0; height: var(--horizon); background: var(--od-scanlines),
@@ -63,7 +64,7 @@ REVERT: everything here is scoped to :root[data-skin='overdrive']; Settings → 
 }
 .ambient-scene:not(.immersive) .od-sun { top: calc(var(--horizon) - var(--sun) * .52); opacity: .34; mix-blend-mode: screen; transition-duration: 160ms; transition-delay: 0ms; }
 .auth-page .ambient-scene .od-sun { opacity: .78; mix-blend-mode: normal; }
-.od-skyline { position: absolute; left: 0; bottom: calc(100% - var(--horizon)); width: 100%; height: clamp(72px, 14vh, 156px); overflow: visible; }
+.od-skyline { position: absolute; left: 0; bottom: calc(100% - var(--horizon)); width: 100%; height: clamp(72px, 14vh, 156px); overflow: visible; transition: opacity 500ms var(--ease-out); }
 .od-skyline-far { fill: color-mix(in oklab, var(--glow-2) 55%, var(--ground)); opacity: .85; }
 .od-skyline-near { fill: color-mix(in oklab, var(--ground), black 30%); stroke: color-mix(in oklab, var(--accent) 55%, transparent); stroke-width: 1; vector-effect: non-scaling-stroke; stroke-linejoin: bevel; }
 .od-window { fill: color-mix(in oklab, var(--accent) 80%, white); opacity: .85; animation: od-blink 9s steps(1) infinite paused; }
@@ -72,6 +73,9 @@ REVERT: everything here is scoped to :root[data-skin='overdrive']; Settings → 
   background: var(--od-scanlines), linear-gradient(to bottom, color-mix(in oklab, var(--neon) 20%, var(--ground)), color-mix(in oklab, var(--glow-2) 25%, var(--ground)) 40%, var(--ground) 90%);
 }
 .od-floor::before { content: ''; position: absolute; z-index: 1; left: 0; right: 0; top: 0; height: 2px; background: var(--rail); box-shadow: 0 0 22px 3px color-mix(in oklab, var(--neon) 45%, transparent); }
+/* Sign-in copy stands on the floor: the grid fades out behind it so the words read cleanly. */
+.auth-page .od-floor::after { content: ''; position: absolute; z-index: 1; inset: 0; pointer-events: none;
+  background: radial-gradient(ellipse 72% 62% at 50% 34%, color-mix(in oklab, var(--ground) 92%, transparent) 30%, transparent 100%); }
 .od-plane {
   --cell: 72px; position: absolute; left: -100%; right: -100%; bottom: 0; height: 1000px; transform-origin: 50% 100%; transform: rotateX(80deg);
   background-image: linear-gradient(to right, var(--grid-line) 0 2px, transparent 2px), linear-gradient(to bottom, var(--grid-line) 0 2px, transparent 2px);
@@ -205,6 +209,7 @@ REVERT: everything here is scoped to :root[data-skin='overdrive']; Settings → 
   .expand-button:hover svg { filter: drop-shadow(0 0 6px var(--accent)); }
 
   /* Reactor: the play control sits inside a ring that turns while the room plays. */
+  @media (max-width: 599px) { .collapsed .transport .play-button { --play-ring: 4px; } }
   .transport .play-button { --play-ring: 7px; position: relative; background-image: radial-gradient(circle at 50% 28%, rgb(255 255 255 / .38), transparent 62%); }
   .transport .play-button::before { content: ''; position: absolute; inset: calc(-1 * var(--play-ring)); border-radius: 50%; pointer-events: none;
     background: conic-gradient(from 0deg, transparent 0 8%, var(--accent) 20%, transparent 32% 50%, var(--neon) 70%, transparent 82%);

@@ -110,6 +110,7 @@
 .library-tools .playlist-import-form > label { max-width: 560px; }
 @media (max-width: 600px) { .library-tools .playlist-import-form .button { width: 100%; justify-content: center; } }
 .library-search-controls > .library-options { flex: none; }
+.library-manage { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding-inline: 8px; font-size: 14px; }
 .menu-panel .menu-import { display: none; }
 @media (max-width: 960px) { .menu-panel .menu-import { display: flex; } }
 /* Importing is its own task under the list: a titled field with its help right beneath it. */

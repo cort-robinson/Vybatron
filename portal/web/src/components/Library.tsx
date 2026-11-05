@@ -114,7 +114,7 @@ export function LibraryView({ portal, active = true }: { portal: Portal; active?
       <input ref={searchRef} id={`library-search-${tab}`} type="search" dir="auto" value={queries[listTab]} maxLength={200} placeholder={`Search ${label}`} onChange={event => setQuery(event.target.value)} />
       {queries[listTab] && <button type="button" className="text-button" onClick={clearSearch}>Clear search</button>}
       {tab === 'favorites' && library.favorites.length > 0 && <button type="button" className="text-button library-import-toggle" aria-expanded={importOpen} aria-controls={importOpen ? 'favorites-import' : undefined} onClick={() => setImportOpen(!importOpen)}><DownloadSimpleIcon size={18} /><span>Import<span className="wide-label"> a playlist</span></span></button>}
-      {tab === 'favorites' && library.favorites.length > 0 && <ActionPopover label="Favorites options" className="library-options" trigger={<DotsThreeIcon size={25} weight="bold" />}>
+      {tab === 'favorites' && library.favorites.length > 0 && <ActionPopover label="Manage favorites" className="library-options" triggerClassName="text-button library-manage" trigger={<><DotsThreeIcon size={22} weight="bold" aria-hidden="true" /><span>Manage</span></>}>
         {close => <>{/* Phones fold Import into this menu so search keeps the row. */}<button className="menu-import" onClick={() => { close(); setImportOpen(true); }}><DownloadSimpleIcon />Import a playlist</button><button className="danger-text" disabled={!editable} onClick={() => { close(); setConfirm({ kind: 'favorites' }); }}><TrashIcon />Clear favorites</button></>}</ActionPopover>}
     </div></div>
     {tab === 'favorites' && <>

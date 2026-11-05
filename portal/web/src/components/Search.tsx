@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { ArrowBendUpRightIcon, DotsThreeIcon, HeartIcon, LinkIcon, MagnifyingGlassIcon, PlusIcon, RadioIcon, SparkleIcon } from '../icons';
+import { ArrowBendUpRightIcon, ArrowRightIcon, DotsThreeIcon, HeartIcon, LinkIcon, MagnifyingGlassIcon, PlusIcon, RadioIcon, SparkleIcon } from '../icons';
 import { api, errorMessage } from '../api';
 import type { Track } from '../types';
 import type { Portal } from '../usePortal';
@@ -117,7 +117,7 @@ export function Search({ portal, open, onClose, page = false }: { portal: Portal
     : <div className="import-actions"><span>{isLink(typed) ? <><LinkIcon size={18} />Add this link</> : <><SparkleIcon size={17} />Add “{typed}” as typed</>}</span><button className="text-button" disabled={!controllable || !typed} title={!controllable ? portal.blockedReason : undefined} onClick={() => void add(true, typed)}><ArrowBendUpRightIcon size={17} />Play next</button><button className="text-button" disabled={!enabled || !typed} onClick={() => void add(false, typed)}><PlusIcon size={17} />Add to queue</button></div>;
   const body = <>
     <form onSubmit={event => { event.preventDefault(); void search(); }} className="search-form" role="search"><label className="search-field"><MagnifyingGlassIcon size={22} /><span className="sr-only">Music search</span><input ref={input} enterKeyHint="search" type="search" aria-label="Music search" aria-describedby="search-hint" value={query} maxLength={maxLength} onChange={event => setQuery(event.target.value)} placeholder="Song, artist or link…" autoComplete="off" spellCheck={false} /></label>
-      <button type="submit" className={`search-submit button ${tracks?.length && lastQuery === typed ? 'secondary' : 'primary'}`} disabled={searching || !typed || portal.connection !== 'live'}>{searching ? <span className="spinner" /> : <MagnifyingGlassIcon size={20} />}<span className="search-submit-label">Search</span></button></form>
+      <button type="submit" className="search-submit button secondary" title="Search" disabled={searching || !typed || portal.connection !== 'live'}>{searching ? <span className="spinner" /> : <ArrowRightIcon size={20} />}<span className="sr-only">Search</span></button></form>
     <p id="search-hint" className="sr-only">Results update as you type. Links load when you choose Search or add them directly.</p>
     {!portal.can('add') && <p className="permission-note">{portal.blockedReason}</p>}
     {typed && isLink(typed) && direct}

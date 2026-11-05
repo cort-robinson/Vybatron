@@ -328,11 +328,11 @@ for (const [width, height] of [[960, 540], [1920, 1080]] as const) {
       const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
       return !!hit && (element === hit || element.contains(hit));
     });
-    const playAll = page.getByRole('button', { name: 'Play all of On repeat' });
+    const playAll = page.getByRole('button', { name: 'Add all of On repeat' });
     await expect(playAll).toBeVisible();
     // Reach it with the arrows from the selected tab, as a remote would: Right, then Down.
-    for (let step = 0; step < 12 && await focused(page) !== 'Play all of On repeat'; step++) await press(page, step < 1 ? 'ArrowRight' : 'ArrowDown');
-    if (await focused(page) !== 'Play all of On repeat') await playAll.focus();
+    for (let step = 0; step < 12 && await focused(page) !== 'Add all of On repeat'; step++) await press(page, step < 1 ? 'ArrowRight' : 'ArrowDown');
+    if (await focused(page) !== 'Add all of On repeat') await playAll.focus();
     expect(await visible()).toBe(true);
     await press(page, 'ArrowDown');
     const shelf = page.getByRole('list', { name: 'On repeat in this server' });
@@ -533,7 +533,7 @@ test('a shelf remembers its song: up to its header and back down returns to it',
   expect(await focused(page)).toBe('Add Golden Hour to the queue');
   // Up to the shelf's header, and over to Play all above its first song.
   await press(page, 'ArrowUp', 'ArrowLeft');
-  expect(await focused(page)).toBe('Play all of On repeat');
+  expect(await focused(page)).toBe('Add all of On repeat');
   await press(page, 'ArrowDown');
   expect(await focused(page)).toBe('Add Golden Hour to the queue');
 });

@@ -1,9 +1,9 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowClockwiseIcon, HeartIcon, PlayIcon, PlusIcon, RadioIcon, TrashIcon, VinylRecordIcon } from '../icons';
+import { ArrowClockwiseIcon, DotsThreeIcon, HeartIcon, PlayIcon, PlusIcon, RadioIcon, TrashIcon, VinylRecordIcon } from '../icons';
 import type { Portal } from '../usePortal';
 import type { Capability, Command, Library, Track } from '../types';
 import { date, time, totalTime } from '../format';
-import { Artwork, Confirm, Empty, ErrorState, IconButton, Loading } from './ui';
+import { ActionPopover, Artwork, Confirm, Empty, ErrorState, IconButton, Loading } from './ui';
 import { Pagination } from './Pagination';
 import { ServerFavorites } from './ServerFavorites';
 import { PlaylistImport } from './PlaylistImport';
@@ -16,9 +16,9 @@ import './library.css';
 const sections = ['favorites', 'mixes', 'history', 'server'] as const;
 type Section = typeof sections[number];
 type ListSection = Exclude<Section, 'server'>;
-const sectionLabels: Record<Section, string> = { favorites: 'Favorites', mixes: 'Shared mixes', history: 'History', server: 'Server favorites' };
-// Tabs show the short word so all four fit a phone; the full name stays their accessible name.
-const shortLabels: Partial<Record<Section, string>> = { mixes: 'Mixes', server: 'Server' };
+const sectionLabels: Record<Section, string> = { favorites: 'Favorites', mixes: 'Shared mixes', history: 'History', server: 'Popular' };
+// Shared mixes shows one word so all four tabs fit a phone; the full name stays its accessible name.
+const shortLabels: Partial<Record<Section, string>> = { mixes: 'Shared' };
 const pageSize = 50;
 const initialQueries = { favorites: '', mixes: '', history: '' };
 const initialPages = { favorites: 0, mixes: 0, history: 0 };
@@ -107,7 +107,8 @@ export function LibraryView({ portal, active = true }: { portal: Portal; active?
     <div className="section-heading"><div><h2 className="sr-only">{tab === 'favorites' ? 'Favorites' : tab === 'mixes' ? 'Shared mixes' : 'Listening history'}</h2>
       <p className="section-description">{tab === 'favorites' ? 'Your private songs, across every server.' : tab === 'mixes' ? `Saved for ${snapshot?.guild.name || 'this server'}. Up to 100 songs per mix.` : 'The latest 100 songs from the past 30 days, from sessions you can see.'}</p></div>
       {tab === 'history' && <IconButton label="Refresh listening history" onClick={() => void portal.refreshLibrary()}><ArrowClockwiseIcon size={21} /></IconButton>}
-      {tab === 'favorites' && library.favorites.length > 0 && <button type="button" className="text-button danger-text library-clear" disabled={!editable} onClick={() => setConfirm({ kind: 'favorites' })}>Clear favorites</button>}
+      {tab === 'favorites' && library.favorites.length > 0 && <ActionPopover label="Favorites options" className="library-options" trigger={<DotsThreeIcon size={25} weight="bold" />}>
+        {close => <button className="danger-text" disabled={!editable} onClick={() => { close(); setConfirm({ kind: 'favorites' }); }}><TrashIcon />Clear favorites</button>}</ActionPopover>}
     </div>
     <div className="library-search"><label className="sr-only" htmlFor={`library-search-${tab}`}>Search {label}</label><div className="library-search-controls">
       <input ref={searchRef} id={`library-search-${tab}`} type="search" dir="auto" value={queries[listTab]} maxLength={200} placeholder={`Search ${label}`} onChange={event => setQuery(event.target.value)} />

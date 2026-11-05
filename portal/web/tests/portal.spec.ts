@@ -257,11 +257,11 @@ test('maintainer settings accept known Discord IDs without revealing a private c
   await expect(page.getByRole('button', { name: 'Resume playback' })).toBeDisabled();
   await channel.fill('<#123456789012345678>'); await expect(channelSave).toBeDisabled();
   await role.fill('1e18'); await expect(roleSave).toBeDisabled(); expect(fixture.commands).toHaveLength(0);
-  await channel.fill('323456789012345678'); await channelSave.click(); await expect(channelSave).toBeEnabled();
+  await channel.fill('323456789012345678'); await channelSave.click(); await expect(channelSave).toHaveCount(0);
   expect(fixture.commands[0]).toEqual({ command: 'settings', subcommand: 'musicchannel', options: { channel: '323456789012345678' } });
-  await role.fill('423456789012345678'); await roleSave.click(); await expect(roleSave).toBeEnabled();
+  await role.fill('423456789012345678'); await roleSave.click(); await expect(roleSave).toHaveCount(0);
   expect(fixture.commands[1]).toEqual({ command: 'settings', subcommand: 'djrole', options: { role: '423456789012345678' } });
-  await role.fill(''); await roleSave.click(); await expect(roleSave).toBeEnabled();
+  await role.fill(''); await roleSave.click(); await expect(roleSave).toHaveCount(0);
   expect(fixture.commands[2]).toEqual({ command: 'settings', subcommand: 'djrole', options: {} });
   await page.getByRole('tab', { name: 'Advanced controls' }).click(); await page.getByLabel('Command', { exact: true }).selectOption('settings');
   await page.getByRole('combobox', { name: 'Action', exact: true }).selectOption('musicchannel'); await page.getByLabel('channel ID', { exact: true }).fill('5e17');

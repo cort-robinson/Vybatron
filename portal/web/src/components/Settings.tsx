@@ -9,10 +9,10 @@ export type AmbientMode = 'on' | 'subtle' | 'off';
 export interface InstallPrompt extends Event { prompt: () => Promise<void>; userChoice: Promise<{ outcome: string }> }
 
 const lookDescription: Record<Skin, string> = {
-  overdrive: 'A neon horizon, chrome wordmark, HUD-framed panels and a reactor-ring play button. Classic restores the original receiver.',
-  fantastic: 'Earth-828, 1964: a ringed planet over a Googie skyline, Kirby krackle in the sky, and the cover playing on a vintage TV set. Flame on.',
-  haunted: 'All Hallows’ Eve: a full moon over a hollow of bare trees, lit windows and jack-o’-lanterns, with fog in the low ground and the cover hung in a candlelit frame.',
-  classic: 'The original smoked-glass receiver. Overdrive adds a neon horizon; Fantastic Four tunes in a retro-future broadcast; Haunted lights a moonlit hollow.',
+  overdrive: 'Synthwave: a neon sunset, a city skyline and glowing controls.',
+  fantastic: 'Retro comic-book space age: a ringed planet, a 1960s skyline and the cover on a vintage TV.',
+  haunted: 'Halloween: a full moon, bare trees and jack-o’-lanterns, with the cover in a candlelit frame.',
+  classic: 'The original look: calm smoked glass, lit by the cover’s colors.',
 };
 
 // Your own settings: how the portal looks and runs on this device, and your account. The server's
@@ -21,8 +21,8 @@ export function SettingsView({ portal, active, ambient, setAmbient, skin, setSki
   return <div className="settings-view" hidden={!active}>
     <section className="personal-settings" aria-labelledby="settings-look"><div className="section-heading"><div><h2 id="settings-look">Look and feel</h2><p className="section-description">These choices apply to this device.</p></div></div><div className="settings-list">
       <div className="setting-row"><div><label htmlFor="portal-look">Portal look</label><p>{lookDescription[skin]}</p></div><select id="portal-look" value={skin} onChange={event => setSkin(event.target.value as Skin)}><option value="overdrive">Overdrive</option><option value="fantastic">Fantastic Four</option><option value="haunted">Haunted</option><option value="classic">Classic</option></select></div>
-      <div className="setting-row"><div><label htmlFor="ambient-mode">Ambient motion</label><p>Album-colored lighting and the decorative spectrum display. Both settle on pause and respect reduced motion.</p></div><select id="ambient-mode" value={ambient} onChange={event => setAmbient(event.target.value as AmbientMode)}><option value="on">Immersive</option><option value="subtle">Subtle</option><option value="off">Off</option></select></div>
-      <div className="setting-row"><div><h3>Performance mode</h3><p>{performance ? 'Lighter rendering is on: solid panels instead of glass blur, no blurred cover light, and a still scene and spectrum. Controls and playback are unchanged.' : 'Full effects: glass blur, cover-colored light, and a moving scene. Turn this on if the portal feels slow or drains battery.'}</p></div><button role="switch" aria-checked={performance} className="switch" aria-label="Performance mode" onClick={() => setPerformance(!performance)}><span />{performance ? 'On' : 'Off'}</button></div>
+      <div className="setting-row"><div><label htmlFor="ambient-mode">Ambient motion</label><p>Lighting from the cover’s colors and the moving spectrum. Both rest while paused.</p></div><select id="ambient-mode" value={ambient} onChange={event => setAmbient(event.target.value as AmbientMode)}><option value="on">Immersive</option><option value="subtle">Subtle</option><option value="off">Off</option></select></div>
+      <div className="setting-row"><div><h3>Performance mode</h3><p>{performance ? 'On: simpler panels and a still scene. Playback is unchanged.' : 'Turn on if the portal feels slow or drains your battery.'}</p></div><button role="switch" aria-checked={performance} className="switch" aria-label="Performance mode" onClick={() => setPerformance(!performance)}><span />{performance ? 'On' : 'Off'}</button></div>
       <FrameRateSetting />
       <div className="setting-row"><div><h3>Install the app</h3><p>{installPrompt ? 'Open Vybatron in its own window, like an app.' : 'Use your browser’s Install app or Add to Home Screen option when available.'}</p></div><button className="button secondary" disabled={!installPrompt} onClick={install}><DownloadSimpleIcon size={19} />Install app</button></div>
     </div></section>

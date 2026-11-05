@@ -154,7 +154,7 @@ test('moving here can leave Discord playing or stop it', async ({ page }) => {
 test('home lists queue on this device from the tracks the portal already shows', async ({ page }) => {
   await portal(page, { inVoice: false });
   await page.getByRole('button', { name: 'Home', exact: true }).click();
-  await page.getByRole('button', { name: 'Play all of On repeat' }).click();
+  await page.getByRole('button', { name: 'Add all of On repeat' }).click();
   await expect(title(page)).toHaveText('Midnight City');
   await page.getByRole('button', { name: 'Queue', exact: true }).click();
   await expect(page.locator('.track-row')).toHaveCount(3);

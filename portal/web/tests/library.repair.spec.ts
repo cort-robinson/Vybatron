@@ -148,6 +148,7 @@ test('outside voice keeps private library edits and creator mix saves while bloc
   await openLibrary(page);
   await expect(page.getByRole('button', { name: 'Queue favorite Night Drive', exact: true })).toBeDisabled();
   await expect(page.getByRole('button', { name: 'Remove favorite Night Drive', exact: true })).toBeEnabled();
+  await page.getByRole('button', { name: 'Favorites options' }).click();
   await page.getByRole('button', { name: 'Clear favorites', exact: true }).click();
   await expect(page.getByRole('dialog')).toContainText('across all servers');
   await page.getByRole('button', { name: 'Cancel', exact: true }).click();

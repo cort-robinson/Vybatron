@@ -39,7 +39,7 @@ test('configuration: one catalog GET per Settings visit despite fresh SSE frames
     server.state.snapshot.revision = 'configuration-hidden-tab-frame'; server.broadcast();
     await expect(page.getByRole('heading', { name: 'Advanced music controls' })).toBeVisible();
     expect(server.configurationReads).toHaveLength(1);
-    await page.getByRole('tab', { name: 'Settings', exact: true }).click(); await loaded(page);
+    await page.getByRole('tab', { name: 'Defaults', exact: true }).click(); await loaded(page);
     expect(server.configurationReads).toHaveLength(2);
     await page.getByRole('button', { name: 'Queue', exact: true }).click();
     await page.getByRole('button', { name: 'My Music', exact: true }).click();
@@ -177,8 +177,8 @@ test('configuration: discovery recovery cannot authorize offline writes or repla
     await connected(page, server); await settings(page);
     await expect(page.getByRole('button', { name: 'Try again', exact: true })).toBeEnabled();
     const volume = page.getByLabel('Default volume', { exact: true }); const save = volume.locator('..').getByRole('button', { name: 'Save', exact: true });
-    await expect(save).toBeEnabled(); await expect(page.getByRole('button', { name: 'Pause playback' })).toBeEnabled();
-    await volume.fill('53'); server.holdCommandReplies(); await save.click();
+    await expect(save).toHaveCount(0); await expect(page.getByRole('button', { name: 'Pause playback' })).toBeEnabled();
+    await volume.fill('53'); await expect(save).toBeEnabled(); server.holdCommandReplies(); await save.click();
     await expect.poll(() => server.heldCommands.size).toBe(1);
     expect(server.commands).toEqual([{ command: 'settings', subcommand: 'volume', options: { value: 53 } }]);
     server.disconnectAndHold();

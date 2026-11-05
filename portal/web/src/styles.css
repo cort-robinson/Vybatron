@@ -360,6 +360,8 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
 .persistent-player { position: fixed; inset: auto 0 0; height: var(--player); z-index: 30; border-top: 1px solid var(--line-strong); background: var(--chrome); backdrop-filter: var(--chrome-blur); box-shadow: var(--shadow-player); }
 /* The compact deck is a swipe surface (swipe.ts): a vertical drag opens the player instead of panning the page. */
 .persistent-player.collapsed { touch-action: none; }
+/* Content scrolling under the deck fades into it instead of being cut off at its edge. */
+.persistent-player.collapsed::before { content: ''; position: absolute; left: 0; right: 0; bottom: 100%; height: 28px; pointer-events: none; background: linear-gradient(to bottom, transparent, color-mix(in oklab, var(--ground) 85%, transparent)); }
 .persistent-player.swiping { will-change: transform, opacity; }
 .player-spectrum { position: absolute; inset: 0; width: 100%; height: 100%; opacity: .22; -webkit-mask-image: linear-gradient(to top, #000 0%, rgb(0 0 0 / .4) 40%, transparent 78%); mask-image: linear-gradient(to top, #000 0%, rgb(0 0 0 / .4) 40%, transparent 78%); }
 .player-footer { position: relative; height: 100%; display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); align-items: center; gap: 0 24px; padding: 0 16px 0 20px; }
@@ -597,6 +599,8 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
 /* Under real results the typed-text shortcut steps back to a plain line. */
 .import-actions.quiet { padding-left: 0; border-color: transparent; background: none; }
 .import-actions.quiet .text-button { font-size: 14px; color: var(--muted); }
+.import-actions.quiet .text-button:hover:not(:disabled) { color: var(--text); }
+@media (max-width: 1023px) { .import-actions.quiet { padding-block: 4px; } .import-actions.quiet > span, .import-actions.quiet .text-button { font-size: 13px; } }
 .import-actions .text-button { font-size: 16px; padding: 7px 8px; color: var(--text-soft); }
 .notice-line { color: var(--muted); font-size: 14px; padding: 11px 0; }
 .search-dialog .empty-state { min-height: 255px; }
@@ -893,11 +897,10 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
   .result-list .artwork { width: 44px; height: 44px; }
   .result-length { display: none; }
   /* Phones caption the icon instead of setting the word beside it. */
-  :is(.result-list, .library-track-list) .icon-button:has(.result-action-label) { flex-direction: column; gap: 1px; width: 48px; height: auto; min-height: 48px; padding: 2px 0; font-size: 11px; font-weight: 600; }
+  :is(.result-list, .library-track-list) .icon-button:has(.result-action-label) { flex-direction: column; gap: 1px; width: 54px; height: auto; min-height: 48px; padding: 2px 0; font-size: 11px; font-weight: 600; }
   .result-list .track-text strong { font-size: 16px; }
   .result-list .track-text > span { font-size: 14px; }
-  .add-result { padding: 8px 10px; min-width: 44px; justify-content: center; }
-  .add-result span { display: none; }
+  .add-result { flex-direction: column; gap: 1px; min-width: 52px; min-height: 48px; padding: 3px 8px; justify-content: center; font-size: 11px; }
   .toast { left: 12px; right: 12px; top: auto; bottom: calc(var(--player) + var(--nav) + 10px); max-width: none; padding-left: 14px; gap: 8px; }
   /* A pending-confirmation pill floats above the compact deck; toasts clear it. */
   .app-shell:has(.collapsed .player-confirmation:not(:empty)) .toast { bottom: calc(var(--player) + var(--nav) + 56px); }
@@ -1265,3 +1268,5 @@ p, .continue-text > span, .section-description, .field-hint { text-wrap: pretty;
 }
 .search-draft-label { color: var(--muted); }
 .search-draft { color: var(--text); }
+.mobile-page-heading { display: none; }
+@media (max-width: 1023px) { .mobile-page-heading { display: block; margin: 4px 0 18px; font-size: 26px; font-weight: 800; font-stretch: var(--wide); letter-spacing: -0.02em; } }

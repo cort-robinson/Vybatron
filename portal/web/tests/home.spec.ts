@@ -37,7 +37,7 @@ test('every shelf queues through the normal commands', async ({ page }) => {
   const mixes = shelf(page, 'Your mixes');
   await expect(mixes.getByRole('heading', { level: 3 })).toHaveText(['Your mix', 'Your top tracks', 'Solara mix']);
   await expect(mixes).toContainText('New picks');
-  expect(await sent(() => mixes.getByRole('button', { name: 'Play Your mix' }).click()))
+  expect(await sent(() => mixes.getByRole('button', { name: 'Add Your mix' }).click()))
     .toEqual({ command: 'mymix', subcommand: 'play', options: { playlist: 'mix', shuffle: false } });
   expect(await sent(() => mixes.getByRole('button', { name: 'Shuffle Solara mix' }).click()))
     .toEqual({ command: 'mymix', subcommand: 'play', options: { playlist: 'artist', artist: 'Solara', shuffle: true } });
@@ -47,15 +47,15 @@ test('every shelf queues through the normal commands', async ({ page }) => {
   await mixes.getByLabel('Time range for Your top tracks').selectOption('7d');
   await expect.poll(() => fixture.requests.filter(path => path.endsWith('/stats')).length).toBe(statsReads + 1);
   await expect(mixes).toContainText('past week');
-  expect(await sent(() => mixes.getByRole('button', { name: 'Play Your top tracks' }).click()))
+  expect(await sent(() => mixes.getByRole('button', { name: 'Add Your top tracks' }).click()))
     .toEqual({ command: 'mymix', subcommand: 'play', options: { playlist: 'top', shuffle: false, window: '7d' } });
 
   const rediscover = shelf(page, 'Rediscover');
   expect(await sent(() => rediscover.getByRole('button', { name: 'Add Night Drive to the queue' }).click()))
     .toEqual({ command: 'favorite', subcommand: 'play', options: { index: 1 }, expectedTrackId: fixture.state.stats.personal.rediscover[0].track.id });
-  expect(await sent(() => rediscover.getByRole('button', { name: 'Play all of Rediscover' }).click()))
+  expect(await sent(() => rediscover.getByRole('button', { name: 'Add all of Rediscover' }).click()))
     .toEqual({ command: 'mymix', subcommand: 'play', options: { playlist: 'rediscover', shuffle: false } });
-  expect(await sent(() => shelf(page, 'Forgotten gems').getByRole('button', { name: 'Play all of Forgotten gems' }).click()))
+  expect(await sent(() => shelf(page, 'Forgotten gems').getByRole('button', { name: 'Add all of Forgotten gems' }).click()))
     .toEqual({ command: 'top', subcommand: 'play', options: { list: 'forgotten-gems', shuffle: false } });
   await expect(page.locator('.home-view')).not.toContainText('requested by', { ignoreCase: true });
 });
@@ -77,7 +77,7 @@ test('Home explains empty, partial, unavailable and no-permission states', async
   await expect(continuing).toContainText('12 songs in General');
   await expect(continuing).toContainText('Join General to resume');
   await expect(continuing.getByRole('button', { name: 'Resume session' })).toBeDisabled();
-  await expect(shelf(page, 'On repeat in this server').getByRole('button', { name: 'Play all of On repeat' })).toBeDisabled();
+  await expect(shelf(page, 'On repeat in this server').getByRole('button', { name: 'Add all of On repeat' })).toBeDisabled();
   await expect(shelf(page, 'On repeat in this server').getByRole('button', { name: /Add .* to the queue/ }).first()).toBeDisabled();
   await expect(shelf(page, 'Your mixes').getByRole('heading', { level: 3 })).toHaveText(['Your top tracks'], { timeout: 7_000 });
   await expect(shelf(page, 'Your mixes')).toContainText('No requests in this range');

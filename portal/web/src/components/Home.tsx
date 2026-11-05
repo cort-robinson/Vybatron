@@ -28,6 +28,7 @@ function playlistCommand(list: AutoPlaylist, statsWindow: StatsWindow, shuffle: 
   return { command: 'mymix', subcommand: 'play', options };
 }
 
+// Collections are queued after what's playing, so their buttons say Add, not Play.
 // The landing surface for music. The session and library come from the live
 // portal state; stats are read on their own (started with the server, shared with
 // Server favorites), so the Home tab never holds up the player and returning to it
@@ -145,7 +146,7 @@ const ContinueListening = memo(function ContinueListening({ current, paused, whe
     <Artwork track={current} className="continue-art" />
     <div className="continue-text"><span className="continue-state">{paused ? 'Paused' : 'Playing now'}{where}</span>
       <strong dir="auto" title={current.title}>{current.title}</strong><span dir="auto">{current.author}{upNext ? ` · ${upNext} up next` : ''}</span></div>
-    <button type="button" className="button primary continue-open" onClick={onOpenPlayer}><CaretUpIcon size={18} weight="bold" /><span>View now playing</span></button>
+    <button type="button" className="button secondary continue-open" onClick={onOpenPlayer}><CaretUpIcon size={18} weight="bold" /><span>View now playing</span></button>
   </div> : resumable && saved ? <div className="continue-feature">
     <span className="continue-art continue-art-saved" aria-hidden="true"><ArrowCounterClockwiseIcon size={30} /></span>
     <div className="continue-text"><span className="continue-state">Saved session</span>
@@ -174,7 +175,7 @@ function Shelf({ id, title, detail, actions, empty, lead, wide = false, children
 
 function PlayShuffle({ label, disabled, title, onPlay }: { label: string; disabled: boolean; title?: string; onPlay: (shuffle: boolean) => void }) {
   return <>
-    <button type="button" className="button primary" disabled={disabled} title={title} aria-label={`Play all of ${label}`} onClick={() => onPlay(false)}><PlayIcon size={18} weight="fill" />Play all</button>
+    <button type="button" className="button primary" disabled={disabled} title={title} aria-label={`Add all of ${label}`} onClick={() => onPlay(false)}><PlusIcon size={18} weight="bold" />Add all</button>
     <button type="button" className="button secondary" disabled={disabled} title={title} aria-label={`Shuffle ${label}`} onClick={() => onPlay(true)}><ShuffleIcon size={18} />Shuffle</button>
   </>;
 }
@@ -198,7 +199,7 @@ function PlaylistTile({ list, detail, disabled, title, onPlay, range }: { list: 
       <div className="playlist-meta-row"><p className="playlist-meta">{empty ? 'No requests in this range' : `${list.tracks.length} ${list.tracks.length === 1 ? 'song' : 'songs'} · ${totalTime(duration)}`}</p>{range}</div>
       <p className="playlist-detail">{detail}</p>
       <div className="playlist-actions">
-        <button type="button" className="button primary" disabled={disabled || empty} title={title} aria-label={`Play ${list.title}`} onClick={() => onPlay(false)}><PlayIcon size={18} weight="fill" />Play</button>
+        <button type="button" className="button primary" disabled={disabled || empty} title={title} aria-label={`Add ${list.title}`} onClick={() => onPlay(false)}><PlusIcon size={18} weight="bold" />Add mix</button>
         <IconButton label={`Shuffle ${list.title}`} title={title || `Shuffle ${list.title}`} disabled={disabled || empty} onClick={() => onPlay(true)}><ShuffleIcon size={21} /></IconButton>
       </div>
     </div>

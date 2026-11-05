@@ -78,6 +78,9 @@
 .continue-text > span:not(.continue-state) { color: var(--text-soft); font-size: 14px; overflow-wrap: anywhere; }
 .continue-text .continue-hint { color: var(--muted); }
 .continue-feature .button { min-height: 44px; padding: 9px 18px; font-size: 14px; }
+/* The whole card opens the player; the button is its visible, focusable label. */
+.continue-feature:has(.continue-open) { position: relative; cursor: pointer; }
+.continue-open::after { content: ''; position: absolute; inset: 0; border-radius: inherit; }
 
 /* Your mixes: a cover collage with the playlist's own actions. */
 .playlist-tile { display: flex; flex-direction: column; }

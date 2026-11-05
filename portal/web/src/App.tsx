@@ -221,6 +221,8 @@ export function App() {
         <Held held={surface !== 'home'}><Home portal={portal} active={surface === 'home'} onOpenPlayer={openPlayer} /></Held>
         <Held held={surface !== 'music'}><LibraryView portal={portal} active={surface === 'music'} /></Held>
         {surface === 'search' && <Search portal={portal} page open onClose={() => navigate('home')} />}
+        {/* Phones hide the top bar, and Server and Settings have no tab of their own, so they name themselves. */}
+        {(surface === 'server' || surface === 'settings') && <p className="mobile-page-heading" aria-hidden="true">{heading}</p>}
         <Held held={surface !== 'server'}><ServerView portal={portal} active={surface === 'server'} /></Held>
         <Held held={surface !== 'settings'}><SettingsView portal={portal} active={surface === 'settings'} ambient={ambient} setAmbient={setAmbient} skin={skin} setSkin={setSkin} performance={performance} setPerformance={setPerformance} installPrompt={installPrompt} install={install} /></Held>
       </>}</Held></div>{!noGuilds && <Player portal={portal} expanded={expanded} setExpanded={toggleExpanded} onAdd={openSearch} palette={palette} animate={!still} skin={skin} />}</main>

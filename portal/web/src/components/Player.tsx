@@ -152,11 +152,13 @@ export function Player({ portal, expanded, setExpanded, onAdd, palette, animate,
   const visualsSwitch = track && <div className="sleeve-visuals">{visualsOpen && <IconButton label="Full-screen visualizer" onClick={() => setVisualsFull(true)}><CornersOutIcon size={21} /></IconButton>}
     <IconButton className={visualsOpen ? 'active-control' : ''} label={visualsOpen ? 'Hide visualizer' : 'Show visualizer'} aria-pressed={visualsOpen} onClick={() => setVisualsOpen(!visualsOpen)}><WaveformIcon size={21} weight={visualsOpen ? 'bold' : 'regular'} /></IconButton></div>;
   const destination = local ? `Playing on ${portal.playingOn || 'this device'}` : session?.voiceChannel ? `Playing in ${session.voiceChannel.name} on Discord` : '';
+  const destinationChip = expanded && !!track && !!destination;
   const identity = <div className="player-identity" data-glass><div className="player-title-row">{lyricsToggle}<h2 ref={headingRef} tabIndex={-1} title={track?.title}>{track?.title || 'Nothing playing'}</h2>{favorite}</div><p title={track ? `${track.author} · ${track.source}` : undefined}>{metadata}</p>
     {/* Where the sound comes out, and the shortest way to change it (More › Play on has it too). */}
-    {expanded && track && destination && <ActionPopover label={`${destination}. Choose where it plays`} className="player-destination" triggerClassName="player-destination-trigger"
+    {destinationChip && <ActionPopover label={`${destination}. Choose where it plays`} className="player-destination" triggerClassName="player-destination-trigger"
       trigger={<>{local ? <DesktopIcon size={16} aria-hidden="true" /> : <DiscordLogoIcon size={16} weight="fill" aria-hidden="true" />}<span>{destination}</span><CaretDownIcon size={14} aria-hidden="true" /></>}>
-      {close => <PlayOnChoices portal={portal} close={close} onMoveHere={() => setConfirmHere(true)} />}</ActionPopover>}
+      {close => <><PlayOnChoices portal={portal} close={close} onMoveHere={() => setConfirmHere(true)} />
+        {portal.devices.length > 0 && <button onClick={() => { close(); setRenaming(true); }}><PencilSimpleIcon />Rename this device</button>}</>}</ActionPopover>}
   </div>;
   const spectrumMode = track && active && live ? 'playing' : 'standby';
   const look = skinLook(skin);
@@ -179,10 +181,11 @@ export function Player({ portal, expanded, setExpanded, onAdd, palette, animate,
       {bootstrap?.filters.map(filter => <option key={filter.id} value={filter.id}>{filter.label}</option>)}
     </select><CaretDownIcon size={16} /></label>}
     <ActionPopover label="More playback controls" trigger={<DotsThreeIcon size={27} weight="bold" />} className="player-more" triggerClassName="icon-button">
-      {/* Where it plays leads the menu; the playback extras follow, then the destructive pair. */}
-      {close => <><PlayOnChoices portal={portal} close={close} onMoveHere={() => setConfirmHere(true)} />
+      {/* Where it plays leads the menu, unless the open player's destination chip already offers it;
+          the playback extras follow, then the destructive pair. */}
+      {close => <>{!destinationChip && <><PlayOnChoices portal={portal} close={close} onMoveHere={() => setConfirmHere(true)} />
         {portal.devices.length > 0 && <button onClick={() => { close(); setRenaming(true); }}><PencilSimpleIcon />Rename this device</button>}
-        <hr className="menu-divider" />
+        <hr className="menu-divider" /></>}
         {expanded && <button disabled={!track} onClick={() => { close(); setVisualsFull(true); }}><CornersOutIcon />Full-screen visualizer</button>}
         {!local && <><button disabled={!can('vote') || pending.includes('voteskip:') || !track} onClick={() => { close(); void run({ command: 'voteskip', expectedRevision: snapshot?.revision }, 'vote'); }}><HandPalmIcon />Vote to skip</button>
         <button disabled={!controllable || !track} onClick={() => { close(); void control({ command: 'radio', subcommand: session?.radio ? 'off' : 'on' }); }}><RadioIcon />Turn autoplay {session?.radio ? 'off' : 'on'}</button>

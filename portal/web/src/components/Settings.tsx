@@ -25,12 +25,13 @@ export function SettingsView({ portal, active, ambient, setAmbient, skin, setSki
       <div className="setting-row"><div><h3>Performance mode</h3><p>{performance ? 'On: simpler panels and a still scene. Playback is unchanged.' : 'Simpler panels and a still background, for a smoother portal and longer battery.'}</p></div><button role="switch" aria-checked={performance} className="switch" aria-label="Performance mode" onClick={() => setPerformance(!performance)}><span />{performance ? 'On' : 'Off'}</button></div>
       <FrameRateSetting />
       {installPrompt && <div className="setting-row"><div><h3>Install the app</h3><p>Open Vybatron in its own window, like an app.</p></div><button className="button secondary" onClick={install}><DownloadSimpleIcon size={19} />Install app</button></div>}
-    </div>{!installPrompt && <p className="settings-footnote">To install Vybatron as an app, use your browser’s Install app or Add to Home Screen option.</p>}</section>
+    </div></section>
     <section className="personal-settings" aria-labelledby="settings-account"><h2 id="settings-account">Account</h2><div className="settings-list">
       {portal.bootstrap?.inviteUrl && <div className="setting-row"><div><h3>Add to another server</h3><p>Pick any server where you have Manage Server permission. Discord shows what Vybatron can access before you confirm.</p></div><a className="button secondary setting-link" href={portal.bootstrap.inviteUrl} target="_blank" rel="noopener noreferrer"><DiscordLogoIcon size={19} weight="fill" />Add to server</a></div>}
       <AutoplayTaste portal={portal} />
       <div className="setting-row"><div><h3>This device’s session</h3><p>Discord sign-in lasts up to seven days per device.</p></div><button className="text-button" onClick={() => void portal.logout()}>Sign out</button></div>
     </div></section>
+    {!installPrompt && <p className="settings-footnote">To install Vybatron as an app, use your browser’s Install app or Add to Home Screen option.</p>}
   </div>;
 }
 

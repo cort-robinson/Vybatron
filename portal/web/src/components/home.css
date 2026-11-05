@@ -1,4 +1,4 @@
-.home-view { min-width: 0; display: flex; flex-direction: column; gap: 48px; padding-bottom: 12px; }
+.home-view { min-width: 0; display: flex; flex-direction: column; gap: 40px; padding-bottom: 12px; }
 .home-view > .permission-note { margin-bottom: -20px; }
 
 /* Shelves: a heading line, then one row that scrolls sideways. */
@@ -104,12 +104,14 @@
 .mix-sheet-meta { color: var(--text-soft); font-size: 15px; font-weight: 600; }
 .mix-sheet-detail { margin-top: 2px; color: var(--muted); font-size: 14px; }
 .mix-tracks { max-height: min(52vh, 420px); overflow-y: auto; margin: 16px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 8px; }
-.mix-tracks li { display: grid; grid-template-columns: 44px minmax(0, 1fr) auto 44px; align-items: center; gap: 12px; padding: 4px 0; }
+.mix-tracks li { display: grid; grid-template-columns: 44px minmax(0, 1fr) auto minmax(44px, auto); align-items: center; gap: 12px; padding: 4px 0; }
 .mix-tracks .artwork { width: 44px; height: 44px; border-radius: 8px; }
-.mix-tracks .add-again { color: var(--muted); opacity: .7; }
-.playlist-repeats { margin-top: 4px; color: var(--accent); font-size: 13px; font-weight: 600; }
+.mix-tracks .add-again { width: auto; gap: 4px; padding-inline: 10px; font-size: 13px; font-weight: 600; color: var(--text-soft); }
+.playlist-repeats { display: flex; align-items: center; gap: 5px; margin-top: 4px; color: var(--muted); font-size: 13px; }
+/* Two-line descriptions keep the queued note and buttons on one line across a row of mix cards. */
+.playlist-detail { min-height: 3em; }
 .mix-repeat-note { margin-top: 12px; color: var(--muted); font-size: 14px; }
-.mix-track-state { color: var(--accent); font-size: 13px; font-weight: 600; white-space: nowrap; }
+.mix-track-state { color: var(--muted); font-size: 13px; font-weight: 600; white-space: nowrap; }
 .mix-tracks li:not(:has(.mix-track-state)) > .mix-track-text { grid-column: span 2; }
 .mix-track-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .mix-track-text strong { font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

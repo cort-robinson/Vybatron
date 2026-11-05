@@ -566,13 +566,18 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
 /* Wide screens set the form on a panel, so its narrower measure reads as deliberate. */
 @media (min-width: 1024px) { .settings-list { padding: 4px 28px; border: 1px solid var(--line); border-radius: 16px; background: color-mix(in oklab, var(--ground) 70%, transparent); } .settings-list > .setting-row:last-child { border-bottom: 0; } .settings-footnote { padding-inline: 28px; } }
 /* On phones the Defaults tab already names the section, so only its one-line summary stays. */
-@media (max-width: 600px) { .server-intro h2 { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; } .server-intro .section-description { margin-top: 0; } }
+@media (min-width: 0px) { .server-intro h2 { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; } .server-intro .section-description { margin-top: 0; } }
 .setting-row > .button.setting-link { flex: none; width: auto; min-height: 44px; }
 /* Results arrive as you type, so the submit is a quiet icon for Enter-less searches and links. */
 .search-form .search-submit { width: 48px; min-width: 48px; padding: 0; justify-content: center; }
 /* The first result keeps the filled Add; later rows use the quieter outline so a long list doesn't become a column of slabs. */
 .result-list > li + li .button.primary.add-result { background: none; color: var(--accent); border: 1px solid var(--field-line); box-shadow: none; }
 .mix-tracks .icon-button, :is(.library-track-list, .history-list) .icon-button:has(.result-action-label) { color: var(--accent); }
+.search-field { position: relative; }
+.search-clear { display: grid; place-items: center; flex: none; width: 36px; height: 36px; margin-right: 4px; border-radius: 50%; color: var(--muted); background: none; }
+.search-clear:hover { color: var(--text); background: var(--hover-surface); }
+.search-field input::-webkit-search-cancel-button { display: none; }
+.signin-footnote { padding: 6px 14px; border-radius: 999px; color: var(--text-soft); background: color-mix(in oklab, var(--ground) 78%, transparent); }
 .settings-footnote { max-width: 760px; margin-top: 14px; color: var(--muted); font-size: 14px; }
 .setting-row { display: flex; align-items: center; justify-content: space-between; gap: 35px; padding: 16px 0; border-bottom: 1px solid var(--line); }
 .setting-row > div:first-child { min-width: 0; max-width: 55ch; }

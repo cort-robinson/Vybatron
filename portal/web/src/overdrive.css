@@ -174,7 +174,9 @@ REVERT: everything here is scoped to :root[data-skin='overdrive']; Settings → 
   .spinner { border-color: var(--accent); border-right-color: transparent; border-left-color: var(--neon); }
   .menu-panel { border-radius: 6px 16px 6px 16px; background: var(--hud), var(--raised); --hud-c: color-mix(in oklab, var(--accent) 45%, transparent); }
   /* Sheets sit on the screen's bottom edge, where the lower brackets would be cut off: they keep the top pair only. */
-  .menu-panel.menu-sheet, .dialog.mix-dialog { background: linear-gradient(var(--hud-c), var(--hud-c)) top left / 14px 1.5px no-repeat, linear-gradient(var(--hud-c), var(--hud-c)) top left / 1.5px 14px no-repeat, linear-gradient(var(--hud-c), var(--hud-c)) top right / 14px 1.5px no-repeat, linear-gradient(var(--hud-c), var(--hud-c)) top right / 1.5px 14px no-repeat, var(--raised); }
+  /* Edge-anchored sheets skip the corner brackets, which the screen edge would clip into stray ticks. */
+  .menu-panel.menu-sheet, .dialog.mix-dialog { background: var(--raised); }
+  .menu-panel.menu-sheet.unused, .dialog.mix-dialog.unused { background: linear-gradient(var(--hud-c), var(--hud-c)) top left / 14px 1.5px no-repeat, linear-gradient(var(--hud-c), var(--hud-c)) top left / 1.5px 14px no-repeat, linear-gradient(var(--hud-c), var(--hud-c)) top right / 14px 1.5px no-repeat, linear-gradient(var(--hud-c), var(--hud-c)) top right / 1.5px 14px no-repeat, var(--raised); }
   /* Over the open player's queue, the More menu needs a firmer edge to read as its own layer. */
   .player-more > .menu-panel { border-color: color-mix(in oklab, var(--accent) 34%, var(--line-strong)); box-shadow: var(--shadow-menu), 0 24px 60px -12px rgb(0 0 0 / .7); }
   .toast, .update-notice { border-radius: 4px 14px 4px 14px; }

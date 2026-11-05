@@ -1380,12 +1380,12 @@ p, .continue-text > span, .section-description, .field-hint { text-wrap: pretty;
 .volume-sheet { display: none; }
 .track-queue-state { color: var(--muted); }
 /* Queue state reads as a status, not a second artist line: a small marker leads it. */
-:is(.queue-state, .track-queue-state, .mix-track-state)::before { content: '\25B8\00A0'; color: var(--accent); }
-.library-track-list .track-queue-state .queue-sep { display: none; }
+:is(.queue-state, .track-queue-state .queue-label, .mix-track-state)::before { content: '\25B8\00A0'; color: var(--accent); }
+:is(.queue-state, .mix-track-state).is-playing::before, .track-queue-state.is-playing .queue-label::before { content: '\266A\00A0'; }
 /* Small player-bar text keeps a ground halo so the spectrum behind it never breaks up the letters. */
 :is(.compact-track-meta, .timeline > span) { text-shadow: 0 0 6px var(--ground), 0 0 3px var(--ground), 0 0 1px var(--ground); }
 /* Section headings that scroll over the horizon sit on a soft backing, so the skyline never runs through them. */
-:is(.home-shelf-header, .section-heading) > div:first-child { padding: 6px 40px 8px 12px; margin: -6px -40px -8px -12px; background: radial-gradient(ellipse 100% 100% at 0% 50%, color-mix(in oklab, var(--ground) 78%, transparent) 55%, transparent 100%); }
+:is(.home-shelf-header, .section-heading) :is(h2, p) { text-shadow: 0 0 18px var(--ground), 0 0 8px var(--ground), 0 0 3px var(--ground); }
 /* The player bar's song name and artist sit on a backing too; the spectrum keeps running around them. */
 .collapsed .timeline > span { padding: 0 4px; border-radius: 6px; background: color-mix(in oklab, var(--ground) 72%, transparent); }
 .collapsed .compact-title { padding: 2px 8px; margin: -2px -8px; border-radius: 8px; background: color-mix(in oklab, var(--ground) 72%, transparent); }

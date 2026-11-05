@@ -17,7 +17,7 @@ const windows: { id: StatsWindow; label: string }[] = [
 const weekday = (at: number) => new Intl.DateTimeFormat(undefined, { weekday: 'long' }).format(at);
 
 function playlistDetail(list: AutoPlaylist) {
-  if (list.kind === 'mix') return `Requests and hearts · new ${list.refreshesAt ? weekday(list.refreshesAt) : 'weekly'}`;
+  if (list.kind === 'mix') return `Songs you asked for and favorites · new ${list.refreshesAt ? weekday(list.refreshesAt) : 'weekly'}`;
   if (list.kind === 'top') return 'Your most requested here';
   return `${list.artist}, from your hearts and this server`;
 }
@@ -110,7 +110,7 @@ const StatsShelves = memo(function StatsShelves({ stats, error, statsWindow, onW
         empty={!stats.serverFavorites.onRepeat.length && 'Nothing on repeat yet. Songs collect here after they play in voice channels you can see.'}>
         {stats.serverFavorites.onRepeat.map((entry, index) => <TrackCard key={entry.track.id} track={entry.track} rank={index + 1} meta={`${entry.plays.toLocaleString()} ${entry.plays === 1 ? 'play' : 'plays'}`} disabled={disabled || !entry.track.uri} title={title} onAdd={() => add(entry.track)} />)}
       </Shelf>
-      <Shelf id="your-mixes" title="Made for you" detail="From your requests and hearts. Only you see these."
+      <Shelf id="your-mixes" title="Made for you" detail="From songs you ask for and your favorites. Only you see these."
         actions={<label className="mix-range"><span aria-hidden="true">Your top tracks:</span>
           <select aria-label="Time range for Your top tracks" value={statsWindow} onChange={event => onWindow(event.target.value as StatsWindow)}>{windows.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>}
         lead={!mixes.some(list => list.tracks.length) && <p className="home-empty">Your mixes fill in as you request songs in voice or heart them. A few requests are enough to start; try a longer range below if you’ve been away.</p>} wide>
@@ -124,7 +124,7 @@ const StatsShelves = memo(function StatsShelves({ stats, error, statsWindow, onW
         {rediscover.map(entry => <TrackCard key={`${entry.index}:${entry.track.id}`} track={entry.track} meta={entry.lastRequestedAt ? `Requested ${date(entry.lastRequestedAt).split(",")[0]}` : 'Never requested'}
           disabled={disabled} title={title} onAdd={() => run({ command: 'favorite', subcommand: 'play', options: { index: entry.index }, expectedTrackId: entry.track.id }, 'add')} />)}
       </Shelf>
-      <Shelf id="forgotten-gems" title="Forgotten gems" detail="Big here two to four months ago, quiet since."
+      <Shelf id="forgotten-gems" title="Forgotten gems" detail="Played a lot here two to four months ago, quiet since."
         actions={stats.serverFavorites.forgottenGems.length > 0 && <PlayShuffle label="Forgotten gems" disabled={disabled} title={title}
           onPlay={shuffle => run({ command: 'top', subcommand: 'play', options: { list: 'forgotten-gems', shuffle } }, 'add', stats.serverFavorites.forgottenGems.map(entry => entry.track))} />}
         empty={!stats.serverFavorites.forgottenGems.length && 'No forgotten gems yet. Songs that were popular two to four months ago, with no plays since, appear here.'}>
@@ -155,7 +155,7 @@ const ContinueListening = memo(function ContinueListening({ current, paused, whe
       {!canResume && <span className="continue-hint">{saved.voiceChannel ? `Join ${saved.voiceChannel.name} to resume. ` : ''}Resuming needs playback controls; anyone can start fresh.</span>}</div>
     <button type="button" className="button primary" disabled={!canResume || busy} onClick={onResume}><PlayIcon size={18} weight="fill" />Resume session</button>
   </div> : null;
-  return <Shelf id="continue" title="Recently played" detail={current ? <><span className="wide-only">Playing now, and what played recently.</span><span className="narrow-only">What played before this song.</span></> : 'What played recently.'}
+  return <Shelf id="continue" title="Recently played" detail={current ? <><span className="wide-only">Playing now, and what played recently.</span><span className="narrow-only">What played recently.</span></> : 'What played recently.'}
     lead={feature}
     empty={!recent.length && !feature && (history ? 'Nothing to pick up yet. Songs played in voice channels you can see show up here, and a saved session appears when one is waiting.' : 'Loading your recent songs…')}>
     {recent.map(entry => <TrackCard key={entry.id} track={entry.track} meta={`Played ${date(entry.playedAt).split(',')[0]}`} disabled={disabled || !entry.track.uri} title={title} onAdd={() => add(entry.track)} />)}

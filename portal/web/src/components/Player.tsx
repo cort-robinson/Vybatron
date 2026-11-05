@@ -190,7 +190,7 @@ export function Player({ portal, expanded, setExpanded, onAdd, palette, animate,
         {portal.devices.length > 0 && <button onClick={() => { close(); setRenaming(true); }}><PencilSimpleIcon />Rename this device</button>}
         <hr className="menu-divider" /></>}
         {expanded && <button disabled={!track} onClick={() => { close(); setVisualsFull(true); }}><CornersOutIcon />Full-screen visualizer</button>}
-        {!local && <><button disabled={!can('vote') || pending.includes('voteskip:') || !track} onClick={() => { close(); void run({ command: 'voteskip', expectedRevision: snapshot?.revision }, 'vote'); }}><HandPalmIcon />Vote to skip</button>
+        {!local && <>{/* Listeners who can skip outright use Skip; voting is for everyone else. */}{!controllable && <button disabled={!can('vote') || pending.includes('voteskip:') || !track} onClick={() => { close(); void run({ command: 'voteskip', expectedRevision: snapshot?.revision }, 'vote'); }}><HandPalmIcon />Vote to skip</button>}
         <button disabled={!controllable || !track} onClick={() => { close(); void control({ command: 'radio', subcommand: session?.radio ? 'off' : 'on' }); }}><RadioIcon />Turn autoplay {session?.radio ? 'off' : 'on'}</button>
         <button disabled={!controllable || !track && !sleep} onClick={() => { close(); setSleepOpen(true); }}><MoonIcon />{sleep ? `Sleep timer · ${sleep}` : 'Sleep timer'}</button></>}
         {!local && track?.suggested && <button disabled={!controllable} onClick={() => { close(); void run({ command: 'radio', subcommand: 'less', expectedTrackId: track.id }, 'control'); }}><ThumbsDownIcon />Less like this</button>}

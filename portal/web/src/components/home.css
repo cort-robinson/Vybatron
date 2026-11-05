@@ -219,6 +219,8 @@
   .home-shelf:has(> .shelf-row-sparse) > .continue-feature { margin-bottom: 0; grid-template-columns: 64px minmax(0, 1fr) auto; padding: 12px 16px 12px 12px; }
   .home-shelf:has(> .shelf-row-sparse) > .continue-feature .continue-art { width: 64px; height: 64px; }
   .home-shelf:has(> .continue-feature) > .shelf-row-sparse > li:only-child { height: 100%; }
+  /* A lone history card keeps the width of a sparse card instead of spanning the half-row. */
+  .home-shelf:has(> .continue-feature) > .shelf-row-sparse > li { max-width: 440px; }
   .home-shelf:has(> .continue-feature) > .shelf-row.shelf-row-sparse { grid-template-columns: minmax(0, 1fr); padding: 0; margin: 0; }
 }
 /* A song card is one target: anywhere on it adds the song, the + is its visible cue. */

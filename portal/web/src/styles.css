@@ -523,7 +523,7 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
   .sleeve-visuals svg { width: 18px; height: 18px; }
   .sleeve-visuals .visuals-toggle { width: auto; padding: 0 11px 0 8px; font-size: 12px; }
 }
-.sleeve-queue { align-self: stretch; max-height: 100%; min-width: 0; min-height: 0; overflow-y: auto; padding: 18px 16px 18px; background: color-mix(in oklab, var(--ground) 62%, transparent); backdrop-filter: var(--chrome-blur); --glass: var(--chrome-blur); border: 1px solid var(--line); border-radius: 20px; }
+.sleeve-queue { align-self: start; max-height: 100%; min-width: 0; min-height: 0; overflow-y: auto; padding: 18px 16px 18px; background: color-mix(in oklab, var(--ground) 62%, transparent); backdrop-filter: var(--chrome-blur); --glass: var(--chrome-blur); border: 1px solid var(--line); border-radius: 20px; }
 .sleeve-queue .section-heading { padding-inline: 8px; }
 /* The open sleeve keeps the same deck, so the transport never moves; the sleeve carries identity. */
 .expanded .player-footer { background: var(--chrome); backdrop-filter: var(--chrome-blur); --glass: var(--chrome-blur); border-top: 1px solid var(--line-strong); }

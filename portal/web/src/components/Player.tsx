@@ -180,9 +180,6 @@ export function Player({ portal, expanded, setExpanded, onAdd, palette, animate,
   </div>;
   const extras = <div className="player-extras">
     <Volume level={session?.volume ?? 100} disabled={!controllable} reset={`${track?.id}:${snapshot?.guild.id}`} scope={local ? 'Volume on this device' : `Volume for everyone${session?.voiceChannel ? ` in ${session.voiceChannel.name}` : ''}`} onCommit={level => void control({ command: 'volume', options: { level } })} />
-    {!local && <label className={`filter-control ${session?.filter === 'warm' ? 'warm' : ''}`} title="Audio filter"><SpeakerHifiIcon className="filter-dot" size={17} aria-hidden="true" /><span className="filter-prefix" aria-hidden="true">Sound:</span><span className="sr-only">Audio filter</span><select aria-label="Audio filter" value={session?.filter || bootstrap?.filters[0]?.id || ''} disabled={!controllable} onChange={event => void control({ command: 'filter', options: { preset: event.target.value } })}>
-      {bootstrap?.filters.map(filter => <option key={filter.id} value={filter.id}>{filter.label}</option>)}
-    </select><CaretDownIcon size={16} /></label>}
     <ActionPopover label="More playback controls" trigger={<DotsThreeIcon size={27} weight="bold" />} className="player-more" triggerClassName="icon-button">
       {/* Where it plays leads the menu, unless the open player's destination chip already offers it;
           the playback extras follow, then the destructive pair. */}
@@ -198,6 +195,10 @@ export function Player({ portal, expanded, setExpanded, onAdd, palette, animate,
         {!local && <><button disabled={!controllable || !track} onClick={() => { close(); void control({ command: 'radio', subcommand: session?.radio ? 'off' : 'on' }); }}><RadioIcon />Turn autoplay {session?.radio ? 'off' : 'on'}</button>
         <button disabled={!controllable || !track && !sleep} onClick={() => { close(); setSleepOpen(true); }}><MoonIcon />{sleep ? `Sleep timer · ${sleep}` : 'Sleep timer'}</button></>}
         {!local && <button disabled={!can('library') || !track} onClick={() => { close(); setSaveSession(true); }}><VinylRecordIcon />Save session as mix</button>}
+        {/* The sound filter is set rarely, so it lives here instead of beside the transport. */}
+        {!local && !!bootstrap?.filters.length && <><p className="menu-section">Sound</p>
+          {bootstrap.filters.map(filter => { const chosen = (session?.filter || bootstrap.filters[0]?.id) === filter.id; return <button key={filter.id} aria-pressed={chosen} disabled={!controllable} onClick={() => { close(); if (!chosen) void control({ command: 'filter', options: { preset: filter.id } }); }}><SpeakerHifiIcon className={filter.id === 'warm' ? 'sound-choice warm' : 'sound-choice'} /><span className="menu-device"><span>{filter.label}</span></span>{chosen && <CheckIcon className="menu-check" weight="bold" />}</button>; })}</>}
+
         <button className="danger-text" disabled={!controllable || !session?.queue.length} onClick={() => { close(); setConfirmClear(true); }}><TrashIcon />Clear upcoming queue</button>
         <button className="danger-text" disabled={!can('control') || !track} onClick={() => { close(); setConfirmStop(true); }}><StopCircleIcon />{local ? 'Stop and clear your queue' : 'Stop and discard session'}</button>
       </>}

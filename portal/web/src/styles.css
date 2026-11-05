@@ -1378,7 +1378,8 @@ p, .continue-text > span, .section-description, .field-hint { text-wrap: pretty;
 .chip-prefix-short { display: none; color: var(--text-soft); font-weight: 500; }
 @media (max-width: 599px) { .chip-prefix { display: none; } .chip-prefix-short { display: inline; } }
 /* The narrowest covers (older Fold cover screens) keep Lyrics and the destination on one line. */
-@media (max-width: 360px) { .chip-prefix-short { display: none; } .sleeve-main .player-chips { flex-wrap: nowrap; } }
+@media (max-width: 360px) { .chip-prefix-short { display: none; } .sleeve-main .player-chips { flex-wrap: nowrap; } .sleeve-main .player-chips :is(button, .player-destination-trigger) { white-space: nowrap; padding-inline: 10px; } }
+.menu-panel .sound-choice.warm { color: var(--amber); }
 /* Desktop queue rows stay compact so a long queue scans in one screen. */
 @media (min-width: 1024px) { .queue:not(.queue-compact) .track-row .artwork { width: 48px; height: 48px; } }
 /* Phones: settings rows sit tighter; the explanation stays readable. */

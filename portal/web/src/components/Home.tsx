@@ -120,13 +120,13 @@ const StatsShelves = memo(function StatsShelves({ stats, playing, queued, error,
     ? <div className="home-unavailable" role="alert"><WarningCircleIcon size={24} aria-hidden="true" /><div><strong>Your mixes and server favorites can’t load right now</strong><p>{error} Recently played above still works.</p></div>
       <button className="button secondary" onClick={retry}><ArrowClockwiseIcon size={18} />Try again</button></div>
     : !stats ? <Loading label="Loading your mixes and server favorites…" /> : <>
-      <Shelf id="on-repeat" title={<><span className="wide-only">On repeat in this server</span><span className="narrow-only">On repeat here</span></>} detail="Most played here, from sessions you can see."
+      <Shelf id="on-repeat" title={<><span className="wide-only">On repeat in this server</span><span className="narrow-only">On repeat here</span></>} detail="Most played in sessions you can see."
         actions={stats.serverFavorites.onRepeat.length > 0 && <PlayShuffle label="On repeat" tracks={stats.serverFavorites.onRepeat.map(entry => entry.track)} disabled={disabled} title={title}
           onPlay={shuffle => run({ command: 'top', subcommand: 'play', options: { list: 'on-repeat', shuffle } }, 'add', stats.serverFavorites.onRepeat.map(entry => entry.track))} />}
         empty={!stats.serverFavorites.onRepeat.length && 'Nothing on repeat yet. Songs collect here after they play in voice channels you can see.'}>
         {stats.serverFavorites.onRepeat.map((entry, index) => <TrackCard key={entry.track.id} track={entry.track} rank={index + 1} meta={`${entry.plays.toLocaleString()} ${entry.plays === 1 ? 'play' : 'plays'}`} disabled={disabled || !entry.track.uri} title={title} onAdd={() => add(entry.track)} />)}
       </Shelf>
-      <Shelf id="your-mixes" title="Made for you" detail="From songs you ask for and your favorites. Only you see these."
+      <Shelf id="your-mixes" title="Made for you" detail="From your requests and favorites. Only you see these."
         actions={<label className="mix-range"><span aria-hidden="true">Your top tracks:</span>
           <select aria-label="Time range for Your top tracks" value={statsWindow} onChange={event => onWindow(event.target.value as StatsWindow)}>{windows.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>}
         lead={!mixes.some(list => list.tracks.length) && <p className="home-empty">Your mixes fill in as you request songs in voice or heart them. A few requests are enough to start; try a longer range below if you’ve been away.</p>} wide>

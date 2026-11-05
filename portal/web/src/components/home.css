@@ -12,6 +12,8 @@
 /* Desktop has room for the note beside the buttons; phones put it underneath. */
 .shelf-queued-note { flex: 0 0 auto; align-self: center; display: flex; align-items: center; gap: 5px; margin: 0; color: var(--muted); font-size: 13px; }
 .home-shelf-actions .button { min-height: 44px; padding: 9px 16px; font-size: 14px; }
+/* The top-tracks range only shapes one mix, so on wide screens it sits at the header's end instead of above the first card. */
+@media (min-width: 961px) { .home-shelf-header:has(.mix-range) { flex-direction: row; justify-content: space-between; align-items: flex-end; } }
 .home-empty { max-width: 64ch; padding: 18px 0 4px; border-top: 1px solid var(--line); color: var(--muted); font-size: 14px; line-height: 1.65; }
 
 .shelf-row {

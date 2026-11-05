@@ -150,7 +150,7 @@ export function Player({ portal, expanded, setExpanded, onAdd, palette, animate,
   // two balanced buttons. Over the visualizer it also offers the full screen.
   const visualsFailed = () => { setVisualsOpen(false); portal.notify('The visualizer isn’t available on this device.', 'error'); };
   const visualsSwitch = track && <div className="sleeve-visuals">{visualsOpen && <IconButton label="Full-screen visualizer" onClick={() => setVisualsFull(true)}><CornersOutIcon size={21} /></IconButton>}
-    <IconButton className={visualsOpen ? 'active-control' : ''} label={visualsOpen ? 'Hide visualizer' : 'Show visualizer'} aria-pressed={visualsOpen} onClick={() => setVisualsOpen(!visualsOpen)}><WaveformIcon size={21} weight={visualsOpen ? 'bold' : 'regular'} /></IconButton></div>;
+    <IconButton className={`visuals-toggle ${visualsOpen ? 'active-control' : ''}`} label={visualsOpen ? 'Hide visualizer' : 'Show visualizer'} aria-pressed={visualsOpen} onClick={() => setVisualsOpen(!visualsOpen)}><WaveformIcon size={21} weight={visualsOpen ? 'bold' : 'regular'} /><span aria-hidden="true">{visualsOpen ? 'Cover' : 'Visualizer'}</span></IconButton></div>;
   const destination = local ? portal.playingOn || 'This device' : session?.voiceChannel ? `Discord · ${session.voiceChannel.name}` : '';
   const destinationChip = expanded && !!track && !!destination;
   const identity = <div className="player-identity" data-glass><div className="player-title-row">{favorite && <span className="title-balance" aria-hidden="true" />}<h2 ref={headingRef} tabIndex={-1} title={track?.title}>{track?.title || 'Nothing playing'}</h2>{favorite}</div><p title={track ? `${track.author} · ${track.source}` : undefined}>{metadata}</p>

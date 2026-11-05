@@ -17,9 +17,9 @@ const windows: { id: StatsWindow; label: string }[] = [
 const weekday = (at: number) => new Intl.DateTimeFormat(undefined, { weekday: 'long' }).format(at);
 
 function playlistDetail(list: AutoPlaylist) {
-  if (list.kind === 'mix') return `Your recent requests and favorites. New picks ${list.refreshesAt ? weekday(list.refreshesAt) : 'every week'}.`;
-  if (list.kind === 'top') return 'What you’ve requested most in this server.';
-  return `Your favorites by ${list.artist} and what this server plays most by them.`;
+  if (list.kind === 'mix') return `Requests and hearts · new ${list.refreshesAt ? weekday(list.refreshesAt) : 'weekly'}`;
+  if (list.kind === 'top') return 'Your most requested here';
+  return `${list.artist}, from your hearts and this server`;
 }
 function playlistCommand(list: AutoPlaylist, statsWindow: StatsWindow, shuffle: boolean): Command {
   const options: Record<string, string | boolean> = { playlist: list.kind, shuffle };
@@ -111,14 +111,14 @@ const StatsShelves = memo(function StatsShelves({ stats, error, statsWindow, onW
         {stats.serverFavorites.onRepeat.map((entry, index) => <TrackCard key={entry.track.id} track={entry.track} rank={index + 1} meta={`${entry.plays.toLocaleString()} ${entry.plays === 1 ? 'play' : 'plays'}`} disabled={disabled || !entry.track.uri} title={title} onAdd={() => add(entry.track)} />)}
       </Shelf>
       <Shelf id="your-mixes" title="Made for you" detail="From your requests and hearts. Only you see these."
+        actions={<label className="mix-range"><span aria-hidden="true">Top tracks from</span>
+          <select aria-label="Time range for Your top tracks" value={statsWindow} onChange={event => onWindow(event.target.value as StatsWindow)}>{windows.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>}
         lead={!mixes.some(list => list.tracks.length) && <p className="home-empty">Your mixes fill in as you request songs in voice or heart them. A few requests are enough to start; try a longer range below if you’ve been away.</p>} wide>
         {mixes.map(list => <PlaylistTile key={list.id} list={list} detail={playlistDetail(list)} disabled={disabled} title={title}
-          onPlay={shuffle => run(playlistCommand(list, statsWindow, shuffle), 'add', list.tracks)}
-          range={list.kind === 'top' ? <label className="mix-range"><span className="sr-only">Time range for Your top tracks</span>
-            <select value={statsWindow} onChange={event => onWindow(event.target.value as StatsWindow)}>{windows.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label> : null} />)}
+          onPlay={shuffle => run(playlistCommand(list, statsWindow, shuffle), 'add', list.tracks)} />)}
       </Shelf>
       <Shelf id="rediscover" title="Rediscover" detail="Favorites you haven’t requested in a month."
-        actions={rediscover.length > 0 && <PlayShuffle label="Rediscover" disabled={disabled} title={title}
+        actions={rediscover.length > 1 && <PlayShuffle label="Rediscover" disabled={disabled} title={title}
           onPlay={shuffle => run({ command: 'mymix', subcommand: 'play', options: { playlist: 'rediscover', shuffle } }, 'add', rediscover.map(entry => entry.track))} />}
         empty={!rediscover.length && (hasFavorites ? 'You’ve requested every favorite this month. Favorites come back here after 30 days without a request.' : 'Heart songs you love. Once a month passes without requesting one, it comes back here.')}>
         {rediscover.map(entry => <TrackCard key={`${entry.index}:${entry.track.id}`} track={entry.track} meta={entry.lastRequestedAt ? `Requested ${date(entry.lastRequestedAt).split(",")[0]}` : 'Never requested'}
@@ -188,20 +188,16 @@ function TrackCard({ track, meta, rank, disabled, title, onAdd }: { track: Track
   </li>;
 }
 
-function PlaylistTile({ list, detail, disabled, title, onPlay, range }: { list: AutoPlaylist; detail: string; disabled: boolean; title?: string; onPlay: (shuffle: boolean) => void; range: ReactNode }) {
+function PlaylistTile({ list, detail, disabled, title, onPlay }: { list: AutoPlaylist; detail: string; disabled: boolean; title?: string; onPlay: (shuffle: boolean) => void }) {
   const covers = list.tracks.slice(0, 4);
   const empty = !list.tracks.length;
   const duration = list.tracks.reduce((sum, track) => sum + track.durationMs, 0);
   return <li className="playlist-tile">
     <div className={`playlist-cover ${covers.length >= 4 ? 'collage' : ''}`} aria-hidden="true">{covers.length >= 4 ? covers.map(track => <Artwork key={track.id} track={track} />) : <Artwork track={covers[0] || null} />}</div>
-    {/* The range sits on the cover so every mix card keeps the same text lines. */}
-    {range && <div className="playlist-range">{range}</div>}
     <div className="playlist-body">
-      <h3 dir="auto" title={list.title}>{list.title}</h3>
+      <h3 dir="auto" title={list.tracks.length ? `${list.title}: ${list.tracks.map(track => track.title).join(', ')}` : list.title}>{list.title}</h3>
       <div className="playlist-meta-row"><p className="playlist-meta">{empty ? 'No requests in this range' : `${list.tracks.length} ${list.tracks.length === 1 ? 'song' : 'songs'} · ${totalTime(duration)}`}</p></div>
       <p className="playlist-detail">{detail}</p>
-      {/* What the mix holds, from the songs already loaded, so adding it to the shared queue isn't blind. */}
-      {list.tracks.length > 0 && <p className="playlist-includes" title={list.tracks.map(track => track.title).join(', ')}>Includes {list.tracks.slice(0, 2).map(track => track.title).join(', ')}{list.tracks.length > 2 ? ` and ${list.tracks.length - 2} more` : ''}</p>}
       <div className="playlist-actions">
         <button type="button" className="button secondary" disabled={disabled || empty} title={title} aria-label={`Add ${list.title}`} onClick={() => onPlay(false)}><PlusIcon size={18} weight="bold" />Add mix</button>
         <IconButton label={`Add ${list.title} shuffled`} title={title || `Add ${list.title} shuffled`} disabled={disabled || empty} onClick={() => onPlay(true)}><ShuffleIcon size={21} /></IconButton>

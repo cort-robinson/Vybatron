@@ -123,6 +123,9 @@
   .dialog.mix-dialog { width: 100%; max-width: 100%; margin: auto 0 0; padding-top: 10px; padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px)); border-bottom: 0; border-radius: 22px 22px 0 0; animation: sheet-in 260ms var(--ease-out) both; }
   .dialog.mix-dialog[open] { display: flex; flex-direction: column; }
   .mix-dialog > .sheet-grabber { display: block; order: -1; margin: 0 auto 6px; }
+  /* Phone-width sheets stack the two collection actions so their longer "again" labels keep the gutters. */
+  .mix-dialog .form-actions { flex-direction: column; align-items: stretch; }
+  .mix-dialog .form-actions .button { justify-content: center; }
 }
 .playlist-body { display: flex; flex-direction: column; flex: 1; margin-top: 14px; }
 .playlist-body h3 { font-size: 18px; font-stretch: var(--wide); letter-spacing: -0.02em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

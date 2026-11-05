@@ -209,7 +209,7 @@ function PlaylistTile({ list, detail, playing, queued, disabled, title, onPlay, 
       <h3 dir="auto">{empty ? list.title : <button type="button" className="playlist-open" tabIndex={-1} aria-hidden="true" onClick={() => setOpen(true)}>{list.title}</button>}</h3>
       <div className="playlist-meta-row">{empty ? <p className="playlist-meta">{meta}</p> : <button type="button" className="playlist-meta playlist-songs" onClick={() => setOpen(true)}>{meta}<CaretRightIcon size={14} weight="bold" aria-hidden="true" /></button>}</div>
       <p className="playlist-detail">{detail}</p>
-      {repeats > 0 && <p className="playlist-repeats"><CheckIcon size={14} weight="bold" aria-hidden="true" />{repeats === list.tracks.length ? `All ${repeats} already queued` : `${repeats} already queued`}</p>}
+      {repeats > 0 && <p className="playlist-repeats"><CheckIcon size={14} weight="bold" aria-hidden="true" />{repeats === list.tracks.length ? `All ${repeats} queued or playing` : `${repeats} queued or playing`}</p>}
       {/* The card keeps one labelled action; the song list holds Add shuffled in words. */}
       <div className="playlist-actions">{addAll()}<IconButton label={`Add ${list.title} shuffled`} title={title || 'Add shuffled'} disabled={disabled || empty} onClick={() => onPlay(true)}><ShuffleIcon size={21} /></IconButton></div>
     </div>

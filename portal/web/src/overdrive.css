@@ -204,7 +204,7 @@ REVERT: everything here is scoped to :root[data-skin='overdrive']; Settings → 
   .player-expand-trigger:hover .compact-track-title { text-shadow: 0 0 16px color-mix(in oklab, var(--accent) 60%, transparent); }
   .player-expand-trigger > .artwork { border-radius: 4px 12px 4px 12px; box-shadow: 0 12px 26px -12px color-mix(in oklab, var(--glow-1), black 20%), 0 0 0 1px color-mix(in oklab, var(--accent) 22%, transparent); }
   .timeline > span:first-child { text-shadow: 0 0 12px color-mix(in oklab, var(--accent) 70%, transparent); }
-  .filter-control { border-radius: 4px 14px 4px 14px; }
+  /* The sound chip stays a pill, like the Lyrics and destination chips beside it. */
   .filter-dot { filter: drop-shadow(0 0 5px var(--accent)); }
   .filter-control.warm .filter-dot { filter: drop-shadow(0 0 5px var(--amber)); }
   .expand-button:hover svg { filter: drop-shadow(0 0 6px var(--accent)); }
@@ -268,7 +268,7 @@ REVERT: everything here is scoped to :root[data-skin='overdrive']; Settings → 
 
 /* Plated corners where the browser can draw true bevels (outline and focus follow them). */
 @supports (corner-shape: bevel) {
-  :root[data-skin='overdrive'] :is(.button, .guild-card, .navigation button, .header-search, .track-row, .menu-panel, .dialog, .sleeve-queue, .continue-feature, .toast, .filter-control, .pill, .mobile-add) { corner-shape: bevel; }
+  :root[data-skin='overdrive'] :is(.button, .guild-card, .navigation button, .header-search, .track-row, .menu-panel, .dialog, .sleeve-queue, .continue-feature, .toast, .pill, .mobile-add) { corner-shape: bevel; }
 }
 
 /* ── Phone and tablet ───────────────────────────────────────────────────── */

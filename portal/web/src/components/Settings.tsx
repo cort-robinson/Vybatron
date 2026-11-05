@@ -9,9 +9,9 @@ export type AmbientMode = 'on' | 'subtle' | 'off';
 export interface InstallPrompt extends Event { prompt: () => Promise<void>; userChoice: Promise<{ outcome: string }> }
 
 const lookDescription: Record<Skin, string> = {
-  overdrive: 'Synthwave: a neon sunset, a city skyline and glowing controls.',
-  fantastic: 'Retro comic-book space age: a ringed planet, a 1960s skyline and the cover on a vintage TV.',
-  haunted: 'Halloween: a full moon, bare trees and jack-o’-lanterns, with the cover in a candlelit frame.',
+  overdrive: 'A synthwave look: neon sunset, city skyline and glowing controls.',
+  fantastic: 'A retro comic-book look: a ringed planet, a 1960s skyline and the cover on a vintage TV.',
+  haunted: 'A Halloween look: a full moon, bare trees and jack-o’-lanterns, with the cover in a candlelit frame.',
   classic: 'The original look: calm smoked glass, lit by the cover’s colors.',
 };
 

@@ -176,6 +176,11 @@ const FavoriteRow = memo(function FavoriteRow({ track, index, addable, editable,
     <IconButton label={`Queue favorite ${track.title}`} disabled={!addable} title={!addable ? blockedReason : undefined} onClick={() => act(fromList({ command: 'favorite', subcommand: 'play', options: { index: index + 1 }, expectedTrackId: track.id }), 'add')}><PlusIcon size={23} /><span className="result-action-label" aria-hidden="true">Add</span></IconButton>
     <RadioButton track={track} enabled={radio} blockedReason={blockedReason} act={act} />
     <IconButton className="favorite active" label={`Remove favorite ${track.title}`} disabled={!editable} onClick={() => unfavorite(track)}><HeartIcon size={23} weight="fill" /></IconButton>
+    <ActionPopover className="row-menu favorite-row-menu" label={`Favorite options for ${track.title}`} trigger={<DotsThreeIcon size={25} weight="bold" />}>
+      {close => <><p>{track.title}</p>
+        {radio !== null && <button disabled={!radio || !startRadioCommand(track)} onClick={() => { close(); const command = startRadioCommand(track); if (command) act(command, 'control'); }}><RadioIcon />Start radio</button>}
+        <button className="danger-text" disabled={!editable} onClick={() => { close(); unfavorite(track); }}><HeartIcon />Remove from favorites</button></>}
+    </ActionPopover>
   </li>;
 });
 // A replay binds to the session the listener saw, so the row also follows its revision.

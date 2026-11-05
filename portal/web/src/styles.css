@@ -722,6 +722,11 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
   .guild-info select { font-size: 16px; min-height: 44px; }
   .guild-status { font-size: 14px; line-height: 20px; }
   .guild-caret { top: 14px; right: 8px; }
+  /* The switcher's chevron follows the server name, so the name reads as the control. */
+  @supports (field-sizing: content) {
+    .guild-info select { field-sizing: content; width: auto; max-width: 100%; align-self: flex-start; padding-right: 24px; background-image: linear-gradient(45deg, transparent 50%, var(--text-soft) 50%), linear-gradient(135deg, var(--text-soft) 50%, transparent 50%); background-position: calc(100% - 13px) 55%, calc(100% - 8px) 55%; background-size: 5px 5px; background-repeat: no-repeat; }
+    .guild-caret { display: none; }
+  }
   .navigation { position: fixed; bottom: 0; left: 0; right: 0; height: var(--nav); display: flex; flex-direction: row; justify-content: space-around; align-items: stretch; margin: 0; padding: 0 max(8px, env(safe-area-inset-right, 0px)) env(safe-area-inset-bottom, 0px) max(8px, env(safe-area-inset-left, 0px)); border-top: 1px solid var(--line); background: var(--chrome); backdrop-filter: var(--chrome-blur); z-index: 60; }
   .navigation button { margin: 0; border-radius: 0; padding: 6px 8px 9px; flex: 1; min-width: 0; align-items: center; justify-content: center; flex-direction: column; gap: 2px; font-size: 14px; min-height: 44px; }
   .navigation button svg { width: 24px; height: 24px; }

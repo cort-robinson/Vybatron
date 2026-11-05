@@ -32,12 +32,12 @@
 @property --shelf-fade-start { syntax: '<length>'; inherits: false; initial-value: 0px; }
 @property --shelf-fade-end { syntax: '<length>'; inherits: false; initial-value: 0px; }
 @supports (animation-timeline: scroll()) {
-  .shelf-row.can-drag { mask-image: linear-gradient(to right, transparent, #000 var(--shelf-fade-start), #000 calc(100% - var(--shelf-fade-end)), transparent); animation: shelf-fade linear both; animation-timeline: scroll(self inline); }
+  .shelf-row:not(.shelf-row-sparse) { mask-image: linear-gradient(to right, transparent, #000 var(--shelf-fade-start), #000 calc(100% - var(--shelf-fade-end)), transparent); animation: shelf-fade linear both; animation-timeline: scroll(self inline); }
 }
 @keyframes shelf-fade { 0% { --shelf-fade-start: 0px; --shelf-fade-end: 56px; } 6% { --shelf-fade-start: 56px; } 94% { --shelf-fade-end: 56px; } 100% { --shelf-fade-start: 56px; --shelf-fade-end: 0px; } }
 .shelf-row > li { scroll-snap-align: start; min-width: 0; }
 /* A shelf with one or two songs lists them as compact rows. */
-.shelf-row.shelf-row-sparse { grid-auto-flow: row; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; overflow: visible; mask-image: none; animation: none; }
+.shelf-row.shelf-row-sparse { grid-auto-flow: row; grid-template-columns: repeat(auto-fill, minmax(300px, 440px)); gap: 12px; overflow: visible; mask-image: none; animation: none; }
 .shelf-row-sparse .shelf-card { display: grid; grid-template-columns: 64px minmax(0, 1fr); align-items: center; gap: 16px; padding: 12px 16px 12px 12px; border-radius: 16px; background: color-mix(in oklab, var(--surface) 80%, transparent); }
 .shelf-row-sparse .shelf-art .artwork { border-radius: 8px; }
 .shelf-row-sparse .shelf-rank { left: 4px; bottom: 4px; min-width: 22px; padding: 0 6px; font-size: 12px; }
@@ -78,6 +78,10 @@
 .continue-text > span:not(.continue-state) { color: var(--text-soft); font-size: 14px; overflow-wrap: anywhere; }
 .continue-text .continue-hint { color: var(--muted); }
 .continue-feature .button { min-height: 44px; padding: 9px 18px; font-size: 14px; }
+/* While a song plays, the bottom bar already shows it, so the card is a slim strip. */
+.continue-feature:has(.continue-open) { grid-template-columns: 56px minmax(0, 1fr) auto; gap: 16px; padding: 10px 14px 10px 10px; }
+.continue-feature:has(.continue-open) .continue-art { width: 56px; height: 56px; }
+.continue-feature:has(.continue-open) .continue-text strong { font-size: 17px; }
 /* The whole card opens the player; the button is its visible, focusable label. */
 .continue-feature:has(.continue-open) { position: relative; cursor: pointer; }
 .continue-open::after { content: ''; position: absolute; inset: 0; border-radius: inherit; }
@@ -91,10 +95,10 @@
 .playlist-body h3 { font-size: 18px; font-stretch: var(--wide); letter-spacing: -0.02em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .playlist-meta { margin-top: 3px; color: var(--text-soft); font-size: 14px; font-variant-numeric: tabular-nums; }
 .playlist-detail { margin-top: 6px; color: var(--muted); font-size: 14px; line-height: 1.5; }
-.playlist-meta-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 3px; min-height: 36px; }
+.playlist-meta-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 3px; min-height: 30px; }
 .playlist-meta-row .playlist-meta { margin-top: 0; }
 .mix-range { flex: none; }
-.mix-range select { min-height: 36px; padding-block: 5px; padding-left: 11px; font-size: 13px; }
+.mix-range select { min-height: 30px; padding: 3px 30px 3px 11px; border-radius: 999px; font-size: 13px; background-position: calc(100% - 17px) 50%, calc(100% - 12px) 50%; }
 .playlist-actions { display: flex; align-items: center; gap: 8px; margin-top: auto; padding-top: 14px; }
 .playlist-actions .button { flex: 1; min-height: 44px; padding: 9px 14px; font-size: 14px; }
 .playlist-actions .icon-button { width: 44px; min-width: 44px; min-height: 44px; border: 1px solid var(--field-line); border-radius: 12px; }

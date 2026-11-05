@@ -198,6 +198,8 @@ function PlaylistTile({ list, detail, disabled, title, onPlay, range }: { list: 
       <h3 dir="auto" title={list.title}>{list.title}</h3>
       <div className="playlist-meta-row"><p className="playlist-meta">{empty ? 'No requests in this range' : `${list.tracks.length} ${list.tracks.length === 1 ? 'song' : 'songs'} · ${totalTime(duration)}`}</p>{range}</div>
       <p className="playlist-detail">{detail}</p>
+      {/* What the mix holds, from the songs already loaded, so adding it to the shared queue isn't blind. */}
+      {list.tracks.length > 0 && <p className="playlist-includes" title={list.tracks.map(track => track.title).join(', ')}>Includes {list.tracks.slice(0, 2).map(track => track.title).join(', ')}{list.tracks.length > 2 ? ` and ${list.tracks.length - 2} more` : ''}</p>}
       <div className="playlist-actions">
         <button type="button" className="button secondary" disabled={disabled || empty} title={title} aria-label={`Add ${list.title}`} onClick={() => onPlay(false)}><PlusIcon size={18} weight="bold" />Add mix</button>
         <IconButton label={`Add ${list.title} shuffled`} title={title || `Add ${list.title} shuffled`} disabled={disabled || empty} onClick={() => onPlay(true)}><ShuffleIcon size={21} /></IconButton>

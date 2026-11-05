@@ -1,6 +1,6 @@
 import { ArrowClockwiseIcon, PlusIcon, ShuffleIcon, SparkleIcon } from '../icons';
 import type { Portal } from '../usePortal';
-import type { Stats, StatEntry } from '../types';
+import type { Stats, StatEntry, Track } from '../types';
 import { statsRead, useRead } from '../reads';
 import { Artwork, Empty, ErrorState, IconButton, Loading } from './ui';
 
@@ -38,13 +38,13 @@ export function ServerFavorites({ portal }: { portal: Portal }) {
     {error && <p className="library-note" role="alert">{error}</p>}
     {!total ? <Empty title="Your server’s favorites start here" description="Play music together and the songs you keep coming back to will collect here." icon={<SparkleIcon size={30} />} />
       : lists.map(list => <ServerList key={list.id} title={list.title} description={list.description} empty={list.empty} entries={stats.serverFavorites[list.key]}
-        disabled={!addable} blockedReason={blockedReason} onPlay={shuffle => void play(list.id, shuffle)} />)}
+        disabled={!addable} blockedReason={blockedReason} onPlay={shuffle => void play(list.id, shuffle)} onAdd={track => { if (track.uri) void run({ command: 'play', options: { query: track.uri } }, 'add', [track]); }} />)}
     {!addable && total > 0 && <p className="library-note">{blockedReason}</p>}
   </div>;
 }
 
-function ServerList({ title, description, empty, entries, disabled, blockedReason, onPlay }: {
-  title: string; description: string; empty: string; entries: StatEntry[]; disabled: boolean; blockedReason: string; onPlay: (shuffle: boolean) => void;
+function ServerList({ title, description, empty, entries, disabled, blockedReason, onPlay, onAdd }: {
+  title: string; description: string; empty: string; entries: StatEntry[]; disabled: boolean; blockedReason: string; onPlay: (shuffle: boolean) => void; onAdd: (track: Track) => void;
 }) {
   const headingId = `server-list-${title.replace(/\s+/g, '-').toLowerCase()}`;
   return <section className="server-list" aria-labelledby={headingId}>
@@ -61,6 +61,7 @@ function ServerList({ title, description, empty, entries, disabled, blockedReaso
         <Artwork track={entry.track} />
         <div className="track-text"><strong dir="auto" title={entry.track.title}>{entry.track.title}</strong><span dir="auto">{entry.track.author}</span></div>
         <span className="server-plays">{entry.plays.toLocaleString()} {entry.plays === 1 ? 'play' : 'plays'}<span> · {lastPlayed(entry.lastPlayedAt)}</span></span>
+        <IconButton label={`Add ${entry.track.title} to the queue`} disabled={disabled || !entry.track.uri} title={disabled ? blockedReason : `Add ${entry.track.title} to the queue`} onClick={() => onAdd(entry.track)}><PlusIcon size={21} weight="bold" /></IconButton>
       </li>)}
     </ol>}
   </section>;

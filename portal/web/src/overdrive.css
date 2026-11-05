@@ -41,8 +41,9 @@ REVERT: everything here is scoped to :root[data-skin='overdrive']; Settings → 
 .ambient-scene.subtle.immersive .od-horizon { opacity: .62; }
 .ambient-scene.disabled .od-horizon { opacity: .42; }
 .ambient-scene:not(.immersive) { --horizon: calc(100% - var(--player) - var(--nav)); --sun: clamp(220px, 34vmin, 400px); }
-/* On the browsing pages content scrolls over the skyline, so it recedes enough to keep rows and fields legible. */
-.ambient-scene:not(.immersive) .od-skyline { height: clamp(56px, 11vh, 124px); opacity: .45; }
+/* Browsing pages keep the sky and cover glow but leave the skyline and sun to sign-in and the open player,
+   so lists and forms never scroll over scenery. */
+.ambient-scene:not(.immersive) .od-skyline { height: clamp(56px, 11vh, 124px); opacity: 0; }
 .ambient-scene.immersive { --horizon: 70%; --sun: clamp(300px, 66vmin, 760px); --sun-x: calc(var(--sidebar) + 32px + (100vw - var(--sidebar) - 96px) * .26); }
 /* Sign-in: the cover and spectrum stand on the horizon and the sign-in copy sits on the clear floor below. */
 .auth-page .ambient-scene { --horizon: calc(50% + 28px); --sun: clamp(300px, 58vmin, 640px); --sun-x: 50%; }
@@ -63,7 +64,7 @@ REVERT: everything here is scoped to :root[data-skin='overdrive']; Settings → 
      once so it never shows uncovered while it travels back down. */
   opacity: .78; transition: opacity 700ms var(--ease-out) 260ms;
 }
-.ambient-scene:not(.immersive) .od-sun { top: calc(var(--horizon) - var(--sun) * .52); opacity: .14; mix-blend-mode: screen; transition-duration: 160ms; transition-delay: 0ms; }
+.ambient-scene:not(.immersive) .od-sun { top: calc(var(--horizon) - var(--sun) * .52); opacity: 0; mix-blend-mode: screen; transition-duration: 160ms; transition-delay: 0ms; }
 .auth-page .ambient-scene .od-sun { opacity: .78; mix-blend-mode: normal; }
 .od-skyline { position: absolute; left: 0; bottom: calc(100% - var(--horizon)); width: 100%; height: clamp(72px, 14vh, 156px); overflow: visible; transition: opacity 500ms var(--ease-out); }
 .od-skyline-far { fill: color-mix(in oklab, var(--glow-2) 55%, var(--ground)); opacity: .85; }

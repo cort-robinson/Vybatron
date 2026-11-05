@@ -202,3 +202,5 @@
   /* The mini player already shows the song in progress, so phones lead Continue listening with what played before. */
   .home-shelf > .continue-feature:has(.continue-open) { display: none; }
 }
+.narrow-only { display: none; }
+@media (max-width: 960px) { .wide-only { display: none; } .narrow-only { display: inline; } }

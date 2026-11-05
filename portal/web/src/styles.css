@@ -277,7 +277,7 @@ svg { flex-shrink: 0; }
 .track-row:hover::before, .track-row:hover + .track-row::before { opacity: 0; }
 .track-row.drop-target { background: var(--accent-soft); box-shadow: inset 0 2px 0 var(--accent); }
 .track-index { color: var(--muted); font-size: 16px; font-weight: 600; font-stretch: var(--wide); text-align: left; font-variant-numeric: tabular-nums; }
-.drag-handle { display: flex; align-items: center; justify-content: center; color: var(--muted); cursor: grab; height: 44px; touch-action: none; opacity: .55; transition: opacity 160ms; }
+.drag-handle { display: flex; align-items: center; justify-content: center; color: var(--text-soft); cursor: grab; height: 44px; touch-action: none; opacity: .8; transition: opacity 160ms; }
 .track-row:hover .drag-handle:not(.disabled) { opacity: 1; }
 .drag-handle.disabled { opacity: .25; cursor: default; }
 .track-main { display: flex; gap: 20px; align-items: center; min-width: 0; }
@@ -410,6 +410,8 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
 .menu-panel > p.menu-section:first-of-type { border-top: 0; margin-top: 0; padding-top: 6px; }
 .metadata-dot { margin: 0 8px; color: var(--muted); }
 .track-source { color: var(--muted); }
+.dock-next { display: none; }
+@media (min-width: 1024px) { .expanded .dock-next { display: grid; align-content: center; min-width: 0; max-width: 260px; padding-left: 4px; line-height: 1.35; } .dock-next > span { color: var(--muted); font-size: 13px; } .dock-next > strong { font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .dock-next > small { color: var(--muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } }
 .compact-destination { display: inline-flex; align-items: center; gap: 5px; color: var(--text-soft); }
 .compact-destination svg { flex: none; color: var(--accent); }
 .player-context { width: min(100%, 560px); display: flex; flex-direction: column; gap: 6px; }
@@ -561,6 +563,7 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
 .settings-list { max-width: 760px; }
 /* On phones the Defaults tab already names the section, so only its one-line summary stays. */
 @media (max-width: 600px) { .server-intro h2 { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; } .server-intro .section-description { margin-top: 0; } }
+.setting-row > .button.setting-link { flex: none; width: auto; min-height: 44px; }
 .settings-footnote { max-width: 760px; margin-top: 14px; color: var(--muted); font-size: 13px; }
 .setting-row { display: flex; align-items: center; justify-content: space-between; gap: 35px; padding: 16px 0; border-bottom: 1px solid var(--line); }
 .setting-row > div:first-child { min-width: 0; max-width: 55ch; }

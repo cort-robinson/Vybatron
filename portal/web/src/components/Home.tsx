@@ -101,7 +101,7 @@ const StatsShelves = memo(function StatsShelves({ stats, error, statsWindow, onW
   const mixes = playlists.filter(list => list.kind !== 'rediscover' && (list.tracks.length || list.kind === 'top'));
   const rediscover = stats?.personal.rediscover || [];
   return error && !stats
-    ? <div className="home-unavailable" role="alert"><WarningCircleIcon size={24} aria-hidden="true" /><div><strong>Your mixes and server favorites can’t load right now</strong><p>{error} Continue listening above still works.</p></div>
+    ? <div className="home-unavailable" role="alert"><WarningCircleIcon size={24} aria-hidden="true" /><div><strong>Your mixes and server favorites can’t load right now</strong><p>{error} Recently played above still works.</p></div>
       <button className="button secondary" onClick={retry}><ArrowClockwiseIcon size={18} />Try again</button></div>
     : !stats ? <Loading label="Loading your mixes and server favorites…" /> : <>
       <Shelf id="on-repeat" title="On repeat in this server" detail="Most played here, from sessions you can see."
@@ -169,7 +169,7 @@ function Shelf({ id, title, detail, actions, empty, lead, wide = false, children
     {lead}
     {/* A sideways shelf is itself a tab stop, so the keyboard can scroll it even when its cards' buttons are disabled. */}
     {/* One or two songs read as a short list instead of a nearly empty sideways row. */}
-    {empty ? <p className="home-empty">{empty}</p> : <ol ref={dragScroll} tabIndex={0} data-tv-group className={`shelf-row ${wide ? 'shelf-row-wide' : Children.count(children) <= 2 ? 'shelf-row-sparse' : ''}`} aria-label={typeof title === 'string' ? title : id === 'continue' ? 'Continue listening' : undefined}>{children}</ol>}
+    {empty ? <p className="home-empty">{empty}</p> : <ol ref={dragScroll} tabIndex={0} data-tv-group className={`shelf-row ${wide ? 'shelf-row-wide' : Children.count(children) <= 2 ? 'shelf-row-sparse' : ''}`} aria-label={typeof title === 'string' ? title : id === 'continue' ? 'Recently played' : undefined}>{children}</ol>}
   </section>;
 }
 

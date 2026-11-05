@@ -32,14 +32,14 @@ test('every shelf queues through the normal commands', async ({ page }) => {
 
   expect(await sent(() => shelf(page, 'Continue listening').getByRole('button', { name: 'Add Afterglow to the queue' }).click()))
     .toEqual({ command: 'play', options: { query: 'https://example.com/music/afterglow' } });
-  expect(await sent(() => shelf(page, 'On repeat in this server').getByRole('button', { name: 'Shuffle On repeat' }).click()))
+  expect(await sent(() => shelf(page, 'On repeat in this server').getByRole('button', { name: 'Add On repeat shuffled' }).click()))
     .toEqual({ command: 'top', subcommand: 'play', options: { list: 'on-repeat', shuffle: true } });
   const mixes = shelf(page, 'Your mixes');
   await expect(mixes.getByRole('heading', { level: 3 })).toHaveText(['Your mix', 'Your top tracks', 'Solara mix']);
   await expect(mixes).toContainText('New picks');
   expect(await sent(() => mixes.getByRole('button', { name: 'Add Your mix' }).click()))
     .toEqual({ command: 'mymix', subcommand: 'play', options: { playlist: 'mix', shuffle: false } });
-  expect(await sent(() => mixes.getByRole('button', { name: 'Shuffle Solara mix' }).click()))
+  expect(await sent(() => mixes.getByRole('button', { name: 'Add Solara mix shuffled' }).click()))
     .toEqual({ command: 'mymix', subcommand: 'play', options: { playlist: 'artist', artist: 'Solara', shuffle: true } });
 
   // The window switch refetches and plays the selected range.

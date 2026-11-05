@@ -32,7 +32,7 @@ export function ServerFavorites({ portal }: { portal: Portal }) {
   const total = stats.serverFavorites.onRepeat.length + stats.serverFavorites.forgottenGems.length;
   return <div className="server-favorites">
     <div className="section-heading"><div><h2 className="sr-only">Popular in this server</h2>
-      <p className="section-description">What {portal.snapshot?.guild.name || 'this server'} plays most, from sessions you can see. Add all or Shuffle queues the whole list.</p></div>
+      <p className="section-description">What {portal.snapshot?.guild.name || 'this server'} plays most, from sessions you can see. Add all or Add shuffled queues the whole list.</p></div>
       <IconButton label="Refresh server favorites" onClick={() => void refresh()}><ArrowClockwiseIcon size={21} /></IconButton>
     </div>
     {error && <p className="library-note" role="alert">{error}</p>}
@@ -52,7 +52,7 @@ function ServerList({ title, description, empty, entries, disabled, blockedReaso
       <div><h3 id={headingId}>{title}</h3><p>{description}</p></div>
       {entries.length > 0 && <div className="server-list-actions">
         <button type="button" className="button primary" disabled={disabled} title={disabled ? blockedReason : undefined} aria-label={`Add all of ${title}`} onClick={() => onPlay(false)}><PlusIcon size={18} weight="bold" />Add all</button>
-        <button type="button" className="button secondary" disabled={disabled} title={disabled ? blockedReason : undefined} aria-label={`Shuffle ${title}`} onClick={() => onPlay(true)}><ShuffleIcon size={18} />Shuffle</button>
+        <button type="button" className="button secondary" disabled={disabled} title={disabled ? blockedReason : undefined} aria-label={`Add ${title} shuffled`} onClick={() => onPlay(true)}><ShuffleIcon size={18} />Add shuffled</button>
       </div>}
     </header>
     {!entries.length ? <p className="library-note">{empty}</p> : <ol className="server-favorite-list">

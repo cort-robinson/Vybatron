@@ -452,8 +452,10 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
 .filter-control:has(select:focus-visible) { outline: 2px solid var(--accent); outline-offset: 3px; }
 .filter-control select:focus-visible { outline: none; }
 .filter-control > svg { position: absolute; right: 10px; pointer-events: none; }
-.filter-dot { position: absolute; left: 12px; width: 9px; height: 9px; border-radius: 50%; background: var(--accent); pointer-events: none; }
-.filter-control.warm .filter-dot { background: var(--amber); }
+/* A speaker mark, tinted by the preset, says this pill is the sound. */
+.filter-dot { position: absolute; left: 10px; color: var(--accent); pointer-events: none; }
+.filter-control.warm .filter-dot { color: var(--amber); }
+.filter-control select { padding-left: 32px; }
 .player-more { position: relative; flex-shrink: 0; }
 .player-more > .menu-panel { top: auto; bottom: 54px; width: 288px; max-height: calc(100dvh - 120px); overflow-y: auto; animation-name: menu-up; }
 @keyframes fade-in { from { opacity: 0; } }
@@ -546,6 +548,12 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
 .setting-row > div:first-child { min-width: 0; max-width: 55ch; }
 .setting-row label, .setting-row h3 { font-size: 16px; font-weight: 700; }
 .setting-row p { font-size: 14px; color: var(--muted); margin-top: 6px; max-width: 48ch; }
+/* Every page lines its controls up in one right-hand column. */
+@media (min-width: 1024px) {
+  .setting-row > select, .setting-action { flex: 0 0 300px; width: 300px; }
+  .setting-action { justify-content: flex-end; }
+  .setting-action select { flex: 1; min-width: 0; }
+}
 .setting-action { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
 .setting-action select, .setting-action .discord-id-input { min-width: 180px; max-width: 250px; font-size: 14px; }
 .number-input { max-width: 90px; }
@@ -621,6 +629,7 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
 .result-list .track-text { flex: 1; }
 .result-list .track-text strong { font-size: 16px; }
 .result-list .track-text > span { font-size: 14px; }
+.result-actions { display: flex; align-items: center; gap: 4px; flex: none; }
 /* Result actions carry a word next to the icon wherever there is room for it. */
 :is(.result-list, .library-track-list) .icon-button:has(.result-action-label) { width: auto; padding: 0 12px 0 10px; gap: 6px; font-size: 14px; font-weight: 600; color: var(--text-soft); }
 :is(.result-list, .library-track-list) .icon-button:has(.result-action-label):hover:not(:disabled) { color: var(--text); }
@@ -862,7 +871,7 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
   .mixes-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px 16px; }
   .mix-open h3 { font-size: 16px; margin-top: 12px; }
   .mix-open p, .mix-actions .text-button { font-size: 14px; }
-  .setting-row { flex-wrap: wrap; gap: 16px; padding: 24px 0; }
+  .setting-row { flex-wrap: wrap; gap: 12px; padding: 16px 0; }
   .setting-row > div:first-child { flex: 1; min-width: min(100%, 200px); }
   .setting-row label, .setting-row h3 { font-size: 16px; }
   .setting-row p { font-size: 14px; }
@@ -895,12 +904,14 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
   .import-actions .text-button { font-size: 14px; }
   .result-list > li { gap: 10px; }
   .result-list .artwork { width: 44px; height: 44px; }
-  .result-length { display: none; }
-  /* Phones caption the icon instead of setting the word beside it. */
-  :is(.result-list, .library-track-list) .icon-button:has(.result-action-label) { flex-direction: column; gap: 1px; width: 54px; height: auto; min-height: 48px; padding: 2px 0; font-size: 11px; font-weight: 600; }
+  .result-list > li { flex-wrap: wrap; row-gap: 4px; }
+  .result-list .track-text { min-width: 0; flex: 1 1 0; }
+  .result-actions { width: 100%; justify-content: flex-end; }
+  .result-list .icon-button:has(.result-action-label) { padding: 0 10px; font-size: 13px; }
   .result-list .track-text strong { font-size: 16px; }
   .result-list .track-text > span { font-size: 14px; }
-  .add-result { flex-direction: column; gap: 1px; min-width: 52px; min-height: 48px; padding: 3px 8px; justify-content: center; font-size: 11px; }
+.result-actions { display: flex; align-items: center; gap: 4px; flex: none; }
+  .add-result { min-height: 44px; padding: 8px 14px; }
   .toast { left: 12px; right: 12px; top: auto; bottom: calc(var(--player) + var(--nav) + 10px); max-width: none; padding-left: 14px; gap: 8px; }
   /* A pending-confirmation pill floats above the compact deck; toasts clear it. */
   .app-shell:has(.collapsed .player-confirmation:not(:empty)) .toast { bottom: calc(var(--player) + var(--nav) + 56px); }
@@ -1270,3 +1281,8 @@ p, .continue-text > span, .section-description, .field-hint { text-wrap: pretty;
 .search-draft { color: var(--text); }
 .mobile-page-heading { display: none; }
 @media (max-width: 1023px) { .mobile-page-heading { display: block; margin: 4px 0 18px; font-size: 26px; font-weight: 800; font-stretch: var(--wide); letter-spacing: -0.02em; } }
+/* The More menu names the song it acts on, so it never reads as a menu for a queue row. */
+.menu-panel > p.menu-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-soft); font-weight: 650; }
+/* Small player text stays legible where the spectrum runs behind it. */
+.collapsed :is(.compact-title, .timeline > span) { text-shadow: 0 1px 2px var(--ground), 0 0 10px var(--ground), 0 0 18px var(--ground); }
+.menu-panel > p.menu-title + p.menu-section { border-top: 0; margin-top: 0; padding-top: 6px; }

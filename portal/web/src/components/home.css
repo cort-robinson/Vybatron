@@ -38,7 +38,7 @@
 .shelf-row > li { scroll-snap-align: start; min-width: 0; }
 /* A shelf with one or two songs lists them as compact rows. */
 .shelf-row.shelf-row-sparse { grid-auto-flow: row; grid-template-columns: repeat(auto-fill, minmax(260px, 340px)); gap: 12px; overflow: visible; mask-image: none; animation: none; }
-.shelf-row-sparse .shelf-card { display: grid; grid-template-columns: 64px minmax(0, 1fr); align-items: center; gap: 14px; padding: 10px 10px 10px 10px; border-radius: 14px; background: color-mix(in oklab, var(--surface) 80%, transparent); }
+.shelf-row-sparse .shelf-card { display: grid; grid-template-columns: 64px minmax(0, 1fr); align-items: center; gap: 14px; padding: 12px; border-radius: 16px; background: color-mix(in oklab, var(--surface) 80%, transparent); }
 .shelf-row-sparse .shelf-art .artwork { border-radius: 8px; }
 .shelf-row-sparse .shelf-rank { left: 4px; bottom: 4px; min-width: 22px; padding: 0 6px; font-size: 12px; }
 .shelf-row-sparse .shelf-card-body { margin-top: 0; align-items: center; }
@@ -140,6 +140,9 @@
   .home-shelf:has(> .continue-feature) { display: grid; grid-template-columns: minmax(280px, 340px) minmax(0, 1fr); column-gap: 28px; align-items: start; }
   .home-shelf:has(> .continue-feature) > .home-shelf-header { grid-column: 1 / -1; }
   .home-shelf > .continue-feature { grid-template-columns: 88px minmax(0, 1fr); align-content: start; margin: 4px 0 0; padding: 18px; }
+  /* Beside the session card, a short recent list stacks to the same height instead of leaving a notch. */
+  .home-shelf:has(> .continue-feature) > .shelf-row-sparse { grid-template-columns: minmax(0, 420px); align-content: stretch; height: 100%; padding-top: 4px; }
+  .home-shelf:has(> .continue-feature) > .shelf-row-sparse:has(> li:only-child) > li { height: 100%; }
   .home-shelf > .continue-feature .continue-text strong { white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
   .home-shelf > .continue-feature .button { grid-column: 1 / -1; justify-content: center; }
 }
@@ -160,7 +163,8 @@
   .home-shelf-actions { width: 100%; }
   .home-shelf-actions .button { flex: 1; }
   .shelf-row { --card: 136px; gap: 14px; margin-inline: -16px; padding-inline: 16px; scroll-padding-inline: 16px; }
-  .shelf-row-wide { --card: 220px; }
+  .shelf-row-wide { --card: 184px; }
+  .playlist-detail { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
   .playlist-meta-row { flex-direction: column; align-items: flex-start; gap: 6px; }
   /* Room for the title beside the add button on narrow cards. */
   .shelf-row:not(.shelf-row-wide):not(.shelf-row-sparse) { --card: 152px; }

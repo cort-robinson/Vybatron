@@ -19,8 +19,8 @@ test('server favorites show both ranked lists and queue them with Play all or Sh
   await onRepeat.getByRole('button', { name: 'Add all of On repeat' }).click();
   await expect.poll(() => fixture.commands.length).toBe(1);
   expect(fixture.commands[0]).toEqual({ command: 'top', subcommand: 'play', options: { list: 'on-repeat', shuffle: false } });
-  await expect(gems.getByRole('button', { name: 'Shuffle Forgotten gems' })).toBeEnabled();
-  await gems.getByRole('button', { name: 'Shuffle Forgotten gems' }).click();
+  await expect(gems.getByRole('button', { name: 'Add Forgotten gems shuffled' })).toBeEnabled();
+  await gems.getByRole('button', { name: 'Add Forgotten gems shuffled' }).click();
   await expect.poll(() => fixture.commands.length).toBe(2);
   expect(fixture.commands[1]).toEqual({ command: 'top', subcommand: 'play', options: { list: 'forgotten-gems', shuffle: true } });
 });
@@ -32,7 +32,7 @@ test('server favorites respect add permission and explain empty and failed state
   await openServerFavorites(page);
   await expect(page.getByRole('button', { name: 'Add all of On repeat' })).toBeDisabled();
   await expect(page.getByRole('region', { name: 'Forgotten gems' })).toContainText('No forgotten gems yet');
-  await expect(page.getByRole('button', { name: 'Shuffle Forgotten gems' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Add Forgotten gems shuffled' })).toHaveCount(0);
 
   fixture.state.stats.serverFavorites.onRepeat = [];
   await page.getByRole('button', { name: 'Refresh server favorites' }).click();

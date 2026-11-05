@@ -1,5 +1,5 @@
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { CaretDownIcon, CheckIcon, DesktopIcon, DeviceMobileIcon, DiscordLogoIcon, PencilSimpleIcon, TelevisionSimpleIcon, CaretUpIcon, DotsThreeIcon, HeartIcon, PauseIcon, PlayIcon, RepeatIcon, RepeatOnceIcon, ShuffleIcon, SkipBackIcon, SkipForwardIcon, SpeakerHighIcon, StopIcon, RadioIcon, HandPalmIcon, ArrowSquareOutIcon, TrashIcon, WarningCircleIcon, ThumbsDownIcon, VinylRecordIcon, MoonIcon, MicrophoneStageIcon, WaveformIcon, CornersOutIcon } from '../icons';
+import { CaretDownIcon, CheckIcon, SpeakerHifiIcon, DesktopIcon, DeviceMobileIcon, DiscordLogoIcon, PencilSimpleIcon, TelevisionSimpleIcon, CaretUpIcon, DotsThreeIcon, HeartIcon, PauseIcon, PlayIcon, RepeatIcon, RepeatOnceIcon, ShuffleIcon, SkipBackIcon, SkipForwardIcon, SpeakerHighIcon, StopIcon, RadioIcon, HandPalmIcon, ArrowSquareOutIcon, TrashIcon, WarningCircleIcon, ThumbsDownIcon, VinylRecordIcon, MoonIcon, MicrophoneStageIcon, WaveformIcon, CornersOutIcon } from '../icons';
 import type { Portal } from '../usePortal';
 import { saveByLink, useSavingFavorite } from '../favorites';
 import type { Command, Track } from '../types';
@@ -177,13 +177,13 @@ export function Player({ portal, expanded, setExpanded, onAdd, palette, animate,
   </div>;
   const extras = <div className="player-extras">
     <Volume level={session?.volume ?? 100} disabled={!controllable} reset={`${track?.id}:${snapshot?.guild.id}`} onCommit={level => void control({ command: 'volume', options: { level } })} />
-    {!local && <label className={`filter-control ${session?.filter === 'warm' ? 'warm' : ''}`}><span className="filter-dot" /><span className="sr-only">Audio filter</span><select aria-label="Audio filter" value={session?.filter || bootstrap?.filters[0]?.id || ''} disabled={!controllable} onChange={event => void control({ command: 'filter', options: { preset: event.target.value } })}>
+    {!local && <label className={`filter-control ${session?.filter === 'warm' ? 'warm' : ''}`} title="Audio filter"><SpeakerHifiIcon className="filter-dot" size={17} aria-hidden="true" /><span className="sr-only">Audio filter</span><select aria-label="Audio filter" value={session?.filter || bootstrap?.filters[0]?.id || ''} disabled={!controllable} onChange={event => void control({ command: 'filter', options: { preset: event.target.value } })}>
       {bootstrap?.filters.map(filter => <option key={filter.id} value={filter.id}>{filter.label}</option>)}
     </select><CaretDownIcon size={16} /></label>}
     <ActionPopover label="More playback controls" trigger={<DotsThreeIcon size={27} weight="bold" />} className="player-more" triggerClassName="icon-button">
       {/* Where it plays leads the menu, unless the open player's destination chip already offers it;
           the playback extras follow, then the destructive pair. */}
-      {close => <>{!destinationChip && <><PlayOnChoices portal={portal} close={close} onMoveHere={() => setConfirmHere(true)} />
+      {close => <>{track && <p className="menu-title">Now playing · {track.title}</p>}{!destinationChip && <><PlayOnChoices portal={portal} close={close} onMoveHere={() => setConfirmHere(true)} />
         {portal.devices.length > 0 && <button onClick={() => { close(); setRenaming(true); }}><PencilSimpleIcon />Rename this device</button>}
         <hr className="menu-divider" /></>}
         {expanded && <button disabled={!track} onClick={() => { close(); setVisualsFull(true); }}><CornersOutIcon />Full-screen visualizer</button>}

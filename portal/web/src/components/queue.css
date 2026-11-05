@@ -126,3 +126,8 @@
 @media (max-width: 1023px) { .queue-now { margin-bottom: 20px; padding: 10px 12px 10px 10px; } .queue-now .artwork { width: 52px; height: 52px; } .queue-now .requester { display: flex; } .queue-now .requester span { display: none; } }
 .row-requester { display: none; }
 @media (max-width: 1023px) { .row-requester { display: inline; } }
+/* Phones: saving the session lives in the player's More menu, and the drag grip stays quieter than the row menu. */
+@media (max-width: 1023px) {
+  .queue:not(.queue-compact) .queue-heading-actions .text-button { display: none; }
+  .queue .drag-handle { opacity: .45; }
+}

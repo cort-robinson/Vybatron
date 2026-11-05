@@ -107,12 +107,13 @@ export function LibraryView({ portal, active = true }: { portal: Portal; active?
     <div className="section-heading"><div><h2 className="sr-only">{tab === 'favorites' ? 'Favorites' : tab === 'mixes' ? 'Shared mixes' : 'Listening history'}</h2>
       <p className="section-description">{tab === 'favorites' ? 'Your private songs, across every server.' : tab === 'mixes' ? `Saved for ${snapshot?.guild.name || 'this server'}. Up to 100 songs per mix.` : 'The latest 100 songs from the past 30 days, from sessions you can see.'}</p></div>
       {tab === 'history' && <IconButton label="Refresh listening history" onClick={() => void portal.refreshLibrary()}><ArrowClockwiseIcon size={21} /></IconButton>}
-      {tab === 'favorites' && library.favorites.length > 0 && <ActionPopover label="Favorites options" className="library-options" trigger={<DotsThreeIcon size={25} weight="bold" />}>
-        {close => <button className="danger-text" disabled={!editable} onClick={() => { close(); setConfirm({ kind: 'favorites' }); }}><TrashIcon />Clear favorites</button>}</ActionPopover>}
+
     </div>
     <div className="library-search"><label className="sr-only" htmlFor={`library-search-${tab}`}>Search {label}</label><div className="library-search-controls">
       <input ref={searchRef} id={`library-search-${tab}`} type="search" dir="auto" value={queries[listTab]} maxLength={200} placeholder={`Search ${label}`} onChange={event => setQuery(event.target.value)} />
       {queries[listTab] && <button type="button" className="text-button" onClick={clearSearch}>Clear search</button>}
+      {tab === 'favorites' && library.favorites.length > 0 && <ActionPopover label="Favorites options" className="library-options" trigger={<DotsThreeIcon size={25} weight="bold" />}>
+        {close => <button className="danger-text" disabled={!editable} onClick={() => { close(); setConfirm({ kind: 'favorites' }); }}><TrashIcon />Clear favorites</button>}</ActionPopover>}
     </div></div>
     {tab === 'favorites' && <>
       {!library.favorites.length ? <Empty title="A place for your repeat favorites" description="Tap the heart on the current song to keep it here. Only you can see this shelf." icon={<HeartIcon size={30} />} /> : !favorites.length ? noMatches : <ul className="library-track-list" aria-label="Favorite songs">{favorites.slice(offset, offset + pageSize).map(({ track, index }) => <FavoriteRow key={`${track.id}:${index}`}
@@ -191,5 +192,5 @@ function RadioButton({ track, enabled, blockedReason, act }: { track: Track; ena
   const command = startRadioCommand(track);
   const allowed = !!command && enabled;
   return <IconButton className="radio-start" label={radioLabel(track)} disabled={!allowed} title={!command ? 'This song has no public source reference' : !allowed ? blockedReason : radioLabel(track)}
-    onClick={() => { if (command) act(command, 'control'); }}><RadioIcon size={22} /><span className="result-action-label" aria-hidden="true">Radio</span></IconButton>;
+    onClick={() => { if (command) act(command, 'control'); }}><RadioIcon size={22} /><span className="result-action-label" aria-hidden="true">Start radio</span></IconButton>;
 }

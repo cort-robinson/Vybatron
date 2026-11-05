@@ -204,8 +204,8 @@ REVERT: everything here is scoped to :root[data-skin='overdrive']; Settings → 
   .player-expand-trigger > .artwork { border-radius: 4px 12px 4px 12px; box-shadow: 0 12px 26px -12px color-mix(in oklab, var(--glow-1), black 20%), 0 0 0 1px color-mix(in oklab, var(--accent) 22%, transparent); }
   .timeline > span:first-child { text-shadow: 0 0 12px color-mix(in oklab, var(--accent) 70%, transparent); }
   .filter-control { border-radius: 4px 14px 4px 14px; }
-  .filter-dot { box-shadow: 0 0 8px var(--accent); }
-  .filter-control.warm .filter-dot { box-shadow: 0 0 8px var(--amber); }
+  .filter-dot { filter: drop-shadow(0 0 5px var(--accent)); }
+  .filter-control.warm .filter-dot { filter: drop-shadow(0 0 5px var(--amber)); }
   .expand-button:hover svg { filter: drop-shadow(0 0 6px var(--accent)); }
 
   /* Reactor: the play control sits inside a ring that turns while the room plays. */

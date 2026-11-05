@@ -115,9 +115,10 @@
 .dialog.mix-dialog .form-actions .button { flex: 1 1 0; }
 .playlist-actions .button.all-queued { color: var(--text-soft); border-color: var(--line); }
 .mix-sheet-head { margin-bottom: 8px; }
-.playlist-repeats { display: flex; align-items: center; gap: 5px; margin-top: 4px; color: var(--muted); font-size: 13px; }
+/* The queued note rides down with the buttons, so a one-line description leaves no hole mid-card. */
+.playlist-repeats { display: flex; align-items: center; gap: 5px; margin-top: auto; padding-top: 10px; color: var(--muted); font-size: 13px; }
+.playlist-repeats + .playlist-actions { margin-top: 0; padding-top: 10px; }
 /* Two-line descriptions keep the queued note and buttons on one line across a row of mix cards. */
-.playlist-detail { min-height: 3em; }
 .mix-repeat-note { margin-top: 12px; color: var(--muted); font-size: 14px; }
 @media (max-width: 360px) { .mix-tracks li { grid-template-columns: 44px minmax(0, 1fr) minmax(44px, auto); row-gap: 0; } .mix-tracks .mix-track-state { grid-column: 2; grid-row: 2; margin-top: -4px; font-size: 12px; } .mix-tracks li > .icon-button { grid-column: 3; grid-row: 1 / span 2; } }
 .mix-track-state { color: var(--muted); font-size: 13px; font-weight: 400; white-space: nowrap; }
@@ -209,8 +210,7 @@
   .home-shelf-actions .button { flex: 1 1 0; min-width: 0; padding-inline: 10px; }
   .shelf-row { --card: 136px; gap: 14px; margin-inline: -16px; padding-inline: 16px; scroll-padding-inline: 16px; }
   .shelf-row-wide { --card: clamp(164px, (100vw - 32px) / 2.15, 248px); }
-  @media (max-width: 360px) { .shelf-row-wide { --card: 228px; } }
-  .playlist-detail { min-height: 3em; }
+  @media (max-width: 360px) { .shelf-row-wide { --card: 216px; } }
   .shelf-row { scrollbar-width: none; }
   @keyframes shelf-fade { 0% { --shelf-fade-start: 0px; --shelf-fade-end: 24px; } 6% { --shelf-fade-start: 24px; } 94% { --shelf-fade-end: 24px; } 100% { --shelf-fade-start: 24px; --shelf-fade-end: 0px; } }
   .shelf-row::-webkit-scrollbar { display: none; }
@@ -260,4 +260,5 @@
 .home-shelf > .continue-feature:has(.continue-open) { display: none; }
 .home-shelf-header p:empty { display: none; }
 .narrow-only { display: none; }
+.queue-scope { margin: 2px 0 0; color: var(--muted); font-size: 13px; }
 @media (max-width: 600px) { .home-view { padding-bottom: 32px; } .shelf-queued-note { flex: 1 0 100%; } .mix-range select { min-height: 44px; } .wide-only { display: none; } .narrow-only { display: inline; } }

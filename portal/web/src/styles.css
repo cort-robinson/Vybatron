@@ -1446,3 +1446,6 @@ p, .continue-text > span, .section-description, .field-hint { text-wrap: pretty;
 }
 .filter-prefix { display: none; position: absolute; left: 32px; color: var(--muted); font-size: 14px; pointer-events: none; }
 @media (min-width: 1024px) { .filter-prefix { display: block; } .filter-control select { padding-left: 82px; } }
+
+/* Tall phones lift the cover so the spare height sits between the spectrum and the title card, where the skyline fills it. */
+@media (max-width: 600px) and (max-aspect-ratio: 1/2) { .persistent-player.expanded .sleeve-artwork { padding-bottom: clamp(0px, 100dvh - 205vw, 110px); } }

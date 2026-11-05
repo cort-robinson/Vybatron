@@ -1333,6 +1333,8 @@ p, .continue-text > span, .section-description, .field-hint { text-wrap: pretty;
 @media (max-width: 1023px) { .mobile-page-heading { display: flex; align-items: center; gap: 4px; margin: 0 0 14px -10px; font-size: 26px; font-weight: 800; font-stretch: var(--wide); letter-spacing: -0.02em; } }
 /* The More menu names the song it acts on, so it never reads as a menu for a queue row. */
 .menu-panel > p.menu-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-soft); font-weight: 650; }
+/* Section headings in a menu read like its title, so the groups look like peers. */
+.menu-panel > p.menu-section { color: var(--text-soft); font-weight: 650; }
 /* Small player text stays legible where the spectrum runs behind it. */
 .collapsed :is(.compact-title, .timeline > span) { text-shadow: 0 1px 2px var(--ground), 0 0 10px var(--ground), 0 0 18px var(--ground); }
 .menu-panel > p.menu-title + p.menu-section { border-top: 0; margin-top: 0; padding-top: 6px; }
@@ -1357,7 +1359,8 @@ p, .continue-text > span, .section-description, .field-hint { text-wrap: pretty;
 @media (max-width: 600px) { .search-page .search-form .button { padding-inline: 14px; min-width: 52px; justify-content: center; } .search-page .search-form .button > svg { display: block; } .search-page .search-submit-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; } }
 .volume-readout { min-width: 3ch; color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; text-align: right; }
 .chip-prefix { color: var(--text-soft); font-weight: 500; }
-@media (max-width: 599px) { .chip-prefix { display: none; } }
+.chip-prefix-short { display: none; color: var(--text-soft); font-weight: 500; }
+@media (max-width: 599px) { .chip-prefix { display: none; } .chip-prefix-short { display: inline; } }
 /* Desktop queue rows stay compact so a long queue scans in one screen. */
 @media (min-width: 1024px) { .queue:not(.queue-compact) .track-row .artwork { width: 48px; height: 48px; } }
 /* Phones: settings rows sit tighter; the explanation stays readable. */

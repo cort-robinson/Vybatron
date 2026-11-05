@@ -131,6 +131,8 @@
 @media (max-width: 1023px) {
   .row-requester { display: inline-flex; flex: none; align-items: center; gap: 5px; color: var(--muted); font-size: 13px; white-space: nowrap; }
   .row-requester .avatar { width: 16px; height: 16px; }
+  .track-byline:has(> .row-requester) { flex-direction: column; align-items: flex-start; gap: 1px; }
+  .track-byline:has(> .row-requester) > span:first-child { max-width: 100%; }
   /* The now-playing card names its requester in words too, like the rows below it. */
   .queue-now .requester { display: none; }
   .queue .queue-now .track-text small.queue-now-by { display: block; }

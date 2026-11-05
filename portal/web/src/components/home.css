@@ -102,7 +102,7 @@
 .mix-range select { min-height: 30px; padding: 3px 30px 3px 11px; border-radius: 999px; font-size: 13px; background-position: calc(100% - 18px) 50%, calc(100% - 12px) 50%; }
 .playlist-actions { display: flex; align-items: center; gap: 8px; margin-top: auto; padding-top: 14px; }
 .playlist-actions .button { flex: 1; min-height: 44px; padding: 9px 14px; font-size: 14px; }
-.playlist-actions .icon-button { width: 44px; min-width: 44px; min-height: 44px; border: 1px solid var(--field-line); border-radius: 12px; }
+.playlist-actions .button { min-width: 0; }
 
 .home-unavailable { display: flex; align-items: flex-start; gap: 14px; flex-wrap: wrap; padding: 18px 20px; border-radius: 16px; background: var(--surface); }
 .home-unavailable > svg { flex-shrink: 0; color: var(--amber); margin-top: 2px; }
@@ -185,7 +185,7 @@
 }
 /* Wide screens set a short recent list beside the playing strip instead of under it. */
 @media (min-width: 1200px) {
-  .home-shelf:has(> .continue-feature):has(> .shelf-row-sparse) { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); column-gap: 20px; align-items: stretch; }
+  .home-shelf:has(> .continue-feature):has(> .shelf-row-sparse) { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 20px; align-items: stretch; }
   .home-shelf:has(> .continue-feature):has(> .shelf-row-sparse) > .home-shelf-header { grid-column: 1 / -1; }
   /* The playing strip and the recent cards match: same cover, padding and height. */
   .home-shelf:has(> .shelf-row-sparse) > .continue-feature { margin-bottom: 0; grid-template-columns: 64px minmax(0, 1fr) auto; padding: 12px 16px 12px 12px; }

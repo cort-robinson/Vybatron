@@ -199,8 +199,8 @@ function PlaylistTile({ list, detail, disabled, title, onPlay }: { list: AutoPla
       <div className="playlist-meta-row"><p className="playlist-meta">{empty ? 'No requests in this range' : `${list.tracks.length} ${list.tracks.length === 1 ? 'song' : 'songs'} · ${totalTime(duration)}`}</p></div>
       <p className="playlist-detail">{detail}</p>
       <div className="playlist-actions">
-        <button type="button" className="button secondary" disabled={disabled || empty} title={title} aria-label={`Add ${list.title}`} onClick={() => onPlay(false)}><PlusIcon size={18} weight="bold" />{list.kind === 'top' ? 'Add all' : 'Add mix'}</button>
-        <IconButton label={`Add ${list.title} shuffled`} title={title || `Add ${list.title} shuffled`} disabled={disabled || empty} onClick={() => onPlay(true)}><ShuffleIcon size={21} /></IconButton>
+        <button type="button" className="button secondary" disabled={disabled || empty} title={title} aria-label={`Add all of ${list.title}`} onClick={() => onPlay(false)}><PlusIcon size={18} weight="bold" />Add all</button>
+        <button type="button" className="button secondary" disabled={disabled || empty} title={title || `Add ${list.title} in a random order`} aria-label={`Add ${list.title} shuffled`} onClick={() => onPlay(true)}><ShuffleIcon size={18} />Shuffle</button>
       </div>
     </div>
   </li>;

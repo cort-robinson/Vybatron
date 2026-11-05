@@ -5,11 +5,12 @@
 .library-view .section-description,
 .library-note { color: var(--muted); font-size: 14px; line-height: 1.65; }
 .library-note { margin-top: 15px; max-width: 70ch; }
-.library-search { display: flex; flex-direction: column; gap: 8px; margin: 0 0 24px; max-width: 620px; }
+.library-search { display: flex; flex-direction: column; gap: 8px; margin: 0 0 24px; }
 .library-search > label { color: var(--muted); font-size: 14px; }
 .library-search-controls { display: flex; align-items: center; gap: 12px; }
 .library-search input { min-width: 0; width: 100%; font-size: 14px; }
-.library-search-controls input { flex: 1; }
+.library-search-controls input { flex: 1; max-width: 620px; }
+.library-search-controls > .library-import-toggle { margin-left: auto; display: inline-flex; align-items: center; gap: 7px; }
 .library-search-controls .text-button { flex-shrink: 0; font-size: 14px; }
 .library-view .tabs { gap: clamp(14px, 3vw, 28px); }
 .library-view .tabs button { font-size: 14px; }
@@ -87,6 +88,7 @@
   .library-view .tabs button { gap: 4px; }
   .library-view .tabs button > span { padding-inline: 3px; }
   .library-view .library-search-controls { flex-wrap: wrap; gap: 4px; }
+  .library-view .library-search-controls input { flex-basis: 100%; max-width: none; }
   .library-view .library-search-controls input { flex-basis: 100%; }
   .library-view .library-track-list > li { gap: 6px; }
   .list-pagination .button { padding-inline: 10px; }
@@ -95,9 +97,11 @@
 
 /* Playlist import: a link form and a preview dialog with counts. */
 .library-view .playlist-import-form { margin-top: 36px; padding: 0; border-bottom: 0; }
-.library-tools { margin-top: 36px; padding: 18px 20px 6px; border: 1px solid var(--line); border-radius: 14px; background: color-mix(in oklab, var(--surface) 55%, transparent); }
-.library-tools .playlist-import-form { margin-top: 0; }
-.library-search-controls > .library-options { flex: none; margin-left: auto; }
+.library-tools { margin-top: 28px; padding: 18px 20px; border: 1px solid var(--line); border-radius: 14px; background: color-mix(in oklab, var(--surface) 55%, transparent); }
+.library-tools .playlist-import-form { margin-top: 0; padding-bottom: 0; }
+.library-tools .playlist-import-form > label { max-width: 560px; }
+@media (max-width: 600px) { .library-tools .playlist-import-form .button { width: 100%; justify-content: center; } }
+.library-search-controls > .library-options { flex: none; }
 /* Importing is its own task under the list: a titled field with its help right beneath it. */
 .library-view .playlist-import-form > label { color: var(--text); font-size: 15px; font-weight: 650; }
 .library-view .playlist-import-form input { font-weight: 400; }

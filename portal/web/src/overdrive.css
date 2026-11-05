@@ -30,6 +30,7 @@ REVERT: everything here is scoped to :root[data-skin='overdrive']; Settings → 
   ::selection { color: var(--primary-ink); background: color-mix(in oklab, var(--accent), var(--neon) 30%); }
 }
 
+/* HUD corner brackets frame the cover and small tiles only; panels, menus and dialogs keep clean bevels. */
 /* ── Horizon ─────────────────────────────────────────────────────────────── */
 .od-horizon { position: absolute; inset: 0; opacity: .6; transition: opacity 900ms var(--ease-out); animation: od-floor-in 700ms var(--ease-out);
   /* CRT scanlines, painted into the sky, sun, and floor themselves. As a separate full-screen layer
@@ -115,7 +116,7 @@ REVERT: everything here is scoped to :root[data-skin='overdrive']; Settings → 
 
   .sidebar { border-right-color: transparent; background: linear-gradient(to bottom, transparent, color-mix(in oklab, var(--neon) 5%, transparent)), var(--chrome); }
   .sidebar::after { content: ''; position: absolute; top: 0; bottom: 0; right: -1px; width: 1px; pointer-events: none; background: linear-gradient(to bottom, transparent, color-mix(in oklab, var(--accent) 45%, transparent) 30%, color-mix(in oklab, var(--neon) 55%, transparent) 75%, transparent); }
-  .guild-card { border-color: var(--line-soft); border-radius: 6px 16px 6px 16px; background: var(--hud), linear-gradient(135deg, color-mix(in oklab, var(--accent) 7%, transparent), rgb(255 255 255 / .02) 60%); }
+  .guild-card { border-color: var(--line-soft); border-radius: 6px 16px 6px 16px; background: linear-gradient(135deg, color-mix(in oklab, var(--accent) 7%, transparent), rgb(255 255 255 / .02) 60%); }
   .guild-card:hover { border-color: color-mix(in oklab, var(--accent) 35%, transparent); }
   .guild-icon { border-radius: 4px 11px; }
   .guild-status.playing .status-dot { box-shadow: 0 0 0 3px var(--accent-soft), 0 0 10px var(--accent); }
@@ -132,7 +133,7 @@ REVERT: everything here is scoped to :root[data-skin='overdrive']; Settings → 
   .topbar { border-bottom-color: transparent; background: var(--rail) bottom / 100% 1px no-repeat; }
   .sleeve-topbar { background: none; }
   .page-title h1 { text-shadow: 0 0 34px color-mix(in oklab, var(--accent) 35%, transparent); }
-  .header-search { border-radius: 4px 14px 4px 14px; background: var(--hud), var(--field); --hud-c: color-mix(in oklab, var(--accent) 40%, transparent); }
+  .header-search { border-radius: 4px 14px 4px 14px; background: var(--field); --hud-c: color-mix(in oklab, var(--accent) 40%, transparent); }
   .header-search:hover { box-shadow: 0 0 0 1px color-mix(in oklab, var(--accent) 25%, transparent), 0 10px 30px -18px var(--accent); }
 
   .button, .text-button, .icon-button, .menu-panel, .toast, .update-notice, input, select { --plate: 4px 12px 4px 12px; }
@@ -171,13 +172,13 @@ REVERT: everything here is scoped to :root[data-skin='overdrive']; Settings → 
   .switch > span::after { border-radius: 2px 7px; }
   .switch[aria-checked='true'] > span { background: linear-gradient(90deg, var(--accent), color-mix(in oklab, var(--accent), var(--neon) 45%)); box-shadow: 0 0 14px -2px var(--accent); }
   .spinner { border-color: var(--accent); border-right-color: transparent; border-left-color: var(--neon); }
-  .menu-panel { border-radius: 6px 16px 6px 16px; background: var(--hud), var(--raised); --hud-c: color-mix(in oklab, var(--accent) 45%, transparent); }
+  .menu-panel { border-radius: 6px 16px 6px 16px; background: var(--raised); --hud-c: color-mix(in oklab, var(--accent) 45%, transparent); }
   .toast, .update-notice { border-radius: 4px 14px 4px 14px; }
   .toast.success { border-color: color-mix(in oklab, var(--accent) 40%, transparent); box-shadow: var(--shadow-menu), 0 0 30px -14px var(--accent); }
-  .dialog { border-radius: 8px 24px 8px 24px; background: var(--hud), var(--rail) top / 100% 1px no-repeat, color-mix(in oklab, var(--ground), white 5%); }
+  .dialog { border-radius: 8px 24px 8px 24px; background: var(--rail) top / 100% 1px no-repeat, color-mix(in oklab, var(--ground), white 5%); }
   .search-field { border-radius: 4px 12px 4px 12px; }
   .suggestion-chip { border-radius: 4px 12px 4px 12px; }
-  .continue-feature { border-radius: 6px 18px 6px 18px; background: var(--hud), linear-gradient(100deg, color-mix(in oklab, var(--accent) 14%, transparent), color-mix(in oklab, var(--neon) 7%, transparent) 60%, transparent), var(--surface); box-shadow: 0 18px 38px -26px color-mix(in oklab, var(--accent) 55%, black), 0 0 0 1px color-mix(in oklab, var(--accent) 14%, transparent); }
+  .continue-feature { border-radius: 6px 18px 6px 18px; background: linear-gradient(100deg, color-mix(in oklab, var(--accent) 14%, transparent), color-mix(in oklab, var(--neon) 7%, transparent) 60%, transparent), var(--surface); box-shadow: 0 18px 38px -26px color-mix(in oklab, var(--accent) 55%, black), 0 0 0 1px color-mix(in oklab, var(--accent) 14%, transparent); }
   .continue-art { border-radius: 4px 10px 4px 10px; }
   .recap-tiles > div { border-radius: 4px 12px 4px 12px; background: var(--hud), var(--surface); box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--accent) 14%, transparent); }
   .recap-list .recap-art { border-radius: 3px 8px 3px 8px; }
@@ -256,7 +257,7 @@ REVERT: everything here is scoped to :root[data-skin='overdrive']; Settings → 
   .sleeve-main > .player-identity, .sleeve-main > .player-context:has(> p) { width: fit-content; max-width: min(100%, 560px); padding: 10px 26px 12px; border-radius: 4px 14px 4px 14px; background: color-mix(in oklab, var(--ground) 92%, transparent); box-shadow: 0 0 0 1px color-mix(in oklab, var(--accent) 18%, transparent), 0 18px 40px -18px rgb(0 0 0 / .8); }
   .sleeve-main > .player-context:has(> p) { padding-block: 8px; }
   .sleeve-main .player-title-row h2 { text-shadow: 0 2px 0 color-mix(in oklab, var(--neon) 35%, transparent); }
-  .sleeve-queue { border-radius: 6px 22px 6px 22px; background: var(--hud), var(--rail) top / 100% 1px no-repeat, color-mix(in oklab, var(--ground) 62%, transparent); }
+  .sleeve-queue { border-radius: 6px 22px 6px 22px; background: var(--rail) top / 100% 1px no-repeat, color-mix(in oklab, var(--ground) 62%, transparent); }
   .expanded .player-footer { border-top-color: transparent; }
 
   /* ── Sign-in ────────────────────────────────────────────────────────── */

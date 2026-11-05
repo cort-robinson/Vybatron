@@ -155,7 +155,7 @@ const ContinueListening = memo(function ContinueListening({ current, paused, whe
       {!canResume && <span className="continue-hint">{saved.voiceChannel ? `Join ${saved.voiceChannel.name} to resume. ` : ''}Resuming needs playback controls; anyone can start fresh.</span>}</div>
     <button type="button" className="button primary" disabled={!canResume || busy} onClick={onResume}><PlayIcon size={18} weight="fill" />Resume session</button>
   </div> : null;
-  return <Shelf id="continue" title="Continue listening" detail="Playing now, and recently played in voice channels you can see."
+  return <Shelf id="continue" title="Continue listening" detail="Playing now, and what played recently."
     lead={feature}
     empty={!recent.length && !feature && (history ? 'Nothing to pick up yet. Songs played in voice channels you can see show up here, and a saved session appears when one is waiting.' : 'Loading your recent songs…')}>
     {recent.map(entry => <TrackCard key={entry.id} track={entry.track} meta={date(entry.playedAt).split(',')[0]} disabled={disabled || !entry.track.uri} title={title} onAdd={() => add(entry.track)} />)}
@@ -175,7 +175,7 @@ function Shelf({ id, title, detail, actions, empty, lead, wide = false, children
 
 function PlayShuffle({ label, disabled, title, onPlay }: { label: string; disabled: boolean; title?: string; onPlay: (shuffle: boolean) => void }) {
   return <>
-    <button type="button" className="button primary" disabled={disabled} title={title} aria-label={`Add all of ${label}`} onClick={() => onPlay(false)}><PlusIcon size={18} weight="bold" />Add all</button>
+    <button type="button" className="button secondary" disabled={disabled} title={title} aria-label={`Add all of ${label}`} onClick={() => onPlay(false)}><PlusIcon size={18} weight="bold" />Add all</button>
     <button type="button" className="button secondary" disabled={disabled} title={title} aria-label={`Add ${label} shuffled`} onClick={() => onPlay(true)}><ShuffleIcon size={18} />Add shuffled</button>
   </>;
 }
@@ -199,7 +199,7 @@ function PlaylistTile({ list, detail, disabled, title, onPlay, range }: { list: 
       <div className="playlist-meta-row"><p className="playlist-meta">{empty ? 'No requests in this range' : `${list.tracks.length} ${list.tracks.length === 1 ? 'song' : 'songs'} · ${totalTime(duration)}`}</p>{range}</div>
       <p className="playlist-detail">{detail}</p>
       <div className="playlist-actions">
-        <button type="button" className="button primary" disabled={disabled || empty} title={title} aria-label={`Add ${list.title}`} onClick={() => onPlay(false)}><PlusIcon size={18} weight="bold" />Add mix</button>
+        <button type="button" className="button secondary" disabled={disabled || empty} title={title} aria-label={`Add ${list.title}`} onClick={() => onPlay(false)}><PlusIcon size={18} weight="bold" />Add mix</button>
         <IconButton label={`Add ${list.title} shuffled`} title={title || `Add ${list.title} shuffled`} disabled={disabled || empty} onClick={() => onPlay(true)}><ShuffleIcon size={21} /></IconButton>
       </div>
     </div>

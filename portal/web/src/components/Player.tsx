@@ -145,20 +145,20 @@ export function Player({ portal, expanded, setExpanded, onAdd, palette, animate,
   // An autoplay pick names its provenance in place of the source.
   const metadata = track ? <>{track.author}<span className="metadata-dot" aria-hidden="true">·</span><span className="track-source">{track.suggested ? 'Autoplay pick' : track.source}</span></> : 'Add a song to start.';
   // The same size as the favorite button and on the title's other side, so the title stays centered.
-  const lyricsToggle = track && <IconButton className={`lyrics-toggle ${lyricsOpen ? 'active-control' : ''}`} label={lyricsOpen ? 'Hide lyrics' : 'Show lyrics'} aria-pressed={lyricsOpen} aria-controls={lyricsOpen ? lyricsId : undefined} onClick={() => { setLyricsOpen(!lyricsOpen); setVisualsOpen(false); }}><MicrophoneStageIcon size={26} weight={lyricsOpen ? 'fill' : 'regular'} /></IconButton>;
+  const lyricsToggle = track && <button type="button" className={`player-chip lyrics-toggle ${lyricsOpen ? 'active-control' : ''}`} aria-label={lyricsOpen ? 'Hide lyrics' : 'Show lyrics'} aria-pressed={lyricsOpen} aria-controls={lyricsOpen ? lyricsId : undefined} onClick={() => { setLyricsOpen(!lyricsOpen); setVisualsOpen(false); }}><MicrophoneStageIcon size={16} weight={lyricsOpen ? 'fill' : 'regular'} aria-hidden="true" />Lyrics</button>;
   // The visualizer's switch sits on the cover's corner, on what it changes: the title row keeps its
   // two balanced buttons. Over the visualizer it also offers the full screen.
   const visualsFailed = () => { setVisualsOpen(false); portal.notify('The visualizer isn’t available on this device.', 'error'); };
   const visualsSwitch = track && <div className="sleeve-visuals">{visualsOpen && <IconButton label="Full-screen visualizer" onClick={() => setVisualsFull(true)}><CornersOutIcon size={21} /></IconButton>}
     <IconButton className={visualsOpen ? 'active-control' : ''} label={visualsOpen ? 'Hide visualizer' : 'Show visualizer'} aria-pressed={visualsOpen} onClick={() => setVisualsOpen(!visualsOpen)}><WaveformIcon size={21} weight={visualsOpen ? 'bold' : 'regular'} /></IconButton></div>;
-  const destination = local ? `Playing on ${portal.playingOn || 'this device'}` : session?.voiceChannel ? `Playing in ${session.voiceChannel.name} on Discord` : '';
+  const destination = local ? portal.playingOn || 'This device' : session?.voiceChannel ? `Discord · ${session.voiceChannel.name}` : '';
   const destinationChip = expanded && !!track && !!destination;
-  const identity = <div className="player-identity" data-glass><div className="player-title-row">{lyricsToggle}<h2 ref={headingRef} tabIndex={-1} title={track?.title}>{track?.title || 'Nothing playing'}</h2>{favorite}</div><p title={track ? `${track.author} · ${track.source}` : undefined}>{metadata}</p>
+  const identity = <div className="player-identity" data-glass><div className="player-title-row">{favorite && <span className="title-balance" aria-hidden="true" />}<h2 ref={headingRef} tabIndex={-1} title={track?.title}>{track?.title || 'Nothing playing'}</h2>{favorite}</div><p title={track ? `${track.author} · ${track.source}` : undefined}>{metadata}</p>
     {/* Where the sound comes out, and the shortest way to change it (More › Play on has it too). */}
-    {destinationChip && <ActionPopover label={`${destination}. Choose where it plays`} className="player-destination" triggerClassName="player-destination-trigger"
+    {track && <div className="player-chips">{lyricsToggle}{destinationChip && <ActionPopover label={`Playing on ${destination}. Choose where it plays`} className="player-destination" triggerClassName="player-destination-trigger"
       trigger={<>{local ? <DesktopIcon size={16} aria-hidden="true" /> : <DiscordLogoIcon size={16} weight="fill" aria-hidden="true" />}<span>{destination}</span><CaretDownIcon size={14} aria-hidden="true" /></>}>
       {close => <><PlayOnChoices portal={portal} close={close} onMoveHere={() => setConfirmHere(true)} />
-        {portal.devices.length > 0 && <button onClick={() => { close(); setRenaming(true); }}><PencilSimpleIcon />Rename this device</button>}</>}</ActionPopover>}
+        {portal.devices.length > 0 && <button onClick={() => { close(); setRenaming(true); }}><PencilSimpleIcon />Rename this device</button>}</>}</ActionPopover>}</div>}
   </div>;
   const spectrumMode = track && active && live ? 'playing' : 'standby';
   const look = skinLook(skin);
@@ -178,7 +178,7 @@ export function Player({ portal, expanded, setExpanded, onAdd, palette, animate,
   const extras = <div className="player-extras">
     <Volume level={session?.volume ?? 100} disabled={!controllable} reset={`${track?.id}:${snapshot?.guild.id}`} onCommit={level => void control({ command: 'volume', options: { level } })} />
     {!local && <label className={`filter-control ${session?.filter === 'warm' ? 'warm' : ''}`} title="Audio filter"><SpeakerHifiIcon className="filter-dot" size={17} aria-hidden="true" /><span className="sr-only">Audio filter</span><select aria-label="Audio filter" value={session?.filter || bootstrap?.filters[0]?.id || ''} disabled={!controllable} onChange={event => void control({ command: 'filter', options: { preset: event.target.value } })}>
-      {bootstrap?.filters.map(filter => <option key={filter.id} value={filter.id}>{filter.label}</option>)}
+      {bootstrap?.filters.map(filter => <option key={filter.id} value={filter.id}>Sound: {filter.label}</option>)}
     </select><CaretDownIcon size={16} /></label>}
     <ActionPopover label="More playback controls" trigger={<DotsThreeIcon size={27} weight="bold" />} className="player-more" triggerClassName="icon-button">
       {/* Where it plays leads the menu, unless the open player's destination chip already offers it;

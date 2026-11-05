@@ -51,7 +51,7 @@ function ServerList({ title, description, empty, entries, disabled, blockedReaso
     <header className="server-list-header">
       <div><h3 id={headingId}>{title}</h3><p>{description}</p></div>
       {entries.length > 0 && <div className="server-list-actions">
-        <button type="button" className="button primary" disabled={disabled} title={disabled ? blockedReason : undefined} aria-label={`Add all of ${title}`} onClick={() => onPlay(false)}><PlusIcon size={18} weight="bold" />Add all</button>
+        <button type="button" className="button secondary" disabled={disabled} title={disabled ? blockedReason : undefined} aria-label={`Add all of ${title}`} onClick={() => onPlay(false)}><PlusIcon size={18} weight="bold" />Add all</button>
         <button type="button" className="button secondary" disabled={disabled} title={disabled ? blockedReason : undefined} aria-label={`Add ${title} shuffled`} onClick={() => onPlay(true)}><ShuffleIcon size={18} />Add shuffled</button>
       </div>}
     </header>

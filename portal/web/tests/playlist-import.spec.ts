@@ -7,6 +7,8 @@ async function openMusic(page: Page, skin?: string) {
   if (skin) await page.addInitScript(value => localStorage.setItem('vybertron.skin', value), skin);
   await page.goto('/'); await page.getByRole('button', { name: 'My Music', exact: true }).click();
   await expect(page.getByLabel('Search favorites', { exact: true })).toBeVisible();
+  const open = page.getByRole('button', { name: 'Import a playlist', exact: true });
+  if (await open.count() && await open.getAttribute('aria-expanded') === 'false') await open.click();
 }
 
 test('a playlist link previews counts and saves to favorites only after confirming', async ({ page }) => {

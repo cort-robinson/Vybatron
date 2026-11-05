@@ -44,7 +44,7 @@ test('Haunted is opt-in: it swaps in the moonlit hollow and the candlelit sleeve
   await expect(page.locator('.hh-scene .hh-moon')).toHaveCount(1);
   await expect(page.locator('.od-horizon, .ff-scene')).toHaveCount(0);
   expect(requested).toHaveLength(1);
-  await expect(page.getByText('All Hallows’ Eve')).toBeVisible();
+  await expect(page.getByText('A Halloween look', { exact: false })).toBeVisible();
   // Its headings take the inscription face; names and copy keep Archivo.
   expect(await page.locator('.page-title h1').evaluate(element => getComputedStyle(element).fontFamily)).toContain('Cinzel');
   expect(await page.locator('.setting-row p').first().evaluate(element => getComputedStyle(element).fontFamily)).toContain('Archivo');
@@ -168,7 +168,7 @@ test('a mouse drags an overflowing shelf sideways without pressing what it grabb
   const fixture = await mockPortal(page); await page.goto('/');
   const shelf = page.getByRole('list', { name: 'Your mixes' });
   await expect(shelf).toHaveClass(/can-drag/);
-  const play = shelf.getByRole('button', { name: /^Play/ }).first();
+  const play = shelf.getByRole('button', { name: /^Add / }).first();
   await play.scrollIntoViewIfNeeded();
   const box = (await play.boundingBox())!;
   const before = fixture.commands.length;

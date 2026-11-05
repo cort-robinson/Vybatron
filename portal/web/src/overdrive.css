@@ -260,8 +260,6 @@ REVERT: everything here is scoped to :root[data-skin='overdrive']; Settings → 
   /* The caption sits where the skyline, sun bands, and floor grid run, so the title, artist, and any
      state note ride a smoked plate. A wide title glow would be clipped by the plate's line clamp. */
   .sleeve-main > .player-identity, .sleeve-main > .player-context:has(> p) { width: fit-content; max-width: min(100%, 560px); padding: 10px 26px 12px; border-radius: 4px 14px 4px 14px; background: color-mix(in oklab, var(--ground) 92%, transparent); box-shadow: 0 0 0 1px color-mix(in oklab, var(--accent) 18%, transparent), 0 18px 40px -18px rgb(0 0 0 / .8); }
-  /* The plate wraps title and heart together, so no spacer is needed to centre them. */
-  .sleeve-main .title-balance { display: none; }
   .sleeve-main > .player-context:has(> p) { padding-block: 8px; }
   .sleeve-main .player-title-row h2 { text-shadow: 0 2px 0 color-mix(in oklab, var(--neon) 35%, transparent); }
   .sleeve-queue { border-radius: 6px 22px 6px 22px; background: var(--rail) top / 100% 1px no-repeat, color-mix(in oklab, var(--ground) 62%, transparent); }

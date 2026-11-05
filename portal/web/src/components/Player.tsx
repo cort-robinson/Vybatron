@@ -177,8 +177,8 @@ export function Player({ portal, expanded, setExpanded, onAdd, palette, animate,
   </div>;
   const extras = <div className="player-extras">
     <Volume level={session?.volume ?? 100} disabled={!controllable} reset={`${track?.id}:${snapshot?.guild.id}`} onCommit={level => void control({ command: 'volume', options: { level } })} />
-    {!local && <label className={`filter-control ${session?.filter === 'warm' ? 'warm' : ''}`} title="Audio filter"><SpeakerHifiIcon className="filter-dot" size={17} aria-hidden="true" /><span className="sr-only">Audio filter</span><select aria-label="Audio filter" value={session?.filter || bootstrap?.filters[0]?.id || ''} disabled={!controllable} onChange={event => void control({ command: 'filter', options: { preset: event.target.value } })}>
-      {bootstrap?.filters.map(filter => <option key={filter.id} value={filter.id}>Sound: {filter.label}</option>)}
+    {!local && <label className={`filter-control ${session?.filter === 'warm' ? 'warm' : ''}`} title="Audio filter"><SpeakerHifiIcon className="filter-dot" size={17} aria-hidden="true" /><span className="filter-prefix" aria-hidden="true">Sound:</span><span className="sr-only">Audio filter</span><select aria-label="Audio filter" value={session?.filter || bootstrap?.filters[0]?.id || ''} disabled={!controllable} onChange={event => void control({ command: 'filter', options: { preset: event.target.value } })}>
+      {bootstrap?.filters.map(filter => <option key={filter.id} value={filter.id}>{filter.label}</option>)}
     </select><CaretDownIcon size={16} /></label>}
     <ActionPopover label="More playback controls" trigger={<DotsThreeIcon size={27} weight="bold" />} className="player-more" triggerClassName="icon-button">
       {/* Where it plays leads the menu, unless the open player's destination chip already offers it;

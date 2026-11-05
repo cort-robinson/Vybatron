@@ -143,7 +143,8 @@ test('player action popover dismisses by Escape, outside activation, and complet
   const player = page.getByTestId('player');
   const more = player.getByRole('button', { name: 'More playback controls' });
   await more.click();
-  await expect(player.getByRole('button', { name: 'Vote to skip', exact: true })).toBeFocused();
+  // Focus moves into the menu, onto its first choice (where it plays).
+  await expect(player.locator('.player-more > .menu-panel button').first()).toBeFocused();
   await page.keyboard.press('Escape');
   await expect(player.locator('.player-more > .menu-panel')).toHaveCount(0);
   await expect(more).toBeFocused();

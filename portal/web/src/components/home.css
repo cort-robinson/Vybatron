@@ -156,14 +156,14 @@
   .home-shelf-actions { width: 100%; }
   .home-shelf-actions .button { flex: 1; }
   .shelf-row { --card: 136px; gap: 14px; margin-inline: -16px; padding-inline: 16px; scroll-padding-inline: 16px; }
-  .shelf-row-wide { --card: calc((100vw - 32px) / 1.6); }
+  .shelf-row-wide { --card: clamp(196px, (100vw - 32px) / 1.6, 248px); }
   .shelf-row { scrollbar-width: none; }
   @keyframes shelf-fade { 0% { --shelf-fade-start: 0px; --shelf-fade-end: 24px; } 6% { --shelf-fade-start: 24px; } 94% { --shelf-fade-end: 24px; } 100% { --shelf-fade-start: 24px; --shelf-fade-end: 0px; } }
   .shelf-row::-webkit-scrollbar { display: none; }
   .playlist-detail { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
   .playlist-meta-row { flex-wrap: wrap; gap: 4px 8px; }
   /* Room for the title beside the add button on narrow cards. */
-  .shelf-row:not(.shelf-row-wide):not(.shelf-row-sparse) { --card: calc((100vw - 60px) / 2.3); }
+  .shelf-row:not(.shelf-row-wide):not(.shelf-row-sparse) { --card: clamp(136px, (100vw - 60px) / 2.3, 168px); }
   .shelf-row.shelf-row-sparse { grid-template-columns: minmax(0, 1fr); margin-inline: 0; padding-inline: 0; }
   .continue-feature { grid-template-columns: 52px minmax(0, 1fr); gap: 12px; padding: 10px 12px 10px 10px; margin-bottom: 14px; }
   .continue-art { width: 52px; height: 52px; }
@@ -198,9 +198,9 @@
 .shelf-card:has(.icon-button:not(:disabled)):hover .shelf-art .artwork { filter: brightness(1.08); }
 .home-view .playlist-tile .mix-range select { border-radius: 999px; corner-shape: round; }
 .playlist-includes { margin-top: 6px; color: var(--text-soft); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-@media (max-width: 960px) {
+@media (max-width: 600px) {
   /* The mini player already shows the song in progress, so phones lead Continue listening with what played before. */
   .home-shelf > .continue-feature:has(.continue-open) { display: none; }
 }
 .narrow-only { display: none; }
-@media (max-width: 960px) { .wide-only { display: none; } .narrow-only { display: inline; } }
+@media (max-width: 600px) { .wide-only { display: none; } .narrow-only { display: inline; } }

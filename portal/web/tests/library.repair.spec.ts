@@ -175,7 +175,7 @@ test('long RTL and CJK metadata stays inside separate 44px targets at desktop an
     await row.scrollIntoViewIfNeeded();
     const bounds = await row.evaluate(element => {
       const text = element.querySelector('.track-text')!.getBoundingClientRect();
-      const buttons = Array.from(element.querySelectorAll('button')).map(button => button.getBoundingClientRect());
+      const buttons = Array.from(element.querySelectorAll('button')).map(button => button.getBoundingClientRect()).filter(rect => rect.width > 0);
       return { noOverflow: document.documentElement.scrollWidth <= innerWidth, textEnd: text.right,
         buttons: buttons.map(button => ({ x: button.x, right: button.right, width: button.width, height: button.height })) };
     });

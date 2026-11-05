@@ -189,7 +189,7 @@ test('configuration: discovery recovery cannot authorize offline writes or repla
     server.releaseCommandReplies();
     await expect.poll(() => server.capturedSnapshots.size).toBe(1);
     server.releaseSnapshotReads();
-    await expect(save).toBeEnabled(); await expect(page.getByRole('button', { name: 'Pause playback' })).toBeEnabled();
+    await expect(save).toHaveCount(0); await expect(page.getByRole('button', { name: 'Pause playback' })).toBeEnabled();
     await expect(volume).toHaveValue('53');
     await page.getByRole('button', { name: 'Refresh options', exact: true }).click();
     await expect.poll(() => server.configurationReads.length).toBe(3); await loaded(page);

@@ -37,7 +37,7 @@ test('every shelf queues through the normal commands', async ({ page }) => {
   const mixes = shelf(page, 'Your mixes');
   await expect(mixes.getByRole('heading', { level: 3 })).toHaveText(['Your mix', 'Your top tracks', 'Solara mix']);
   await expect(mixes).toContainText('New picks');
-  expect(await sent(() => mixes.getByRole('button', { name: 'Add Your mix' }).click()))
+  expect(await sent(() => mixes.getByRole('button', { name: 'Add Your mix', exact: true }).click()))
     .toEqual({ command: 'mymix', subcommand: 'play', options: { playlist: 'mix', shuffle: false } });
   expect(await sent(() => mixes.getByRole('button', { name: 'Add Solara mix shuffled' }).click()))
     .toEqual({ command: 'mymix', subcommand: 'play', options: { playlist: 'artist', artist: 'Solara', shuffle: true } });
@@ -46,8 +46,9 @@ test('every shelf queues through the normal commands', async ({ page }) => {
   const statsReads = fixture.requests.filter(path => path.endsWith('/stats')).length;
   await mixes.getByLabel('Time range for Your top tracks').selectOption('7d');
   await expect.poll(() => fixture.requests.filter(path => path.endsWith('/stats')).length).toBe(statsReads + 1);
-  await expect(mixes).toContainText('past week');
-  expect(await sent(() => mixes.getByRole('button', { name: 'Add Your top tracks' }).click()))
+  // The range shows in the card's own picker rather than repeated in its description.
+  await expect(mixes.getByLabel('Time range for Your top tracks')).toHaveValue('7d');
+  expect(await sent(() => mixes.getByRole('button', { name: 'Add Your top tracks', exact: true }).click()))
     .toEqual({ command: 'mymix', subcommand: 'play', options: { playlist: 'top', shuffle: false, window: '7d' } });
 
   const rediscover = shelf(page, 'Rediscover');
@@ -249,13 +250,11 @@ for (const [name, viewport] of [['desktop', { width: 1440, height: 900 }], ['pho
   });
 }
 
-test('on a phone the playing card opens from a caret and a saved session keeps a full-width Resume', async ({ page }) => {
+test('on a phone the mini player stands in for the playing card, and a saved session keeps a full-width Resume', async ({ page }) => {
   await page.setViewportSize({ width: 393, height: 852 });
   const fixture = await mockPortal(page);
   await page.goto('/');
-  const open = shelf(page, 'Continue listening').getByRole('button', { name: 'View now playing' });
-  await expect(open).toBeVisible();
-  expect((await open.boundingBox())!.width).toBeLessThanOrEqual(48);
+  await expect(shelf(page, 'Continue listening').getByRole('button', { name: 'View now playing' })).toBeHidden();
 
   const { snapshot } = fixture.state;
   snapshot.session.current = null; snapshot.session.queue = []; snapshot.session.status = 'idle';

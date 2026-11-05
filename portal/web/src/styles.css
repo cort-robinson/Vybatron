@@ -395,10 +395,10 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
 /* Lyrics and where it plays sit under the song as labeled chips; a spacer opposite the heart keeps the title centered. */
 .title-balance { flex: none; width: 44px; }
 .player-chips { display: flex; justify-content: center; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
-.player-chip { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 4px 12px; border-radius: 999px; background: rgb(255 255 255 / .07); color: var(--text-soft); font-size: 14px; font-weight: 600; }
+.player-chip { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 4px 14px; border-radius: 999px; background: rgb(255 255 255 / .07); color: var(--text-soft); font-size: 14px; font-weight: 600; }
 .player-chip:hover { background: rgb(255 255 255 / .12); color: var(--text); }
 .player-chip.active-control { background: color-mix(in oklab, var(--accent) 18%, transparent); color: var(--accent); }
-.player-destination-trigger { display: inline-flex; align-items: center; gap: 7px; min-height: 32px; padding: 4px 12px; border-radius: 999px; background: color-mix(in oklab, var(--accent) 12%, transparent); color: var(--accent); font-size: 14px; font-weight: 600; }
+.player-destination-trigger { display: inline-flex; align-items: center; gap: 7px; min-height: 44px; padding: 4px 14px; border-radius: 999px; background: color-mix(in oklab, var(--accent) 12%, transparent); color: var(--accent); font-size: 14px; font-weight: 600; }
 .player-destination-trigger:hover { background: color-mix(in oklab, var(--accent) 20%, transparent); }
 .player-destination-trigger svg { flex: none; }
 .player-destination > .menu-panel { top: auto; bottom: calc(100% + 8px); right: auto; left: 50%; translate: -50% 0; width: 288px; text-align: left; }
@@ -450,7 +450,7 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
 .timeline.is-live .range::-webkit-slider-runnable-track { background: var(--range-track); }
 .player-extras { grid-column: 3; grid-row: 1; justify-self: end; margin-right: 52px; display: flex; align-items: center; gap: 8px; min-width: 0; }
 .volume-control { display: flex; align-items: center; gap: 10px; color: var(--text-soft); width: 136px; min-width: 0; margin-right: 4px; }
-.filter-control { display: flex; align-items: center; position: relative; border: 1px solid var(--line-strong); background: rgb(255 255 255 / .04); border-radius: 999px; min-height: 44px; width: 164px; flex-shrink: 0; transition: border-color 160ms; }
+.filter-control { display: flex; align-items: center; position: relative; border: 1px solid var(--line-strong); background: rgb(255 255 255 / .04); border-radius: 999px; min-height: 44px; width: 126px; flex-shrink: 0; transition: border-color 160ms; }
 .filter-control:hover { border-color: rgb(255 255 255 / .26); }
 /* The select spans the whole pill so its hit area and focus ring match the visible control. */
 .filter-control select { appearance: none; position: absolute; inset: -1px; background: transparent; padding: 0 30px 0 29px; border: none; border-radius: inherit; min-height: 0; height: calc(100% + 2px); font-size: 16px; width: calc(100% + 2px); min-width: 0; }
@@ -852,7 +852,7 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
   .expanded .transport .play-button svg { width: 28px; height: 28px; }
   .expanded .player-extras { border: 0; padding: 0; margin: 0; display: flex; width: 100%; max-width: 480px; justify-content: space-between; gap: 12px; }
   .expanded .volume-control { display: flex; flex: 1; width: auto; gap: 8px; }
-  .expanded .filter-control { width: 164px; }
+  .expanded .filter-control { width: 126px; }
   .expanded .expand-button { display: none; }
   .player-more > .menu-panel { right: 0; bottom: 52px; width: min(288px, calc(100vw - 32px)); max-height: calc(100dvh - var(--nav) - 72px - env(safe-area-inset-top, 0px)); }
   /* An open More menu may rise over the server header, so short screens still show every action. */
@@ -1140,9 +1140,8 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
 .next-result { flex-shrink: 0; color: var(--text-soft); }
 .settings-view > .personal-settings:first-child { margin-top: 0; }
 
-/* Large phones get the favorite heart on the mini player, as tablets do; on the rest the title keeps
-   the room, and the heart waits one tap away in the open player. */
-@media (min-width: 480px) and (max-width: 599px) {
+/* Phones wide enough for a title beside it get the favorite heart on the mini player, as tablets do. */
+@media (min-width: 360px) and (max-width: 599px) {
   .compact-favorite { display: flex; }
 }
 
@@ -1338,3 +1337,8 @@ p, .continue-text > span, .section-description, .field-hint { text-wrap: pretty;
   .result-actions .add-result { margin-left: 0; padding: 8px 12px; }
   .menu-panel > .phone-only-item { display: flex; }
 }
+/* Wide decks have room for the full "Sound:" pill and a volume readout; tighter ones keep the slider. */
+@media (min-width: 1024px) { .filter-control { width: 164px; } }
+@media (max-width: 1023px) { .volume-readout { display: none; } }
+.filter-prefix { display: none; position: absolute; left: 32px; color: var(--muted); font-size: 14px; pointer-events: none; }
+@media (min-width: 1024px) { .filter-prefix { display: block; } .filter-control select { padding-left: 82px; } }

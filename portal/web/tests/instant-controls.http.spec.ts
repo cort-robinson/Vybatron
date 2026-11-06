@@ -200,3 +200,18 @@ test('a preset another listener picks mid-navigation leaves one tab stop, on the
   await expect(group.locator('[tabindex="0"]')).toHaveCount(1);
   await expect(group.locator('[tabindex="0"]')).toHaveAttribute('data-preset', name!);
 });
+
+test('closing the menu mid-navigation puts the sound tab stop back on the chosen preset', async ({ page }) => {
+  await mockPortal(page); await page.goto('/');
+  const more = page.getByTestId('player').getByRole('button', { name: 'More playback controls' });
+  const group = page.getByRole('radiogroup', { name: 'Sound for everyone in voice' });
+  await more.click();
+  await group.getByRole('radio', { checked: true }).focus();
+  await page.keyboard.press('ArrowDown');
+  // Dismiss by clicking outside, which unmounts the menu without a blur inside the group.
+  await page.mouse.click(5, 5);
+  await expect(group).toHaveCount(0);
+  await more.click();
+  await expect(group.getByRole('radio', { checked: true })).toHaveAttribute('tabindex', '0');
+  await expect(group.locator('[tabindex="0"]')).toHaveCount(1);
+});

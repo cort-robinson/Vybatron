@@ -1,5 +1,5 @@
 import { expect, test, type Page } from './test';
-import { gotoSession, mockPortal } from './fixtures';
+import { gotoSession, mockPortal, streamAction } from './fixtures';
 import type { GuildSnapshot } from '../src/types';
 import { startHttpFixture } from './http-fixture';
 
@@ -182,4 +182,21 @@ test('sound presets are one tab stop, and the arrows move between them', async (
   await other.focus();
   await page.keyboard.press('ArrowUp');
   await expect(checked).toBeFocused();
+});
+
+test('a preset another listener picks mid-navigation leaves one tab stop, on the focused preset', async ({ page }) => {
+  const fixture = await mockPortal(page);
+  fixture.state.bootstrap.filters.push({ id: 'bass', label: 'Bass', description: 'More low end' });
+  await page.goto('/');
+  await page.getByTestId('player').getByRole('button', { name: 'More playback controls' }).click();
+  const group = page.getByRole('radiogroup', { name: 'Sound for everyone in voice' });
+  await group.getByRole('radio', { checked: true }).focus();
+  await page.keyboard.press('ArrowDown');
+  const focused = group.locator(':focus');
+  const name = await focused.getAttribute('data-preset');
+  const { snapshot } = fixture.state;
+  await streamAction(page, 'reconnect', { ...snapshot, revision: 'revision-bass', session: { ...snapshot.session, filter: 'bass' } });
+  await expect(group.getByRole('radio', { name: /^Bass/ })).toBeChecked();
+  await expect(group.locator('[tabindex="0"]')).toHaveCount(1);
+  await expect(group.locator('[tabindex="0"]')).toHaveAttribute('data-preset', name!);
 });

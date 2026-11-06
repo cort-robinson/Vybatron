@@ -53,6 +53,8 @@ export function Player({ portal, expanded, setExpanded, onAdd, palette, animate,
   const reasonId = useId();
   const confirmationId = useId();
   const soundId = useId();
+  // The sound preset holding the tab stop while arrows move through them; null leaves it on the chosen one.
+  const [soundFocus, setSoundFocus] = useState<string | null>(null);
   const queueId = useId();
   const lyricsId = useId();
   // Timeline ticks belong to the deck; unchanged queue artwork and row menus can keep their tree.
@@ -212,12 +214,11 @@ export function Player({ portal, expanded, setExpanded, onAdd, palette, animate,
             const step = { ArrowDown: 1, ArrowRight: 1, ArrowUp: -1, ArrowLeft: -1 }[event.key];
             if (!step || 'tv' in document.documentElement.dataset) return;
             const radios = Array.from(event.currentTarget.querySelectorAll('[role="radio"]')) as HTMLElement[];
-            const at = radios.indexOf(document.activeElement as HTMLElement);
-            const next = radios[(at + step + radios.length) % radios.length]; if (!next) return;
+            const next = radios[(radios.indexOf(document.activeElement as HTMLElement) + step + radios.length) % radios.length]; if (!next) return;
             // The tab stop moves with focus, so Tab leaves the group from the focused preset.
-            event.preventDefault(); radios.forEach(radio => { radio.tabIndex = radio === next ? 0 : -1; }); next.focus();
-          }}>
-          {bootstrap.filters.map(filter => { const chosen = (session?.filter || bootstrap.filters[0]?.id) === filter.id; return <button key={filter.id} role="radio" aria-checked={chosen} tabIndex={chosen || 'tv' in document.documentElement.dataset ? 0 : -1} disabled={!controllable} onClick={() => { close(); if (!chosen) void control({ command: 'filter', options: { preset: filter.id } }); }}><span className={`sound-radio ${chosen ? 'chosen' : ''}`} aria-hidden="true" /><span className="menu-device"><span>{filter.label}</span>{filter.description && <small>{filter.description}</small>}</span></button>; })}</div></>}
+            event.preventDefault(); setSoundFocus(next.dataset.preset ?? null); next.focus();
+          }} onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setSoundFocus(null); }}>
+          {bootstrap.filters.map(filter => { const chosen = (session?.filter || bootstrap.filters[0]?.id) === filter.id; return <button key={filter.id} data-preset={filter.id} role="radio" aria-checked={chosen} tabIndex={(soundFocus ?? (session?.filter || bootstrap.filters[0]?.id)) === filter.id || 'tv' in document.documentElement.dataset ? 0 : -1} disabled={!controllable} onClick={() => { close(); if (!chosen) void control({ command: 'filter', options: { preset: filter.id } }); }}><span className={`sound-radio ${chosen ? 'chosen' : ''}`} aria-hidden="true" /><span className="menu-device"><span>{filter.label}</span>{filter.description && <small>{filter.description}</small>}</span></button>; })}</div></>}
 
         <button className="danger-text" disabled={!controllable || !session?.queue.length} onClick={() => { close(); setConfirmClear(true); }}><TrashIcon />Clear upcoming queue</button>
         <button className="danger-text" disabled={!can('control') || !track} onClick={() => { close(); setConfirmStop(true); }}><StopCircleIcon /><span className="menu-device"><span>{local ? 'Stop and clear your queue' : 'Stop and discard session'}</span>{!local && <small>Ends playback for everyone in voice</small>}</span></button>

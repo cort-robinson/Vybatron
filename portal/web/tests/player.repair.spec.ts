@@ -134,6 +134,9 @@ test('expanded permission explanation keeps the voice destination in view and le
   await expect(player.getByRole('button', { name: 'Pause playback' })).toBeDisabled();
   await player.getByRole('button', { name: 'Volume', exact: true }).click();
   await expect(page.getByRole('slider', { name: 'Volume', exact: true }).filter({ visible: true })).toBeDisabled();
+  // Nothing in the sheet can take focus, so Tab keeps it on the sheet instead of leaving the modal.
+  await page.keyboard.press('Tab');
+  await expect(page.getByRole('dialog', { name: 'Volume' })).toBeFocused();
   expect(fixture.commands).toHaveLength(0);
 });
 

@@ -44,6 +44,9 @@ export function LibraryView({ portal, active = true }: { portal: Portal; active?
   const [mixQuery, setMixQuery] = useState('');
   const [mixPage, setMixPage] = useState(0);
   const [importOpen, setImportOpen] = useState(false);
+  // Import chosen from the phone menu opens below the list, so bring its field into view and focus.
+  const [importFocus, setImportFocus] = useState(0);
+  useEffect(() => { if (!importFocus) return; const frame = requestAnimationFrame(() => { const field = document.querySelector('#favorites-import input') as HTMLElement | null; field?.scrollIntoView({ block: 'center' }); field?.focus({ preventScroll: true }); }); return () => cancelAnimationFrame(frame); }, [importFocus]);
   const [confirm, setConfirm] = useState<Confirmation | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const mixSearchRef = useRef<HTMLInputElement>(null);
@@ -120,7 +123,7 @@ export function LibraryView({ portal, active = true }: { portal: Portal; active?
       {queries[listTab] && <button type="button" className="text-button" onClick={clearSearch}>Clear search</button>}
       {tab === 'favorites' && library.favorites.length > 0 && <button type="button" className="text-button library-import-toggle" aria-expanded={importOpen} aria-controls={importOpen ? 'favorites-import' : undefined} onClick={() => setImportOpen(!importOpen)}><DownloadSimpleIcon size={18} /><span>Import<span className="wide-label"> a playlist</span></span></button>}
       {tab === 'favorites' && library.favorites.length > 0 && <ActionPopover label="Import and manage favorites" className="library-options" triggerClassName="text-button library-manage" trigger={<><span className="narrow-label">Manage</span><span className="wide-label">Manage</span><CaretDownIcon size={16} weight="bold" aria-hidden="true" /></>}>
-        {close => <>{/* Phones fold Import into this menu so search keeps the row. */}<button className="menu-import" onClick={() => { close(); setImportOpen(true); }}><DownloadSimpleIcon />Import a playlist</button><button className="danger-text" disabled={!editable} onClick={() => { close(); setConfirm({ kind: 'favorites' }); }}><TrashIcon />Clear favorites</button></>}</ActionPopover>}
+        {close => <>{/* Phones fold Import into this menu so search keeps the row. */}<button className="menu-import" onClick={() => { close(); setImportOpen(true); setImportFocus(count => count + 1); }}><DownloadSimpleIcon />Import a playlist</button><button className="danger-text" disabled={!editable} onClick={() => { close(); setConfirm({ kind: 'favorites' }); }}><TrashIcon />Clear favorites</button></>}</ActionPopover>}
     </div></div>
     {tab === 'favorites' && <>
       {!library.favorites.length ? <Empty title="A place for your repeat favorites" description="Tap the heart on the current song to keep it here. Only you can see this shelf." icon={<HeartIcon size={30} />} /> : !favorites.length ? noMatches : <ul className="library-track-list" aria-label="Favorite songs">{favorites.slice(offset, offset + pageSize).map(({ track, index }) => <FavoriteRow key={`${track.id}:${index}`} state={queueState(track)}

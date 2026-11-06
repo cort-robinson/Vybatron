@@ -122,7 +122,7 @@
 .mix-repeat-note { margin-top: 12px; color: var(--muted); font-size: 14px; }
 @media (max-width: 360px) { .mix-tracks li { grid-template-columns: 44px minmax(0, 1fr) minmax(44px, auto); row-gap: 0; } .mix-tracks .mix-track-state { grid-column: 2; grid-row: 2; margin-top: -4px; font-size: 12px; } .mix-tracks li > .icon-button { grid-column: 3; grid-row: 1 / span 2; } }
 .mix-track-state { color: var(--muted); font-size: 13px; font-weight: 400; white-space: nowrap; }
-.mix-tracks li:not(:has(.mix-track-state)) > .mix-track-text { grid-column: span 2; }
+@media (min-width: 361px) { .mix-tracks li:not(:has(.mix-track-state)) > .mix-track-text { grid-column: span 2; } }
 .mix-track-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .mix-track-text strong { font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mix-track-text span { color: var(--muted); font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

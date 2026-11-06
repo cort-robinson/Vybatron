@@ -177,6 +177,8 @@ export function ActionPopover({ label, trigger, className = '', triggerClassName
         // A sheet covers the page, so Tab cycles within it like a dialog.
         if (event.key !== 'Tab') return;
         const actions = focusableElements(event.currentTarget); const first = actions[0]; const last = actions[actions.length - 1];
+        // With nothing enabled inside (Volume for a listener without control), focus stays on the sheet itself.
+        if (!actions.length) { event.preventDefault(); event.currentTarget.focus(); return; }
         if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
         else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
       }}><span className="sheet-grabber" aria-hidden="true" />{children(close)}</div></div>, document.body)}

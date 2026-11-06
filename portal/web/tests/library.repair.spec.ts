@@ -224,3 +224,14 @@ test('a new song in the same room keeps the library on screen while it refreshes
   expect(await page.getByText('Loading your music…').count()).toBe(0);
   expect(await favorites.count()).toBe(2);
 });
+
+test('on a phone, Import from the Manage menu brings its field into view and focus', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const fixture = await mockPortal(page); fixture.state.library.favorites = songs(40);
+  await openLibrary(page);
+  await page.getByRole('button', { name: 'Import and manage favorites' }).click();
+  await page.getByRole('button', { name: 'Import a playlist' }).click();
+  const field = page.getByRole('textbox', { name: 'Import a playlist' });
+  await expect(field).toBeFocused();
+  await expect(field).toBeInViewport();
+});

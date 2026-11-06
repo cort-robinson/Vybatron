@@ -137,3 +137,4 @@
 .library-view .mix-create { margin-top: 36px; }
 
 .server-favorite-list .icon-button { color: var(--accent); }
+.server-favorite-list .icon-button.add-again { color: var(--muted); }

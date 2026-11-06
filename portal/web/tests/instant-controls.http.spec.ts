@@ -149,9 +149,9 @@ test('volume, loop and filter apply instantly and coalesce repeated adjustments'
     await expect(player(page).getByRole('button', { name: /^Repeat: track/ })).toBeVisible({ timeout: 250 });
     // The sound filter lives in the More menu: choosing one closes it, and reopening shows the choice at once.
     await player(page).getByRole('button', { name: 'More playback controls' }).click();
-    await page.getByRole('button', { name: /^Original/ }).click();
+    await page.getByRole('radio', { name: /^Original/ }).click();
     await player(page).getByRole('button', { name: 'More playback controls' }).click();
-    await expect(page.getByRole('button', { name: /^Original/ })).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByRole('radiogroup', { name: 'Sound for everyone in voice' }).getByRole('radio', { name: /^Original/ })).toBeChecked();
     await page.keyboard.press('Escape');
     server.releaseCommandExecution();
     await expect.poll(() => server.state.snapshot.session).toMatchObject({ volume: 70, repeat: 'track', filter: 'off' });

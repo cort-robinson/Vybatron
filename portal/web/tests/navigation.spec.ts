@@ -152,3 +152,24 @@ test('the phone Search field sticks to the top edge, with one focus ring in ever
     await expect.poll(async () => Math.round((await page.locator('.search-page .search-form').boundingBox())!.y)).toBe(0);
   }
 });
+
+test('search results and Popular say when a song is already queued, and adding it again stays possible', async ({ page }) => {
+  const fixture = await mockPortal(page);
+  const { session } = fixture.state.snapshot;
+  session.queue.push({ ...session.queue[0], id: 'queued-midnight-city', title: 'Midnight City', author: 'M83', uri: 'https://example.com/music/midnight-city' });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Add music', exact: true }).first().click();
+  await page.getByRole('searchbox', { name: 'Music search' }).fill('Midnight City');
+  const again = page.getByRole('button', { name: 'Add Midnight City to queue again' });
+  await expect(again).toBeVisible();
+  await expect(page.locator('.result-list li').filter({ has: again })).toContainText('In queue');
+  await again.click();
+  await expect.poll(() => fixture.commands.at(-1)?.command).toBe('play');
+  await page.getByRole('button', { name: 'Close dialog' }).click();
+
+  await page.getByRole('button', { name: 'My Music', exact: true }).click();
+  await page.getByRole('tab', { name: 'Popular' }).click();
+  const queued = page.locator('.server-favorite-list li').filter({ hasText: 'Night Drive' }).first();
+  await expect(queued).toContainText('In queue');
+  await expect(queued.getByRole('button', { name: 'Add Night Drive to the queue again' })).toBeEnabled();
+});

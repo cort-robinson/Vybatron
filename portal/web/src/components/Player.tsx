@@ -52,6 +52,7 @@ export function Player({ portal, expanded, setExpanded, onAdd, palette, animate,
   const openedFromIdentity = useRef(false);
   const reasonId = useId();
   const confirmationId = useId();
+  const soundId = useId();
   const queueId = useId();
   const lyricsId = useId();
   // Timeline ticks belong to the deck; unchanged queue artwork and row menus can keep their tree.
@@ -205,8 +206,9 @@ export function Player({ portal, expanded, setExpanded, onAdd, palette, animate,
         <button disabled={!controllable || !track && !sleep} onClick={() => { close(); setSleepOpen(true); }}><MoonIcon />{sleep ? `Sleep timer · ${sleep}` : 'Sleep timer'}</button></>}
         {!local && <button disabled={!can('library') || !track} onClick={() => { close(); setSaveSession(true); }}><VinylRecordIcon />Save session as mix</button>}
         {/* The sound filter is set rarely, so it lives here instead of beside the transport. */}
-        {!local && !!bootstrap?.filters.length && <><p className="menu-section">Sound for everyone in voice</p>
-          {bootstrap.filters.map(filter => { const chosen = (session?.filter || bootstrap.filters[0]?.id) === filter.id; return <button key={filter.id} aria-pressed={chosen} disabled={!controllable} onClick={() => { close(); if (!chosen) void control({ command: 'filter', options: { preset: filter.id } }); }}><span className={`sound-radio ${chosen ? 'chosen' : ''}`} aria-hidden="true" /><span className="menu-device"><span>{filter.label}</span>{filter.description && <small>{filter.description}</small>}</span></button>; })}</>}
+        {!local && !!bootstrap?.filters.length && <><p className="menu-section" id={`${soundId}-label`}>Sound for everyone in voice</p>
+          {/* One preset is always on, so the choices are a radio group. */}<div role="radiogroup" aria-labelledby={`${soundId}-label`}>
+          {bootstrap.filters.map(filter => { const chosen = (session?.filter || bootstrap.filters[0]?.id) === filter.id; return <button key={filter.id} role="radio" aria-checked={chosen} disabled={!controllable} onClick={() => { close(); if (!chosen) void control({ command: 'filter', options: { preset: filter.id } }); }}><span className={`sound-radio ${chosen ? 'chosen' : ''}`} aria-hidden="true" /><span className="menu-device"><span>{filter.label}</span>{filter.description && <small>{filter.description}</small>}</span></button>; })}</div></>}
 
         <button className="danger-text" disabled={!controllable || !session?.queue.length} onClick={() => { close(); setConfirmClear(true); }}><TrashIcon />Clear upcoming queue</button>
         <button className="danger-text" disabled={!can('control') || !track} onClick={() => { close(); setConfirmStop(true); }}><StopCircleIcon /><span className="menu-device"><span>{local ? 'Stop and clear your queue' : 'Stop and discard session'}</span>{!local && <small>Ends playback for everyone in voice</small>}</span></button>

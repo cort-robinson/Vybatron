@@ -220,7 +220,7 @@ REVERT: everything here is scoped to :root[data-skin='haunted']; Settings → Po
   .sleeve-artwork > .artwork { box-shadow: none; }
   .sleeve-spectrum { translate: 0 calc(var(--bezel) - 4px); }
   .hh-frame, .hh-mist { position: absolute; left: 50%; translate: -50% 0; pointer-events: none; }
-  .hh-frame { z-index: -1; top: calc((100cqh - var(--cover) - 12px - var(--spectrum)) / 2 - var(--bezel)); width: calc(var(--cover) + var(--bezel) * 2); height: calc(var(--cover) + var(--bezel) * 2); border-radius: 16px;
+  .hh-frame { z-index: -1; top: calc((100cqh - var(--cover) - var(--spectrum-gap) - var(--spectrum)) / 2 - var(--bezel)); width: calc(var(--cover) + var(--bezel) * 2); height: calc(var(--cover) + var(--bezel) * 2); border-radius: 16px;
     background: linear-gradient(160deg, color-mix(in oklab, var(--hh-violet) 40%, #1a1420), #0c0a10 55%, color-mix(in oklab, var(--hh-plum) 30%, #120e16));
     box-shadow: inset 0 1px 0 color-mix(in oklab, var(--hh-moon) 30%, transparent), inset 0 0 0 1px color-mix(in oklab, var(--hh-bone) 18%, transparent), inset 0 0 0 4px rgb(0 0 0 / .4), inset 0 0 0 5px color-mix(in oklab, var(--hh-bone) 8%, transparent),
       0 40px 80px -34px rgb(0 0 0 / .9), 0 34px 70px -34px color-mix(in oklab, var(--hh-pumpkin) 60%, transparent); }
@@ -228,10 +228,10 @@ REVERT: everything here is scoped to :root[data-skin='haunted']; Settings → Po
   .hh-frame::after { content: ''; position: absolute; left: 8%; right: 8%; top: 82%; height: 34%; border-radius: 50%; background: radial-gradient(closest-side, color-mix(in oklab, var(--hh-pumpkin) 50%, transparent), transparent); animation: hh-candle 2.2s linear infinite paused; }
   .motion-live .hh-frame::after { animation-play-state: running; }
   /* A cobweb strung across the cover's top-left corner, over the picture. */
-  .hh-web { position: absolute; z-index: 1; left: calc(50% - var(--cover) / 2 - 3px); top: calc((100cqh - var(--cover) - 12px - var(--spectrum)) / 2 - 3px); width: clamp(42px, 17%, 92px); height: auto; overflow: visible; pointer-events: none;
+  .hh-web { position: absolute; z-index: 1; left: calc(50% - var(--cover) / 2 - 3px); top: calc((100cqh - var(--cover) - var(--spectrum-gap) - var(--spectrum)) / 2 - 3px); width: clamp(42px, 17%, 92px); height: auto; overflow: visible; pointer-events: none;
     fill: none; stroke: color-mix(in oklab, var(--hh-bone) 44%, transparent); stroke-width: .55; stroke-linecap: round; filter: drop-shadow(0 1px 1px rgb(0 0 0 / .5)); }
   /* Track change: a breath of fog drifts across the cover. */
-  .hh-mist { top: calc((100cqh - var(--cover) - 12px - var(--spectrum)) / 2); width: var(--cover); height: var(--cover); overflow: hidden; border-radius: 10px; }
+  .hh-mist { top: calc((100cqh - var(--cover) - var(--spectrum-gap) - var(--spectrum)) / 2); width: var(--cover); height: var(--cover); overflow: hidden; border-radius: 10px; }
   .hh-mist::before { content: ''; position: absolute; top: -10%; bottom: -10%; left: 0; width: 70%; translate: -105% 0; opacity: 0;
     background: radial-gradient(50% 30% at 50% 30%, rgb(232 226 244 / .5), transparent), radial-gradient(46% 26% at 40% 62%, rgb(232 226 244 / .42), transparent), radial-gradient(40% 22% at 62% 84%, rgb(232 226 244 / .34), transparent);
     animation: hh-breath 1300ms cubic-bezier(.4, 0, .3, 1) 80ms both; }

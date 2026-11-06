@@ -33,7 +33,7 @@ test('1,000 favorites mount at most 50 rows and filtering plus paging retains so
   await expect(page.getByRole('navigation', { name: 'favorites pagination' })).toContainText('1–50 of 500');
   await page.getByRole('button', { name: 'Next page of favorites' }).click();
   await expect(rows.first()).toContainText('Song 0102');
-  await page.getByRole('button', { name: 'Queue favorite Song 0102', exact: true }).click();
+  await page.getByRole('button', { name: /^Queue favorite Song 0102( again)?$/ }).click();
   await expect.poll(() => fixture.commands.length).toBe(1);
   expect(fixture.commands[0]).toEqual({ command: 'favorite', subcommand: 'play', options: { index: 102 }, expectedTrackId: fixture.state.library.favorites[101].id });
   await expect(page.getByRole('button', { name: 'Remove favorite Song 0102', exact: true })).toBeEnabled();
@@ -148,7 +148,7 @@ test('outside voice keeps private library edits and creator mix saves while bloc
   await openLibrary(page);
   await expect(page.getByRole('button', { name: /^Queue favorite Night Drive( again)?$/ })).toBeDisabled();
   await expect(page.getByRole('button', { name: 'Remove favorite Night Drive', exact: true })).toBeEnabled();
-  await page.getByRole('button', { name: 'Favorites options' }).click();
+  await page.getByRole('button', { name: 'Import and manage favorites' }).click();
   await page.getByRole('button', { name: 'Clear favorites', exact: true }).click();
   await expect(page.getByRole('dialog')).toContainText('across all servers');
   await page.getByRole('button', { name: 'Cancel', exact: true }).click();

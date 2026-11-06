@@ -267,7 +267,8 @@ test('an addition on this device made while another is still looking up its song
   const wait = page.getByRole('button', { name: 'Add Wait to queue' });
   await expect(wait).toBeEnabled();
   held = new Promise(resolve => { release = resolve; });
-  await page.getByRole('button', { name: 'Add to queue', exact: true }).click();
+  // With results showing, the typed text adds through the automatic-match fallback.
+  await page.getByRole('button', { name: /^Queue an automatic match for/ }).click();
   await wait.click();
   release(); held = undefined;
   await page.keyboard.press('Escape');

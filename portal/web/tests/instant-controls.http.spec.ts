@@ -1,5 +1,5 @@
 import { expect, test, type Page } from './test';
-import { gotoSession } from './fixtures';
+import { gotoSession, mockPortal, streamAction } from './fixtures';
 import type { GuildSnapshot } from '../src/types';
 import { startHttpFixture } from './http-fixture';
 
@@ -149,9 +149,9 @@ test('volume, loop and filter apply instantly and coalesce repeated adjustments'
     await expect(player(page).getByRole('button', { name: /^Repeat: track/ })).toBeVisible({ timeout: 250 });
     // The sound filter lives in the More menu: choosing one closes it, and reopening shows the choice at once.
     await player(page).getByRole('button', { name: 'More playback controls' }).click();
-    await page.getByRole('button', { name: /^Original/ }).click();
+    await page.getByRole('radio', { name: /^Original/ }).click();
     await player(page).getByRole('button', { name: 'More playback controls' }).click();
-    await expect(page.getByRole('button', { name: /^Original/ })).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByRole('radiogroup', { name: 'Sound for everyone in voice' }).getByRole('radio', { name: /^Original/ })).toBeChecked();
     await page.keyboard.press('Escape');
     server.releaseCommandExecution();
     await expect.poll(() => server.state.snapshot.session).toMatchObject({ volume: 70, repeat: 'track', filter: 'off' });
@@ -162,4 +162,56 @@ test('volume, loop and filter apply instantly and coalesce repeated adjustments'
     expect(server.commands.filter(command => command.command === 'volume').at(-1)?.options?.level).toBe(70);
     await expect(volume).toHaveValue('70');
   } finally { await server.close(); }
+});
+
+test('sound presets are one tab stop, and the arrows move between them', async ({ page }) => {
+  await mockPortal(page); await page.goto('/');
+  await page.getByTestId('player').getByRole('button', { name: 'More playback controls' }).click();
+  const group = page.getByRole('radiogroup', { name: 'Sound for everyone in voice' });
+  const [checked, other] = [group.getByRole('radio', { checked: true }), group.getByRole('radio', { checked: false })];
+  await expect(checked).toHaveAttribute('tabindex', '0');
+  await expect(other).toHaveAttribute('tabindex', '-1');
+  await checked.focus();
+  await page.keyboard.press('ArrowDown');
+  await expect(other).toBeFocused();
+  // The tab stop follows focus, so Tab leaves the group instead of returning to the checked preset.
+  await expect(other).toHaveAttribute('tabindex', '0');
+  await expect(checked).toHaveAttribute('tabindex', '-1');
+  await page.keyboard.press('Tab');
+  await expect(group.locator(':focus')).toHaveCount(0);
+  await other.focus();
+  await page.keyboard.press('ArrowUp');
+  await expect(checked).toBeFocused();
+});
+
+test('a preset another listener picks mid-navigation leaves one tab stop, on the focused preset', async ({ page }) => {
+  const fixture = await mockPortal(page);
+  fixture.state.bootstrap.filters.push({ id: 'bass', label: 'Bass', description: 'More low end' });
+  await page.goto('/');
+  await page.getByTestId('player').getByRole('button', { name: 'More playback controls' }).click();
+  const group = page.getByRole('radiogroup', { name: 'Sound for everyone in voice' });
+  await group.getByRole('radio', { checked: true }).focus();
+  await page.keyboard.press('ArrowDown');
+  const focused = group.locator(':focus');
+  const name = await focused.getAttribute('data-preset');
+  const { snapshot } = fixture.state;
+  await streamAction(page, 'reconnect', { ...snapshot, revision: 'revision-bass', session: { ...snapshot.session, filter: 'bass' } });
+  await expect(group.getByRole('radio', { name: /^Bass/ })).toBeChecked();
+  await expect(group.locator('[tabindex="0"]')).toHaveCount(1);
+  await expect(group.locator('[tabindex="0"]')).toHaveAttribute('data-preset', name!);
+});
+
+test('closing the menu mid-navigation puts the sound tab stop back on the chosen preset', async ({ page }) => {
+  await mockPortal(page); await page.goto('/');
+  const more = page.getByTestId('player').getByRole('button', { name: 'More playback controls' });
+  const group = page.getByRole('radiogroup', { name: 'Sound for everyone in voice' });
+  await more.click();
+  await group.getByRole('radio', { checked: true }).focus();
+  await page.keyboard.press('ArrowDown');
+  // Dismiss by clicking outside, which unmounts the menu without a blur inside the group.
+  await page.mouse.click(5, 5);
+  await expect(group).toHaveCount(0);
+  await more.click();
+  await expect(group.getByRole('radio', { checked: true })).toHaveAttribute('tabindex', '0');
+  await expect(group.locator('[tabindex="0"]')).toHaveCount(1);
 });

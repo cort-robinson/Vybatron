@@ -52,6 +52,7 @@ export function Player({ portal, expanded, setExpanded, onAdd, palette, animate,
   const openedFromIdentity = useRef(false);
   const reasonId = useId();
   const confirmationId = useId();
+  const soundId = useId();
   const queueId = useId();
   const lyricsId = useId();
   // Timeline ticks belong to the deck; unchanged queue artwork and row menus can keep their tree.
@@ -205,8 +206,9 @@ export function Player({ portal, expanded, setExpanded, onAdd, palette, animate,
         <button disabled={!controllable || !track && !sleep} onClick={() => { close(); setSleepOpen(true); }}><MoonIcon />{sleep ? `Sleep timer · ${sleep}` : 'Sleep timer'}</button></>}
         {!local && <button disabled={!can('library') || !track} onClick={() => { close(); setSaveSession(true); }}><VinylRecordIcon />Save session as mix</button>}
         {/* The sound filter is set rarely, so it lives here instead of beside the transport. */}
-        {!local && !!bootstrap?.filters.length && <><p className="menu-section">Sound for everyone in voice</p>
-          {bootstrap.filters.map(filter => { const chosen = (session?.filter || bootstrap.filters[0]?.id) === filter.id; return <button key={filter.id} aria-pressed={chosen} disabled={!controllable} onClick={() => { close(); if (!chosen) void control({ command: 'filter', options: { preset: filter.id } }); }}><span className={`sound-radio ${chosen ? 'chosen' : ''}`} aria-hidden="true" /><span className="menu-device"><span>{filter.label}</span>{filter.description && <small>{filter.description}</small>}</span></button>; })}</>}
+        {!local && !!bootstrap?.filters.length && <><p className="menu-section" id={`${soundId}-label`}>Sound for everyone in voice</p>
+          <SoundPresets labelId={`${soundId}-label`} filters={bootstrap.filters} chosen={session?.filter || bootstrap.filters[0]?.id} disabled={!controllable}
+            onChoose={preset => { close(); if (preset !== (session?.filter || bootstrap.filters[0]?.id)) void control({ command: 'filter', options: { preset } }); }} /></>}
 
         <button className="danger-text" disabled={!controllable || !session?.queue.length} onClick={() => { close(); setConfirmClear(true); }}><TrashIcon />Clear upcoming queue</button>
         <button className="danger-text" disabled={!can('control') || !track} onClick={() => { close(); setConfirmStop(true); }}><StopCircleIcon /><span className="menu-device"><span>{local ? 'Stop and clear your queue' : 'Stop and discard session'}</span>{!local && <small>Ends playback for everyone in voice</small>}</span></button>
@@ -346,4 +348,23 @@ export function BackButton({ clock, seekable, disabled, title, onPress }: { cloc
 function CompactProgress({ clock, track, duration }: { clock: Clock; track: Track | null; duration: number }) {
   const position = usePosition(clock);
   return <span className="compact-progress" aria-hidden="true" style={{ '--progress-scale': track && !track.isStream && duration ? Math.min(1, position / duration) : 0 } as React.CSSProperties} />;
+}
+
+// One preset is always on, so the choices are a radio group: one tab stop, arrows move between presets and
+// Space or Enter picks one. A TV remote reaches every preset with its own arrows instead. The tab stop lives
+// here, so it starts on the chosen preset each time the menu opens.
+function SoundPresets({ labelId, filters, chosen, disabled, onChoose }: { labelId: string; filters: { id: string; label: string; description?: string }[]; chosen?: string; disabled: boolean; onChoose: (preset: string) => void }) {
+  const [focused, setFocused] = useState<string | null>(null);
+  const tv = 'tv' in document.documentElement.dataset;
+  return <div role="radiogroup" aria-labelledby={labelId} onKeyDown={event => {
+    const step = { ArrowDown: 1, ArrowRight: 1, ArrowUp: -1, ArrowLeft: -1 }[event.key];
+    if (!step || tv) return;
+    const radios = Array.from(event.currentTarget.querySelectorAll('[role="radio"]')) as HTMLElement[];
+    const next = radios[(radios.indexOf(document.activeElement as HTMLElement) + step + radios.length) % radios.length]; if (!next) return;
+    // The tab stop moves with focus, so Tab leaves the group from the focused preset.
+    event.preventDefault(); setFocused(next.dataset.preset ?? null); next.focus();
+  }} onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setFocused(null); }}>
+    {filters.map(filter => <button key={filter.id} data-preset={filter.id} role="radio" aria-checked={chosen === filter.id} tabIndex={tv || (focused ?? chosen) === filter.id ? 0 : -1} disabled={disabled} onClick={() => onChoose(filter.id)}>
+      <span className={`sound-radio ${chosen === filter.id ? 'chosen' : ''}`} aria-hidden="true" /><span className="menu-device"><span>{filter.label}</span>{filter.description && <small>{filter.description}</small>}</span></button>)}
+  </div>;
 }

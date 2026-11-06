@@ -5,6 +5,7 @@ import { publicUrl } from '../api';
 import { swipe } from '../swipe';
 import { adoptFlight } from '../motion';
 import type { Track } from '../types';
+import type { QueuedState } from '../suggestions';
 import cover320 from '../assets/fallback-cover-320.webp';
 import cover640 from '../assets/fallback-cover-640.webp';
 import cover1024 from '../assets/fallback-cover-1024.webp';
@@ -218,4 +219,9 @@ export function Dialog({ title, children, onClose, className = '', initialFocusR
 }
 export function Confirm({ title, detail, action, onConfirm, onClose, busy = false }: { title: string; detail: string; action: string; onConfirm: () => void; onClose: () => void; busy?: boolean }) {
   return <Dialog title={title} onClose={onClose} className="confirm-dialog"><p>{detail}</p><div className="form-actions"><button className="button secondary" onClick={onClose}>Cancel</button><button className="button danger" disabled={busy} onClick={onConfirm}>{busy ? 'Working…' : action}</button></div></Dialog>;
+}
+
+// "In queue" or "Playing" after a song's details; narrow lists put it on its own line.
+export function QueuedLabel({ state }: { state: QueuedState }) {
+  return state && <span className={`track-queue-state ${state === 'playing' ? 'is-playing' : ''}`}><span className="queue-sep"> · </span><span className="queue-label">{state === 'playing' ? 'Playing' : 'In queue'}</span></span>;
 }

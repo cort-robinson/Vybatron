@@ -249,6 +249,14 @@
   .home-shelf:has(> .continue-feature) > .shelf-row-sparse > li { max-width: 440px; }
   .home-shelf:has(> .continue-feature) > .shelf-row.shelf-row-sparse { grid-template-columns: minmax(0, 1fr); padding: 0; margin: 0; }
 }
+/* Wide screens set neighbouring one-song shelves (Rediscover, Forgotten gems) side by side, so a lone
+   card doesn't leave most of a row empty. A one-song shelf with no neighbour still spans the row.
+   A TV keeps one shelf per row, since its remote moves row by row. */
+@media (min-width: 1200px) {
+  :root:not([data-tv]) .home-view { flex-flow: row wrap; column-gap: 40px; }
+  :root:not([data-tv]) .home-view > * { flex: 1 1 100%; min-width: 0; }
+  :root:not([data-tv]) .home-view > .home-shelf:has(> .shelf-row-sparse > li:only-child):not(:has(> .continue-feature)) { flex-basis: calc(50% - 20px); }
+}
 /* A song card is one target: anywhere on it adds the song, the + is its visible cue. */
 .shelf-card { position: relative; }
 .shelf-card-body .icon-button::after { content: ''; position: absolute; inset: 0; border-radius: 10px; }

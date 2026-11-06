@@ -3,7 +3,8 @@ import { ArrowClockwiseIcon, CaretDownIcon, DotsThreeIcon, DownloadSimpleIcon, H
 import type { Portal } from '../usePortal';
 import type { Capability, Command, Library, Track } from '../types';
 import { date, time, totalTime } from '../format';
-import { ActionPopover, Artwork, Confirm, Empty, ErrorState, IconButton, Loading } from './ui';
+import { ActionPopover, Artwork, Confirm, Empty, ErrorState, IconButton, Loading, QueuedLabel } from './ui';
+import { queuedState } from '../suggestions';
 import { Pagination } from './Pagination';
 import { ServerFavorites } from './ServerFavorites';
 import { PlaylistImport } from './PlaylistImport';
@@ -52,10 +53,7 @@ export function LibraryView({ portal, active = true }: { portal: Portal; active?
   const mixSearchRef = useRef<HTMLInputElement>(null);
   const { library, libraryError, run, can, pending, snapshot } = portal;
   // Favorites say what the shared queue already holds, as Home does, so a repeat add is a choice.
-  const queueKey = (track: Track) => track.uri || track.id;
-  const playingKey = snapshot?.session.current ? queueKey(snapshot.session.current) : '';
-  const queuedKeys = new Set((snapshot?.session.queue || []).map(queueKey));
-  const queueState = (track: Track) => queueKey(track) === playingKey ? 'playing' : queuedKeys.has(queueKey(track)) ? 'queued' : null;
+  const queueState = queuedState(snapshot?.session);
   const addable = can('add');
   const controllable = can('control');
   const editable = can('library');
@@ -180,7 +178,7 @@ type Act = (body: Command, capability: Capability) => void;
 // Library rows render again when their song, place or permissions change, not on every live frame.
 const FavoriteRow = memo(function FavoriteRow({ track, state, index, addable, editable, radio, blockedReason, act, unfavorite }: { track: Track; state: 'playing' | 'queued' | null; index: number; addable: boolean; editable: boolean; radio: boolean | null; blockedReason: string; act: Act; unfavorite: (track: Track) => void }) {
   return <li>
-    <Artwork track={track} /><div className="track-text"><strong dir="auto" title={track.title}>{track.title}</strong><span dir="auto">{track.author}<span className="track-source"> · {track.source}</span><span className="track-length-inline"> · {track.isStream ? 'Live' : time(track.durationMs)}</span>{state && <span className={`track-queue-state ${state === 'playing' ? 'is-playing' : ''}`}><span className="queue-sep"> · </span><span className="queue-label">{state === 'playing' ? 'Playing' : 'In queue'}</span></span>}</span></div><span className="track-duration">{track.isStream ? 'Live' : time(track.durationMs)}</span>
+    <Artwork track={track} /><div className="track-text"><strong dir="auto" title={track.title}>{track.title}</strong><span dir="auto">{track.author}<span className="track-source"> · {track.source}</span><span className="track-length-inline"> · {track.isStream ? 'Live' : time(track.durationMs)}</span><QueuedLabel state={state} /></span></div><span className="track-duration">{track.isStream ? 'Live' : time(track.durationMs)}</span>
     <IconButton className={state ? 'add-again' : ''} label={state ? `Queue favorite ${track.title} again` : `Queue favorite ${track.title}`} disabled={!addable} title={!addable ? blockedReason : undefined} onClick={() => act(fromList({ command: 'favorite', subcommand: 'play', options: { index: index + 1 }, expectedTrackId: track.id }), 'add')}><PlusIcon size={23} /><span className="result-action-label" aria-hidden="true">{state ? 'Add again' : 'Add'}</span></IconButton>
     <IconButton className="favorite active" label={`Remove favorite ${track.title}`} disabled={!editable} onClick={() => unfavorite(track)}><HeartIcon size={23} weight="fill" /></IconButton>
     <ActionPopover className="row-menu favorite-row-menu" label={`Favorite options for ${track.title}`} trigger={<DotsThreeIcon size={25} weight="bold" />}>

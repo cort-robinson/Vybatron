@@ -2,7 +2,8 @@ import { ArrowClockwiseIcon, PlusIcon, ShuffleIcon, SparkleIcon } from '../icons
 import type { Portal } from '../usePortal';
 import type { Stats, StatEntry, Track } from '../types';
 import { statsRead, useRead } from '../reads';
-import { Artwork, Empty, ErrorState, IconButton, Loading } from './ui';
+import { Artwork, Empty, ErrorState, IconButton, Loading, QueuedLabel } from './ui';
+import { queuedState, type QueuedState } from '../suggestions';
 
 type ListId = 'on-repeat' | 'forgotten-gems';
 const lists: { id: ListId; key: keyof Stats['serverFavorites']; title: string; description: string; empty: string }[] = [
@@ -24,6 +25,7 @@ export function ServerFavorites({ portal }: { portal: Portal }) {
   const stats = value ?? null;
   const refresh = reload;
   const addable = can('add');
+  const stateOf = queuedState(portal.snapshot?.session);
 
   const play = (list: ListId, shuffle: boolean) => run({ command: 'top', subcommand: 'play', options: { list, shuffle } }, 'add', stats?.serverFavorites[lists.find(item => item.id === list)!.key].map(entry => entry.track));
 
@@ -37,14 +39,14 @@ export function ServerFavorites({ portal }: { portal: Portal }) {
     </div>
     {error && <p className="library-note" role="alert">{error}</p>}
     {!total ? <Empty title="Your server’s favorites start here" description="Play music together and the songs you keep coming back to will collect here." icon={<SparkleIcon size={30} />} />
-      : lists.map(list => <ServerList key={list.id} title={list.title} description={list.description} empty={list.empty} entries={stats.serverFavorites[list.key]}
+      : lists.map(list => <ServerList key={list.id} title={list.title} description={list.description} empty={list.empty} entries={stats.serverFavorites[list.key]} stateOf={stateOf}
         disabled={!addable} blockedReason={blockedReason} onPlay={shuffle => void play(list.id, shuffle)} onAdd={track => { if (track.uri) void run({ command: 'play', options: { query: track.uri } }, 'add', [track]); }} />)}
     {!addable && total > 0 && <p className="library-note">{blockedReason}</p>}
   </div>;
 }
 
-function ServerList({ title, description, empty, entries, disabled, blockedReason, onPlay, onAdd }: {
-  title: string; description: string; empty: string; entries: StatEntry[]; disabled: boolean; blockedReason: string; onPlay: (shuffle: boolean) => void; onAdd: (track: Track) => void;
+function ServerList({ title, description, empty, entries, stateOf, disabled, blockedReason, onPlay, onAdd }: {
+  title: string; description: string; empty: string; entries: StatEntry[]; stateOf: (track: Track) => QueuedState; disabled: boolean; blockedReason: string; onPlay: (shuffle: boolean) => void; onAdd: (track: Track) => void;
 }) {
   const headingId = `server-list-${title.replace(/\s+/g, '-').toLowerCase()}`;
   return <section className="server-list" aria-labelledby={headingId}>
@@ -56,13 +58,13 @@ function ServerList({ title, description, empty, entries, disabled, blockedReaso
       </div>}
     </header>
     {!entries.length ? <p className="library-note">{empty}</p> : <ol className="server-favorite-list">
-      {entries.map((entry, index) => <li key={entry.track.id}>
+      {entries.map((entry, index) => { const state = stateOf(entry.track); return <li key={entry.track.id}>
         <span className="server-rank" aria-hidden="true">{index + 1}</span>
         <Artwork track={entry.track} />
-        <div className="track-text"><strong dir="auto" title={entry.track.title}>{entry.track.title}</strong><span dir="auto">{entry.track.author}</span></div>
+        <div className="track-text"><strong dir="auto" title={entry.track.title}>{entry.track.title}</strong><span dir="auto">{entry.track.author}<QueuedLabel state={state} /></span></div>
         <span className="server-plays">{entry.plays.toLocaleString()} {entry.plays === 1 ? 'play' : 'plays'}<span> · {lastPlayed(entry.lastPlayedAt)}</span></span>
-        <IconButton label={`Add ${entry.track.title} to the queue`} disabled={disabled || !entry.track.uri} title={disabled ? blockedReason : `Add ${entry.track.title} to the queue`} onClick={() => onAdd(entry.track)}><PlusIcon size={21} weight="bold" /></IconButton>
-      </li>)}
+        <IconButton className={state ? 'add-again' : ''} label={`Add ${entry.track.title} to the queue${state ? ' again' : ''}`} disabled={disabled || !entry.track.uri} title={disabled ? blockedReason : state ? 'Add again' : `Add ${entry.track.title} to the queue`} onClick={() => onAdd(entry.track)}><PlusIcon size={21} weight="bold" /></IconButton>
+      </li>; })}
     </ol>}
   </section>;
 }

@@ -138,7 +138,7 @@ test('no-results feedback supports keyboard clearing and offline state blocks mu
   await page.locator('.empty-state').getByRole('button', { name: 'Clear search' }).click();
   await expect(page.getByLabel('Search favorites', { exact: true })).toBeFocused();
   await streamAction(page, 'disconnect');
-  await expect(page.getByRole('button', { name: 'Queue favorite Night Drive', exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: /^Queue favorite Night Drive( again)?$/ })).toBeDisabled();
   await expect(page.getByRole('button', { name: 'Remove favorite Night Drive', exact: true })).toBeDisabled();
   expect(fixture.commands).toHaveLength(0);
 });
@@ -146,7 +146,7 @@ test('no-results feedback supports keyboard clearing and offline state blocks mu
 test('outside voice keeps private library edits and creator mix saves while blocking music additions', async ({ page }) => {
   const fixture = await mockPortal(page, { outsideVoice: true });
   await openLibrary(page);
-  await expect(page.getByRole('button', { name: 'Queue favorite Night Drive', exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: /^Queue favorite Night Drive( again)?$/ })).toBeDisabled();
   await expect(page.getByRole('button', { name: 'Remove favorite Night Drive', exact: true })).toBeEnabled();
   await page.getByRole('button', { name: 'Favorites options' }).click();
   await page.getByRole('button', { name: 'Clear favorites', exact: true }).click();

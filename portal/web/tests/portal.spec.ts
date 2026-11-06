@@ -55,18 +55,20 @@ test('one player transforms, stays across navigation, and sends scoped core comm
 
 test('disconnect preserves search input, gates writes, refreshes before deliberate retry', async ({ page }) => {
   const fixture = await mockPortal(page); await gotoSession(page);
+  // Before results arrive the typed text adds as-is; once they do, the same add is the quiet automatic-match fallback.
+  const typedAdd = page.getByRole('button', { name: 'Add to queue', exact: true }).or(page.getByRole('button', { name: /^Queue an automatic match for/ }));
   await expect(page.getByRole('button', { name: 'Pause playback' })).toBeEnabled();
   await page.getByRole('button', { name: 'Add music', exact: true }).first().click();
   await page.getByRole('searchbox', { name: 'Music search' }).fill('my long playlist draft');
   await streamAction(page, 'disconnect');
-  await expect(page.getByRole('button', { name: 'Add to queue', exact: true })).toBeDisabled();
+  await expect(typedAdd).toBeDisabled();
   await expect(page.getByRole('searchbox', { name: 'Music search' })).toHaveValue('my long playlist draft');
   expect(fixture.commands).toHaveLength(0);
   fixture.delaySnapshot(450); await streamAction(page, 'reconnect');
-  await expect(page.getByRole('button', { name: 'Add to queue', exact: true })).toBeDisabled();
-  await expect(page.getByRole('button', { name: 'Add to queue', exact: true })).toBeEnabled();
+  await expect(typedAdd).toBeDisabled();
+  await expect(typedAdd).toBeEnabled();
   expect(fixture.commands).toHaveLength(0);
-  await page.getByRole('button', { name: 'Add to queue', exact: true }).click();
+  await typedAdd.click();
   await expect.poll(() => fixture.commands.length).toBe(1);
   expect(fixture.commands[0]).toEqual({ command: 'play', options: { query: 'my long playlist draft' } });
 });
@@ -184,7 +186,7 @@ test('play-next and history replay require DJ control and send the fresh revisio
   await page.getByRole('button', { name: 'Add music', exact: true }).first().click();
   await page.getByRole('searchbox', { name: 'Music search' }).fill('Midnight City');
   await expect(page.getByRole('button', { name: 'Add to queue', exact: true })).toBeEnabled();
-  await expect(page.getByRole('button', { name: 'Play next', exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Play Midnight City next', exact: true })).toBeDisabled();
   await page.getByRole('button', { name: 'Close dialog' }).click();
   await page.getByRole('button', { name: 'My Music', exact: true }).click(); await page.getByRole('tab', { name: 'History' }).click();
   await expect(page.getByRole('button', { name: 'Replay Afterglow' })).toBeDisabled();
@@ -197,10 +199,10 @@ test('play-next and history replay require DJ control and send the fresh revisio
   fixture.state.snapshot.session.canControl = true; fixture.state.snapshot.session.reason = null; fixture.state.snapshot.revision = 'revision-dj-ready';
   await streamAction(page, 'reconnect', fixture.state.snapshot);
   await page.getByRole('button', { name: 'Add music', exact: true }).first().click();
-  await expect(page.getByRole('button', { name: 'Play next', exact: true })).toBeEnabled();
-  await page.getByRole('button', { name: 'Play next', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Play next', exact: true })).toBeEnabled();
-  expect(fixture.commands[0]).toEqual({ command: 'playnext', options: { query: 'Midnight City' }, expectedRevision: 'revision-dj-ready' });
+  await expect(page.getByRole('button', { name: 'Play Midnight City next', exact: true })).toBeEnabled();
+  await page.getByRole('button', { name: 'Play Midnight City next', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Play Midnight City next', exact: true })).toBeEnabled();
+  expect(fixture.commands[0]).toEqual({ command: 'playnext', options: { query: 'https://example.com/music/midnight-city' }, expectedRevision: 'revision-dj-ready' });
   await page.getByRole('button', { name: 'Close dialog' }).click();
   await page.getByRole('button', { name: 'My Music', exact: true }).click(); await page.getByRole('tab', { name: 'History' }).click();
   await page.getByRole('button', { name: 'Replay Afterglow' }).click();

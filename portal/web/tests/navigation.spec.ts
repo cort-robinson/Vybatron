@@ -5,7 +5,7 @@ const phone = { width: 393, height: 852 };
 
 test('a search result plays next in one step', async ({ page }) => {
   const fixture = await mockPortal(page); await page.goto('/');
-  await page.getByRole('button', { name: 'Search music' }).click();
+  await page.getByRole('button', { name: 'Add music', exact: true }).first().click();
   await page.getByRole('searchbox', { name: 'Music search' }).fill('Midnight City');
   await page.getByRole('button', { name: 'Play Midnight City next' }).click();
   await expect.poll(() => fixture.commands.map(command => command.command)).toEqual(['playnext']);
@@ -80,14 +80,14 @@ test('an open search keeps its form and query across the breakpoint, and never d
   await expect(field).toHaveValue('Midnight');
   await page.getByRole('button', { name: 'Home', exact: true }).focus();
   // The top-bar search goes to the Search page already showing, not a second search on top of it.
-  await page.getByRole('button', { name: 'Search music' }).click();
+  await page.getByRole('button', { name: 'Add music', exact: true }).first().click();
   await expect(field).toBeFocused();
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await page.getByRole('button', { name: 'Queue', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Shared Queue', level: 1 })).toBeVisible();
   await expect(page.getByRole('dialog')).toHaveCount(0);
   // A desktop dialog stays a dialog on a phone, and resizing never opens one.
-  await page.getByRole('button', { name: 'Search music' }).click();
+  await page.getByRole('button', { name: 'Add music', exact: true }).first().click();
   const dialog = page.getByRole('dialog', { name: 'Add music' });
   await expect(dialog.getByRole('searchbox', { name: 'Music search' })).toBeFocused();
   await page.setViewportSize(phone);

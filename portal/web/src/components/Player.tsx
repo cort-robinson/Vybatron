@@ -154,8 +154,9 @@ export function Player({ portal, expanded, setExpanded, onAdd, palette, animate,
   const destination = local ? portal.playingOn || 'This device' : session?.voiceChannel ? `Discord · ${session.voiceChannel.name}` : '';
   const destinationChip = expanded && !!track && !!destination;
   // The compact player says where the music is playing; the open player's chip says it there instead.
+  // An autoplay pick keeps its label, so nobody mistakes it for a friend's request.
   const where = local ? portal.playingOn || 'This device' : session?.voiceChannel?.name;
-  const compactMetadata = track && where ? <>{track.author}<span className="metadata-dot" aria-hidden="true">·</span><span className="compact-destination">{local ? <DesktopIcon size={14} aria-hidden="true" /> : <DiscordLogoIcon size={14} weight="fill" aria-hidden="true" />}<span><span className="sr-only">Playing on </span>{where}</span></span></> : metadata;
+  const compactMetadata = track && where && !track.suggested ? <>{track.author}<span className="metadata-dot" aria-hidden="true">·</span><span className="compact-destination">{local ? <DesktopIcon size={14} aria-hidden="true" /> : <DiscordLogoIcon size={14} weight="fill" aria-hidden="true" />}<span><span className="sr-only">Playing on </span>{where}</span></span></> : metadata;
   const identity = <div className="player-identity" data-glass><div className="player-title-row">{favorite && <span className="title-balance" aria-hidden="true" />}<h2 ref={headingRef} tabIndex={-1} title={track?.title}>{track?.title || 'Nothing playing'}</h2>{favorite}</div><p title={track ? `${track.author} · ${track.source}` : undefined}>{metadata}</p>
     {/* Where the sound comes out, and the shortest way to change it (More › Play on has it too). */}
     {track && <div className="player-chips">{lyricsToggle}{destinationChip && <ActionPopover label={`Playing on ${destination}. Choose where it plays`} className="player-destination" triggerClassName="player-destination-trigger"

@@ -112,7 +112,7 @@ test('phone suggestions keep one action column and put Add to queue in the row m
   expect(await row.evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
   await group.getByRole('button', { name: 'Suggestion options for City Lights' }).click();
   // Phone menus open as a bottom sheet outside the row.
-  await page.getByRole('group', { name: 'Suggestion options for City Lights' }).getByRole('button', { name: 'Add to queue' }).click();
+  await page.getByRole('dialog', { name: 'Suggestion options for City Lights' }).getByRole('button', { name: 'Add to queue' }).click();
   await expect.poll(() => fixture.commands.at(-1)?.subcommand).toBe('promote');
 });
 

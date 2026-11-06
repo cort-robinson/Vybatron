@@ -173,7 +173,7 @@ const ContinueListening = memo(function ContinueListening({ current, paused, whe
   </div> : null;
   return <Shelf id="continue" title="Recently played" detail=""
     lead={resumable ? feature : null}
-    empty={!recent.length && !feature && (history ? 'Nothing to pick up yet. Songs played in voice channels you can see show up here, and a saved session appears when one is waiting.' : 'Loading your recent songs…')}>
+    empty={!recent.length && !resumable && (history ? 'Nothing to pick up yet. Songs played in voice channels you can see show up here, and a saved session appears when one is waiting.' : 'Loading your recent songs…')}>
     {recent.map(entry => <TrackCard key={entry.id} track={entry.track} meta={`Played ${date(entry.playedAt).split(',')[0]}`} disabled={disabled || !entry.track.uri} title={title} onAdd={() => add(entry.track)} />)}
   </Shelf>;
 });
@@ -224,7 +224,8 @@ function PlaylistTile({ list, detail, fullDetail, playing, queued, disabled, tit
   return <li className="playlist-tile">
     <button type="button" className={`playlist-cover ${covers.length >= 4 ? 'collage' : ''}`} disabled={empty} aria-label={`See the songs in ${list.title}`} onClick={() => setOpen(true)}>{covers.length >= 4 ? covers.map(track => <Artwork key={track.id} track={track} />) : <Artwork track={covers[0] || null} />}</button>
     <div className="playlist-body">
-      <h3 dir="auto">{empty ? list.title : <button type="button" className="playlist-open" tabIndex={-1} aria-hidden="true" onClick={() => setOpen(true)}>{list.title}</button>}</h3>
+      {/* The title opens the song list for pointers; the cover and song count are the buttons, so the heading keeps its name. */}
+      <h3 dir="auto" className={empty ? undefined : 'playlist-open'} onClick={empty ? undefined : () => setOpen(true)}>{list.title}</h3>
       <div className="playlist-meta-row">{empty ? <p className="playlist-meta">{meta}</p> : <button type="button" className="playlist-meta playlist-songs" onClick={() => setOpen(true)}>{meta}<CaretRightIcon size={14} weight="bold" aria-hidden="true" /></button>}</div>
       <p className="playlist-detail">{detail}</p>
       {repeats > 0 && <p className="playlist-repeats"><CheckIcon size={14} weight="bold" aria-hidden="true" />{repeats === list.tracks.length ? `All ${repeats} queued or playing` : `${repeats} queued or playing`}</p>}

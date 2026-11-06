@@ -166,7 +166,7 @@ test('performance mode drops glass blur and stills the scene, and stays on after
 test('a mouse drags an overflowing shelf sideways without pressing what it grabbed', async ({ page }) => {
   await page.setViewportSize({ width: 1024, height: 800 });
   const fixture = await mockPortal(page); await page.goto('/');
-  const shelf = page.getByRole('list', { name: 'Your mixes' });
+  const shelf = page.getByRole('list', { name: 'Made for you' });
   await expect(shelf).toHaveClass(/can-drag/);
   const play = shelf.getByRole('button', { name: /^Add / }).first();
   await play.scrollIntoViewIfNeeded();

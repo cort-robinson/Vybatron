@@ -1408,8 +1408,9 @@ p, .continue-text > span, .section-description, .field-hint { text-wrap: pretty;
 /* Phones: the open player's volume and More buttons sit in its top-right corner, across from Close player. */
 @media (max-width: 599px) {
   .sleeve-content > .sleeve-corner, .sleeve-content > .mobile-collapse { grid-row: 1; grid-column: 1; }
-  /* Tall phones keep the song card next to the controls; spare height sits above the cover. */
-  .persistent-player.expanded:not(.queue-open) .sleeve-main { align-self: end; }
+  /* Tall phones keep the song card next to the controls; spare height sits above the cover. "safe" starts at
+     the top instead when the stack is taller than the screen, so none of it overflows out of reach. */
+  .persistent-player.expanded:not(.queue-open) .sleeve-main { align-self: safe end; }
   .sleeve-content > .sleeve-corner { justify-self: end; align-self: center; }
   .persistent-player.expanded .sleeve-corner .player-extras { width: auto; max-width: none; gap: 4px; }
   .sleeve-corner .player-extras > .volume-control { display: none; }

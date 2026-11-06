@@ -147,8 +147,12 @@ test('volume, loop and filter apply instantly and coalesce repeated adjustments'
     await expect(volume).toHaveValue('70', { timeout: 250 });
     await player(page).getByRole('button', { name: /^Repeat: off/ }).click();
     await expect(player(page).getByRole('button', { name: /^Repeat: track/ })).toBeVisible({ timeout: 250 });
-    await player(page).getByRole('combobox', { name: 'Audio filter' }).selectOption('off');
-    await expect(player(page).getByRole('combobox', { name: 'Audio filter' })).toHaveValue('off');
+    // The sound filter lives in the More menu: choosing one closes it, and reopening shows the choice at once.
+    await player(page).getByRole('button', { name: 'More playback controls' }).click();
+    await page.getByRole('button', { name: /^Original/ }).click();
+    await player(page).getByRole('button', { name: 'More playback controls' }).click();
+    await expect(page.getByRole('button', { name: /^Original/ })).toHaveAttribute('aria-pressed', 'true');
+    await page.keyboard.press('Escape');
     server.releaseCommandExecution();
     await expect.poll(() => server.state.snapshot.session).toMatchObject({ volume: 70, repeat: 'track', filter: 'off' });
     await expect(player(page).getByText('Syncing with Discord…')).toHaveCount(0);

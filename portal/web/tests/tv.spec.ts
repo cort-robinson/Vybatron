@@ -328,26 +328,26 @@ for (const [width, height] of [[960, 540], [1920, 1080]] as const) {
       const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
       return !!hit && (element === hit || element.contains(hit));
     });
-    const playAll = page.getByRole('button', { name: 'Play all of On repeat' });
+    const playAll = page.getByRole('button', { name: 'Add all of On repeat' });
     await expect(playAll).toBeVisible();
     // Reach it with the arrows from the selected tab, as a remote would: Right, then Down.
-    for (let step = 0; step < 12 && await focused(page) !== 'Play all of On repeat'; step++) await press(page, step < 1 ? 'ArrowRight' : 'ArrowDown');
-    if (await focused(page) !== 'Play all of On repeat') await playAll.focus();
+    for (let step = 0; step < 12 && !(await focused(page)).startsWith('Add all of On repeat'); step++) await press(page, step < 1 ? 'ArrowRight' : 'ArrowDown');
+    if (!(await focused(page)).startsWith('Add all of On repeat')) await playAll.focus();
     expect(await visible()).toBe(true);
     await press(page, 'ArrowDown');
     const shelf = page.getByRole('list', { name: 'On repeat in this server' });
     const inShelf = () => shelf.evaluate(list => list !== document.activeElement && list.contains(document.activeElement));
     expect(await inShelf()).toBe(true);
-    expect(await focused(page)).toMatch(/^Add .* to the queue$/);
+    expect(await focused(page)).toMatch(/^Add .* to the queue( again)?$/);
     expect(await visible()).toBe(true);
     const first = await focused(page);
-    await press(page, first === 'Add Night Drive to the queue' ? 'ArrowRight' : 'ArrowLeft');
+    await press(page, first.startsWith('Add Night Drive to the queue') ? 'ArrowRight' : 'ArrowLeft');
     expect(await inShelf()).toBe(true);
     const song = await focused(page);
     expect(song).not.toBe(first);
     expect(await visible()).toBe(true);
     await press(page, 'Enter');
-    const title = song.replace(/^Add (.*) to the queue$/, '$1');
+    const title = song.replace(/^Add (.*) to the queue( again)?$/, '$1');
     await expect.poll(() => fixture.commands.filter(command => command.command === 'play').length).toBe(1);
     expect(fixture.commands.find(command => command.command === 'play')?.options?.query).toContain(title.toLowerCase().replace(/ /g, '-'));
   });
@@ -411,9 +411,9 @@ for (const size of [{ width: 960, height: 540 }, large]) {
     // The last song in a shelf: Right goes nowhere, not to another row's control.
     await shelfSong(page, 'On repeat in this server', 'Afterglow').focus();
     await press(page, 'ArrowRight');
-    expect(await focused(page)).toBe('Add Afterglow to the queue');
+    expect(await focused(page)).toMatch(/^Add Afterglow to the queue( again)?$/);
     await press(page, 'ArrowLeft');
-    expect(await focused(page)).toBe('Add Golden Hour to the queue');
+    expect(await focused(page)).toMatch(/^Add Golden Hour to the queue( again)?$/);
     // A shelf of one: Right stays, so Down carries on to the next shelf instead of looping back up.
     await shelfSong(page, 'Rediscover', 'Night Drive').focus();
     await press(page, 'ArrowRight');
@@ -426,9 +426,9 @@ for (const size of [{ width: 960, height: 540 }, large]) {
 test('Up from the top of the page never reaches the hidden skip link', async ({ page }) => {
   await tv(page, large);
   await browse(page);
-  await page.getByRole('button', { name: 'Search music' }).focus();
+  await page.getByRole('button', { name: 'Add music', exact: true }).first().focus();
   await press(page, 'ArrowUp', 'ArrowUp');
-  expect(await focused(page)).toBe('Search music');
+  expect(await focused(page)).toBe('Add music');
   expect(await within(page, '.skip-link')).toBe(false);
 });
 
@@ -480,7 +480,7 @@ test('Left from the start of a row reaches the navigation\'s current page, and R
   await press(page, 'ArrowLeft');
   expect(await focused(page)).toBe('Home');
   await press(page, 'ArrowRight');
-  expect(await focused(page)).toBe('Add Night Drive to the queue');
+  expect(await focused(page)).toMatch(/^Add Night Drive to the queue( again)?$/);
 });
 
 test('Right from the navigation after the page scrolled returns to a control on the screen, not one scrolled away', async ({ page }) => {
@@ -495,7 +495,7 @@ test('Right from the navigation after the page scrolled returns to a control on 
   const scrolled = await page.evaluate(() => scrollY);
   await press(page, 'ArrowRight');
   expect(await within(page, '[data-tv-region="content"]')).toBe(true);
-  expect(await focused(page)).not.toBe('Add Night Drive to the queue');
+  expect(await focused(page)).not.toMatch(/^Add Night Drive to the queue( again)?$/);
   expect(await page.evaluate(() => scrollY)).toBeGreaterThanOrEqual(scrolled - 80);
 });
 
@@ -511,18 +511,19 @@ test('Down from the last page in the side navigation goes to the account below i
 test('Up and Down go row by row: no row is skipped for a control further away in line', async ({ page }) => {
   await tv(page);
   await browse(page);
-  // Continue listening: the song card's button below and to the left of View now playing.
-  await shelfSong(page, 'Continue listening', 'Afterglow').focus();
+  // On repeat: Up from its first song reaches the shelf's own actions just above, not a row further up.
+  await shelfSong(page, 'On repeat in this server', 'Night Drive').focus();
   await press(page, 'ArrowUp');
-  expect(await focused(page)).toBe('View now playing');
+  expect(await focused(page)).toMatch(/^Add all of On repeat( again)?$/);
 });
 
 test('Down from the search bar at the top reaches the first row of the page, not one further down', async ({ page }) => {
   await tv(page, large);
   await browse(page);
-  await page.getByRole('button', { name: 'Search music' }).focus();
+  await page.getByRole('button', { name: 'Add music', exact: true }).first().focus();
   await press(page, 'ArrowDown');
-  expect(await focused(page)).toBe('View now playing');
+  // The first row is On repeat's actions.
+  expect(await focused(page)).toMatch(/^Add (all of )?On repeat( shuffled)?( again)?$/);
 });
 
 test('a shelf remembers its song: up to its header and back down returns to it', async ({ page }) => {
@@ -530,12 +531,12 @@ test('a shelf remembers its song: up to its header and back down returns to it',
   await browse(page);
   await shelfSong(page, 'On repeat in this server', 'Night Drive').focus();
   await press(page, 'ArrowRight', 'ArrowRight');
-  expect(await focused(page)).toBe('Add Golden Hour to the queue');
+  expect(await focused(page)).toMatch(/^Add Golden Hour to the queue( again)?$/);
   // Up to the shelf's header, and over to Play all above its first song.
   await press(page, 'ArrowUp', 'ArrowLeft');
-  expect(await focused(page)).toBe('Play all of On repeat');
+  expect(await focused(page)).toMatch(/^Add all of On repeat( again)?$/);
   await press(page, 'ArrowDown');
-  expect(await focused(page)).toBe('Add Golden Hour to the queue');
+  expect(await focused(page)).toMatch(/^Add Golden Hour to the queue( again)?$/);
 });
 
 test('a long queue over now playing scrolls on to its last song, and back to its first', async ({ page }) => {

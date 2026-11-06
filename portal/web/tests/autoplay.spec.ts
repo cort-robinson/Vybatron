@@ -50,23 +50,26 @@ test('start radio from a queued song, a favorite, a history entry, or a search r
   await gotoSession(page);
   const firstQueued = fixture.state.snapshot.session.queue[0];
   await page.getByRole('button', { name: `Song options for ${firstQueued.title}` }).click();
-  await page.getByRole('button', { name: 'Start radio from this song' }).click();
+  await page.getByRole('button', { name: 'Autoplay from this song' }).click();
   await expect.poll(() => fixture.commands.at(-1)).toEqual({ command: 'radio', subcommand: 'on', options: { track: firstQueued.uri } });
 
   await page.getByRole('link', { name: 'My Music' }).or(page.getByRole('button', { name: 'My Music' })).first().click();
   const favorite = fixture.state.library.favorites[0];
-  await page.getByRole('button', { name: `Start radio from ${favorite.title}` }).click();
+  await page.getByRole('button', { name: `Favorite options for ${favorite.title}` }).click();
+  await page.getByRole('button', { name: 'Autoplay from this song' }).click();
   await expect.poll(() => fixture.commands.at(-1)).toEqual({ command: 'radio', subcommand: 'on', options: { track: favorite.uri } });
 
   await page.getByRole('tab', { name: /History/ }).click();
   const played = fixture.state.library.history[0].track;
-  await page.getByRole('button', { name: `Start radio from ${played.title}` }).click();
+  await page.getByRole('button', { name: `History options for ${played.title}` }).click();
+  await page.getByRole('button', { name: 'Autoplay from this song' }).click();
   await expect.poll(() => fixture.commands.at(-1)).toEqual({ command: 'radio', subcommand: 'on', options: { track: played.uri } });
 
   await page.getByRole('button', { name: 'Add music', exact: true }).first().click();
   const dialog = page.getByRole('dialog');
   await dialog.getByRole('searchbox', { name: 'Music search' }).fill('Midnight');
-  await dialog.getByRole('button', { name: 'Start radio from Midnight City' }).click();
+  await dialog.getByRole('button', { name: 'More options for Midnight City' }).click();
+  await page.getByRole('button', { name: 'Autoplay from this song' }).click();
   await expect.poll(() => fixture.commands.at(-1)?.options).toMatchObject({ track: expect.stringContaining('midnight-city') });
 });
 
@@ -109,7 +112,7 @@ test('phone suggestions keep one action column and put Add to queue in the row m
   expect(await row.evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
   await group.getByRole('button', { name: 'Suggestion options for City Lights' }).click();
   // Phone menus open as a bottom sheet outside the row.
-  await page.getByRole('group', { name: 'Suggestion options for City Lights' }).getByRole('button', { name: 'Add to queue' }).click();
+  await page.getByRole('dialog', { name: 'Suggestion options for City Lights' }).getByRole('button', { name: 'Add to queue' }).click();
   await expect.poll(() => fixture.commands.at(-1)?.subcommand).toBe('promote');
 });
 

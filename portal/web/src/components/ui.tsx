@@ -95,7 +95,7 @@ function focusableElements(container: ParentNode) {
 
 // Phones get menus as bottom sheets, within thumb reach, as music apps present them.
 const sheetQuery = '(max-width: 599px)';
-function useSheet() {
+export function useSheet() {
   const [sheet, setSheet] = useState(() => matchMedia(sheetQuery).matches);
   useEffect(() => {
     const media = matchMedia(sheetQuery); const change = () => setSheet(media.matches);
@@ -173,12 +173,24 @@ export function ActionPopover({ label, trigger, className = '', triggerClassName
     <button ref={button} type="button" className={triggerClassName} aria-label={label} title={label} aria-expanded={open} aria-controls={id} onClick={() => setOpen(value => !value)}>{trigger}</button>
     {open && !sheet && <div ref={panel} id={id} className={`menu-panel ${panelClassName}`} tabIndex={-1}>{children(close)}</div>}
     {open && sheet && createPortal(<div className="menu-sheet-layer"><div className="menu-sheet-scrim" aria-hidden="true" />
-      <div ref={panel} id={id} className={`menu-panel menu-sheet ${panelClassName}`} role="group" aria-label={label} tabIndex={-1}><span className="sheet-grabber" aria-hidden="true" />{children(close)}</div></div>, document.body)}
+      <div ref={panel} id={id} className={`menu-panel menu-sheet ${panelClassName}`} role="dialog" aria-modal="true" aria-label={label} tabIndex={-1} onKeyDown={event => {
+        // A sheet covers the page, so Tab cycles within it like a dialog.
+        if (event.key !== 'Tab') return;
+        const actions = focusableElements(event.currentTarget); const first = actions[0]; const last = actions[actions.length - 1];
+        // With nothing enabled inside (Volume for a listener without control), focus stays on the sheet itself.
+        if (!actions.length) { event.preventDefault(); event.currentTarget.focus(); return; }
+        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+      }}><span className="sheet-grabber" aria-hidden="true" />{children(close)}</div></div>, document.body)}
   </div>;
 }
 
-export function Dialog({ title, children, onClose, className = '', initialFocusRef }: { title: string; children: ReactNode; onClose: () => void; className?: string; initialFocusRef?: RefObject<HTMLElement | null> }) {
+export function Dialog({ title, children, onClose, className = '', initialFocusRef, sheet = false }: { title: string; children: ReactNode; onClose: () => void; className?: string; initialFocusRef?: RefObject<HTMLElement | null>; sheet?: boolean }) {
   const ref = useRef<HTMLDialogElement>(null);
+  // A dialog drawn as a phone bottom sheet closes with a pull down, like the menu sheets.
+  const phone = useSheet();
+  const latestClose = useRef(onClose); latestClose.current = onClose;
+  useEffect(() => sheet && phone ? swipe(ref.current, 'down', (_, settle) => { settle(); latestClose.current(); }) : undefined, [sheet, phone]);
   useLayoutEffect(() => {
     const dialog = ref.current; if (!dialog) return;
     const previous = document.activeElement as HTMLElement | null;

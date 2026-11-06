@@ -1,14 +1,19 @@
-.home-view { min-width: 0; display: flex; flex-direction: column; gap: 48px; padding-bottom: 12px; }
+.home-view { min-width: 0; display: flex; flex-direction: column; gap: 40px; padding-bottom: 12px; }
 .home-view > .permission-note { margin-bottom: -20px; }
 
 /* Shelves: a heading line, then one row that scrolls sideways. */
 .home-shelf { min-width: 0; }
-.home-shelf-header { display: flex; align-items: flex-end; justify-content: space-between; gap: 14px 28px; flex-wrap: wrap; margin-bottom: 18px; }
-.home-shelf-header > div:first-child { min-width: 0; flex: 1 1 320px; }
+/* A shelf's Play all and Shuffle sit under its title, next to the songs they play. */
+.home-shelf-header { display: flex; flex-direction: column; align-items: flex-start; gap: 14px; margin-bottom: 18px; }
+.home-shelf-header > div:first-child { min-width: 0; }
 .home-shelf-header h2 { font-size: 24px; font-stretch: var(--wide); letter-spacing: -0.02em; text-wrap: balance; }
 .home-shelf-header p { margin-top: 6px; max-width: 64ch; color: var(--muted); font-size: 14px; line-height: 1.6; }
-.home-shelf-actions { display: flex; gap: 10px; flex-shrink: 0; }
+.home-shelf-actions { display: flex; flex-wrap: wrap; gap: 10px; flex-shrink: 0; }
+/* Desktop has room for the note beside the buttons; phones put it underneath. */
+.shelf-queued-note { flex: 0 0 auto; align-self: center; display: flex; align-items: center; gap: 5px; margin: 0; color: var(--muted); font-size: 13px; }
 .home-shelf-actions .button { min-height: 44px; padding: 9px 16px; font-size: 14px; }
+/* The top-tracks range only shapes one mix, so on wide screens it sits at the header's end instead of above the first card. */
+@media (min-width: 961px) { .home-shelf-header:has(.mix-range) { flex-direction: row; align-items: flex-end; column-gap: 40px; } }
 .home-empty { max-width: 64ch; padding: 18px 0 4px; border-top: 1px solid var(--line); color: var(--muted); font-size: 14px; line-height: 1.65; }
 
 .shelf-row {
@@ -31,10 +36,17 @@
 @property --shelf-fade-start { syntax: '<length>'; inherits: false; initial-value: 0px; }
 @property --shelf-fade-end { syntax: '<length>'; inherits: false; initial-value: 0px; }
 @supports (animation-timeline: scroll()) {
-  .shelf-row.can-drag { mask-image: linear-gradient(to right, transparent, #000 var(--shelf-fade-start), #000 calc(100% - var(--shelf-fade-end)), transparent); animation: shelf-fade linear both; animation-timeline: scroll(self inline); }
+  .shelf-row:not(.shelf-row-sparse) { mask-image: linear-gradient(to right, transparent, #000 var(--shelf-fade-start), #000 calc(100% - var(--shelf-fade-end)), transparent); animation: shelf-fade linear both; animation-timeline: scroll(self inline); }
 }
 @keyframes shelf-fade { 0% { --shelf-fade-start: 0px; --shelf-fade-end: 56px; } 6% { --shelf-fade-start: 56px; } 94% { --shelf-fade-end: 56px; } 100% { --shelf-fade-start: 56px; --shelf-fade-end: 0px; } }
 .shelf-row > li { scroll-snap-align: start; min-width: 0; }
+/* A shelf with one or two songs lists them as compact rows. */
+.shelf-row.shelf-row-sparse { grid-auto-flow: row; grid-template-columns: repeat(auto-fill, minmax(300px, 360px)); gap: 12px; overflow: visible; mask-image: none; animation: none; }
+.shelf-row-sparse .shelf-card { display: grid; grid-template-columns: 64px minmax(0, 1fr); align-items: center; gap: 16px; padding: 12px 16px 12px 12px; border-radius: 16px; background: color-mix(in oklab, var(--surface), var(--ground) 40%); }
+.shelf-row-sparse .shelf-art .artwork { border-radius: 8px; }
+.shelf-row-sparse .shelf-rank { left: 4px; bottom: 4px; min-width: 22px; padding: 0 6px; font-size: 12px; }
+.shelf-row-sparse .shelf-card-body { margin-top: 0; align-items: center; }
+.shelf-row-sparse .shelf-card-body .icon-button { margin: 0; }
 .shelf-row::-webkit-scrollbar { height: 6px; }
 .shelf-row::-webkit-scrollbar-thumb { background: var(--scrollbar); border-radius: 6px; }
 
@@ -55,7 +67,7 @@
 .shelf-card-body small { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
 .shelf-card-body .icon-button { flex-shrink: 0; width: 44px; min-width: 44px; min-height: 44px; margin: -6px -8px 0 0; color: var(--accent); }
 
-/* The session in progress, or a saved one waiting to resume. */
+/* The session in progress, or a saved one waiting to resume: one full-width row, recent songs beneath. */
 .continue-feature {
   display: grid; grid-template-columns: 88px minmax(0, 1fr) auto; align-items: center; gap: 20px;
   margin-bottom: 22px; padding: 16px 20px 16px 16px; border-radius: 16px;
@@ -70,21 +82,78 @@
 .continue-text > span:not(.continue-state) { color: var(--text-soft); font-size: 14px; overflow-wrap: anywhere; }
 .continue-text .continue-hint { color: var(--muted); }
 .continue-feature .button { min-height: 44px; padding: 9px 18px; font-size: 14px; }
+/* While a song plays, the bottom bar already shows it, so the card is a slim strip. */
+.continue-feature:has(.continue-open) { grid-template-columns: 56px minmax(0, 1fr) auto; gap: 16px; padding: 10px 14px 10px 10px; }
+.continue-feature:has(.continue-open) .continue-art { width: 56px; height: 56px; }
+.continue-feature:has(.continue-open) .continue-text strong { font-size: 17px; }
+/* The whole card opens the player; the button is its visible, focusable label. */
+.continue-feature:has(.continue-open) { position: relative; cursor: pointer; }
+.continue-open::after { content: ''; position: absolute; inset: 0; border-radius: inherit; }
 
 /* Your mixes: a cover collage with the playlist's own actions. */
 .playlist-tile { display: flex; flex-direction: column; }
+.home-shelf-actions .mix-range { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 14px; }
 .playlist-cover { aspect-ratio: 1; border-radius: 14px; overflow: hidden; background: var(--surface); }
 .playlist-cover .artwork { display: block; width: 100%; height: 100%; border-radius: 0; object-fit: cover; }
 .playlist-cover.collage { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 2px; }
+.playlist-cover { display: block; width: 100%; padding: 0; border: 0; color: inherit; cursor: pointer; transition: transform 160ms var(--ease-out), box-shadow 160ms; }
+.playlist-cover:disabled { cursor: default; }
+.playlist-cover:not(:disabled):hover { transform: translateY(-2px); box-shadow: 0 10px 28px -12px rgb(0 0 0 / .7); }
+.playlist-open { cursor: pointer; }
+.playlist-open:hover { text-decoration: underline; text-underline-offset: 3px; }
+.mix-dialog { width: 520px; }
+.dialog.mix-dialog .dialog-heading { margin-bottom: 0; }
+.mix-sheet-head { display: grid; grid-template-columns: 72px minmax(0, 1fr); align-items: center; gap: 14px; margin-top: 8px; }
+.mix-sheet-head .playlist-cover { width: 72px; border-radius: 10px; cursor: default; }
+.mix-sheet-meta { color: var(--text-soft); font-size: 15px; font-weight: 600; }
+.mix-sheet-detail { margin-top: 2px; color: var(--muted); font-size: 14px; }
+.mix-tracks { max-height: min(52vh, 420px); overflow-y: auto; margin: 16px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 8px; }
+.mix-tracks li { display: grid; grid-template-columns: 44px minmax(0, 1fr) auto minmax(44px, auto); align-items: center; gap: 12px; padding: 4px 0; }
+.mix-tracks .artwork { width: 44px; height: 44px; border-radius: 8px; }
+.mix-tracks .add-again { color: var(--text-soft); }
+.shelf-card-body .icon-button.add-again, .mix-tracks .icon-button.add-again { color: var(--muted); }
+.dialog.mix-dialog .form-actions .button { flex: 1 1 0; }
+.playlist-actions .button.all-queued { color: var(--text-soft); border-color: var(--line); }
+.mix-sheet-head { margin-bottom: 8px; }
+/* The queued note rides down with the buttons, so a one-line description leaves no hole mid-card. */
+.playlist-repeats { display: flex; align-items: center; gap: 5px; margin-top: auto; padding-top: 10px; color: var(--muted); font-size: 13px; }
+.playlist-repeats + .playlist-actions { margin-top: 0; padding-top: 10px; }
+/* Two-line descriptions keep the queued note and buttons on one line across a row of mix cards. */
+.mix-repeat-note { margin-top: 12px; color: var(--muted); font-size: 14px; }
+@media (max-width: 360px) { .mix-tracks li { grid-template-columns: 44px minmax(0, 1fr) minmax(44px, auto); row-gap: 0; } .mix-tracks .mix-track-state { grid-column: 2; grid-row: 2; margin-top: -4px; font-size: 12px; } .mix-tracks li > .icon-button { grid-column: 3; grid-row: 1 / span 2; } }
+.mix-track-state { color: var(--muted); font-size: 13px; font-weight: 400; white-space: nowrap; }
+@media (min-width: 361px) { .mix-tracks li:not(:has(.mix-track-state)) > .mix-track-text { grid-column: span 2; } }
+.mix-track-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.mix-track-text strong { font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mix-track-text span { color: var(--muted); font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mix-dialog .form-actions .button { flex: 1; }
+.mix-dialog > .sheet-grabber { display: none; }
+/* On phones the song list is a bottom sheet, like the other phone menus (ui.tsx sheetQuery). */
+@media (max-width: 599px) {
+  .dialog.mix-dialog { width: 100%; max-width: 100%; margin: auto 0 0; padding-top: 10px; padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px)); border-bottom: 0; border-radius: 22px 22px 0 0; animation: sheet-in 260ms var(--ease-out) both; }
+  .dialog.mix-dialog[open] { display: flex; flex-direction: column; }
+  .mix-dialog > .sheet-grabber { display: block; order: -1; margin: 0 auto 6px; }
+  /* Phone-width sheets stack the two collection actions so their longer "again" labels keep the gutters. */
+  .mix-dialog .form-actions { flex-direction: row; align-items: stretch; }
+  @media (max-width: 360px) { .mix-dialog .form-actions { flex-direction: column; } }
+  .mix-dialog .form-actions .button { justify-content: center; }
+}
 .playlist-body { display: flex; flex-direction: column; flex: 1; margin-top: 14px; }
 .playlist-body h3 { font-size: 18px; font-stretch: var(--wide); letter-spacing: -0.02em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .playlist-meta { margin-top: 3px; color: var(--text-soft); font-size: 14px; font-variant-numeric: tabular-nums; }
 .playlist-detail { margin-top: 6px; color: var(--muted); font-size: 14px; line-height: 1.5; }
-.mix-range { display: block; margin-top: 10px; }
-.mix-range select { width: 100%; min-height: 44px; font-size: 14px; }
+.playlist-meta-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 3px; min-height: 30px; }
+.playlist-meta-row .playlist-meta { margin-top: 0; }
+.mix-range { flex: none; }
+.mix-range select { min-height: 36px; padding: 3px 30px 3px 11px; border-radius: 999px; font-size: 13px; background-position: calc(100% - 18px) 50%, calc(100% - 12px) 50%; }
 .playlist-actions { display: flex; align-items: center; gap: 8px; margin-top: auto; padding-top: 14px; }
 .playlist-actions .button { flex: 1; min-height: 44px; padding: 9px 14px; font-size: 14px; }
+.playlist-actions .button { min-width: 0; }
 .playlist-actions .icon-button { width: 44px; min-width: 44px; min-height: 44px; border: 1px solid var(--field-line); border-radius: 12px; }
+/* A 40px touch target that keeps the line's height: the negative margin gives back the padding. */
+.playlist-songs { all: unset; display: inline-flex; align-items: center; gap: 4px; min-height: 40px; margin-block: -10px; cursor: pointer; color: var(--text-soft); font-size: 14px; }
+.playlist-songs:hover { color: var(--text); text-decoration: underline; text-underline-offset: 3px; }
+.playlist-songs:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
 
 .home-unavailable { display: flex; align-items: flex-start; gap: 14px; flex-wrap: wrap; padding: 18px 20px; border-radius: 16px; background: var(--surface); }
 .home-unavailable > svg { flex-shrink: 0; color: var(--amber); margin-top: 2px; }
@@ -122,14 +191,6 @@
 
 /* Save session as mix, standalone or inside the Stop confirmation. */
 .session-mix-field { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; color: var(--text-soft); font-size: 14px; }
-/* Wide screens pair the session in progress with the recent shelf instead of stacking a banner over it. */
-@media (min-width: 1200px) {
-  .home-shelf:has(> .continue-feature) { display: grid; grid-template-columns: minmax(280px, 340px) minmax(0, 1fr); column-gap: 28px; align-items: start; }
-  .home-shelf:has(> .continue-feature) > .home-shelf-header { grid-column: 1 / -1; }
-  .home-shelf > .continue-feature { grid-template-columns: 88px minmax(0, 1fr); align-content: start; margin: 4px 0 0; padding: 18px; }
-  .home-shelf > .continue-feature .continue-text strong { white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
-  .home-shelf > .continue-feature .button { grid-column: 1 / -1; justify-content: center; }
-}
 .session-mix-field input { font-size: 16px; }
 .field-hint { color: var(--muted); font-size: 14px; line-height: 1.55; }
 .field-hint.error-text { color: var(--error-text); }
@@ -142,18 +203,29 @@
 .queue-heading-actions .text-button { display: inline-flex; align-items: center; gap: 7px; font-size: 14px; }
 
 @media (max-width: 960px) {
-  .home-view { gap: 40px; }
+  .home-view { gap: 28px; }
+  .home-shelf-header { gap: 10px; margin-bottom: 12px; }
+  .home-shelf-header p { margin-top: 4px; }
   .home-shelf-header h2 { font-size: 21px; }
   .home-shelf-actions { width: 100%; }
-  .home-shelf-actions .button { flex: 1; }
+  .home-shelf-actions .button { flex: 1 1 0; min-width: 0; padding-inline: 10px; }
   .shelf-row { --card: 136px; gap: 14px; margin-inline: -16px; padding-inline: 16px; scroll-padding-inline: 16px; }
-  .shelf-row-wide { --card: 220px; }
-  .continue-feature { grid-template-columns: 64px minmax(0, 1fr); gap: 14px; padding: 14px; }
-  .continue-art { width: 64px; height: 64px; }
+  .shelf-row-wide { --card: clamp(164px, (100vw - 32px) / 2.15, 248px); }
+  @media (max-width: 360px) { .shelf-row-wide { --card: 216px; } }
+  .shelf-row { scrollbar-width: none; }
+  @keyframes shelf-fade { 0% { --shelf-fade-start: 0px; --shelf-fade-end: 24px; } 6% { --shelf-fade-start: 24px; } 94% { --shelf-fade-end: 24px; } 100% { --shelf-fade-start: 24px; --shelf-fade-end: 0px; } }
+  .shelf-row::-webkit-scrollbar { display: none; }
+  .playlist-detail { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+  .playlist-meta-row { flex-wrap: wrap; gap: 4px 8px; }
+  /* Room for the title beside the add button on narrow cards. */
+  .shelf-row:not(.shelf-row-wide):not(.shelf-row-sparse) { --card: clamp(136px, (100vw - 60px) / 2.3, 168px); }
+  .shelf-row.shelf-row-sparse { grid-template-columns: minmax(0, 1fr); margin-inline: 0; padding-inline: 0; }
+  .continue-feature { grid-template-columns: 52px minmax(0, 1fr); gap: 12px; padding: 10px 12px 10px 10px; margin-bottom: 14px; }
+  .continue-art { width: 52px; height: 52px; }
   .continue-text strong { font-size: 17px; white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow-wrap: anywhere; }
   .continue-feature .button { grid-column: 1 / -1; }
   /* The mini player already names the song, so the phone card stays one row and opens the player from a caret. */
-  .continue-feature:has(.continue-open) { grid-template-columns: 64px minmax(0, 1fr) 44px; }
+  .continue-feature:has(.continue-open) { grid-template-columns: 52px minmax(0, 1fr) 44px; }
   .continue-feature .continue-open { grid-column: auto; width: 44px; min-width: 44px; padding: 0; justify-content: center; }
   .continue-open > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   .recap-grid { grid-template-columns: minmax(0, 1fr); gap: 32px; }
@@ -165,3 +237,29 @@
 @media (prefers-reduced-motion: reduce) {
   .shelf-row { scroll-behavior: auto; scroll-snap-type: none; }
 }
+/* Wide screens set a short recent list beside the playing strip instead of under it. */
+@media (min-width: 1200px) {
+  .home-shelf:has(> .continue-feature):has(> .shelf-row-sparse) { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 20px; align-items: stretch; }
+  .home-shelf:has(> .continue-feature):has(> .shelf-row-sparse) > .home-shelf-header { grid-column: 1 / -1; }
+  /* The playing strip and the recent cards match: same cover, padding and height. */
+  .home-shelf:has(> .shelf-row-sparse) > .continue-feature { margin-bottom: 0; grid-template-columns: 64px minmax(0, 1fr) auto; padding: 12px 16px 12px 12px; }
+  .home-shelf:has(> .shelf-row-sparse) > .continue-feature .continue-art { width: 64px; height: 64px; }
+  .home-shelf:has(> .continue-feature) > .shelf-row-sparse > li:only-child { height: 100%; }
+  /* A lone history card keeps the width of a sparse card instead of spanning the half-row. */
+  .home-shelf:has(> .continue-feature) > .shelf-row-sparse > li { max-width: 440px; }
+  .home-shelf:has(> .continue-feature) > .shelf-row.shelf-row-sparse { grid-template-columns: minmax(0, 1fr); padding: 0; margin: 0; }
+}
+/* A song card is one target: anywhere on it adds the song, the + is its visible cue. */
+.shelf-card { position: relative; }
+.shelf-card-body .icon-button::after { content: ''; position: absolute; inset: 0; border-radius: 10px; }
+.shelf-card:has(.icon-button:not(:disabled)):hover .shelf-art .artwork { filter: brightness(1.08); }
+.home-view .playlist-tile .mix-range select { border-radius: 999px; corner-shape: round; }
+@media (max-width: 600px) {
+  /* The mini player already shows the song in progress, so phones lead Continue listening with what played before. */
+}
+/* The player bar already shows the song in progress, so Recently played leads with what played before. */
+.home-shelf > .continue-feature:has(.continue-open) { display: none; }
+.home-shelf-header p:empty { display: none; }
+.narrow-only { display: none; }
+.queue-scope { margin: 2px 0 0; color: var(--muted); font-size: 13px; }
+@media (max-width: 600px) { .home-view { padding-bottom: 32px; } .shelf-queued-note { flex: 1 0 100%; } .mix-range select { min-height: 44px; } .wide-only { display: none; } .narrow-only { display: inline; } }

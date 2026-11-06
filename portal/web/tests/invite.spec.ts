@@ -10,7 +10,7 @@ test('account menu and settings page offer the Discord add-to-server link in a n
   for (const [name, value] of Object.entries({ href: INVITE_URL, ...external })) await expect(menuLink).toHaveAttribute(name, value);
   await page.keyboard.press('Escape');
   await openSettings(page);
-  await expect(page.getByRole('link', { name: 'Add to server' })).toHaveAttribute('href', INVITE_URL);
+  await expect(page.getByRole('link', { name: 'Add to a server' })).toHaveAttribute('href', INVITE_URL);
 });
 
 test('a listener with no shared servers is offered an install instead of a dead end', async ({ page }) => {

@@ -21,3 +21,14 @@ for (const skin of ['fantastic', 'haunted', 'overdrive', 'classic'])
         return Math.round(Math.abs((cover.top - around.top) - (around.bottom - cover.bottom)) + Math.abs((cover.left - around.left) - (around.right - cover.right)));
       }, frame)).toBeLessThanOrEqual(1);
     });
+
+// Lyrics scroll inside their panel; their length never grows the open player past the screen.
+for (const [width, height] of [[416, 608], [600, 760]])
+  test(`lyrics at ${width}×${height} scroll in their panel, not the open player`, async ({ page }) => {
+    await page.setViewportSize({ width, height });
+    await mockPortal(page); await page.goto('/');
+    await page.getByRole('button', { name: 'Open player', exact: true }).click();
+    await page.getByRole('button', { name: 'Show lyrics', exact: true }).click();
+    await expect(page.getByRole('region', { name: 'Lyrics' })).toBeVisible();
+    await expect.poll(() => page.locator('.sleeve-content').evaluate(node => node.scrollHeight - node.clientHeight)).toBeLessThanOrEqual(0);
+  });

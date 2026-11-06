@@ -213,7 +213,9 @@ export function Player({ portal, expanded, setExpanded, onAdd, palette, animate,
             if (!step || 'tv' in document.documentElement.dataset) return;
             const radios = Array.from(event.currentTarget.querySelectorAll('[role="radio"]')) as HTMLElement[];
             const at = radios.indexOf(document.activeElement as HTMLElement);
-            event.preventDefault(); radios[(at + step + radios.length) % radios.length]?.focus();
+            const next = radios[(at + step + radios.length) % radios.length]; if (!next) return;
+            // The tab stop moves with focus, so Tab leaves the group from the focused preset.
+            event.preventDefault(); radios.forEach(radio => { radio.tabIndex = radio === next ? 0 : -1; }); next.focus();
           }}>
           {bootstrap.filters.map(filter => { const chosen = (session?.filter || bootstrap.filters[0]?.id) === filter.id; return <button key={filter.id} role="radio" aria-checked={chosen} tabIndex={chosen || 'tv' in document.documentElement.dataset ? 0 : -1} disabled={!controllable} onClick={() => { close(); if (!chosen) void control({ command: 'filter', options: { preset: filter.id } }); }}><span className={`sound-radio ${chosen ? 'chosen' : ''}`} aria-hidden="true" /><span className="menu-device"><span>{filter.label}</span>{filter.description && <small>{filter.description}</small>}</span></button>; })}</div></>}
 

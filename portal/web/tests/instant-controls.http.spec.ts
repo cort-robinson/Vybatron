@@ -174,6 +174,12 @@ test('sound presets are one tab stop, and the arrows move between them', async (
   await checked.focus();
   await page.keyboard.press('ArrowDown');
   await expect(other).toBeFocused();
+  // The tab stop follows focus, so Tab leaves the group instead of returning to the checked preset.
+  await expect(other).toHaveAttribute('tabindex', '0');
+  await expect(checked).toHaveAttribute('tabindex', '-1');
+  await page.keyboard.press('Tab');
+  await expect(group.locator(':focus')).toHaveCount(0);
+  await other.focus();
   await page.keyboard.press('ArrowUp');
   await expect(checked).toBeFocused();
 });

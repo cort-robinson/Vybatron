@@ -251,14 +251,14 @@ REVERT: everything here is scoped to :root[data-skin='overdrive']; Settings → 
   .od-cover-hud, .od-cover-scan, .od-cover-plate { position: absolute; left: 50%; translate: -50% 0; pointer-events: none; }
   /* Behind the cover, unseen until the cover travels on its own as the player opens or closes:
      its landing spot then shows this shade, not the eclipsed sun. */
-  .od-cover-plate { z-index: -1; top: calc((100cqh - var(--cover) - 12px - var(--spectrum)) / 2); width: var(--cover); height: var(--cover); border-radius: 6px 20px 6px 20px; background: color-mix(in oklab, var(--ground), black 25%); box-shadow: 0 30px 70px -30px rgb(0 0 0 / .8); }
-  .od-cover-hud { --gap: 14px; top: calc((100cqh - var(--cover) - 12px - var(--spectrum)) / 2 - var(--gap)); width: calc(var(--cover) + var(--gap) * 2); height: calc(var(--cover) + var(--gap) * 2); }
+  .od-cover-plate { z-index: -1; top: calc((100cqh - var(--cover) - var(--spectrum-gap) - var(--spectrum)) / 2); width: var(--cover); height: var(--cover); border-radius: 6px 20px 6px 20px; background: color-mix(in oklab, var(--ground), black 25%); box-shadow: 0 30px 70px -30px rgb(0 0 0 / .8); }
+  .od-cover-hud { --gap: 14px; top: calc((100cqh - var(--cover) - var(--spectrum-gap) - var(--spectrum)) / 2 - var(--gap)); width: calc(var(--cover) + var(--gap) * 2); height: calc(var(--cover) + var(--gap) * 2); }
   .od-hud i { position: absolute; width: 26px; height: 26px; border: 2px solid var(--hud-c); filter: drop-shadow(0 0 6px color-mix(in oklab, var(--accent) 60%, transparent)); }
   .od-hud i:nth-child(1) { left: 0; top: 0; border-right: 0; border-bottom: 0; }
   .od-hud i:nth-child(2) { right: 0; top: 0; border-left: 0; border-bottom: 0; }
   .od-hud i:nth-child(3) { left: 0; bottom: 0; border-right: 0; border-top: 0; }
   .od-hud i:nth-child(4) { right: 0; bottom: 0; border-left: 0; border-top: 0; }
-  .od-cover-scan { top: calc((100cqh - var(--cover) - 12px - var(--spectrum)) / 2); width: var(--cover); height: var(--cover); overflow: hidden; border-radius: 6px 20px 6px 20px; }
+  .od-cover-scan { top: calc((100cqh - var(--cover) - var(--spectrum-gap) - var(--spectrum)) / 2); width: var(--cover); height: var(--cover); overflow: hidden; border-radius: 6px 20px 6px 20px; }
   .od-cover-scan::before { content: ''; position: absolute; left: 0; right: 0; top: 0; height: 34%; translate: 0 -110%; mix-blend-mode: screen;
     background: linear-gradient(to bottom, transparent, color-mix(in oklab, var(--accent) 22%, transparent) 70%, color-mix(in oklab, var(--neon) 50%, transparent) 94%, rgb(255 255 255 / .7) 98%, transparent);
     animation: od-scan 1.3s cubic-bezier(.3, .1, .2, 1) 120ms 1 both; }

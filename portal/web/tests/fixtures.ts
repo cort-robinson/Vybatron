@@ -78,8 +78,9 @@ export function selectedCommandError(library: Library, command: Command) {
   return null;
 }
 export const INVITE_URL = 'https://discord.com/oauth2/authorize?client_id=123456789012345678&scope=bot+applications.commands&permissions=281474979875840&integration_type=0';
-export async function mockPortal(page: Page, options: { signedOut?: boolean; basic?: boolean; outsideVoice?: boolean; saved?: boolean; maintainerOutsideGuild?: boolean; suggested?: boolean; shared?: SharedPlayerHub } = {}) {
+export async function mockPortal(page: Page, options: { signedOut?: boolean; basic?: boolean; outsideVoice?: boolean; saved?: boolean; maintainerOutsideGuild?: boolean; suggested?: boolean; shared?: SharedPlayerHub; title?: string } = {}) {
   const state = fixtureState();
+  if (options.title && state.snapshot.session.current) state.snapshot.session.current.title = options.title;
   if (options.suggested) Object.assign(state.snapshot.session, { radio: true, autoplay: 'on', queue: state.snapshot.session.queue.slice(0, 1), suggestions: suggestedTracks() });
   if (options.basic) { state.snapshot.guild.admin = false; state.snapshot.settings = null; state.snapshot.roles = []; state.snapshot.channels = []; state.snapshot.session.canControl = false; state.snapshot.session.reason = 'Playback controls need the DJ role. You can add music and vote to skip.'; }
   if (options.outsideVoice) { state.snapshot.session.canAdd = false; state.snapshot.session.canControl = false; state.snapshot.session.canVote = false; state.snapshot.session.reason = 'Join General to add music or use playback controls.'; }

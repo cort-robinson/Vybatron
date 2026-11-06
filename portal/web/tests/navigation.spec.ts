@@ -173,3 +173,18 @@ test('search results and Popular say when a song is already queued, and adding i
   await expect(queued).toContainText('In queue');
   await expect(queued.getByRole('button', { name: 'Add Night Drive to the queue again' })).toBeEnabled();
 });
+
+test('on a phone, the queued label of a search result shows in full on its own line', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const fixture = await mockPortal(page);
+  const { session } = fixture.state.snapshot;
+  session.queue.push({ ...session.queue[0], id: 'queued-midnight-city', title: 'Midnight City', author: 'M83', uri: 'https://example.com/music/midnight-city' });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Search', exact: true }).click();
+  await page.getByRole('searchbox', { name: 'Music search' }).fill('Midnight City');
+  const label = page.locator('.result-list li').filter({ has: page.getByRole('button', { name: 'Add Midnight City to queue again' }) }).locator('.track-queue-state');
+  await expect(label.locator('.queue-label')).toHaveText('In queue');
+  await expect(label).toBeInViewport({ ratio: 1 });
+  const [box, text] = await Promise.all([label.boundingBox(), label.locator('..').boundingBox()]);
+  expect(box!.x + box!.width).toBeLessThanOrEqual(text!.x + text!.width + 1);
+});

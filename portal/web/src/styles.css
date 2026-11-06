@@ -1396,7 +1396,7 @@ p, .continue-text > span, .section-description, .field-hint { text-wrap: pretty;
 .sound-radio { flex: none; width: 18px; height: 18px; margin-inline: 1px; border-radius: 50%; border: 2px solid var(--muted); }
 .sound-radio.chosen { border-color: var(--accent); background: radial-gradient(circle, var(--accent) 0 4px, transparent 5px); }
 /* Phone rows give the queue note its own line so the song's details never cut it short. */
-@media (max-width: 960px) { .library-track-list .track-queue-state { display: block; } .library-track-list .queue-sep { display: none; } }
+@media (max-width: 960px) { :is(.library-track-list, .result-list, .server-favorite-list) .track-queue-state { display: block; } :is(.library-track-list, .result-list, .server-favorite-list) .queue-sep { display: none; } }
 /* The narrowest covers keep each song's length: the source and the queue note give way first. */
 @media (max-width: 360px) {
   .result-list .result-source { display: none; }

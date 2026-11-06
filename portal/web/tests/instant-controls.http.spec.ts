@@ -1,5 +1,5 @@
 import { expect, test, type Page } from './test';
-import { gotoSession } from './fixtures';
+import { gotoSession, mockPortal } from './fixtures';
 import type { GuildSnapshot } from '../src/types';
 import { startHttpFixture } from './http-fixture';
 
@@ -162,4 +162,18 @@ test('volume, loop and filter apply instantly and coalesce repeated adjustments'
     expect(server.commands.filter(command => command.command === 'volume').at(-1)?.options?.level).toBe(70);
     await expect(volume).toHaveValue('70');
   } finally { await server.close(); }
+});
+
+test('sound presets are one tab stop, and the arrows move between them', async ({ page }) => {
+  await mockPortal(page); await page.goto('/');
+  await page.getByTestId('player').getByRole('button', { name: 'More playback controls' }).click();
+  const group = page.getByRole('radiogroup', { name: 'Sound for everyone in voice' });
+  const [checked, other] = [group.getByRole('radio', { checked: true }), group.getByRole('radio', { checked: false })];
+  await expect(checked).toHaveAttribute('tabindex', '0');
+  await expect(other).toHaveAttribute('tabindex', '-1');
+  await checked.focus();
+  await page.keyboard.press('ArrowDown');
+  await expect(other).toBeFocused();
+  await page.keyboard.press('ArrowUp');
+  await expect(checked).toBeFocused();
 });

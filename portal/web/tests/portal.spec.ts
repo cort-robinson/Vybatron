@@ -339,6 +339,10 @@ test('phone player is singular, keyboard-accessible, responsive and reduced-moti
   await expect(page.getByRole('button', { name: 'Pause playback' })).toHaveCount(1);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   const motion = await page.locator('.room-light .light').first().evaluate(el => getComputedStyle(el).animationName); expect(motion).toBe('none');
+  // Reduced motion keeps the sleeve's entrance fades, so let them land before axe
+  // measures contrast; a half-faded label otherwise reads as a violation. A cancelled
+  // animation rejects its finished promise, and that one is already gone.
+  await page.evaluate(() => Promise.all(document.getAnimations().filter(a => a.effect?.getComputedTiming().iterations !== Infinity).map(a => a.finished.catch(() => undefined))));
   const result = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze();
   expect(result.violations).toEqual([]);
 });

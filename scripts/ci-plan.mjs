@@ -16,7 +16,10 @@ const pipeline = [/^\.github\/workflows\/ci\.yml$/, /^\.github\/actions\//, /^sc
 export const SUITES = {
   // The browser suite builds and serves portal/web, and link.spec reads the
   // portal server's Content-Security-Policy, so every portal path but the app.
-  browser: [/^portal\/(?!android\/)/, ...pipeline],
+  // Vite also reads ancestor workspace files (package.json, lerna.json,
+  // pnpm-workspace.yaml) and can then load a root PostCSS or other config, so
+  // every repository-root file but prose counts too.
+  browser: [/^portal\/(?!android\/)/, /^[^/]+$(?<!\.md)/, ...pipeline],
   android: [/^portal\/android\//, ...pipeline],
 };
 

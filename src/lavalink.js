@@ -91,7 +91,8 @@ export async function handleTrackStart(client, player, track) {
   client.lavalink?.playbackRecovery?.started(player);
   client.lavalink?.playbackWatchdog?.trackStarted(player);
   playbackFailures.delete(player);
-  clearQueueIdleTimer(player);
+  // A voice resume can complete with nothing current; keep its queue-idle deadline.
+  if (player.queue?.current) clearQueueIdleTimer(player);
   updateTrackPresence(client, player, track);
   requestControllerUpdate(client, player, { state: player.paused ? 'paused' : 'playing', track });
   updateVoiceStatus(client, player);
@@ -192,7 +193,8 @@ export function handleRecoveryFailed(client, player, track, details = {}) {
 
 export function handleRecoveryResumed(client, player) {
   playbackFailures.delete(player);
-  clearQueueIdleTimer(player);
+  // A voice resume can complete with nothing current; keep its queue-idle deadline.
+  if (player.queue?.current) clearQueueIdleTimer(player);
   client.lavalink?.playbackWatchdog?.touch(player);
   updateTrackPresence(client, player);
   requestControllerUpdate(client, player, { state: player.paused ? 'paused' : 'playing' });

@@ -403,3 +403,20 @@ test('listeners leaving and returning keep the audio-unavailable timer', async (
     clearIdleTimer(player.guildId);
   }
 });
+
+test('a resume with nothing playing keeps the empty-queue disconnect', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const player = mockPlayer('resume-empty');
+  player.queue.current = null;
+  const client = mockClient(mockChannel());
+  client.lavalink = { getPlayer: () => player, playbackWatchdog: { touch() {} } };
+  try {
+    startIdleTimer(player, { client, reason: 'queue-empty' });
+    handleRecoveryResumed(client, player);
+    t.mock.timers.tick(IDLE_MS);
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(player.destroyed, 1);
+  } finally {
+    clearIdleTimer(player.guildId);
+  }
+});

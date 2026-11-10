@@ -81,3 +81,32 @@ test('V8: user in same channel as bot passes', async () => {
   assert.equal(result, player);
   assert.equal(i.replies.length, 0);
 });
+
+function recoveringPlayer({ recovering = false, reallocating = false } = {}) {
+  const player = { guildId: 'g1', voiceChannelId: 'vc1', queue: { current: { info: { title: 'Song' } }, tracks: [] } };
+  player.LavalinkManager = { playbackRecovery: {
+    isRecovering: () => recovering, isVoiceReallocating: () => reallocating, generation: () => 0,
+  } };
+  return player;
+}
+
+test('controls follow one recovery rule, including while Discord reallocates voice', async () => {
+  for (const state of [{ recovering: true }, { reallocating: true }]) {
+    const player = recoveringPlayer(state);
+    const pause = mockInteraction({ voiceChannelId: 'vc1', player });
+    pause.commandName = 'pause';
+    assert.equal(await requireControl(pause), null, JSON.stringify(state));
+    assert.match(pause.replies[0].content, /reconnecting/);
+    const skip = mockInteraction({ voiceChannelId: 'vc1', player });
+    skip.commandName = 'skip';
+    assert.equal(await requireControl(skip), player);
+  }
+  // The player's Back button is disabled while it recovers; /back stays available.
+  const player = recoveringPlayer({ recovering: true });
+  const button = mockInteraction({ voiceChannelId: 'vc1', player });
+  button.customId = 'player:v1:back';
+  assert.equal(await requireControl(button), null);
+  const command = mockInteraction({ voiceChannelId: 'vc1', player });
+  command.commandName = 'back';
+  assert.equal(await requireControl(command), player);
+});

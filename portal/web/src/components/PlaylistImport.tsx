@@ -29,7 +29,7 @@ export function PlaylistImport({ portal, target }: { portal: Portal; target: 'fa
   const held = useRef(false); const sending = useRef(false); const looking = useRef(false); const gone = useRef(false);
   // Leaving abandons the preview, but a lookup or confirmation the bot is still
   // working on keeps the slot until it answers.
-  useEffect(() => () => { gone.current = true; settle(); }, []);
+  useEffect(() => { gone.current = false; return () => { gone.current = true; settle(); }; }, []);
   const songSaving = slot.state !== 'idle' && slot.owner === 'song';
   const editable = can('library') && !pending.some(key => key.endsWith(':import'));
   const existing = target === 'mix' ? library?.mixes.find(mix => mixKey(mix.name) === mixKey(name)) : undefined;

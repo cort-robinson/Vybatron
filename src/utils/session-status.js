@@ -1,4 +1,4 @@
-import { isPlaybackRecovering, playbackGeneration } from '../playback-recovery.js';
+import { isPlaybackRecovering, isVoiceReallocating, playbackGeneration } from '../playback-recovery.js';
 
 // The status of one listening session, as every surface shows it: the Discord
 // controller, /nowplaying, controller buttons and the portal. Read it with
@@ -12,10 +12,11 @@ import { isPlaybackRecovering, playbackGeneration } from '../playback-recovery.j
 //   queue-finished             nothing left to play (handleQueueEnd)
 //   ended                      the session is over (requestControllerEnd)
 //
-// The recovery service owns "recovering". The controller label may also say
-// so (a voice reconnect can be announced before the service flags it), but only
-// for the recovery generation it was set in: any skip, seek, play, stop, move
-// or teardown starts a new generation, and the label lapses with it.
+// The recovery service owns "recovering": a stream, voice or audio-service
+// recovery, or Discord voice being reallocated (which outlives skips and
+// seeks). A controller label that says so counts only for the recovery
+// generation it was set in: any skip, seek, play, stop, move or teardown starts
+// a new generation, and the label lapses with it.
 export const SESSION_STATUS = Object.freeze({
   PLAYING: 'playing',
   PAUSED: 'paused',
@@ -37,7 +38,7 @@ export function statusLabel(player, state) {
 
 // `label` is the controller record ({ state, recoveryGeneration }) or null.
 export function sessionStatus(player, label = null) {
-  if (isPlaybackRecovering(player)) return SESSION_STATUS.RECOVERING;
+  if (isPlaybackRecovering(player) || isVoiceReallocating(player)) return SESSION_STATUS.RECOVERING;
   if (label?.state === SESSION_STATUS.RECOVERING
     && label.recoveryGeneration === playbackGeneration(player)) return SESSION_STATUS.RECOVERING;
   if (STICKY.has(label?.state)) return label.state;

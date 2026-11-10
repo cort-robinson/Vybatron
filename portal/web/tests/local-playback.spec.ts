@@ -306,6 +306,25 @@ test('a heart tapped during a playlist lookup waits for that import instead of r
   expect(fixture.state.library.favorites.map(track => track.title)).toEqual(expect.arrayContaining(['Open Road', 'Mile Marker', 'Midnight City']));
 });
 
+test('leaving the import form during a lookup keeps a waiting heart behind that lookup', async ({ page }) => {
+  const fixture = await portal(page, { inVoice: false });
+  let release = () => {}; const playlist = new Promise<void>(resolve => { release = resolve; });
+  await oneImportSlot(page, fixture, { playlist });
+  await addSongs(page);
+  await expect(title(page)).toHaveText('Midnight City');
+  await openImport(page);
+  await page.getByRole('button', { name: 'Preview import' }).click();
+  await expect(page.getByRole('button', { name: 'Looking up…' })).toBeDisabled();
+  await page.getByTestId('player').getByRole('button', { name: 'Save current song to favorites' }).filter({ visible: true }).click();
+  await page.getByRole('button', { name: 'Home', exact: true }).click();
+  // The bot is still looking the playlist up; a song lookup now would be refused.
+  await page.waitForTimeout(300);
+  expect(imports(fixture)).toEqual([['playlist', null]]);
+  release();
+  await expect.poll(() => imports(fixture)).toEqual([['playlist', null], ['song', null], ['song', 'c']]);
+  await expect(page.getByTestId('player').getByRole('button', { name: 'Remove current song from favorites' }).filter({ visible: true })).toBeVisible();
+});
+
 test('a playlist preview waits while a song from this device is saving', async ({ page }, info) => {
   const fixture = await portal(page, { inVoice: false });
   let release = () => {}; const song = new Promise<void>(resolve => { release = resolve; });

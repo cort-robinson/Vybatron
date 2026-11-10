@@ -26,8 +26,10 @@ export function PlaylistImport({ portal, target }: { portal: Portal; target: 'fa
   // confirmation has an answer, and waits while a song saves.
   const slot = useImportSlot();
   const lease = useRef<ImportLease | null>(null);
-  const held = useRef(false); const sending = useRef(false);
-  useEffect(() => () => lease.current?.release(), []);
+  const held = useRef(false); const sending = useRef(false); const looking = useRef(false); const gone = useRef(false);
+  // Leaving abandons the preview, but a lookup or confirmation the bot is still
+  // working on keeps the slot until it answers.
+  useEffect(() => () => { gone.current = true; settle(); }, []);
   const songSaving = slot.state !== 'idle' && slot.owner === 'song';
   const editable = can('library') && !pending.some(key => key.endsWith(':import'));
   const existing = target === 'mix' ? library?.mixes.find(mix => mixKey(mix.name) === mixKey(name)) : undefined;
@@ -41,15 +43,15 @@ export function PlaylistImport({ portal, target }: { portal: Portal; target: 'fa
     const mine = claimImport('playlist');
     if (!mine) { portal.notify('Another import is still in progress. Try again once it’s done.', 'info'); return; }
     lease.current = mine;
-    setLoading(true);
+    setLoading(true); looking.current = true;
     try {
       const value = await portal.previewImport(command(draft));
       // A preview with nothing to add isn't kept by the bot, so it holds nothing.
       held.current = !!value?.id;
       if (value) setPreview({ value, ...draft });
-    } finally { setLoading(false); settle(); }
+    } finally { looking.current = false; setLoading(false); settle(); }
   };
-  const settle = () => { if (!held.current && !sending.current) { lease.current?.release(); lease.current = null; } };
+  function settle() { if ((gone.current || !held.current) && !sending.current && !looking.current) { lease.current?.release(); lease.current = null; } }
   const close = () => { setPreview(null); held.current = false; settle(); };
   const confirm = async () => {
     if (!preview?.value.id) return;

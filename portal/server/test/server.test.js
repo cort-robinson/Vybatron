@@ -2394,11 +2394,32 @@ test('Concurrent polls of an approved code create exactly one session', { timeou
   const polls = await Promise.all(Array.from({ length: 5 }, () => devicePoll(f, screen.cookie)));
   const approved = polls.filter(response => response.json().status === 'approved');
   assert.equal(approved.length, 1);
-  assert.ok(polls.filter(response => response !== approved[0]).every(response => response.json().status === 'expired' && !sessionHeader(response)));
+  // The others arrive while it's being claimed: still pending, with no session.
+  assert.ok(polls.filter(response => response !== approved[0]).every(response => response.json().status === 'pending' && !sessionHeader(response)));
   assert.equal(f.state.calls.slice(calls).filter(call => call.path === '/v1/bootstrap').length, 1, 'one bot check, for the one session');
+  assert.deepEqual((await devicePoll(f, screen.cookie)).json(), { status: 'expired' });
 });
 
-test('An approval binds only the approving listener, to only that code', { timeout: 5000 }, async t => {
+test('An approved code survives a failed sign-in the TV can retry', { timeout: 5000 }, async t => {
+  const f = await fixture(t); const listener = await f.login(); const screen = await tv(f);
+  assert.equal((await deviceDecide(f, listener, screen.code)).status, 200);
+  // The bot is briefly unavailable: the TV hears a retryable error and keeps its code and cookie.
+  f.state.status = 503;
+  const failed = await devicePoll(f, screen.cookie);
+  assert.equal(failed.status, 503); assert.equal(sessionHeader(failed), undefined);
+  assert.equal((failed.headers['set-cookie'] || []).some(value => value.startsWith(`${DEVICE_COOKIE}=`)), false);
+  assert.equal(f.app.resourceCounts().pendingDeviceSignIns, 1);
+  // The approval still can't be changed while it waits.
+  assert.equal((await deviceDecide(f, listener, screen.code, 'deny')).status, 400);
+  f.state.status = null;
+  const finished = await devicePoll(f, screen.cookie);
+  assert.deepEqual(finished.json(), { status: 'approved' });
+  assert.equal(await viewerOf(f, cookieValue(finished, SESSION_COOKIE)), actorId);
+  assert.equal(f.app.resourceCounts().pendingDeviceSignIns, 0);
+  assert.deepEqual((await devicePoll(f, screen.cookie)).json(), { status: 'expired' });
+});
+
+test('An approval binds only the approving listener, to only that code',{ timeout: 5000 }, async t => {
   const f = await fixture(t); const otherActor = '456789012345678901';
   const first = await f.login(); f.state.identity = otherActor; const second = await f.login();
   const screenA = await tv(f); const screenB = await tv(f);

@@ -91,8 +91,7 @@ export async function handleTrackStart(client, player, track) {
   client.lavalink?.playbackRecovery?.started(player);
   client.lavalink?.playbackWatchdog?.trackStarted(player);
   playbackFailures.delete(player);
-  // A voice resume can complete with nothing current; keep its queue-idle deadline.
-  if (player.queue?.current) clearQueueIdleTimer(player);
+  clearQueueIdleTimer(player);
   updateTrackPresence(client, player, track);
   requestControllerUpdate(client, player, { state: player.paused ? 'paused' : 'playing', track });
   updateVoiceStatus(client, player);

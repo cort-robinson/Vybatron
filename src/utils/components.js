@@ -12,7 +12,6 @@ import {
 } from './messages.js';
 import {
   requestControllerEnd,
-  controllerSessionStatus,
   getControllerRecord,
   getMessageLink,
   refresh,
@@ -37,7 +36,6 @@ import { buildLyricsPayload, findSessionTrack, trackLyrics } from './lyrics.js';
 import { cancelGuildMutations } from './requests.js';
 import { retirePresentationPlayer } from './presentation-updates.js';
 import { cancelImport, commitImport } from './playlist-import.js';
-import { SESSION_STATUS } from './session-status.js';
 
 async function disableStaleComponents(interaction) {
   await interaction.message?.edit?.({ components: [] }).catch(() => {});
@@ -104,11 +102,6 @@ async function handlePlayerComponent(interaction, action, expectedIdentity = nul
 
   const controlledPlayer = await requireControl(interaction, { checkDJ: action !== 'favorite' });
   if (!controlledPlayer) return null;
-
-  if (controllerSessionStatus(controlledPlayer) === SESSION_STATUS.RECOVERING
-    && !['skip', 'stop', 'stop-confirm'].includes(action)) {
-    return interaction.reply(ephemeralText('Audio is reconnecting. You can skip this track or stop playback while it recovers.'));
-  }
 
   if (action === 'favorite') {
     const track = controlledPlayer.queue.current;
@@ -354,9 +347,6 @@ export async function handleModalSubmit(interaction) {
 
   const player = await requireControl(interaction);
   if (!player) return null;
-  if (controllerSessionStatus(player) === SESSION_STATUS.RECOVERING) {
-    return interaction.reply(ephemeralText('Audio is reconnecting. Open Seek again after playback resumes.'));
-  }
   const track = player.queue.current;
   if (!track || trackIdentity(track) !== match[1]) {
     return interaction.reply(ephemeralText('The track changed; open Seek again.'));

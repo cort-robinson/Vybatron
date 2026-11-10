@@ -163,6 +163,23 @@ export function handleTrackFailure(player, track, { skipped = true } = {}) {
     : `Audio unavailable for ${title}. Your queue is preserved.`);
 }
 
+// Recovery gave up. A transport failure keeps the track and queue but plays
+// nothing, so nothing else will end the session.
+export function handleRecoveryFailed(client, player, track, details = {}) {
+  handleTrackFailure(player, track, { skipped: !details.transport });
+  if (!details.transport) return;
+  clearTrackPresence(client, player);
+  requestControllerStatus(client, player, 'unavailable',
+    details.voice
+      ? 'Discord voice could not reconnect. Your queue is preserved; try /play again or restore it with /session.'
+      : 'The audio service could not recover. Your queue is safe; try /play again.');
+  // Leave after five minutes unless a track starts. The checkpoint is kept for
+  // /session resume, and a shorter empty-room timer keeps running.
+  if (idleTimers.get(player.guildId)?.reason !== 'voice-empty') {
+    startIdleTimer(player, { client, reason: 'audio-unavailable' });
+  }
+}
+
 export async function handleTrackError(player, track, payload, logger = console) {
   if (player.LavalinkManager?.playbackRecovery
     && (['TrackExceptionEvent', 'TrackStuckEvent'].includes(payload?.type)
@@ -247,16 +264,7 @@ export function initLavalink(client) {
           ? 'Reconnecting to Discord voice. Keeping your queue and track position.'
         : 'Reconnecting the audio stream. Keeping your queue and track position.');
     },
-    onFailed: (player, track, details) => {
-      handleTrackFailure(player, track, { skipped: !details.transport });
-      if (details.transport) {
-        clearTrackPresence(client, player);
-        requestControllerStatus(client, player, 'unavailable',
-          details.voice
-            ? 'Discord voice could not reconnect. Your queue is preserved; try /play again or restore it with /session.'
-            : 'The audio service could not recover. Your queue is safe; try /play again.');
-      }
-    },
+    onFailed: (player, track, details) => handleRecoveryFailed(client, player, track, details),
     onResumed: (player) => {
       lavalink.playbackWatchdog.touch(player);
       updateTrackPresence(client, player);

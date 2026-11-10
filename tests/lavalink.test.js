@@ -9,6 +9,9 @@ import {
   handleTrackFailure,
   handleVoiceStateUpdate,
   handlePlayerDestroy,
+  handleRecoveryFailed,
+  IDLE_MS,
+  VOICE_EMPTY_MS,
 } from '../src/lavalink.js';
 import { startPresence } from '../src/utils/presence.js';
 import { presentationWritePending } from '../src/utils/presentation-updates.js';
@@ -298,5 +301,47 @@ test('late teardown cleans the old watcher while keeping replacement presence, v
   } finally {
     clearIdleTimer(replacement.guildId);
     stopPresence();
+  }
+});
+
+test('a session left without playable audio after recovery gives up still disconnects', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const player = mockPlayer('transport-failed');
+  const client = mockClient(mockChannel());
+  client.lavalink = { getPlayer: () => player };
+  try {
+    handleRecoveryFailed(client, player, player.queue.current, { transport: true });
+    t.mock.timers.tick(IDLE_MS);
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(player.destroyed, 1);
+  } finally {
+    clearIdleTimer(player.guildId);
+  }
+});
+
+test('a recovery failure keeps a shorter empty-room timer, and a new track cancels its own', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const client = mockClient(mockChannel());
+  const empty = mockPlayer('transport-failed-empty');
+  client.lavalink = { getPlayer: () => empty };
+  try {
+    startIdleTimer(empty, { reason: 'voice-empty', client });
+    handleRecoveryFailed(client, empty, empty.queue.current, { transport: true });
+    t.mock.timers.tick(VOICE_EMPTY_MS);
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(empty.destroyed, 1);
+  } finally {
+    clearIdleTimer(empty.guildId);
+  }
+  const retried = mockPlayer('transport-failed-retried');
+  client.lavalink = { getPlayer: () => retried };
+  try {
+    handleRecoveryFailed(client, retried, retried.queue.current, { transport: true, voice: true });
+    await handleTrackStart(client, retried, track);
+    t.mock.timers.tick(IDLE_MS);
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(retried.destroyed, 0);
+  } finally {
+    clearIdleTimer(retried.guildId);
   }
 });

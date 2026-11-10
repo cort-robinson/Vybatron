@@ -308,3 +308,55 @@ test('in Discord the seek bar holds while the bot says a song is still starting'
   await page.waitForTimeout(2500);
   await expect(seek).toHaveValue('0');
 });
+
+// This device's player refuses one song outright (not a tap-first refusal), with no media error to follow.
+async function refuse(page: Page, videoId: string) {
+  await page.addInitScript(id => {
+    const play = HTMLMediaElement.prototype.play;
+    HTMLMediaElement.prototype.play = function () {
+      const page = window as unknown as { deckAudio?: HTMLMediaElement; deckPaused: boolean };
+      if (!page.deckAudio) this.addEventListener('pause', () => { page.deckPaused = true; });
+      page.deckAudio = this;
+      return this.dataset.video === id ? Promise.reject(new DOMException('The element has no supported sources.', 'NotSupportedError')) : play.call(this);
+    };
+  }, videoId);
+}
+
+test('a song whose audio won’t start on this device gets one retry, then is skipped', async ({ page }) => {
+  await refuse(page, 'dX3k_QDnzHE');
+  const fixture = await portal(page, { inVoice: false });
+  // The bot is busy for that song, which is worth one quiet retry.
+  await page.route('**/api/guilds/*/audio/dX3k_QDnzHE', route => route.request().resourceType() === 'fetch'
+    ? route.fulfill({ status: 503, json: { error: { code: 'busy', message: 'The bot is busy.' } } }) : route.fallback());
+  await addSongs(page);
+  await expect.poll(async () => (await calls(page)).filter(call => call.startsWith('play:dX3k_QDnzHE')).length, { timeout: 5000 }).toBe(2);
+  await expect(page.getByText('“Midnight City”: The bot is busy. Skipping it.')).toBeVisible();
+  await expect(title(page)).toHaveText('Wait');
+  await expect.poll(() => calls(page)).toContain('play:Fk3RbKWbmtg@0');
+  // The song that plays is reported as playing, so the listener's other devices follow it.
+  const wait = () => fixture.shared.player.current?.track.title === 'Wait' && fixture.shared.player.playhead.playing;
+  await expect.poll(wait).toBe(true);
+  expect(fixture.commands).toEqual([]);
+});
+
+test('a paused song on this device keeps reporting its place after its audio stalls', async ({ page }) => {
+  await refuse(page, 'none');
+  const fixture = await portal(page, { inVoice: false });
+  await addSongs(page);
+  await page.getByRole('button', { name: 'Open player', exact: true }).click();
+  const seek = page.getByRole('slider', { name: 'Playback position' });
+  await expect.poll(async () => Number(await seek.inputValue())).toBeGreaterThan(1000);
+  await page.getByRole('button', { name: 'Pause playback' }).click();
+  await expect.poll(() => fixture.shared.player.playhead.playing).toBe(false);
+  await expect.poll(() => page.evaluate(() => (window as unknown as { deckPaused?: boolean }).deckPaused)).toBe(true);
+  // A stall the element announces as it pauses, which no longer applies.
+  await page.evaluate(() => (window as unknown as { deckAudio: HTMLMediaElement }).deckAudio.dispatchEvent(new Event('waiting')));
+  const before = fixture.shared.player.playhead.positionMs;
+  // One seek, five seconds on.
+  await seek.focus();
+  for (let press = 0; press < 5; press++) await page.keyboard.down('ArrowRight');
+  await page.keyboard.up('ArrowRight');
+  // The seek is reported. (The mock's audio has no byte ranges, so the element itself can't land there.)
+  const reported = () => fixture.shared.ops('report').some(({ body: { playhead } }) => playhead && !playhead.playing && playhead.positionMs > before + 4000);
+  await expect.poll(reported).toBe(true);
+});

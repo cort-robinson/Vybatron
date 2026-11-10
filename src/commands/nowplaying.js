@@ -6,7 +6,8 @@ import {
   SlashCommandBuilder,
 } from 'discord.js';
 import { buildPlayerPayload, ephemeralText } from '../utils/messages.js';
-import { getControllerRecord, getMessageLink } from '../utils/player-controller.js';
+import { controllerSessionStatus, getControllerRecord, getMessageLink } from '../utils/player-controller.js';
+import { SESSION_STATUS } from '../utils/session-status.js';
 import { requireSessionVisibility } from '../utils/guards.js';
 
 export const data = new SlashCommandBuilder()
@@ -21,8 +22,10 @@ export async function execute(interaction) {
     return interaction.reply(ephemeralText('Nothing is playing. Add something with /play.'));
   }
   const record = getControllerRecord(interaction.guildId);
+  const status = controllerSessionStatus(player);
   const payload = buildPlayerPayload(player, {
-    state: ['recovering', 'unavailable'].includes(record?.state) ? record.state : player.paused ? 'paused' : 'playing',
+    // A track is current here, so a finished-queue label is already out of date.
+    state: status === SESSION_STATUS.QUEUE_FINISHED ? player.paused ? 'paused' : 'playing' : status,
     track,
     startedAt: record?.startedAt || Date.now(),
     reason: record?.reason,

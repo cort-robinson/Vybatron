@@ -5,7 +5,8 @@ import { savedSession, usableSession } from '../utils/sessions.js';
 import { AUDIO_PRESETS, getAudioPreset } from '../utils/filters.js';
 import { autoplayActive, autoplayMode, isAutoplayTrack, radioState, suggestions } from '../utils/radio.js';
 import { isPlaybackRecovering } from '../playback-recovery.js';
-import { getControllerRecord } from '../utils/player-controller.js';
+import { controllerSessionStatus } from '../utils/player-controller.js';
+import { SESSION_STATUS } from '../utils/session-status.js';
 import { seekRevision } from '../utils/operations.js';
 import { sleepTimer } from '../utils/sleep-timer.js';
 import { actorVoiceId, djAccess, visible, visibleHistory, visibleSession, writable, TEXT_TYPES, VOICE_TYPES } from './policy.js';
@@ -142,7 +143,7 @@ export function createRevisions(client) {
     const current = player?.queue?.current;
     const signature = [epochs.get(guildId) || 0, objectId(player), objectId(current), current ? trackId(current) : null,
       (player?.queue?.tracks || []).map(track => [objectId(track), trackId(track)]), player?.voiceChannelId, player?.textChannelId,
-      Boolean(player?.paused), Boolean(player?.playing), Boolean(isPlaybackRecovering(player)), player?.volume, player?.repeatMode, getAudioPreset(player).label,
+      Boolean(player?.paused), Boolean(player?.playing), player ? controllerSessionStatus(player) : null, player?.volume, player?.repeatMode, getAudioPreset(player).label,
       seekRevision(player), Boolean(player?.queue?.previous?.length), sleepTimer(player),
       Boolean(radioState(player).enabled), radioState(player).override, autoplayActive(client, player), suggestions(player).map(trackId),
       Boolean(current && isAutoplayTrack(player, current)), current && opening.has(current) ? player.lastPosition ?? null : false, library.document, library.historyIds, checkpoint(guildId, library.session, Date.now())];
@@ -171,9 +172,9 @@ export function snapshotProjection(client, context, revision, ordering) {
   const canAdd = Boolean(allowed && sameVoice && botVoiceAccess && (player || (writable(context, musicChannel) && visible(context, musicChannel))));
   const preset = getAudioPreset(player);
   const current = allowed ? player?.queue?.current : null;
-  const recovering = Boolean(player && isPlaybackRecovering(player));
-  const controllerState = getControllerRecord(id)?.state;
-  const status = !allowed || !player ? 'idle' : recovering ? 'recovering' : controllerState === 'unavailable' || player.node?.connected === false ? 'unavailable' : !current ? 'idle' : player.paused ? 'paused' : 'playing';
+  // One session status for Discord and the portal (src/utils/session-status.js).
+  const shown = player ? controllerSessionStatus(player) : null;
+  const status = !allowed || !player ? 'idle' : shown === SESSION_STATUS.RECOVERING ? 'recovering' : shown === SESSION_STATUS.UNAVAILABLE || player.node?.connected === false ? 'unavailable' : !current ? 'idle' : player.paused ? 'paused' : 'playing';
   const starting = status === 'playing' && opening.has(current);
   const listeners = allowed ? [...(context.channels.get(player?.voiceChannelId)?.members?.values() || [])].filter(member => !member.user.bot).slice(0, 100).map(member => actorProjection({ ...member.user, id: member.id, displayName: member.displayName, avatarUrl: member.user.displayAvatarURL?.() })).filter(Boolean) : [];
   const reason = !allowed ? 'The listening channel is not visible to you.' : !context.member ? 'Join this server to control playback.' : !sameVoice ? 'Join the listening voice channel to control playback.' : !player && !canAdd ? 'An administrator must configure a visible music text channel.' : !djAccess(context, client) ? 'Playback controls require the DJ role.' : null;

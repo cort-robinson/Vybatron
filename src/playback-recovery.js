@@ -42,6 +42,11 @@ export function isPlaybackRecovering(player) {
   return service(player)?.isRecovering(player) === true;
 }
 
+// Moves on every invalidation (skip, seek, play, stop, voice move, teardown).
+export function playbackGeneration(player) {
+  return service(player)?.generation?.(player);
+}
+
 // Audio writes share a lane. A skip invalidates a pending retry immediately, then
 // follows any request already sent to Lavalink, rather than racing its response.
 function withPlaybackLock(player, action) {

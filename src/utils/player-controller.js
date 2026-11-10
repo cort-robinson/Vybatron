@@ -1,5 +1,6 @@
 import { buildPlayerPayload } from './messages.js';
 import { trackIdentity } from './presentation.js';
+import { sessionStatus, statusLabel } from './session-status.js';
 import {
   PRESENTATION_LIMITS, presentationPlayerActive, recordPresentationDrop,
   recordPresentationFailure, retirePresentationPlayer, submitPresentationWrite,
@@ -113,7 +114,7 @@ function prepareController(client, player, {
     lastTrack: null,
     lastTrackKey: null,
     notice: null,
-    state,
+    ...statusLabel(player, state),
     reason: null,
     previous: null,
   };
@@ -132,7 +133,7 @@ function prepareController(client, player, {
     record.lastTrack = track;
     record.lastTrackKey = key;
   }
-  record.state = state;
+  Object.assign(record, statusLabel(player, state));
   record.reason = reason;
   record.notice = notice || record.notice;
   controllers.set(player.guildId, record);
@@ -140,9 +141,7 @@ function prepareController(client, player, {
 }
 
 function currentPayload(player, record) {
-  const state = ['recovering', 'unavailable', 'queue-finished'].includes(record.state)
-    ? record.state
-    : !player?.queue?.current ? 'queue-finished' : player.paused ? 'paused' : 'playing';
+  const state = sessionStatus(player, record);
   const track = state === 'queue-finished' ? null
     : player?.queue?.current || (['recovering', 'unavailable'].includes(state) ? record.lastTrack : null);
   if (track) {
@@ -214,7 +213,7 @@ export function requestControllerStatus(client, player, state, reason) {
   const existing = controllers.get(player.guildId);
   const record = existing?.player === player ? existing : prepareController(client, player, { state, reason });
   if (!record) return null;
-  record.state = state;
+  Object.assign(record, statusLabel(player, state));
   record.reason = reason;
   return enqueueControllerOperation(player.guildId, () => renderCurrent(client, player, record));
 }
@@ -280,6 +279,12 @@ export function withControllerLink(content, interaction, player) {
   const link = getMessageLink(interaction?.guildId);
   if (!link || player?.textChannelId === interaction?.channelId) return content;
   return `${content} Open player: ${link}`;
+}
+
+// The session status every surface shows (see session-status.js).
+export function controllerSessionStatus(player) {
+  const record = controllers.get(player?.guildId);
+  return sessionStatus(player, record?.player === player ? record : null);
 }
 
 export function getControllerRecord(guildId) {

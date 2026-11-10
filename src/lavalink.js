@@ -35,8 +35,15 @@ export function startIdleTimer(player, options = IDLE_MS) {
   const ms = settings.ms ?? (reason === 'voice-empty' ? VOICE_EMPTY_MS : IDLE_MS);
   const client = settings.client || null;
   clearIdleTimer(player.guildId);
+  const position = player.lastPosition;
   const timer = setTimeout(() => {
     idleTimers.delete(player.guildId);
+    // Recovery can give up while the audio server keeps streaming (a failed
+    // session reconciliation). Server-reported progress means audio still plays.
+    if (reason === 'audio-unavailable' && player.connected !== false && player.lastPosition !== position) {
+      startIdleTimer(player, settings);
+      return;
+    }
     // This disconnect keeps the checkpoint. A sleep timer firing while the
     // voice status clears would stop the session and discard it instead.
     cancelSleepTimer(player);
@@ -150,13 +157,16 @@ export function handleVoiceStateUpdate(client, oldState, channelId) {
     if (idleTimers.get(player.guildId)?.reason === 'voice-empty') clearIdleTimer(player.guildId);
     if (!player.queue?.current && !isPlaybackRecovering(player) && !idleTimers.has(player.guildId)) {
       handleQueueEnd(client, player);
+    } else if (playbackFailures.get(player) === 'transport' && !isPlaybackRecovering(player) && !idleTimers.has(player.guildId)) {
+      startIdleTimer(player, { client, reason: 'audio-unavailable' });
     }
     requestControllerRefresh(client, player);
   }
 }
 
 export function handleTrackFailure(player, track, { skipped = true } = {}) {
-  playbackFailures.set(player, true);
+  // 'transport' keeps the track but plays nothing until a track starts or a recovery resumes.
+  playbackFailures.set(player, skipped ? 'track' : 'transport');
   const title = plainText(track?.info?.title, { fallback: 'A track', maxLength: 120 });
   setNotice(player.guildId, skipped
     ? `Couldn’t play ${title}; skipped.`
@@ -178,6 +188,15 @@ export function handleRecoveryFailed(client, player, track, details = {}) {
   if (idleTimers.get(player.guildId)?.reason !== 'voice-empty') {
     startIdleTimer(player, { client, reason: 'audio-unavailable' });
   }
+}
+
+export function handleRecoveryResumed(client, player) {
+  playbackFailures.delete(player);
+  clearQueueIdleTimer(player);
+  client.lavalink?.playbackWatchdog?.touch(player);
+  updateTrackPresence(client, player);
+  requestControllerUpdate(client, player, { state: player.paused ? 'paused' : 'playing' });
+  updateVoiceStatus(client, player);
 }
 
 export async function handleTrackError(player, track, payload, logger = console) {
@@ -265,12 +284,7 @@ export function initLavalink(client) {
         : 'Reconnecting the audio stream. Keeping your queue and track position.');
     },
     onFailed: (player, track, details) => handleRecoveryFailed(client, player, track, details),
-    onResumed: (player) => {
-      lavalink.playbackWatchdog.touch(player);
-      updateTrackPresence(client, player);
-      requestControllerUpdate(client, player, { state: player.paused ? 'paused' : 'playing' });
-      updateVoiceStatus(client, player);
-    },
+    onResumed: (player) => handleRecoveryResumed(client, player),
   });
   lavalink.playbackRecovery = recovery;
   lavalink.playbackWatchdog = createPlaybackWatchdog({

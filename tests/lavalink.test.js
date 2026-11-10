@@ -10,6 +10,7 @@ import {
   handleVoiceStateUpdate,
   handlePlayerDestroy,
   handleRecoveryFailed,
+  handleRecoveryResumed,
   IDLE_MS,
   VOICE_EMPTY_MS,
 } from '../src/lavalink.js';
@@ -343,5 +344,62 @@ test('a recovery failure keeps a shorter empty-room timer, and a new track cance
     assert.equal(retried.destroyed, 0);
   } finally {
     clearIdleTimer(retried.guildId);
+  }
+});
+
+test('the audio-unavailable timer never cuts off audio the server is still playing', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const player = mockPlayer('transport-still-streaming');
+  player.connected = true;
+  player.lastPosition = 10_000;
+  const client = mockClient(mockChannel());
+  client.lavalink = { getPlayer: () => player };
+  try {
+    handleRecoveryFailed(client, player, player.queue.current, { transport: true });
+    player.lastPosition = 40_000;
+    t.mock.timers.tick(IDLE_MS);
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(player.destroyed, 0);
+    t.mock.timers.tick(IDLE_MS);
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(player.destroyed, 1);
+  } finally {
+    clearIdleTimer(player.guildId);
+  }
+});
+
+test('a resumed session cancels the audio-unavailable timer', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const player = mockPlayer('transport-resumed');
+  const client = mockClient(mockChannel());
+  client.lavalink = { getPlayer: () => player, playbackWatchdog: { touch() {} } };
+  try {
+    handleRecoveryFailed(client, player, player.queue.current, { transport: true, voice: true });
+    handleRecoveryResumed(client, player);
+    t.mock.timers.tick(IDLE_MS);
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(player.destroyed, 0);
+  } finally {
+    clearIdleTimer(player.guildId);
+  }
+});
+
+test('listeners leaving and returning keep the audio-unavailable timer', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const player = mockPlayer('transport-room-blip');
+  const client = mockClient(mockChannel());
+  client.lavalink = { getPlayer: () => player };
+  const room = (humans) => ({ guild: { id: player.guildId, channels: { cache: new Map([['v1', {
+    members: { filter: () => ({ size: humans }) },
+  }]]) } } });
+  try {
+    handleRecoveryFailed(client, player, player.queue.current, { transport: true });
+    handleVoiceStateUpdate(client, room(0));
+    handleVoiceStateUpdate(client, room(1));
+    t.mock.timers.tick(IDLE_MS);
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(player.destroyed, 1);
+  } finally {
+    clearIdleTimer(player.guildId);
   }
 });

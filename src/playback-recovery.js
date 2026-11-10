@@ -42,6 +42,15 @@ export function isPlaybackRecovering(player) {
   return service(player)?.isRecovering(player) === true;
 }
 
+export function isVoiceReallocating(player) {
+  return service(player)?.isVoiceReallocating?.(player) === true;
+}
+
+// Moves on every invalidation (skip, seek, play, stop, voice move, teardown).
+export function playbackGeneration(player) {
+  return service(player)?.generation?.(player);
+}
+
 // Audio writes share a lane. A skip invalidates a pending retry immediately, then
 // follows any request already sent to Lavalink, rather than racing its response.
 function withPlaybackLock(player, action) {
@@ -1093,6 +1102,9 @@ export function createPlaybackRecovery({
   return { invalidate, destroyPlayer, handleFailure, handleVoiceClosed, consumeVoiceUpdate, connectVoice, started, beginRequest, acceptsEvent, attachNode,
     generation: (player) => stateFor(player).epoch,
     nodeDisconnected, nodeReady, isRecovering: (player) => stateFor(player).recovering,
+    // Discord withdrew the voice server; a passive pair waits for a new one.
+    // It survives skips and seeks, and ends when the pair completes or fails.
+    isVoiceReallocating: (player) => Boolean(stateFor(player).voiceRefresh?.allocationGone),
     summary: () => ({ ...counters, recovering: [...(manager?.players?.values() || [])]
       .filter((player) => stateFor(player).recovering).length }),
   };

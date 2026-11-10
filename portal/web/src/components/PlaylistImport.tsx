@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { DownloadSimpleIcon } from '../icons';
 import type { Portal } from '../playback';
 import type { ImportPreview } from '../types';
+import { claimImport, useImportSlot, type ImportLease } from '../importSlot';
 import { Dialog } from './ui';
 
 const mixKey = (value: string) => value.trim().toLowerCase().replace(/\s+/g, ' ');
@@ -20,29 +21,47 @@ export function PlaylistImport({ portal, target }: { portal: Portal; target: 'fa
   const [loading, setLoading] = useState(false);
   const [preview, setPreview] = useState<{ value: ImportPreview; link: string; name: string } | null>(null);
   const { library, can, pending } = portal;
-  // The bot holds one import preview per listener at a time.
+  // The bot holds one import preview per listener at a time, so this form holds the
+  // import slot (importSlot.ts) from its lookup until its preview closes and any
+  // confirmation has an answer, and waits while a song saves.
+  const slot = useImportSlot();
+  const lease = useRef<ImportLease | null>(null);
+  const held = useRef(false); const sending = useRef(false);
+  useEffect(() => () => lease.current?.release(), []);
+  const songSaving = slot.state !== 'idle' && slot.owner === 'song';
   const editable = can('library') && !pending.some(key => key.endsWith(':import'));
   const existing = target === 'mix' ? library?.mixes.find(mix => mixKey(mix.name) === mixKey(name)) : undefined;
   const locked = !!existing && !existing.canEdit;
-  const ready = editable && !loading && supported(link) && (target === 'favorites' || (!!name.trim() && !locked));
+  const ready = editable && !loading && !songSaving && supported(link) && (target === 'favorites' || (!!name.trim() && !locked));
   const command = (draft: { link: string; name: string }) => ({ command: target === 'favorites' ? 'favorite' : 'mix', subcommand: 'import',
     options: { link: draft.link, ...(target === 'mix' && { name: draft.name }) } });
 
   const lookUp = async () => {
     const draft = { link: link.trim(), name: name.trim() };
+    const mine = claimImport('playlist');
+    if (!mine) { portal.notify('Another import is still in progress. Try again once it’s done.', 'info'); return; }
+    lease.current = mine;
     setLoading(true);
     try {
       const value = await portal.previewImport(command(draft));
+      // A preview with nothing to add isn't kept by the bot, so it holds nothing.
+      held.current = !!value?.id;
       if (value) setPreview({ value, ...draft });
-    } finally { setLoading(false); }
+    } finally { setLoading(false); settle(); }
   };
+  const settle = () => { if (!held.current && !sending.current) { lease.current?.release(); lease.current = null; } };
+  const close = () => { setPreview(null); held.current = false; settle(); };
   const confirm = async () => {
     if (!preview?.value.id) return;
-    if (await portal.run({ ...command(preview), expectedImportId: preview.value.id }, 'library')) {
-      setPreview(null); setLink(''); if (target === 'mix') setName('');
-    }
+    sending.current = true; lease.current?.confirming();
+    let ok = false;
+    try { ok = await portal.run({ ...command(preview), expectedImportId: preview.value.id }, 'library'); }
+    finally { sending.current = false; }
+    if (ok) { close(); setLink(''); if (target === 'mix') setName(''); }
+    else { lease.current?.previewing(); settle(); }
   };
-  const note = locked ? 'That mix belongs to another listener. Choose a new name, or ask its creator or a server manager.'
+  const note = songSaving ? 'Saving a song to your favorites. You can preview a playlist once it’s saved.'
+    : locked ? 'That mix belongs to another listener. Choose a new name, or ask its creator or a server manager.'
     : target === 'favorites' ? 'Paste a public YouTube, YouTube Music, Spotify or SoundCloud playlist. You’ll see what will be saved before anything changes. Up to 100 songs per import.'
     : existing ? `Adds new songs to “${existing.name}”, up to 100 songs in the mix.` : 'Creates a shared mix from a public playlist, up to 100 songs.';
 
@@ -53,7 +72,7 @@ export function PlaylistImport({ portal, target }: { portal: Portal; target: 'fa
       <button className="button secondary" disabled={!ready}><DownloadSimpleIcon size={20} />{loading ? 'Looking up…' : 'Preview import'}</button>
     </form>
     <p className="library-note">{loading ? 'Looking up the playlist. Large Spotify playlists can take up to a minute.' : note}</p>
-    {preview && <ImportDialog preview={preview.value} busy={!editable} onClose={() => setPreview(null)} onConfirm={() => void confirm()} />}
+    {preview && <ImportDialog preview={preview.value} busy={!editable} onClose={close} onConfirm={() => void confirm()} />}
   </>;
 }
 

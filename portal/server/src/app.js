@@ -140,7 +140,9 @@ export async function createPortalServer(config, testOptions = {}) {
   const anonymousLimiter = new RateLimiter(limits.rateKeys, now);
   const pendingOAuth = new Map(); const streams = new Set(); const commandReaders = new Set();
   // Sign-ins with a code (ADR-0019) by device token hash, and their user codes.
-  // In memory only, like Discord's OAuth state: a restart loses them.
+  // In memory only, like Discord's OAuth state: a restart loses them. Each one is
+  // pending, then approved (with the listener) or denied; an approved one is
+  // claiming while its poll makes the session, and is removed once that succeeds.
   const pendingDevices = new Map(); const deviceCodes = new Map();
   const entityTags = new EntityTags();
   let processing = 0; let stops = 0; let closing = false;
@@ -670,7 +672,7 @@ export async function createPortalServer(config, testOptions = {}) {
           if (pendingDevices.size >= limits.pendingDeviceSignIns) throw busy();
           let code; do code = userCode(); while (deviceCodes.has(code));
           const deviceToken = randomToken(); const key = tokenHash(deviceToken);
-          pendingDevices.set(key, { code, until: now() + limits.deviceSignInMs, actorId: null, denied: false }); deviceCodes.set(code, key);
+          pendingDevices.set(key, { code, until: now() + limits.deviceSignInMs, status: 'pending', actorId: null }); deviceCodes.set(code, key);
           res.setHeader('Set-Cookie', setCookie(DEVICE_COOKIE, deviceToken, limits.deviceSignInMs / 1000));
           json(res, 200, { userCode: showCode(code), verificationUri: `${config.origin}/link`, expiresIn: limits.deviceSignInMs / 1000, interval: 5 }); return;
         }
@@ -688,8 +690,8 @@ export async function createPortalServer(config, testOptions = {}) {
           purgeDevices();
           const code = normalizeCode(body.code); const entry = code ? pendingDevices.get(deviceCodes.get(code)) : null;
           // The approving listener is recorded once and never replaced.
-          if (!entry || entry.actorId || entry.denied) throw codeRefused();
-          if (decision[1] === 'approve') entry.actorId = session.actorId; else entry.denied = true;
+          if (!entry || entry.status !== 'pending') throw codeRefused();
+          if (decision[1] === 'approve') { entry.status = 'approved'; entry.actorId = session.actorId; } else entry.status = 'denied';
           json(res, 200, { ok: true }); return;
         }
         if (pathname === '/auth/device/poll' && req.method === 'POST') {
@@ -699,22 +701,31 @@ export async function createPortalServer(config, testOptions = {}) {
           if (key) anonymousLimiter.check(`device-poll:${key}`, limits.devicePolls);
           purgeDevices();
           const entry = key ? pendingDevices.get(key) : undefined;
-          if (!entry || entry.denied) {
+          if (!entry || entry.status === 'denied') {
             dropDevice(key); res.setHeader('Set-Cookie', setCookie(DEVICE_COOKIE, '', 0));
             json(res, 200, { status: entry ? 'denied' : 'expired' }); return;
           }
-          if (!entry.actorId) { json(res, 200, { status: 'pending' }); return; }
-          // Claimed and removed in this step, with no wait in between: a second
-          // poll at the same moment finds nothing.
-          dropDevice(key); trusted = true;
-          res.setHeader('Set-Cookie', setCookie(DEVICE_COOKIE, '', 0));
-          const { actorId } = entry;
-          // As after Discord sign-in: the bot's freshly verified viewer first.
-          const bootstrap = await transport.bridge('/v1/bootstrap', actorId, { signal: controller.signal });
-          if (bootstrap.viewer?.id !== actorId || !Array.isArray(bootstrap.guilds)) throw unavailable();
-          const previousToken = cookie(req, SESSION_COOKIE);
-          const previous = previousToken ? store.get(previousToken) : null;
-          const created = await store.create(actorId, previousToken);
+          if (entry.status !== 'approved') { json(res, 200, { status: 'pending' }); return; }
+          // Claimed in this step, with no wait in between: a second poll at the
+          // same moment hears it's still pending and never makes a session.
+          entry.status = 'claiming'; trusted = true;
+          const { actorId } = entry; let created; let previousToken; let previous;
+          try {
+            // As after Discord sign-in: the bot's freshly verified viewer first.
+            const bootstrap = await transport.bridge('/v1/bootstrap', actorId, { signal: controller.signal });
+            if (bootstrap.viewer?.id !== actorId || !Array.isArray(bootstrap.guilds)) throw unavailable();
+            previousToken = cookie(req, SESSION_COOKIE);
+            previous = previousToken ? store.get(previousToken) : null;
+            created = await store.create(actorId, previousToken);
+          } catch (error) {
+            // A refusal (the listener lost access) ends the sign-in. A failure the
+            // TV retries keeps the approval for its next poll, while the code lives.
+            const retry = !(error instanceof HttpError) || error.status === 429 || error.status >= 500;
+            if (retry && pendingDevices.get(key) === entry) entry.status = 'approved';
+            else { dropDevice(key); res.setHeader('Set-Cookie', setCookie(DEVICE_COOKIE, '', 0)); }
+            throw error;
+          }
+          dropDevice(key);
           if (previousToken) for (const stream of streams) if (stream.sessionKey === tokenHash(previousToken)) stream.close();
           if (previous) forgetDevices(previous);
           res.setHeader('Set-Cookie', [setCookie(DEVICE_COOKIE, '', 0), setCookie(SESSION_COOKIE, created.token, created.maxAge)]);

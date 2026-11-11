@@ -39,13 +39,13 @@ const queuePage = async (ctx: Ctx) => nav(ctx, await role(ctx.page, 'Queue').cou
 const account = async (ctx: Ctx, item: string) => { await act(ctx, role(ctx.page, 'Account options'), 'menu'); await act(ctx, role(ctx.page, item)); };
 
 export const tasks: Record<string, (ctx: Ctx) => Promise<void>> = {
-  'Add a searched song': async ctx => { await openSearch(ctx); await act(ctx, ctx.page.getByRole('searchbox', { name: 'Music search' }), 'type', 'Midnight City'); await act(ctx, role(ctx.page, /^Add Midnight City/)); },
+  'Add a searched song': async ctx => { await openSearch(ctx); await act(ctx, ctx.page.getByRole('searchbox', { name: 'Music search' }), 'type', 'Midnight City'); await act(ctx, role(ctx.page, /^Add (to queue|again): Midnight City$/)); },
   'Search a song and play it next': async ctx => {
     await openSearch(ctx); await act(ctx, ctx.page.getByRole('searchbox', { name: 'Music search' }), 'type', 'Midnight City');
-    await expect(role(ctx.page, /^Add Midnight City/).first()).toBeVisible();
-    const inline = role(ctx.page, /^Play Midnight City next/);
+    await expect(role(ctx.page, /^Add (to queue|again): Midnight City$/).first()).toBeVisible();
+    const inline = role(ctx.page, /^Play next: Midnight City$/);
     if (await inline.count()) { await act(ctx, inline); return; }
-    await act(ctx, role(ctx.page, /^Add Midnight City/)); await act(ctx, role(ctx.page, 'Close dialog'));
+    await act(ctx, role(ctx.page, /^Add (to queue|again): Midnight City$/)); await act(ctx, role(ctx.page, 'Close dialog'));
     await queuePage(ctx); await direct(ctx, /^Play Midnight City next/, /^Song options for Midnight City/, 'Play next');
   },
   'Favorite the current song': async ctx => {

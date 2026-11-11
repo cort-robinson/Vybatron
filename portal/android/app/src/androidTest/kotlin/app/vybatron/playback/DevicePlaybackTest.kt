@@ -51,8 +51,31 @@ class DevicePlaybackTest {
         .put("durationMs", 1000).put("artworkUrl", JSONObject.NULL).put("isStream", false).put("requestedBy", JSONObject.NULL)
     private fun youtube(video: String, title: String) = song(video, title, "https://www.youtube.com/watch?v=$video")
 
+    // A 30-second Ogg Opus tone, the format the bot serves.
+    private val ogg by lazy { instrumentation.context.assets.open("tone30.ogg").use { it.readBytes() } }
+    private val fetched = Collections.synchronizedSet(HashSet<String>())
+
+    // Served the way the bot serves a song: while it's still being fetched, a request from the
+    // start streams it without a length; once it's whole, with a length and by byte range.
+    private fun botAudio(video: String, range: String?): MockResponse {
+        val ogg = Buffer().write(ogg)
+        if (range == null && fetched.add(video)) return MockResponse.Builder().addHeader("Content-Type", "audio/ogg").chunkedBody(ogg, 1024)
+            // Arriving about twice as fast as it plays, so a seek ahead lands past what has arrived.
+            .throttleBody(1500, 1, TimeUnit.SECONDS).build()
+        fetched.add(video)
+        val size = ogg.size
+        val match = range?.let { Regex("""bytes=(\d+)-(\d*)""").matchEntire(it) }
+            ?: return MockResponse.Builder().addHeader("Content-Type", "audio/ogg").addHeader("Accept-Ranges", "bytes").body(ogg).build()
+        val start = match.groupValues[1].toLong()
+        val end = match.groupValues[2].toLongOrNull()?.coerceAtMost(size - 1) ?: (size - 1)
+        ogg.skip(start)
+        return MockResponse.Builder().code(206).addHeader("Content-Type", "audio/ogg").addHeader("Accept-Ranges", "bytes")
+            .addHeader("Content-Range", "bytes $start-$end/$size").body(Buffer().also { it.write(ogg, end - start + 1) }).build()
+    }
+
     @Before fun start() {
         audio.clear()
+        fetched.clear()
         while (server.takeRequest(0, TimeUnit.MILLISECONDS) != null) Unit
         server.dispatcher = object : Dispatcher() {
             override fun dispatch(request: RecordedRequest): MockResponse {
@@ -61,6 +84,7 @@ class DevicePlaybackTest {
                     val video = path.substringAfterLast('/')
                     audio.add(video)
                     return when (video) {
+                        "fetchingogg" -> botAudio(video, request.headers["Range"])
                         "shortaaaaaa", "matchedddd1" -> MockResponse.Builder().addHeader("Content-Type", "audio/wav").body(silence(1)).build()
                         "longbbbbbbb", "longccccccc" -> MockResponse.Builder().addHeader("Content-Type", "audio/wav").body(silence(30)).build()
                         else -> MockResponse.Builder().code(404).addHeader("Content-Type", "application/json")
@@ -106,6 +130,8 @@ class DevicePlaybackTest {
 
     private fun load(vararg songs: JSONObject) = handle(PlayerRequest.Load(
         "1", NativeTrack.parse(songs.first()), songs.drop(1).map { NativeTrack.parse(it)!! }, emptyList(), 0, true, 100, Repeat.OFF))
+    private fun position(): Long { var at = 0L; instrumentation.runOnMainSync { at = controller.currentPosition }; return at }
+    private fun playingSteadily() = states.lastOrNull()?.let { it.optString("status") == "playing" && !it.optBoolean("waiting") } == true
 
     private fun currentTitle(): String? = states.lastOrNull()?.optJSONObject("current")?.optString("title")
     private fun waitFor(what: String, timeoutMs: Long = 20_000, condition: () -> Boolean) {
@@ -156,6 +182,17 @@ class DevicePlaybackTest {
         var result: Result<JSONObject>? = null
         instrumentation.runOnMainSync { result = PlaybackService.player!!.handle(request) }
         return result!!
+    }
+
+    // ExoPlayer can't seek past what it has buffered of a stream without a length, so a seek
+    // (from the portal or a controller) used to restart a song the bot was still fetching.
+    @Test fun seekingASongTheBotIsStillFetchingLandsWhereAsked() {
+        load(youtube("fetchingogg", "Fetching"))
+        waitFor("the song to play") { playingSteadily() }
+        handle(PlayerRequest.Seek(20_000))
+        waitFor("the seek to land at 0:20", 20_000) { playingSteadily() && position() >= 19_500 }
+        Thread.sleep(1_000)
+        assertTrue("still past 0:20, at ${position()}", position() >= 20_000)
     }
 
     @Test fun subscribingAnswersWithoutTellingEveryone() {

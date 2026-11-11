@@ -14,19 +14,19 @@ async function searchFor(page: Page) {
   await page.getByRole('button', { name: 'Add music', exact: true }).first().click();
   await page.getByRole('searchbox', { name: 'Music search' }).fill('harbor lights');
   await page.getByRole('button', { name: 'Search', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Add Neon Tide to queue' })).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Add to queue: Neon Tide' })).toBeEnabled();
 }
 
 test('a chosen result joins the queue at once and further additions stay open while the bot confirms', async ({ page }) => {
   const fixture = await mockPortal(page);
   await searchFor(page);
   const release = fixture.holdCommands();
-  await page.getByRole('button', { name: 'Add Neon Tide to queue' }).click();
+  await page.getByRole('button', { name: 'Add to queue: Neon Tide' }).click();
   await expect.poll(() => queued(page)).toContain('Neon Tide');
   await expect(page.getByRole('status').filter({ hasText: 'Adding “Neon Tide”…' })).toBeVisible();
   // The next result can be added before the first is confirmed; it waits its turn.
-  await expect(page.getByRole('button', { name: 'Add Rain Check to queue' })).toBeEnabled();
-  await page.getByRole('button', { name: 'Add Rain Check to queue' }).click();
+  await expect(page.getByRole('button', { name: 'Add to queue: Rain Check' })).toBeEnabled();
+  await page.getByRole('button', { name: 'Add to queue: Rain Check' }).click();
   await expect.poll(() => queued(page)).toEqual(['Night Drive', 'Slow Motion', 'Golden Hour', 'Afterglow', 'Neon Tide', 'Rain Check']);
   expect(fixture.commands.map(command => command.options?.query)).toEqual([neon.uri]);
   release();
@@ -39,8 +39,8 @@ test('a live update confirming the first addition keeps the next one shown', asy
   const fixture = await mockPortal(page);
   await searchFor(page);
   const release = fixture.holdCommands();
-  await page.getByRole('button', { name: 'Add Neon Tide to queue' }).click();
-  await page.getByRole('button', { name: 'Add Rain Check to queue' }).click();
+  await page.getByRole('button', { name: 'Add to queue: Neon Tide' }).click();
+  await page.getByRole('button', { name: 'Add to queue: Rain Check' }).click();
   await expect.poll(() => fixture.commands.length).toBe(1);
   // The bot added the first song and Discord pushes that before its reply arrives.
   const confirmed = structuredClone(fixture.state.snapshot);
@@ -56,7 +56,7 @@ test('a rejected addition leaves the queue as the bot reports it', async ({ page
   await searchFor(page);
   const release = fixture.holdCommands();
   fixture.conflictNext();
-  await page.getByRole('button', { name: 'Add Neon Tide to queue' }).click();
+  await page.getByRole('button', { name: 'Add to queue: Neon Tide' }).click();
   await expect.poll(() => queued(page)).toContain('Neon Tide');
   release();
   await expect(page.getByRole('alert').first()).toContainText('The session or library changed');
@@ -68,9 +68,9 @@ test('a fair queue adds without predicting where the song lands', async ({ page 
   fixture.state.snapshot.session.fairQueue = true;
   await searchFor(page);
   const release = fixture.holdCommands();
-  await page.getByRole('button', { name: 'Add Neon Tide to queue' }).click();
+  await page.getByRole('button', { name: 'Add to queue: Neon Tide' }).click();
   await expect.poll(() => fixture.commands.length).toBe(1);
   expect(await queued(page)).not.toContain('Neon Tide');
-  await expect(page.getByRole('button', { name: 'Add Rain Check to queue' })).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Add to queue: Rain Check' })).toBeEnabled();
   release();
 });

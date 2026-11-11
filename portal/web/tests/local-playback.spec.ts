@@ -45,8 +45,8 @@ async function playOn(page: Page, choice: string | RegExp) {
 async function addSongs(page: Page) {
   await page.getByRole('button', { name: 'Add music' }).first().click();
   await page.getByRole('searchbox', { name: 'Music search' }).fill('midnight');
-  await page.getByRole('button', { name: 'Add Midnight City to queue' }).click();
-  await page.getByRole('button', { name: 'Add Wait to queue' }).click();
+  await page.getByRole('button', { name: 'Add to queue: Midnight City' }).click();
+  await page.getByRole('button', { name: 'Add to queue: Wait' }).click();
   await page.keyboard.press('Escape');
 }
 
@@ -352,8 +352,8 @@ test('a song from a source the import can\'t read explains instead of failing', 
   await page.route('**/api/guilds/*/search?*', route => route.fulfill({ json: { tracks: [youtubeTrack('dX3k_QDnzHE', 'Midnight City'), { ...youtubeTrack('bandcamp01', 'Bandcamp Song'), uri: 'https://artist.bandcamp.com/track/song', source: 'bandcamp' }], notice: null } }));
   await page.getByRole('button', { name: 'Add music' }).first().click();
   await page.getByRole('searchbox', { name: 'Music search' }).fill('song');
-  await page.getByRole('button', { name: 'Add Midnight City to queue' }).click();
-  await page.getByRole('button', { name: 'Add Bandcamp Song to queue' }).click();
+  await page.getByRole('button', { name: 'Add to queue: Midnight City' }).click();
+  await page.getByRole('button', { name: 'Add to queue: Bandcamp Song' }).click();
   await page.keyboard.press('Escape');
   await page.getByRole('button', { name: 'Queue', exact: true }).click();
   await page.getByRole('button', { name: 'Save Bandcamp Song to favorites' }).click();
@@ -371,7 +371,7 @@ test('an addition on this device made while another is still looking up its song
   });
   await page.getByRole('button', { name: 'Add music' }).first().click();
   await page.getByRole('searchbox', { name: 'Music search' }).fill('midnight');
-  const wait = page.getByRole('button', { name: 'Add Wait to queue' });
+  const wait = page.getByRole('button', { name: 'Add to queue: Wait' });
   await expect(wait).toBeEnabled();
   held = new Promise(resolve => { release = resolve; });
   // With results showing, the typed text adds through the automatic-match fallback.

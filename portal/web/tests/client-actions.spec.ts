@@ -167,7 +167,7 @@ test('Play next, suggestion edits and a repeat-queue skip show at once', async (
   await page.getByRole('button', { name: 'Add music', exact: true }).first().click();
   await page.getByRole('searchbox', { name: 'Music search' }).fill('harbor lights');
   await page.getByRole('button', { name: 'Search', exact: true }).click();
-  await page.getByRole('button', { name: 'Play Neon Tide next' }).click();
+  await page.getByRole('button', { name: 'Play next: Neon Tide' }).click();
   await expect.poll(() => queued(page)).toEqual(['Neon Tide', 'Night Drive']);
   expect(fixture.commands.at(-1)).toMatchObject({ command: 'playnext', options: { query: neon.uri }, expectedRevision: 'revision-2' });
   release();

@@ -79,13 +79,13 @@ for (const viewport of [{ width: 320, height: 568 }, { width: 390, height: 844 }
       expect(box.height).toBeGreaterThanOrEqual(44);
     }
     await visibleBounds(player.getByRole('slider', { name: 'Playback position' }), page);
-    await visibleBounds(player.getByRole('slider', { name: 'Volume', exact: true }), page);
-    await visibleBounds(player.getByRole('combobox', { name: 'Audio filter' }), page);
+    // Phones keep volume behind a button in the stage's corner; wider screens show the slider.
+    await visibleBounds(player.getByRole('slider', { name: 'Volume', exact: true }).or(player.getByRole('button', { name: 'Volume', exact: true })).filter({ visible: true }), page);
     await expect(player.locator('.transport')).toHaveCount(1);
     await expect(player.getByRole('slider', { name: 'Playback position' })).toHaveCount(1);
     await player.getByRole('button', { name: 'More playback controls' }).click();
     // Phones get the menu as a bottom sheet; wider screens keep the popover inside the deck.
-    const menu = page.getByRole('group', { name: 'More playback controls' }).or(player.locator('.player-more > .menu-panel'));
+    const menu = page.getByRole('dialog', { name: 'More playback controls' }).or(player.locator('.player-more > .menu-panel'));
     await expect(menu).toHaveCount(1);
     await menu.evaluate(element => Promise.all(element.getAnimations().map(animation => animation.finished)));
     await visibleBounds(menu, page);
@@ -132,7 +132,11 @@ test('expanded permission explanation keeps the voice destination in view and le
   await expect(page.locator('.guild-status')).toContainText('Chill Lounge');
   await expect(player.locator('.player-permission')).toHaveText('Join Chill Lounge to add music or use playback controls.');
   await expect(player.getByRole('button', { name: 'Pause playback' })).toBeDisabled();
-  await expect(player.getByRole('slider', { name: 'Volume', exact: true })).toBeDisabled();
+  await player.getByRole('button', { name: 'Volume', exact: true }).click();
+  await expect(page.getByRole('slider', { name: 'Volume', exact: true }).filter({ visible: true })).toBeDisabled();
+  // Nothing in the sheet can take focus, so Tab keeps it on the sheet instead of leaving the modal.
+  await page.keyboard.press('Tab');
+  await expect(page.getByRole('dialog', { name: 'Volume' })).toBeFocused();
   expect(fixture.commands).toHaveLength(0);
 });
 
@@ -143,7 +147,8 @@ test('player action popover dismisses by Escape, outside activation, and complet
   const player = page.getByTestId('player');
   const more = player.getByRole('button', { name: 'More playback controls' });
   await more.click();
-  await expect(player.getByRole('button', { name: 'Vote to skip', exact: true })).toBeFocused();
+  // Focus moves into the menu, onto its first choice (where it plays).
+  await expect(player.locator('.player-more > .menu-panel button').first()).toBeFocused();
   await page.keyboard.press('Escape');
   await expect(player.locator('.player-more > .menu-panel')).toHaveCount(0);
   await expect(more).toBeFocused();
@@ -183,7 +188,7 @@ test('short offline sleeve keeps transport visible and reduced motion leaves int
   release();
 });
 
-test('phone sleeve centers the empty cover icon and rings the whole filter pill', async ({ page }) => {
+test('phone sleeve centers the empty cover icon', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await mockPortal(page, { saved: true });
   await gotoSession(page);
@@ -195,18 +200,6 @@ test('phone sleeve centers the empty cover icon and rings the whole filter pill'
   const [coverBox, iconBox] = await Promise.all([visibleBounds(cover, page), visibleBounds(cover.locator('svg'), page)]);
   expect(Math.abs((iconBox.x + iconBox.width / 2) - (coverBox.x + coverBox.width / 2))).toBeLessThanOrEqual(1);
   expect(Math.abs((iconBox.y + iconBox.height / 2) - (coverBox.y + coverBox.height / 2))).toBeLessThanOrEqual(1);
-  const filter = player.getByRole('combobox', { name: 'Audio filter', exact: true });
-  await filter.focus();
-  await page.keyboard.press('Shift+Tab');
-  await page.keyboard.press('Tab');
-  const ring = await filter.evaluate(select => {
-    const pill = select.parentElement!;
-    const a = select.getBoundingClientRect(); const b = pill.getBoundingClientRect();
-    return { select: [a.left, a.top, a.right, a.bottom], pill: [b.left, b.top, b.right, b.bottom].map((v, i) => v + (i < 2 ? 1 : -1)), pillOutline: getComputedStyle(pill).outlineStyle, selectOutline: getComputedStyle(select).outlineStyle };
-  });
-  ring.select.forEach((value, i) => expect(Math.abs(value - ring.pill[i])).toBeLessThanOrEqual(1));
-  expect(ring.pillOutline).toBe('solid');
-  expect(ring.selectOutline).toBe('none');
 });
 
 test('icon-only transport controls keep their name as a hover tooltip while usable', async ({ page }) => {

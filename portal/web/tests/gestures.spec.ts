@@ -135,7 +135,7 @@ test('phone song menus are bottom sheets that close by scrim, swipe, or action',
   await page.setViewportSize({ width: 390, height: 844 });
   const fixture = await mockPortal(page); await gotoSession(page);
   const options = (title: string) => page.getByRole('button', { name: `Song options for ${title}`, exact: true });
-  const sheet = page.getByRole('group', { name: 'Song options for Golden Hour' });
+  const sheet = page.getByRole('dialog', { name: 'Song options for Golden Hour' });
   await options('Golden Hour').click();
   await expect(sheet).toBeVisible();
   await expect.poll(async () => { const box = (await sheet.boundingBox())!; return [box.width, Math.round(box.y + box.height)]; }).toEqual([390, 844]);
@@ -155,7 +155,7 @@ test('holding a queue row opens its menu; a tap or a scroll does not', async ({ 
   await page.setViewportSize({ width: 390, height: 844 });
   const fixture = await mockPortal(page); await gotoSession(page);
   const row = page.locator('.queue .track-row', { hasText: 'Slow Motion' }).locator('.track-text');
-  const sheet = page.getByRole('group', { name: 'Song options for Slow Motion' });
+  const sheet = page.getByRole('dialog', { name: 'Song options for Slow Motion' });
   await burst(page, row);
   // A scroll whose finger then rests past the hold time is still a scroll.
   await burst(page, row, [-15, -30, -45, -60], { holdAfter: 700 });

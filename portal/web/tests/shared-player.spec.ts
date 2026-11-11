@@ -44,8 +44,8 @@ const openMenu = (page: Page) => page.getByTestId('player').getByRole('button', 
 async function addSongs(page: Page) {
   await page.getByRole('button', { name: 'Add music' }).first().click();
   await page.getByRole('searchbox', { name: 'Music search' }).fill('midnight');
-  await page.getByRole('button', { name: 'Add Midnight City to queue' }).click();
-  await page.getByRole('button', { name: 'Add Wait to queue' }).click();
+  await page.getByRole('button', { name: /^Add (to queue|again): Midnight City$/ }).click();
+  await page.getByRole('button', { name: /^Add (to queue|again): Wait$/ }).click();
   await page.keyboard.press('Escape');
 }
 // Device A starts the player and plays for a moment.

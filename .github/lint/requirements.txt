@@ -1,4 +1,4 @@
 actionlint-py==1.7.12.25
 PyYAML==6.0.3
-ruff==0.17.1
+ruff==0.17.3
 shellcheck-py==0.11.0.1

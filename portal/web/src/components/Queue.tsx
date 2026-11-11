@@ -1,5 +1,5 @@
 import { memo, useEffect, useId, useMemo, useRef, useState } from 'react';
-import { ArrowDownIcon, ArrowLineUpIcon, ArrowUpIcon, DotsThreeIcon, HeartIcon, ListNumbersIcon, PlayIcon, PlusIcon, RadioIcon, ThumbsDownIcon, TrashIcon, DotsSixVerticalIcon, VinylRecordIcon, XIcon } from '../icons';
+import { ArrowDownIcon, ArrowLineUpIcon, ArrowUpIcon, CaretRightIcon, CaretUpIcon, DotsSixVerticalIcon, DotsThreeIcon, HeartIcon, ListNumbersIcon, PlayIcon, PlusIcon, RadioIcon, ThumbsDownIcon, TrashIcon, VinylRecordIcon, XIcon } from '../icons';
 import type { Track } from '../types';
 import type { Portal } from '../usePortal';
 import { time, totalTime } from '../format';
@@ -11,7 +11,7 @@ import { startRadioCommand } from '../radio';
 import { useEvent } from '../stable';
 import './queue.css';
 
-export function Queue({ portal, compact = false, onAdd }: { portal: Portal; compact?: boolean; onAdd: () => void }) {
+export function Queue({ portal, compact = false, onAdd, onOpenPlayer }: { portal: Portal; compact?: boolean; onAdd: () => void; onOpenPlayer?: () => void }) {
   const { snapshot, library, run, can } = portal;
   const queue = snapshot?.session.queue || [];
   // Older bots omit suggestions; treat that as none.
@@ -112,9 +112,15 @@ export function Queue({ portal, compact = false, onAdd }: { portal: Portal; comp
       case 'release': drag.current = null; setDropIndex(null); break;
     }
   });
-  const radioButton = (track: Track, close: () => void) => local ? null : <button disabled={!controllable || !track.uri} onClick={() => { close(); startRadio(track); }}><RadioIcon />Start radio from this song</button>;
+  const radioButton = (track: Track, close: () => void) => local ? null : <button disabled={!controllable || !track.uri} onClick={() => { close(); startRadio(track); }}><RadioIcon />Autoplay from this song</button>;
+  const current = !compact ? snapshot?.session.current : null;
   return <section className={`queue ${compact ? 'queue-compact' : ''}`} aria-label={local ? 'Queue on this device' : 'Shared queue'}>
-    <div className="section-heading"><div className="heading-line"><h2>Up Next</h2>{queue.length > 0 && <span className="count">{queue.length} {queue.length === 1 ? 'song' : 'songs'}{queue.length ? ` · ${totalTime(duration)}${queue.some(t => t.isStream) ? ' + live' : ''}` : ''}</span>}</div>
+    {/* The queue page leads with what's playing, so "up next" reads as what follows it. */}
+    {current && <div className="queue-now"><Artwork track={current} /><div className="track-text"><small>Now playing</small><strong title={current.title}>{current.title}</strong><span title={current.author}>{current.author}</span>{current.requestedBy && <small className="queue-now-by"><Avatar url={current.requestedBy.avatarUrl} name={current.requestedBy.displayName} />Added by {current.requestedBy.displayName}</small>}</div>
+      {current.requestedBy && <div className="requester"><Avatar url={current.requestedBy.avatarUrl} name={current.requestedBy.displayName} /><span>Added by {current.requestedBy.displayName}</span></div>}
+      {/* Like Home's playing card, the whole strip opens the player. */}
+      {onOpenPlayer && <button type="button" className="button secondary queue-now-open" onClick={onOpenPlayer}><CaretUpIcon className="queue-now-up" size={18} weight="bold" /><CaretRightIcon className="queue-now-go" size={20} weight="bold" aria-hidden="true" /><span className="queue-now-label">View now playing</span></button>}</div>}
+    <div className="section-heading"><div className="heading-line"><h2>Up Next</h2>{queue.length > 0 && <span className="count">{queue.length} {queue.length === 1 ? 'song' : 'songs'}{queue.length ? ` · ${totalTime(duration)}${queue.some(t => t.isStream) ? ' + live' : ''}` : ''}</span>}</div>{!local && <p className="queue-scope narrow-only">Shared with everyone in voice</p>}
       {!compact && (snapshot?.session.fairQueue || snapshot?.session.current) && <div className="queue-heading-actions">
         {snapshot?.session.fairQueue && <span className="pill"><ListNumbersIcon size={16} />Taking turns</span>}
         {snapshot?.session.current && !local && <button type="button" className="text-button" disabled={!editable} onClick={() => setSaveSession(true)}><VinylRecordIcon size={19} />Save session as mix</button>}
@@ -156,7 +162,7 @@ const QueueRow = memo(function QueueRow({ track, index, rowKey, last, compact, l
     <span className={`drag-handle ${controllable ? '' : 'disabled'}`} draggable={controllable} title={controllable ? 'Drag to reorder; the song menu also has keyboard controls' : blockedReason}
       onPointerDown={event => handle({ type: 'raise', event, index })} onPointerMove={event => handle({ type: 'follow', event })} onPointerUp={event => handle({ type: 'lower', event, commit: true })} onPointerCancel={event => handle({ type: 'lower', event, commit: false })}
       onDragStart={event => handle({ type: 'grab', event, index, key: rowKey })} onDragEnd={() => handle({ type: 'release' })}><DotsSixVerticalIcon size={23} /></span>
-    <div className="track-main"><Artwork track={track} /><div className="track-text"><strong title={track.title}>{track.title}</strong><span title={track.author}>{track.author}</span></div>
+    <div className="track-main">{/* Phones hide the # column for the drag grip, so the position rides on the cover. */}<span className="row-rank" aria-hidden="true">{index + 1}</span><Artwork track={track} /><div className="track-text"><strong title={track.title}>{track.title}</strong><span className="track-byline"><span title={track.author}>{track.author}<span className="row-duration"> · {track.isStream ? 'Live' : time(track.durationMs)}</span></span>{/* Phones have no Added by column, so the requester gets a quiet line under the artist. */}{track.requestedBy && !track.suggested && <span className="row-requester" title={`Added by ${track.requestedBy.displayName}`}><Avatar url={track.requestedBy.avatarUrl} name={track.requestedBy.displayName} />Added by {track.requestedBy.displayName}</span>}</span></div>
       {/* The two most common edits sit on the row with a pointer; the menu keeps the rest. */}
       {!compact && <span className="row-quick"><IconButton label={`Play ${track.title} next`} disabled={!controllable || index === 0} title={index === 0 ? 'Already next' : !controllable ? blockedReason : 'Play next'} onClick={() => change('move', { from: index + 1, to: 1 })}><ArrowLineUpIcon size={21} /></IconButton><IconButton label={`Remove ${track.title} from queue`} disabled={!controllable} title={!controllable ? blockedReason : 'Remove from queue'} onClick={() => change('remove', { position: index + 1 })}><XIcon size={21} /></IconButton></span>}</div>
     <div className={`requester ${track.suggested ? 'suggested-source' : ''}`}>{track.suggested ? <span>Autoplay pick</span> : track.requestedBy && <><Avatar url={track.requestedBy.avatarUrl} name={track.requestedBy.displayName} /><span>{track.requestedBy.displayName}</span></>}</div>
@@ -170,7 +176,7 @@ const QueueRow = memo(function QueueRow({ track, index, rowKey, last, compact, l
         <button disabled={!controllable || index === 0} onClick={() => { close(); change('move', { from: index + 1, to: 1 }); }}><ArrowLineUpIcon />Play next</button>
         <button disabled={!controllable || index === 0} onClick={() => { close(); change('move', { from: index + 1, to: index }); }}><ArrowUpIcon />Move up</button>
         <button disabled={!controllable || last} onClick={() => { close(); change('move', { from: index + 1, to: index + 2 }); }}><ArrowDownIcon />Move down</button>
-        {!local && <button disabled={!controllable || !track.uri} onClick={() => { close(); handle({ type: 'radio', track }); }}><RadioIcon />Start radio from this song</button>}
+        {!local && <button disabled={!controllable || !track.uri} onClick={() => { close(); handle({ type: 'radio', track }); }}><RadioIcon />Autoplay from this song</button>}
         {<button className="menu-favorite" disabled={!editable} onClick={() => { close(); save(); }}><HeartIcon weight={favorite ? 'fill' : 'regular'} />{favorite ? 'Remove favorite' : 'Save to favorites'}</button>}
         <button className="danger-text" disabled={!controllable} onClick={() => { close(); change('remove', { position: index + 1 }); }}><TrashIcon />Remove from queue</button>
         {!controllable && <small>{blockedReason}</small>}
@@ -193,7 +199,7 @@ function Suggestions({ portal, tracks, compact, radioButton }: { portal: Portal;
       {tracks.map((track, index) => <li key={`${track.id}:${index}`} className="track-row suggested-row" data-track-id={track.id}>
         <span className="track-index" aria-hidden="true"><RadioIcon size={16} /></span>
         {!compact && <span className="suggested-spacer" aria-hidden="true" />}
-        <div className="track-main"><Artwork track={track} /><div className="track-text"><strong title={track.title}>{track.title}</strong><span title={track.author}>{track.author}</span></div></div>
+        <div className="track-main"><Artwork track={track} /><div className="track-text"><strong title={track.title}>{track.title}</strong><span className="track-byline"><span title={track.author}>{track.author}<span className="row-duration"> · {track.isStream ? 'Live' : time(track.durationMs)}</span></span>{/* Phones have no Added by column, so the requester gets a quiet line under the artist. */}{track.requestedBy && !track.suggested && <span className="row-requester" title={`Added by ${track.requestedBy.displayName}`}><Avatar url={track.requestedBy.avatarUrl} name={track.requestedBy.displayName} />Added by {track.requestedBy.displayName}</span>}</span></div></div>
         <div className="requester suggested-source"><span>Autoplay pick</span></div>
         {!compact && <span className="track-duration">{track.isStream ? 'LIVE' : time(track.durationMs)}</span>}
         <IconButton className="suggested-add" label={`Add ${track.title} to the queue`} disabled={!addable} title={!addable ? portal.blockedReason : `Add ${track.title} to the queue`} onClick={() => edit('promote', track, index)}><PlusIcon size={22} /></IconButton>

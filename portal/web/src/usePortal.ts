@@ -16,6 +16,8 @@ const bindsToSession = (body: Command) => conflicting.has(body.command) || (body
 const libraryOnly = (body: Command) => (body.command === 'favorite' && ['remove', 'clear', 'import'].includes(body.subcommand || ''))
   || (body.command === 'mix' && ['delete', 'import'].includes(body.subcommand || '')) || body.command === 'settings';
 const freshnessMs = 25_000;
+const reconnectReason = 'Reconnect for fresh state before making changes.';
+const staleMessage = 'Live state stopped arriving. Reconnecting for fresh state.';
 // Returning to the app re-reads the library only when it may be out of date.
 const libraryStaleMs = 60_000;
 // Rapid song changes settle before history is re-read.
@@ -92,6 +94,8 @@ export function usePortal() {
   const refreshRef = useRef<() => Promise<void>>(async () => {});
   const libraryRefreshRef = useRef<() => Promise<void>>(async () => {});
   const reconnectRef = useRef<() => void>(() => {});
+  // Ends a lapsed lease at once, rather than whenever a (possibly throttled) timer runs.
+  const expireRef = useRef<() => void>(() => {});
   const completeCommandRef = useRef<(next: GuildSnapshot, version: number, loss: number, startedOrdering: SnapshotOrdering | null) => Promise<void>>(async () => {});
   const bootstrapSequence = useRef(0);
   const bootstrapAttempt = useRef(0);
@@ -432,12 +436,16 @@ export function usePortal() {
     };
     void refresh();
     void refreshLibrary();
+    const expire = () => {
+      if (!valid() || !fresh.current || Date.now() - verifiedAt.current < freshnessMs) return false;
+      pauseConnection(staleMessage);
+      if (!document.hidden) void refresh();
+      return true;
+    };
+    expireRef.current = () => { expire(); };
     const policyCheck = () => {
       if (!valid()) return;
-      if (fresh.current && Date.now() - verifiedAt.current >= freshnessMs) {
-        pauseConnection('Live state stopped arriving. Reconnecting for fresh state.');
-        if (!document.hidden) void refresh();
-      } else if (!fresh.current && !document.hidden && !refreshing) scheduleRecovery();
+      if (!expire() && !fresh.current && !document.hidden && !refreshing) scheduleRecovery();
       policyTimer = setTimeout(policyCheck, freshnessMs);
     };
     policyTimer = setTimeout(policyCheck, freshnessMs);
@@ -459,14 +467,15 @@ export function usePortal() {
     return () => {
       abort.abort(); refreshController?.abort(); libraryController?.abort(); closeStream(); clearRecovery(); clearTimeout(policyTimer); clearTimeout(historyTimer); clearTimeout(rotateTimer); fresh.current = false;
       refreshRef.current = async () => {}; libraryRefreshRef.current = async () => {};
-      reconnectRef.current = () => {}; completeCommandRef.current = async () => {};
+      reconnectRef.current = () => {}; completeCommandRef.current = async () => {}; expireRef.current = () => {};
       document.removeEventListener('visibilitychange', visibility);
       window.removeEventListener('offline', wentOffline); window.removeEventListener('online', online);
     };
   }, [guildId, auth, expireAuth, putLibrary, clearWants]);
 
+  const lapsed = () => Date.now() - verifiedAt.current >= freshnessMs;
   const can = useCallback((capability: Capability) => {
-    if (!fresh.current || Date.now() - verifiedAt.current >= freshnessMs || !current.current || !bootstrap) return false;
+    if (!fresh.current || lapsed() || !current.current || !bootstrap) return false;
     const s = current.current;
     switch (capability) {
       case 'add': return s.session.canAdd;
@@ -477,9 +486,16 @@ export function usePortal() {
       case 'resume': return s.savedSession.canResume;
     }
   }, [bootstrap, snapshot, connection]);
-  useEffect(() => { if (connection === 'live' && snapshot) interactive(); }, [connection, snapshot]);
-  const blockedReason = connection !== 'live' ? 'Reconnect for fresh state before making changes.'
+  // What the page shows: a lease that lapsed is offline even before its timer
+  // notices, so the banner, the controls and their reasons agree.
+  const stale = connection === 'live' && lapsed();
+  const shownConnection: Connection = stale ? 'offline' : connection;
+  useEffect(() => { if (stale) expireRef.current(); }, [stale]);
+  useEffect(() => { if (shownConnection === 'live' && snapshot) interactive(); }, [shownConnection, snapshot]);
+  // Read at click time too: a render from before the lease lapsed is out of date.
+  const blockedNow = () => connection !== 'live' || lapsed() ? reconnectReason
     : snapshot?.session.reason || 'Join the music voice channel. Playback controls may require the DJ role.';
+  const blockedReason = blockedNow();
 
   const view = useMemo(() => snapshot ? applyIntents(snapshot, receivedAt, intents) : { snapshot, receivedAt }, [snapshot, receivedAt, intents]);
   // Hearts show the listener's latest choice at once; the library confirms it.
@@ -528,8 +544,9 @@ export function usePortal() {
     const behind = () => queueRef.current.indexOf(entry) + 1;
     const refuse = (message: string) => { if (session) discard(behind(), message); else notify(message, 'error'); return false; };
     if (!can(entry.capability) || !bootstrap || !verified) {
-      return refuse(fresh.current ? 'Your change was not sent because your playback access changed. Review the session and try again.'
-        : 'Reconnect for fresh state before making changes.');
+      const access = fresh.current && !lapsed();
+      expireRef.current();
+      return refuse(access ? 'Your change was not sent because your playback access changed. Review the session and try again.' : reconnectReason);
     }
     const command = { ...body };
     if (intent) {
@@ -641,7 +658,7 @@ export function usePortal() {
 
   const run = useCallback(async (body: Command, capability: Capability, tracks?: Track[]): Promise<boolean> => {
     // Check refs at click time, not a render-time closure, so offline clicks cannot escape.
-    if (!can(capability) || !bootstrap || !current.current) { notify(blockedReason, 'error'); return false; }
+    if (!can(capability) || !bootstrap || !current.current) { const reason = blockedNow(); expireRef.current(); notify(reason, 'error'); return false; }
     const id = activeGuild.current; const epoch = generation.current; const verified = current.current;
     const key = `${body.command}:${body.subcommand || ''}`;
     const optimistic = isOptimistic(body); const addition = isAddition(body, tracks);
@@ -695,7 +712,7 @@ export function usePortal() {
       (lane === 'session' ? queueRef : libraryQueueRef).current.push(entry);
       syncQueue(); void pump(lane);
     });
-  }, [bootstrap, can, notify, blockedReason, receivedAt, discard, send, pump, syncQueue]);
+  }, [bootstrap, can, notify, blockedReason, connection, receivedAt, discard, send, pump, syncQueue]);
 
   // Edits the confirmed library this device holds, between server reads.
   const patchFavorites = useCallback((track: Track, saved: boolean) => {
@@ -743,7 +760,7 @@ export function usePortal() {
   // An import preview only reads, so it skips the ordered command queue. Its
   // confirmation goes through run() with the preview's id.
   const previewImport = useCallback(async (body: Command): Promise<ImportPreview | null> => {
-    if (!can('library') || !bootstrap || !current.current) { notify(blockedReason, 'error'); return null; }
+    if (!can('library') || !bootstrap || !current.current) { const reason = blockedNow(); expireRef.current(); notify(reason, 'error'); return null; }
     const id = activeGuild.current;
     try {
       const result = await api.command(id, bootstrap.csrfToken, body);
@@ -755,7 +772,7 @@ export function usePortal() {
       else if (activeGuild.current === id) notify(errorMessage(error), 'error');
       return null;
     }
-  }, [bootstrap, can, notify, blockedReason, expireAuth]);
+  }, [bootstrap, can, notify, blockedReason, connection, expireAuth]);
 
   const logout = async () => {
     if (!bootstrap) return;
@@ -767,7 +784,7 @@ export function usePortal() {
   // verified is the last authorized bot state and the only permission source.
   // pending lists changes waiting for the bot; none of them locks other controls.
   return { bootstrap, auth, authError, loadBootstrap, guildId, selectGuild, snapshot: view.snapshot, receivedAt: view.receivedAt, verified: snapshot,
-    library: shownLibrary, libraryError, refreshLibrary: () => libraryRefreshRef.current(), connection, connectionError,
+    library: shownLibrary, libraryError, refreshLibrary: () => libraryRefreshRef.current(), connection: shownConnection, connectionError: stale ? staleMessage : connectionError,
     reconnect: () => reconnectRef.current(), pending, confirming, queued, syncing, can, blockedReason, run: timed(run), favorite, previewImport, notice, notify,
     dismissNotice: () => setNotice(null), logout };
 }

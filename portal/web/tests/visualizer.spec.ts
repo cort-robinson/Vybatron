@@ -76,11 +76,16 @@ test('the sleeve swaps its cover for a visualizer, whose code loads only then', 
   expect(requested.some(path => /visualizer-[\w-]+\.css$/.test(path))).toBe(true);
   // MilkDrop's own chunk waits until someone chooses it.
   expect(requested.filter(path => milkdropChunk.test(path))).toEqual([]);
-  // It takes the cover's box exactly, so the layout around it doesn't move.
-  const box = await visual.boundingBox();
+  // It takes the cover's box exactly, so the layout around it doesn't move. The cover tilts toward
+  // the pointer, so both boxes are measured with the pointer away and the tilt settled.
+  await page.mouse.move(0, 0);
+  let box = await visual.boundingBox();
+  await expect.poll(async () => { const next = await visual.boundingBox(); const settled = JSON.stringify(next) === JSON.stringify(box); box = next; return settled; }).toBe(true);
   await page.getByRole('button', { name: 'Hide visualizer', exact: true }).click();
   await expect(page.locator('.sleeve-artwork > img.artwork')).toHaveCount(1);
-  expect(await page.locator('.sleeve-artwork > img.artwork').boundingBox()).toEqual(box);
+  // Within a pixel: the visualizer's frame can sit a subpixel off the image's rounded box.
+  const cover = (await page.locator('.sleeve-artwork > img.artwork').boundingBox())!;
+  for (const key of ['x', 'y', 'width', 'height'] as const) expect(Math.abs(cover[key] - box![key])).toBeLessThanOrEqual(1);
 
   // Lyrics and the visualizer take turns in the sleeve.
   await page.getByRole('button', { name: 'Show visualizer', exact: true }).click();

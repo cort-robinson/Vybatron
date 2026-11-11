@@ -167,7 +167,7 @@ test('Play next, suggestion edits and a repeat-queue skip show at once', async (
   await page.getByRole('button', { name: 'Add music', exact: true }).first().click();
   await page.getByRole('searchbox', { name: 'Music search' }).fill('harbor lights');
   await page.getByRole('button', { name: 'Search', exact: true }).click();
-  await page.getByRole('button', { name: 'Play Neon Tide next' }).click();
+  await page.getByRole('button', { name: 'Play next: Neon Tide' }).click();
   await expect.poll(() => queued(page)).toEqual(['Neon Tide', 'Night Drive']);
   expect(fixture.commands.at(-1)).toMatchObject({ command: 'playnext', options: { query: neon.uri }, expectedRevision: 'revision-2' });
   release();
@@ -213,7 +213,7 @@ test('Home and Server favorites share one stats read, and Home comes back withou
   await expect(page.getByRole('heading', { name: 'On repeat in this server' })).toBeVisible();
   await expect(page.locator('.recap-grid')).toBeVisible();
   await page.getByRole('button', { name: 'My Music', exact: true }).click();
-  await page.getByRole('tab', { name: 'Server favorites' }).click();
+  await page.getByRole('tab', { name: 'Popular' }).click();
   await expect(page.getByRole('region', { name: 'On repeat' }).getByRole('listitem')).toHaveCount(4);
   const spinner = await watchFor(page, '.home-view .loading-state');
   await page.getByRole('button', { name: 'Home', exact: true }).click();

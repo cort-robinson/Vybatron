@@ -137,9 +137,17 @@ jobs:
         run: npm run portal:test
       - name: Build portal web client
         run: npm run portal:build
+      - name: Find the Playwright version
+        id: playwright
+        working-directory: portal/web
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
       - name: Install browser for portal verification
         working-directory: portal/web
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install chromium
       - name: Verify browser OAuth through proxy and authoritative bot adapter
         run: npm run portal:integration
       - name: Build isolated portal image
@@ -177,10 +185,14 @@ jobs:
           archive: false
           retention-days: 1
 
-  # A merge commit whose tree matches a same-repository pull request run that
-  # already passed the browser suite skips the suite on main. Tree equality
-  # means identical files, so the earlier pass covers this commit exactly.
-  browser-plan:
+  # Plans the slow jobs. The browser shards and the Android build run only when a
+  # file they read changed (scripts/ci-plan.mjs). A pull request compares its head
+  # with its base. A main push compares with the previous main commit, and only
+  # when that commit's CI passed, so each skip leans on a green run of the same
+  # files. Separately, a main push whose tree matches a same-repository pull
+  # request run that already passed the browser suite skips the suite: tree
+  # equality means identical files. Anything the plan can't list runs everything.
+  plan:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -188,40 +200,65 @@ jobs:
       actions: read
     outputs:
       tree: ${{ steps.plan.outputs.tree }}
-      run: ${{ steps.plan.outputs.run }}
+      browser: ${{ steps.plan.outputs.browser }}
+      android: ${{ steps.plan.outputs.android }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Find an earlier pass on this tree
+      - name: Plan the browser and Android jobs
         id: plan
         env:
           GH_TOKEN: ${{ github.token }}
           REPO_ID: ${{ github.repository_id }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BEFORE: ${{ github.event.before }}
         run: |
           TREE=$(git rev-parse 'HEAD^{tree}')
           echo "tree=$TREE" >> "$GITHUB_OUTPUT"
-          RUN=true
-          if [ "$GITHUB_EVENT_NAME" = push ]; then
+          # Changed paths (both sides of a rename), or nothing when the list is
+          # unavailable or may be truncated (the compare API stops at 300 files).
+          changed() {
+            gh api "repos/$GITHUB_REPOSITORY/compare/$1...$2" \
+              --jq 'if (.files | length) >= 300 then empty else .files[] | .filename, (.previous_filename // empty) end'
+          }
+          FILES=""
+          if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
+            FILES=$(changed "$BASE_SHA" "$HEAD_SHA") || FILES=""
+          elif [ "$GITHUB_EVENT_NAME" = push ] && [ -n "$BEFORE" ] && [ "$BEFORE" != 0000000000000000000000000000000000000000 ]; then
+            GREEN=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$BEFORE&event=push&status=success" \
+              --jq '.total_count') || GREEN=0
+            if [ "$GREEN" -gt 0 ]; then FILES=$(changed "$BEFORE" "$GITHUB_SHA") || FILES=""; fi
+          fi
+          PLAN=$(printf '%s\n' "$FILES" | node scripts/ci-plan.mjs)
+          BROWSER=$(sed -n 's/^browser=//p' <<< "$PLAN")
+          ANDROID=$(sed -n 's/^android=//p' <<< "$PLAN")
+          if [ "$BROWSER" = false ]; then
+            echo "::notice::No file the browser suite reads changed; skipping it."
+          elif [ "$GITHUB_EVENT_NAME" = push ]; then
             PASSED=$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?name=browser-verified-$TREE&per_page=100" \
               --jq "[.artifacts[] | select((.expired | not) and .workflow_run.head_repository_id == $REPO_ID)] | length")
             if [ "$PASSED" -gt 0 ]; then
-              RUN=false
+              BROWSER=false
               echo "::notice::A pull request run already passed the browser suite on tree $TREE; skipping it here."
             fi
           fi
-          echo "run=$RUN" >> "$GITHUB_OUTPUT"
+          if [ "$ANDROID" = false ]; then echo "::notice::No Android file changed; skipping the Android build."; fi
+          { echo "browser=$BROWSER"; echo "android=$ANDROID"; } | tee -a "$GITHUB_OUTPUT"
 
   browser:
-    name: browser (${{ matrix.shard }}/3)
-    needs: browser-plan
-    if: needs.browser-plan.outputs.run == 'true'
+    name: browser (${{ matrix.shard }}/6)
+    needs: plan
+    if: needs.plan.outputs.browser == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3]
+        # Each shard is CPU-bound at 2 workers (the WebGL specs render in software),
+        # so more machines, not more workers, is what shortens the suite.
+        shard: [1, 2, 3, 4, 5, 6]
     defaults:
       run:
         working-directory: portal/web
@@ -236,10 +273,19 @@ jobs:
           cache-dependency-path: portal/web/package-lock.json
       - name: Install portal web dependencies
         run: npm ci
+      - name: Find the Playwright version
+        id: playwright
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
+      # The runner image already has Chromium's system libraries, so skip apt
+      # (--with-deps), which once took ten minutes. On a cache hit this is a no-op.
       - name: Install browser
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install chromium
       - name: Verify portal desktop, phone and accessibility
-        run: npx playwright test --shard=${{ matrix.shard }}/3
+        run: npx playwright test --shard=${{ matrix.shard }}/6
       - name: Upload failure evidence
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -251,7 +297,7 @@ jobs:
           retention-days: 7
 
   browser-verified:
-    needs: [browser-plan, browser]
+    needs: [plan, browser]
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -259,16 +305,18 @@ jobs:
       - name: Record the tested tree
         run: echo "$TREE" > browser-verified.txt
         env:
-          TREE: ${{ needs.browser-plan.outputs.tree }}
+          TREE: ${{ needs.plan.outputs.tree }}
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: browser-verified-${{ needs.browser-plan.outputs.tree }}
+          name: browser-verified-${{ needs.plan.outputs.tree }}
           path: browser-verified.txt
           retention-days: 14
 
   # The Android app: JVM tests, lint and a debug build. The bridge-scope test needs
   # a device and the live portal, so it runs by hand (portal/android/README.md).
   android:
+    needs: plan
+    if: needs.plan.outputs.android == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     defaults:
@@ -279,7 +327,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+      - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with:
           distribution: temurin
           java-version: '21'
@@ -291,12 +339,12 @@ jobs:
         run: ./gradlew --no-daemon testDebugUnitTest lintDebug assembleDebug
 
   # The single required status check. Fails when any verification job fails, is
-  # cancelled or is skipped, except the browser shards on a main push whose exact
-  # tree already passed them on its pull request (see browser-plan).
+  # cancelled or is skipped, except the browser shards and the Android build when
+  # the plan found nothing for them to verify (see plan).
   check:
     name: Check
     if: always()
-    needs: [lint, test, portal, android, browser-plan, browser]
+    needs: [lint, test, portal, android, plan, browser]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -306,6 +354,7 @@ jobs:
         run: |
           echo "$RESULTS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
           echo "$RESULTS" | jq -e '
-            (.["browser-plan"].outputs.run == "false") as $browserCovered
+            .plan.outputs as $plan
             | all(to_entries[]; .value.result == "success"
-                or (.key == "browser" and .value.result == "skipped" and $browserCovered))' > /dev/null
+                or (.value.result == "skipped" and .key == "browser" and $plan.browser == "false")
+                or (.value.result == "skipped" and .key == "android" and $plan.android == "false"))' > /dev/null

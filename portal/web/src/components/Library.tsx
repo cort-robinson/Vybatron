@@ -1,22 +1,25 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowClockwiseIcon, HeartIcon, PlayIcon, PlusIcon, RadioIcon, TrashIcon, VinylRecordIcon } from '../icons';
+import { ArrowClockwiseIcon, CaretDownIcon, DotsThreeIcon, DownloadSimpleIcon, HeartIcon, MagnifyingGlassIcon, PlayIcon, PlusIcon, RadioIcon, TrashIcon, VinylRecordIcon } from '../icons';
 import type { Portal } from '../usePortal';
 import type { Capability, Command, Library, Track } from '../types';
 import { date, time, totalTime } from '../format';
-import { Artwork, Confirm, Empty, ErrorState, IconButton, Loading } from './ui';
+import { ActionPopover, Artwork, Confirm, Empty, ErrorState, IconButton, Loading, QueuedLabel } from './ui';
+import { queuedState } from '../suggestions';
 import { Pagination } from './Pagination';
 import { ServerFavorites } from './ServerFavorites';
 import { PlaylistImport } from './PlaylistImport';
 import { fromList } from '../favorites';
 import { transition } from '../motion';
-import { radioLabel, startRadioCommand } from '../radio';
+import { startRadioCommand } from '../radio';
 import { useEvent } from '../stable';
 import './library.css';
 
 const sections = ['favorites', 'mixes', 'history', 'server'] as const;
 type Section = typeof sections[number];
 type ListSection = Exclude<Section, 'server'>;
-const sectionLabels: Record<Section, string> = { favorites: 'Favorites', mixes: 'Shared mixes', history: 'History', server: 'Server favorites' };
+const sectionLabels: Record<Section, string> = { favorites: 'Favorites', mixes: 'Shared mixes', history: 'History', server: 'Popular' };
+// Shared mixes shows one word so all four tabs fit a phone; the full name stays its accessible name.
+const shortLabels: Partial<Record<Section, string>> = { mixes: 'Mixes' };
 const pageSize = 50;
 const initialQueries = { favorites: '', mixes: '', history: '' };
 const initialPages = { favorites: 0, mixes: 0, history: 0 };
@@ -41,10 +44,16 @@ export function LibraryView({ portal, active = true }: { portal: Portal; active?
   const [selected, setSelected] = useState<string | null>(null);
   const [mixQuery, setMixQuery] = useState('');
   const [mixPage, setMixPage] = useState(0);
+  const [importOpen, setImportOpen] = useState(false);
+  // Import chosen from the phone menu opens below the list, so bring its field into view and focus.
+  const [importFocus, setImportFocus] = useState(0);
+  useEffect(() => { if (!importFocus) return; const frame = requestAnimationFrame(() => { const field = document.querySelector('#favorites-import input') as HTMLElement | null; field?.scrollIntoView({ block: 'center' }); field?.focus({ preventScroll: true }); }); return () => cancelAnimationFrame(frame); }, [importFocus]);
   const [confirm, setConfirm] = useState<Confirmation | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const mixSearchRef = useRef<HTMLInputElement>(null);
   const { library, libraryError, run, can, pending, snapshot } = portal;
+  // Favorites say what the shared queue already holds, as Home does, so a repeat add is a choice.
+  const queueState = queuedState(snapshot?.session);
   const addable = can('add');
   const controllable = can('control');
   const editable = can('library');
@@ -92,30 +101,35 @@ export function LibraryView({ portal, active = true }: { portal: Portal; active?
   // A paused cache keeps drafts and filters, but mounts no heavy list or modal.
   if (!active) return <div className="library-view" hidden />;
   return <div className="library-view"><div className="tabs" role="tablist" aria-label="My music sections">
-    {sections.map(section => <button type="button" key={section} role="tab" id={`tab-${section}`} aria-selected={tab === section} aria-controls={`panel-${section}`} tabIndex={tab === section ? 0 : -1}
+    {sections.map(section => <button type="button" key={section} role="tab" id={`tab-${section}`} aria-selected={tab === section} aria-controls={`panel-${section}`} tabIndex={tab === section ? 0 : -1} aria-label={shortLabels[section] && `${sectionLabels[section]}${library && section !== 'server' ? ` ${library[section].length.toLocaleString()}` : ''}`}
       onKeyDown={event => {
         if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
         event.preventDefault(); const index = sections.indexOf(tab);
         const next = event.key === 'Home' ? sections[0] : event.key === 'End' ? sections[sections.length - 1] : sections[(index + (event.key === 'ArrowRight' ? 1 : sections.length - 1)) % sections.length];
         selectTab(next); document.getElementById(`tab-${next}`)?.focus();
-      }} onClick={() => selectTab(section)}>{tab === section && <span className="tab-indicator" aria-hidden="true" />}{sectionLabels[section]}{library && section !== 'server' && <span>{library[section].length.toLocaleString()}</span>}</button>)}
+      }} onClick={() => selectTab(section)}>{tab === section && <span className="tab-indicator" aria-hidden="true" />}{shortLabels[section] || sectionLabels[section]}{library && section !== 'server' && <span>{library[section].length.toLocaleString()}</span>}</button>)}
   </div>
   {tab === 'server' ? <section role="tabpanel" id="panel-server" aria-labelledby="tab-server"><ServerFavorites portal={portal} /></section>
   : libraryError ? <ErrorState message={libraryError} retry={() => void portal.refreshLibrary()} /> : !library ? <Loading label="Loading your music…" /> : <section role="tabpanel" id={`panel-${tab}`} aria-labelledby={`tab-${tab}`}>
     <div className="section-heading"><div><h2 className="sr-only">{tab === 'favorites' ? 'Favorites' : tab === 'mixes' ? 'Shared mixes' : 'Listening history'}</h2>
       <p className="section-description">{tab === 'favorites' ? 'Your private songs, across every server.' : tab === 'mixes' ? `Saved for ${snapshot?.guild.name || 'this server'}. Up to 100 songs per mix.` : 'The latest 100 songs from the past 30 days, from sessions you can see.'}</p></div>
       {tab === 'history' && <IconButton label="Refresh listening history" onClick={() => void portal.refreshLibrary()}><ArrowClockwiseIcon size={21} /></IconButton>}
+
     </div>
     <div className="library-search"><label className="sr-only" htmlFor={`library-search-${tab}`}>Search {label}</label><div className="library-search-controls">
-      <input ref={searchRef} id={`library-search-${tab}`} type="search" dir="auto" value={queries[listTab]} maxLength={200} placeholder={`Search ${label}`} onChange={event => setQuery(event.target.value)} />
+      <MagnifyingGlassIcon className="library-search-icon" size={18} aria-hidden="true" /><input ref={searchRef} id={`library-search-${tab}`} type="search" dir="auto" value={queries[listTab]} maxLength={200} placeholder={`Search ${label}`} onChange={event => setQuery(event.target.value)} />
       {queries[listTab] && <button type="button" className="text-button" onClick={clearSearch}>Clear search</button>}
+      {tab === 'favorites' && library.favorites.length > 0 && <button type="button" className="text-button library-import-toggle" aria-expanded={importOpen} aria-controls={importOpen ? 'favorites-import' : undefined} onClick={() => setImportOpen(!importOpen)}><DownloadSimpleIcon size={18} /><span>Import<span className="wide-label"> a playlist</span></span></button>}
+      {tab === 'favorites' && library.favorites.length > 0 && <ActionPopover label="Import and manage favorites" className="library-options" triggerClassName="text-button library-manage" trigger={<><span className="narrow-label">Manage</span><span className="wide-label">Manage</span><CaretDownIcon size={16} weight="bold" aria-hidden="true" /></>}>
+        {close => <>{/* Phones fold Import into this menu so search keeps the row. */}<button className="menu-import" onClick={() => { close(); setImportOpen(true); setImportFocus(count => count + 1); }}><DownloadSimpleIcon />Import a playlist</button><button className="danger-text" disabled={!editable} onClick={() => { close(); setConfirm({ kind: 'favorites' }); }}><TrashIcon />Clear favorites</button></>}</ActionPopover>}
     </div></div>
     {tab === 'favorites' && <>
-      {!library.favorites.length ? <Empty title="A place for your repeat favorites" description="Tap the heart on the current song to keep it here. Only you can see this shelf." icon={<HeartIcon size={30} />} /> : !favorites.length ? noMatches : <ul className="library-track-list" aria-label="Favorite songs">{favorites.slice(offset, offset + pageSize).map(({ track, index }) => <FavoriteRow key={`${track.id}:${index}`}
+      {!library.favorites.length ? <Empty title="A place for your repeat favorites" description="Tap the heart on the current song to keep it here. Only you can see this shelf." icon={<HeartIcon size={30} />} /> : !favorites.length ? noMatches : <ul className="library-track-list" aria-label="Favorite songs">{favorites.slice(offset, offset + pageSize).map(({ track, index }) => <FavoriteRow key={`${track.id}:${index}`} state={queueState(track)}
         track={track} index={index} addable={addable} editable={editable} radio={radio} blockedReason={portal.blockedReason} act={act} unfavorite={unfavorite} />)}</ul>}
       <Pagination label="favorites" page={currentPage} total={favorites.length} pageSize={pageSize} onPageChange={page => setPages(previous => ({ ...previous, favorites: page }))} />
-      <PlaylistImport portal={portal} target="favorites" />
-      {library.favorites.length > 0 && <button type="button" className="text-button danger-text library-clear" disabled={!editable} onClick={() => setConfirm({ kind: 'favorites' })}>Clear favorites</button>}
+      {/* Importing is occasional, so it opens on request, or on its own while the shelf is empty. */}
+      {(importOpen || !library.favorites.length) && <div className="library-tools" id="favorites-import"><PlaylistImport portal={portal} target="favorites" /></div>}
+
       {library.favorites.length >= 1000 && <p className="library-note">Your shelf is full. Remove a favorite to make room for another song.</p>}
       {!addable && <p className="library-note">{portal.blockedReason}</p>}
     </>}
@@ -162,29 +176,35 @@ export function LibraryView({ portal, active = true }: { portal: Portal; active?
 
 type Act = (body: Command, capability: Capability) => void;
 // Library rows render again when their song, place or permissions change, not on every live frame.
-const FavoriteRow = memo(function FavoriteRow({ track, index, addable, editable, radio, blockedReason, act, unfavorite }: { track: Track; index: number; addable: boolean; editable: boolean; radio: boolean | null; blockedReason: string; act: Act; unfavorite: (track: Track) => void }) {
+const FavoriteRow = memo(function FavoriteRow({ track, state, index, addable, editable, radio, blockedReason, act, unfavorite }: { track: Track; state: 'playing' | 'queued' | null; index: number; addable: boolean; editable: boolean; radio: boolean | null; blockedReason: string; act: Act; unfavorite: (track: Track) => void }) {
   return <li>
-    <Artwork track={track} /><div className="track-text"><strong dir="auto" title={track.title}>{track.title}</strong><span dir="auto">{track.author}<span className="track-source"> · {track.source}</span></span></div><span className="track-duration">{track.isStream ? 'Live' : time(track.durationMs)}</span>
-    <IconButton label={`Queue favorite ${track.title}`} disabled={!addable} title={!addable ? blockedReason : undefined} onClick={() => act(fromList({ command: 'favorite', subcommand: 'play', options: { index: index + 1 }, expectedTrackId: track.id }), 'add')}><PlusIcon size={23} /></IconButton>
-    <RadioButton track={track} enabled={radio} blockedReason={blockedReason} act={act} />
+    <Artwork track={track} /><div className="track-text"><strong dir="auto" title={track.title}>{track.title}</strong><span dir="auto">{track.author}<span className="track-source"> · {track.source}</span><span className="track-length-inline"> · {track.isStream ? 'Live' : time(track.durationMs)}</span><QueuedLabel state={state} /></span></div><span className="track-duration">{track.isStream ? 'Live' : time(track.durationMs)}</span>
+    <IconButton className={state ? 'add-again' : ''} label={state ? `Queue favorite ${track.title} again` : `Queue favorite ${track.title}`} disabled={!addable} title={!addable ? blockedReason : undefined} onClick={() => act(fromList({ command: 'favorite', subcommand: 'play', options: { index: index + 1 }, expectedTrackId: track.id }), 'add')}><PlusIcon size={23} /><span className="result-action-label" aria-hidden="true">{state ? 'Add again' : 'Add'}</span></IconButton>
     <IconButton className="favorite active" label={`Remove favorite ${track.title}`} disabled={!editable} onClick={() => unfavorite(track)}><HeartIcon size={23} weight="fill" /></IconButton>
+    <ActionPopover className="row-menu favorite-row-menu" label={`Favorite options for ${track.title}`} trigger={<DotsThreeIcon size={25} weight="bold" />}>
+      {close => <><p>{track.title}</p>
+        {radio !== null && <><button disabled={!radio || !startRadioCommand(track)} onClick={() => { close(); const command = startRadioCommand(track); if (command) act(command, 'control'); }}><RadioIcon />Autoplay from this song</button><small>{radio ? 'Related songs play after the queue.' : blockedReason}</small></>}
+        <button className="danger-text" disabled={!editable} onClick={() => { close(); unfavorite(track); }}><HeartIcon />Remove from favorites</button></>}
+    </ActionPopover>
   </li>;
 });
 // A replay binds to the session the listener saw, so the row also follows its revision.
 const HistoryRow = memo(function HistoryRow({ entry, index, controllable, radio, revision, blockedReason, act }: { entry: Library['history'][number]; index: number; controllable: boolean; radio: boolean | null; revision?: string; blockedReason: string; act: Act }) {
   return <li>
     <Artwork track={entry.track} /><div className="track-text"><strong dir="auto" title={entry.track.title}>{entry.track.title}</strong><span dir="auto">{entry.track.author}{entry.voiceChannel ? ` · ${entry.voiceChannel.name}` : ''}</span></div><time dateTime={new Date(entry.playedAt).toISOString()}>{date(entry.playedAt)}</time>
-    <IconButton label={`Replay ${entry.track.title}`} disabled={!controllable} title={!controllable ? blockedReason : undefined} onClick={() => act({ command: 'replay', options: { index: index + 1 }, expectedHistoryId: entry.id, expectedRevision: revision }, 'control')}><PlusIcon size={23} /></IconButton>
-    <RadioButton track={entry.track} enabled={radio} blockedReason={blockedReason} act={act} />
+    <IconButton label={`Replay ${entry.track.title}`} disabled={!controllable} title={!controllable ? blockedReason : undefined} onClick={() => act({ command: 'replay', options: { index: index + 1 }, expectedHistoryId: entry.id, expectedRevision: revision }, 'control')}><PlusIcon size={23} /><span className="result-action-label" aria-hidden="true">Replay</span></IconButton>
+    <RadioMenu track={entry.track} enabled={radio} blockedReason={blockedReason} act={act} />
   </li>;
 });
 
 // Seeds autoplay from a saved song. Needs a live session and playback control; `enabled` is null
 // on this device's own playback, which has no autoplay.
-function RadioButton({ track, enabled, blockedReason, act }: { track: Track; enabled: boolean | null; blockedReason: string; act: Act }) {
+function RadioMenu({ track, enabled, blockedReason, act }: { track: Track; enabled: boolean | null; blockedReason: string; act: Act }) {
   if (enabled === null) return null;
   const command = startRadioCommand(track);
   const allowed = !!command && enabled;
-  return <IconButton className="radio-start" label={radioLabel(track)} disabled={!allowed} title={!command ? 'This song has no public source reference' : !allowed ? blockedReason : radioLabel(track)}
-    onClick={() => { if (command) act(command, 'control'); }}><RadioIcon size={22} /></IconButton>;
+  return <ActionPopover className="row-menu" label={`History options for ${track.title}`} trigger={<DotsThreeIcon size={25} weight="bold" />}>
+    {close => <><p>{track.title}</p><button disabled={!allowed} onClick={() => { close(); if (command) act(command, 'control'); }}><RadioIcon />Autoplay from this song</button>
+      <small>{!command ? 'This song has no public source reference.' : !allowed ? blockedReason : 'Related songs play after the queue.'}</small></>}
+  </ActionPopover>;
 }

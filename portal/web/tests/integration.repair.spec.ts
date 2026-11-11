@@ -10,7 +10,7 @@ for (const width of [1280, 390]) {
       await page.getByRole('button', { name: 'Open player', exact: true }).click();
       const open = async () => {
         await page.getByRole('button', { name: 'More playback controls' }).click();
-        await page.getByRole('button', { name: command === 'clear' ? 'Clear upcoming queue' : 'Stop and discard session', exact: true }).click();
+        await page.getByRole('button', { name: command === 'clear' ? /^Clear upcoming queue$/ : /^Stop and discard session/ }).click();
       };
       await open();
       const dialog = page.getByRole('dialog');
@@ -97,6 +97,6 @@ test('transient disconnect retains search results and typed input while disablin
   await streamAction(page, 'disconnect');
   await expect(page.getByText('Midnight City', { exact: true })).toBeVisible();
   await expect(page.getByRole('searchbox', { name: 'Music search' })).toHaveValue('a song draft');
-  await expect(page.getByRole('button', { name: 'Add Midnight City to queue', exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Add to queue: Midnight City', exact: true })).toBeDisabled();
   expect(fixture.commands).toEqual([]);
 });

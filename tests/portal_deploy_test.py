@@ -340,5 +340,70 @@ class PortalReleasePolicyTests(unittest.TestCase):
             self.deployer.restore_data(self.deployer.bot_volume(), name)
 
 
+@unittest.skipIf(sys.platform == 'win32', 'the maintenance lock uses fcntl')
+class MaintenanceLockTests(unittest.TestCase):
+    """The 5-minute recovery check briefly holds the same maintenance lock."""
+
+    def setUp(self):
+        import fcntl
+        self.fcntl = fcntl
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.root = Path(directory.name)
+        self.holder = open(self.root / 'maintenance.lock', 'a')
+        self.addCleanup(self.holder.close)
+        fcntl.flock(self.holder, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        self.deployed = []
+        test = self
+
+        class Driver:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def deploy(self, sha, guild):
+                # The driver must hold the lock itself by now.
+                with open(test.root / 'maintenance.lock', 'a') as probe, test.assertRaises(BlockingIOError):
+                    fcntl.flock(probe, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                test.deployed.append(sha)
+                return 'deployed'
+
+        patches = {'LOCK': str(self.root / 'maintenance.lock'), 'PortalDeployer': Driver, 'LOCK_POLL': 0.02}
+        for name, value in patches.items():
+            original = getattr(module, name, None)
+            setattr(module, name, value)
+            self.addCleanup(setattr, module, name, original)
+
+    def main(self, *extra):
+        import contextlib
+        import io
+        argv = ['portal-driver.py', 'deploy', '--sha', SHA, '--guild-id', '1' * 18,
+                '--repo', str(self.root / 'release'), '--state-dir', str(self.root / 'state'), *extra]
+        output, code = io.StringIO(), 0
+        original = sys.argv
+        sys.argv = argv
+        try:
+            with contextlib.redirect_stdout(output):
+                module.main()
+        except SystemExit as error:
+            code = error.code
+        finally:
+            sys.argv = original
+        return code, json.loads(output.getvalue().strip().splitlines()[-1])
+
+    def test_waits_for_a_briefly_held_maintenance_lock(self):
+        import threading
+        release = threading.Timer(0.2, self.fcntl.flock, (self.holder, self.fcntl.LOCK_UN))
+        release.start()
+        self.addCleanup(release.cancel)
+        code, result = self.main()
+        self.assertEqual((code, result), (0, {'status': 'deployed', 'sha': SHA}))
+        self.assertEqual(self.deployed, [SHA])
+
+    def test_a_lock_held_past_the_timeout_still_fails_before_changing_anything(self):
+        code, result = self.main('--lock-timeout', '0.1')
+        self.assertEqual((code, result), (1, {'status': 'failed', 'error': 'portal_maintenance_lock_busy'}))
+        self.assertEqual(self.deployed, [])
+
+
 if __name__ == '__main__':
     unittest.main()

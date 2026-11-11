@@ -55,18 +55,20 @@ test('one player transforms, stays across navigation, and sends scoped core comm
 
 test('disconnect preserves search input, gates writes, refreshes before deliberate retry', async ({ page }) => {
   const fixture = await mockPortal(page); await gotoSession(page);
+  // Before results arrive the typed text adds as-is; once they do, the same add is the quiet automatic-match fallback.
+  const typedAdd = page.getByRole('button', { name: 'Add to queue', exact: true }).or(page.getByRole('button', { name: /^Queue an automatic match for/ }));
   await expect(page.getByRole('button', { name: 'Pause playback' })).toBeEnabled();
   await page.getByRole('button', { name: 'Add music', exact: true }).first().click();
   await page.getByRole('searchbox', { name: 'Music search' }).fill('my long playlist draft');
   await streamAction(page, 'disconnect');
-  await expect(page.getByRole('button', { name: 'Add to queue', exact: true })).toBeDisabled();
+  await expect(typedAdd).toBeDisabled();
   await expect(page.getByRole('searchbox', { name: 'Music search' })).toHaveValue('my long playlist draft');
   expect(fixture.commands).toHaveLength(0);
   fixture.delaySnapshot(450); await streamAction(page, 'reconnect');
-  await expect(page.getByRole('button', { name: 'Add to queue', exact: true })).toBeDisabled();
-  await expect(page.getByRole('button', { name: 'Add to queue', exact: true })).toBeEnabled();
+  await expect(typedAdd).toBeDisabled();
+  await expect(typedAdd).toBeEnabled();
   expect(fixture.commands).toHaveLength(0);
-  await page.getByRole('button', { name: 'Add to queue', exact: true }).click();
+  await typedAdd.click();
   await expect.poll(() => fixture.commands.length).toBe(1);
   expect(fixture.commands[0]).toEqual({ command: 'play', options: { query: 'my long playlist draft' } });
 });
@@ -184,7 +186,7 @@ test('play-next and history replay require DJ control and send the fresh revisio
   await page.getByRole('button', { name: 'Add music', exact: true }).first().click();
   await page.getByRole('searchbox', { name: 'Music search' }).fill('Midnight City');
   await expect(page.getByRole('button', { name: 'Add to queue', exact: true })).toBeEnabled();
-  await expect(page.getByRole('button', { name: 'Play next', exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Play Midnight City next', exact: true })).toBeDisabled();
   await page.getByRole('button', { name: 'Close dialog' }).click();
   await page.getByRole('button', { name: 'My Music', exact: true }).click(); await page.getByRole('tab', { name: 'History' }).click();
   await expect(page.getByRole('button', { name: 'Replay Afterglow' })).toBeDisabled();
@@ -197,10 +199,10 @@ test('play-next and history replay require DJ control and send the fresh revisio
   fixture.state.snapshot.session.canControl = true; fixture.state.snapshot.session.reason = null; fixture.state.snapshot.revision = 'revision-dj-ready';
   await streamAction(page, 'reconnect', fixture.state.snapshot);
   await page.getByRole('button', { name: 'Add music', exact: true }).first().click();
-  await expect(page.getByRole('button', { name: 'Play next', exact: true })).toBeEnabled();
-  await page.getByRole('button', { name: 'Play next', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Play next', exact: true })).toBeEnabled();
-  expect(fixture.commands[0]).toEqual({ command: 'playnext', options: { query: 'Midnight City' }, expectedRevision: 'revision-dj-ready' });
+  await expect(page.getByRole('button', { name: 'Play Midnight City next', exact: true })).toBeEnabled();
+  await page.getByRole('button', { name: 'Play Midnight City next', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Play Midnight City next', exact: true })).toBeEnabled();
+  expect(fixture.commands[0]).toEqual({ command: 'playnext', options: { query: 'https://example.com/music/midnight-city' }, expectedRevision: 'revision-dj-ready' });
   await page.getByRole('button', { name: 'Close dialog' }).click();
   await page.getByRole('button', { name: 'My Music', exact: true }).click(); await page.getByRole('tab', { name: 'History' }).click();
   await page.getByRole('button', { name: 'Replay Afterglow' }).click();
@@ -257,11 +259,11 @@ test('maintainer settings accept known Discord IDs without revealing a private c
   await expect(page.getByRole('button', { name: 'Resume playback' })).toBeDisabled();
   await channel.fill('<#123456789012345678>'); await expect(channelSave).toBeDisabled();
   await role.fill('1e18'); await expect(roleSave).toBeDisabled(); expect(fixture.commands).toHaveLength(0);
-  await channel.fill('323456789012345678'); await channelSave.click(); await expect(channelSave).toBeEnabled();
+  await channel.fill('323456789012345678'); await channelSave.click(); await expect(channelSave).toHaveCount(0);
   expect(fixture.commands[0]).toEqual({ command: 'settings', subcommand: 'musicchannel', options: { channel: '323456789012345678' } });
-  await role.fill('423456789012345678'); await roleSave.click(); await expect(roleSave).toBeEnabled();
+  await role.fill('423456789012345678'); await roleSave.click(); await expect(roleSave).toHaveCount(0);
   expect(fixture.commands[1]).toEqual({ command: 'settings', subcommand: 'djrole', options: { role: '423456789012345678' } });
-  await role.fill(''); await roleSave.click(); await expect(roleSave).toBeEnabled();
+  await role.fill(''); await roleSave.click(); await expect(roleSave).toHaveCount(0);
   expect(fixture.commands[2]).toEqual({ command: 'settings', subcommand: 'djrole', options: {} });
   await page.getByRole('tab', { name: 'Advanced controls' }).click(); await page.getByLabel('Command', { exact: true }).selectOption('settings');
   await page.getByRole('combobox', { name: 'Action', exact: true }).selectOption('musicchannel'); await page.getByLabel('channel ID', { exact: true }).fill('5e17');
@@ -337,6 +339,10 @@ test('phone player is singular, keyboard-accessible, responsive and reduced-moti
   await expect(page.getByRole('button', { name: 'Pause playback' })).toHaveCount(1);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   const motion = await page.locator('.room-light .light').first().evaluate(el => getComputedStyle(el).animationName); expect(motion).toBe('none');
+  // Reduced motion keeps the sleeve's entrance fades, so let them land before axe
+  // measures contrast; a half-faded label otherwise reads as a violation. A cancelled
+  // animation rejects its finished promise, and that one is already gone.
+  await page.evaluate(() => Promise.all(document.getAnimations().filter(a => a.effect?.getComputedTiming().iterations !== Infinity).map(a => a.finished.catch(() => undefined))));
   const result = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze();
   expect(result.violations).toEqual([]);
 });

@@ -261,12 +261,12 @@ REVERT: everything here is scoped to :root[data-skin='fantastic']; Settings → 
   .timeline.is-live .range::-webkit-slider-runnable-track { background: var(--range-track); }
 
   /* ── Sleeve: the cover plays on a 1964 television ──────────────────── */
-  .sleeve-artwork { --bezel: 16px; --cover: min(100cqw - var(--bezel) * 2, 100cqh - var(--spectrum) - 12px - var(--bezel) * 2); }
+  .sleeve-artwork { --bezel: 16px; --cover: min(100cqw - var(--bezel) * 2, 100cqh - var(--spectrum) - var(--spectrum-gap) - var(--bezel) * 2); }
   .sleeve-artwork > .artwork, .sleeve-artwork > .artwork-ghost { border-radius: 22px; }
   .sleeve-artwork > .artwork { box-shadow: none; }
   .sleeve-spectrum { translate: 0 calc(var(--bezel) - 6px); }
   .ff-tv, .ff-tv-glass, .ff-tune { position: absolute; left: 50%; translate: -50% 0; pointer-events: none; }
-  .ff-tv { z-index: -1; top: calc((100cqh - var(--cover) - 12px - var(--spectrum)) / 2 - var(--bezel)); width: calc(var(--cover) + var(--bezel) * 2); height: calc(var(--cover) + var(--bezel) * 2); border-radius: 34px;
+  .ff-tv { z-index: -1; top: calc((100cqh - var(--cover) - var(--spectrum-gap) - var(--spectrum)) / 2 - var(--bezel)); width: calc(var(--cover) + var(--bezel) * 2); height: calc(var(--cover) + var(--bezel) * 2); border-radius: 34px;
     background: linear-gradient(160deg, color-mix(in oklab, var(--ff-teal) 62%, var(--ff-cream)), color-mix(in oklab, var(--ff-teal) 86%, var(--accent)) 32%, color-mix(in oklab, var(--ff-teal), black 40%));
     box-shadow: inset 0 2px 0 rgb(255 255 255 / .32), inset 0 -3px 0 rgb(0 0 0 / .28), 0 40px 80px -34px rgb(0 0 0 / .85), 0 22px 60px -30px color-mix(in oklab, var(--accent) 60%, transparent); }
   /* Speaker slot and two knobs, set into the lower bezel. */
@@ -274,7 +274,7 @@ REVERT: everything here is scoped to :root[data-skin='fantastic']; Settings → 
   .ff-tv i { position: absolute; bottom: calc(var(--bezel) / 2 - 5px); width: 10px; height: 10px; border-radius: 50%; background: radial-gradient(circle at 40% 35%, #fffaf0, var(--ff-cream) 45%, #a9987a); box-shadow: 0 1px 2px rgb(0 0 0 / .55); }
   .ff-tv i:nth-child(1) { right: calc(var(--bezel) + 8px); }
   .ff-tv i:nth-child(2) { right: calc(var(--bezel) + 26px); }
-  .ff-tv-glass, .ff-tune { top: calc((100cqh - var(--cover) - 12px - var(--spectrum)) / 2); width: var(--cover); height: var(--cover); border-radius: 22px; }
+  .ff-tv-glass, .ff-tune { top: calc((100cqh - var(--cover) - var(--spectrum-gap) - var(--spectrum)) / 2); width: var(--cover); height: var(--cover); border-radius: 22px; }
   /* Curved glass: a soft window reflection and the tube's darker rim. */
   .ff-tv-glass { background: radial-gradient(90% 70% at 22% 8%, rgb(255 255 255 / .17), transparent 46%), radial-gradient(closest-side, transparent 72%, rgb(0 0 0 / .26));
     box-shadow: inset 0 0 0 1.5px rgb(0 0 0 / .45), inset 0 0 34px rgb(0 0 0 / .32); }

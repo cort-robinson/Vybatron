@@ -9,6 +9,10 @@ import {
   handleTrackFailure,
   handleVoiceStateUpdate,
   handlePlayerDestroy,
+  handleRecoveryFailed,
+  handleRecoveryResumed,
+  IDLE_MS,
+  VOICE_EMPTY_MS,
 } from '../src/lavalink.js';
 import { startPresence } from '../src/utils/presence.js';
 import { presentationWritePending } from '../src/utils/presentation-updates.js';
@@ -298,5 +302,121 @@ test('late teardown cleans the old watcher while keeping replacement presence, v
   } finally {
     clearIdleTimer(replacement.guildId);
     stopPresence();
+  }
+});
+
+test('a session left without playable audio after recovery gives up still disconnects', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const player = mockPlayer('transport-failed');
+  const client = mockClient(mockChannel());
+  client.lavalink = { getPlayer: () => player };
+  try {
+    handleRecoveryFailed(client, player, player.queue.current, { transport: true });
+    t.mock.timers.tick(IDLE_MS);
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(player.destroyed, 1);
+  } finally {
+    clearIdleTimer(player.guildId);
+  }
+});
+
+test('a recovery failure keeps a shorter empty-room timer, and a new track cancels its own', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const client = mockClient(mockChannel());
+  const empty = mockPlayer('transport-failed-empty');
+  client.lavalink = { getPlayer: () => empty };
+  try {
+    startIdleTimer(empty, { reason: 'voice-empty', client });
+    handleRecoveryFailed(client, empty, empty.queue.current, { transport: true });
+    t.mock.timers.tick(VOICE_EMPTY_MS);
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(empty.destroyed, 1);
+  } finally {
+    clearIdleTimer(empty.guildId);
+  }
+  const retried = mockPlayer('transport-failed-retried');
+  client.lavalink = { getPlayer: () => retried };
+  try {
+    handleRecoveryFailed(client, retried, retried.queue.current, { transport: true, voice: true });
+    await handleTrackStart(client, retried, track);
+    t.mock.timers.tick(IDLE_MS);
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(retried.destroyed, 0);
+  } finally {
+    clearIdleTimer(retried.guildId);
+  }
+});
+
+test('the audio-unavailable timer never cuts off audio the server is still playing', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const player = mockPlayer('transport-still-streaming');
+  player.connected = true;
+  player.lastPosition = 10_000;
+  const client = mockClient(mockChannel());
+  client.lavalink = { getPlayer: () => player };
+  try {
+    handleRecoveryFailed(client, player, player.queue.current, { transport: true });
+    player.lastPosition = 40_000;
+    t.mock.timers.tick(IDLE_MS);
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(player.destroyed, 0);
+    t.mock.timers.tick(IDLE_MS);
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(player.destroyed, 1);
+  } finally {
+    clearIdleTimer(player.guildId);
+  }
+});
+
+test('a resumed session cancels the audio-unavailable timer', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const player = mockPlayer('transport-resumed');
+  const client = mockClient(mockChannel());
+  client.lavalink = { getPlayer: () => player, playbackWatchdog: { touch() {} } };
+  try {
+    handleRecoveryFailed(client, player, player.queue.current, { transport: true, voice: true });
+    handleRecoveryResumed(client, player);
+    t.mock.timers.tick(IDLE_MS);
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(player.destroyed, 0);
+  } finally {
+    clearIdleTimer(player.guildId);
+  }
+});
+
+test('listeners leaving and returning keep the audio-unavailable timer', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const player = mockPlayer('transport-room-blip');
+  const client = mockClient(mockChannel());
+  client.lavalink = { getPlayer: () => player };
+  const room = (humans) => ({ guild: { id: player.guildId, channels: { cache: new Map([['v1', {
+    members: { filter: () => ({ size: humans }) },
+  }]]) } } });
+  try {
+    handleRecoveryFailed(client, player, player.queue.current, { transport: true });
+    handleVoiceStateUpdate(client, room(0));
+    handleVoiceStateUpdate(client, room(1));
+    t.mock.timers.tick(IDLE_MS);
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(player.destroyed, 1);
+  } finally {
+    clearIdleTimer(player.guildId);
+  }
+});
+
+test('a resume with nothing playing keeps the empty-queue disconnect', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const player = mockPlayer('resume-empty');
+  player.queue.current = null;
+  const client = mockClient(mockChannel());
+  client.lavalink = { getPlayer: () => player, playbackWatchdog: { touch() {} } };
+  try {
+    startIdleTimer(player, { client, reason: 'queue-empty' });
+    handleRecoveryResumed(client, player);
+    t.mock.timers.tick(IDLE_MS);
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(player.destroyed, 1);
+  } finally {
+    clearIdleTimer(player.guildId);
   }
 });

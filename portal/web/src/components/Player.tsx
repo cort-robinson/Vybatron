@@ -1,5 +1,5 @@
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { CaretDownIcon, CheckIcon, DesktopIcon, DeviceMobileIcon, DiscordLogoIcon, PencilSimpleIcon, TelevisionSimpleIcon, CaretUpIcon, DotsThreeIcon, HeartIcon, PauseIcon, PlayIcon, RepeatIcon, RepeatOnceIcon, ShuffleIcon, SkipBackIcon, SkipForwardIcon, SpeakerHighIcon, StopIcon, RadioIcon, HandPalmIcon, ArrowSquareOutIcon, TrashIcon, WarningCircleIcon, ThumbsDownIcon, VinylRecordIcon, MoonIcon, MicrophoneStageIcon, WaveformIcon, CornersOutIcon } from '../icons';
+import { CaretDownIcon, CheckIcon, DesktopIcon, DeviceMobileIcon, DiscordLogoIcon, PencilSimpleIcon, TelevisionSimpleIcon, CaretUpIcon, DotsThreeIcon, HeartIcon, PauseIcon, PlayIcon, RepeatIcon, RepeatOnceIcon, ShuffleIcon, SkipBackIcon, SkipForwardIcon, SpeakerHighIcon, SpeakerLowIcon, SpeakerXIcon, StopCircleIcon, RadioIcon, HandPalmIcon, ArrowSquareOutIcon, TrashIcon, WarningCircleIcon, ThumbsDownIcon, VinylRecordIcon, MoonIcon, MicrophoneStageIcon, WaveformIcon, CornersOutIcon } from '../icons';
 import type { Portal } from '../usePortal';
 import { saveByLink, useSavingFavorite } from '../favorites';
 import type { Command, Track } from '../types';
@@ -7,7 +7,7 @@ import { usePosition, type Clock } from '../position';
 import { publicUrl } from '../api';
 import { time, timestamp } from '../format';
 import { RESTART_AFTER_MS } from '../playback';
-import { ActionPopover, Artwork, Confirm, Dialog, IconButton } from './ui';
+import { ActionPopover, Artwork, Confirm, Dialog, IconButton, useSheet } from './ui';
 import { SaveSessionDialog, StopDialog } from './SessionMix';
 import { SleepDialog, useSleepText } from './SleepTimer';
 import { Queue } from './Queue';
@@ -52,6 +52,7 @@ export function Player({ portal, expanded, setExpanded, onAdd, palette, animate,
   const openedFromIdentity = useRef(false);
   const reasonId = useId();
   const confirmationId = useId();
+  const soundId = useId();
   const queueId = useId();
   const lyricsId = useId();
   // Timeline ticks belong to the deck; unchanged queue artwork and row menus can keep their tree.
@@ -145,13 +146,24 @@ export function Player({ portal, expanded, setExpanded, onAdd, palette, animate,
   // An autoplay pick names its provenance in place of the source.
   const metadata = track ? <>{track.author}<span className="metadata-dot" aria-hidden="true">·</span><span className="track-source">{track.suggested ? 'Autoplay pick' : track.source}</span></> : 'Add a song to start.';
   // The same size as the favorite button and on the title's other side, so the title stays centered.
-  const lyricsToggle = track && <IconButton className={`lyrics-toggle ${lyricsOpen ? 'active-control' : ''}`} label={lyricsOpen ? 'Hide lyrics' : 'Show lyrics'} aria-pressed={lyricsOpen} aria-controls={lyricsOpen ? lyricsId : undefined} onClick={() => { setLyricsOpen(!lyricsOpen); setVisualsOpen(false); }}><MicrophoneStageIcon size={26} weight={lyricsOpen ? 'fill' : 'regular'} /></IconButton>;
+  const lyricsToggle = track && <button type="button" className={`player-chip lyrics-toggle ${lyricsOpen ? 'active-control' : ''}`} aria-label={lyricsOpen ? 'Hide lyrics' : 'Show lyrics'} aria-pressed={lyricsOpen} aria-controls={lyricsOpen ? lyricsId : undefined} onClick={() => { setLyricsOpen(!lyricsOpen); setVisualsOpen(false); }}><MicrophoneStageIcon size={16} weight={lyricsOpen ? 'fill' : 'regular'} aria-hidden="true" />Lyrics</button>;
   // The visualizer's switch sits on the cover's corner, on what it changes: the title row keeps its
   // two balanced buttons. Over the visualizer it also offers the full screen.
   const visualsFailed = () => { setVisualsOpen(false); portal.notify('The visualizer isn’t available on this device.', 'error'); };
   const visualsSwitch = track && <div className="sleeve-visuals">{visualsOpen && <IconButton label="Full-screen visualizer" onClick={() => setVisualsFull(true)}><CornersOutIcon size={21} /></IconButton>}
-    <IconButton className={visualsOpen ? 'active-control' : ''} label={visualsOpen ? 'Hide visualizer' : 'Show visualizer'} aria-pressed={visualsOpen} onClick={() => setVisualsOpen(!visualsOpen)}><WaveformIcon size={21} weight={visualsOpen ? 'bold' : 'regular'} /></IconButton></div>;
-  const identity = <div className="player-identity" data-glass><div className="player-title-row">{lyricsToggle}<h2 ref={headingRef} tabIndex={-1} title={track?.title}>{track?.title || 'Nothing playing'}</h2>{favorite}</div><p title={track ? `${track.author} · ${track.source}` : undefined}>{metadata}</p>
+    <IconButton className={`visuals-toggle ${visualsOpen ? 'active-control' : ''}`} label={visualsOpen ? 'Hide visualizer' : 'Show visualizer'} aria-pressed={visualsOpen} onClick={() => setVisualsOpen(!visualsOpen)}><WaveformIcon size={21} weight={visualsOpen ? 'bold' : 'regular'} /><span aria-hidden="true">{visualsOpen ? 'Cover' : 'Visualizer'}</span></IconButton></div>;
+  const destination = local ? portal.playingOn || 'This device' : session?.voiceChannel ? `Discord · ${session.voiceChannel.name}` : '';
+  const destinationChip = expanded && !!track && !!destination;
+  // The compact player says where the music is playing; the open player's chip says it there instead.
+  // An autoplay pick keeps its label, so nobody mistakes it for a friend's request.
+  const where = local ? portal.playingOn || 'This device' : session?.voiceChannel?.name;
+  const compactMetadata = track && where && !track.suggested ? <>{track.author}<span className="metadata-dot" aria-hidden="true">·</span><span className="compact-destination">{local ? <DesktopIcon size={14} aria-hidden="true" /> : <DiscordLogoIcon size={14} weight="fill" aria-hidden="true" />}<span><span className="sr-only">Playing on </span>{where}</span></span></> : metadata;
+  const identity = <div className="player-identity" data-glass><div className="player-title-row">{favorite && <span className="title-balance" aria-hidden="true" />}<h2 ref={headingRef} tabIndex={-1} title={track?.title}>{track?.title || 'Nothing playing'}</h2>{favorite}</div><p title={track ? `${track.author} · ${track.source}` : undefined}>{metadata}</p>
+    {/* Where the sound comes out, and the shortest way to change it (More › Play on has it too). */}
+    {track && <div className="player-chips">{lyricsToggle}{destinationChip && <ActionPopover label={`Playing on ${destination}. Choose where it plays`} className="player-destination" triggerClassName="player-destination-trigger"
+      trigger={<>{local ? <DesktopIcon size={16} aria-hidden="true" /> : <DiscordLogoIcon size={16} weight="fill" aria-hidden="true" />}<span><span className="chip-prefix">Playing on </span><span className="chip-prefix-short">On </span>{destination}</span><CaretDownIcon size={14} aria-hidden="true" /></>}>
+      {close => <><PlayOnChoices portal={portal} close={close} onMoveHere={() => setConfirmHere(true)} />
+        {portal.devices.length > 0 && <button onClick={() => { close(); setRenaming(true); }}><PencilSimpleIcon />Rename this device</button>}</>}</ActionPopover>}</div>}
   </div>;
   const spectrumMode = track && active && live ? 'playing' : 'standby';
   const look = skinLook(skin);
@@ -168,38 +180,54 @@ export function Player({ portal, expanded, setExpanded, onAdd, palette, animate,
     <IconButton label={`Repeat: ${session?.repeat || 'off'}. Change repeat mode`} className={`repeat-control ${session?.repeat !== 'off' && session?.repeat ? 'active-control' : ''}`} disabled={!controllable || !track} title={blockedTitle}
       onClick={() => void control({ command: 'loop', options: { mode: session?.repeat === 'off' ? 'track' : session?.repeat === 'track' ? 'queue' : 'off' } })}>{session?.repeat === 'track' ? <RepeatOnceIcon size={25} /> : <RepeatIcon size={25} />}</IconButton>
   </div>;
+  // Phones with the player open keep volume and More in the stage's top corner, not under the transport.
+  const phone = useSheet();
+  const volumeScope = local ? 'Volume on this device' : `Volume for everyone${session?.voiceChannel ? ` in ${session.voiceChannel.name}` : ''}`;
+  const volume = <Volume level={session?.volume ?? 100} disabled={!controllable} reset={`${track?.id}:${snapshot?.guild.id}`} scope={volumeScope} onCommit={level => void control({ command: 'volume', options: { level } })} />;
   const extras = <div className="player-extras">
-    <Volume level={session?.volume ?? 100} disabled={!controllable} reset={`${track?.id}:${snapshot?.guild.id}`} onCommit={level => void control({ command: 'volume', options: { level } })} />
-    {!local && <label className={`filter-control ${session?.filter === 'warm' ? 'warm' : ''}`}><span className="filter-dot" /><span className="sr-only">Audio filter</span><select aria-label="Audio filter" value={session?.filter || bootstrap?.filters[0]?.id || ''} disabled={!controllable} onChange={event => void control({ command: 'filter', options: { preset: event.target.value } })}>
-      {bootstrap?.filters.map(filter => <option key={filter.id} value={filter.id}>{filter.label}</option>)}
-    </select><CaretDownIcon size={16} /></label>}
+    {volume}
+    {/* Phones keep volume behind a button in the open player's top corner, so it never takes a row of its own. */}
+    <ActionPopover label="Volume" className="volume-sheet" trigger={(session?.volume ?? 100) === 0 ? <SpeakerXIcon size={23} /> : (session?.volume ?? 100) < 50 ? <SpeakerLowIcon size={23} /> : <SpeakerHighIcon size={23} />} triggerClassName="icon-button">
+      {() => <><p className="menu-title">{volumeScope}</p>{volume}</>}
+    </ActionPopover>
     <ActionPopover label="More playback controls" trigger={<DotsThreeIcon size={27} weight="bold" />} className="player-more" triggerClassName="icon-button">
-      {close => <>{expanded && <button disabled={!track} onClick={() => { close(); setVisualsFull(true); }}><CornersOutIcon />Full-screen visualizer</button>}
-        {!local && <><button disabled={!can('vote') || pending.includes('voteskip:') || !track} onClick={() => { close(); void run({ command: 'voteskip', expectedRevision: snapshot?.revision }, 'vote'); }}><HandPalmIcon />Vote to skip</button>
-        <button disabled={!controllable || !track} onClick={() => { close(); void control({ command: 'radio', subcommand: session?.radio ? 'off' : 'on' }); }}><RadioIcon />Turn autoplay {session?.radio ? 'off' : 'on'}</button>
-        <button disabled={!controllable || !track && !sleep} onClick={() => { close(); setSleepOpen(true); }}><MoonIcon />{sleep ? `Sleep timer · ${sleep}` : 'Sleep timer'}</button></>}
+      {/* Where it plays leads the menu, unless the open player's destination chip already offers it;
+          the playback extras follow, then the destructive pair. */}
+      {close => <>{track && <p className="menu-title">Now playing · {track.title}</p>}{!destinationChip && <><PlayOnChoices portal={portal} close={close} onMoveHere={() => setConfirmHere(true)} />
+        {portal.devices.length > 0 && <button onClick={() => { close(); setRenaming(true); }}><PencilSimpleIcon />Rename this device</button>}
+        <hr className="menu-divider" /></>}
+        {expanded && <button disabled={!track} onClick={() => { close(); setVisualsFull(true); }}><CornersOutIcon />Full-screen visualizer</button>}
+        {/* Listeners who can skip outright use Skip; voting is for everyone else. */}{!local && !controllable && <button disabled={!can('vote') || pending.includes('voteskip:') || !track} onClick={() => { close(); void run({ command: 'voteskip', expectedRevision: snapshot?.revision }, 'vote'); }}><HandPalmIcon />Vote to skip</button>}
         {!local && track?.suggested && <button disabled={!controllable} onClick={() => { close(); void run({ command: 'radio', subcommand: 'less', expectedTrackId: track.id }, 'control'); }}><ThumbsDownIcon />Less like this</button>}
         {sourceUrl && <a href={sourceUrl} target="_blank" rel="noreferrer" onClick={close}><ArrowSquareOutIcon />Open original track</a>}
+        {/* What follows acts on the whole session, not the song named at the top. */}
+        {!local && <p className="menu-section">Session</p>}
+        {!local && <><button disabled={!controllable || !track} onClick={() => { close(); void control({ command: 'radio', subcommand: session?.radio ? 'off' : 'on' }); }}><RadioIcon />Turn autoplay {session?.radio ? 'off' : 'on'}</button>
+        <button disabled={!controllable || !track && !sleep} onClick={() => { close(); setSleepOpen(true); }}><MoonIcon />{sleep ? `Sleep timer · ${sleep}` : 'Sleep timer'}</button></>}
         {!local && <button disabled={!can('library') || !track} onClick={() => { close(); setSaveSession(true); }}><VinylRecordIcon />Save session as mix</button>}
-        <PlayOnChoices portal={portal} close={close} onMoveHere={() => setConfirmHere(true)} />
-        {portal.devices.length > 0 && <button onClick={() => { close(); setRenaming(true); }}><PencilSimpleIcon />Rename this device</button>}
+        {/* The sound filter is set rarely, so it lives here instead of beside the transport. */}
+        {!local && !!bootstrap?.filters.length && <><p className="menu-section" id={`${soundId}-label`}>Sound for everyone in voice</p>
+          <SoundPresets labelId={`${soundId}-label`} filters={bootstrap.filters} chosen={session?.filter || bootstrap.filters[0]?.id} disabled={!controllable}
+            onChoose={preset => { close(); if (preset !== (session?.filter || bootstrap.filters[0]?.id)) void control({ command: 'filter', options: { preset } }); }} /></>}
+
         <button className="danger-text" disabled={!controllable || !session?.queue.length} onClick={() => { close(); setConfirmClear(true); }}><TrashIcon />Clear upcoming queue</button>
-        <button className="danger-text" disabled={!can('control') || !track} onClick={() => { close(); setConfirmStop(true); }}><StopIcon />{local ? 'Stop and clear your queue' : 'Stop and discard session'}</button>
+        <button className="danger-text" disabled={!can('control') || !track} onClick={() => { close(); setConfirmStop(true); }}><StopCircleIcon /><span className="menu-device"><span>{local ? 'Stop and clear your queue' : 'Stop and discard session'}</span>{!local && <small>Ends playback for everyone in voice</small>}</span></button>
       </>}
     </ActionPopover>
   </div>;
   const upcoming = session?.queue.length || 0;
   return <section ref={playerRef} className={`persistent-player ${expanded ? 'expanded' : 'collapsed'} ${queueOpen ? 'queue-open' : ''} ${session?.status || 'idle'}`} aria-label="Music player" data-testid="player" data-tv-region>
     {!expanded && spectrum('player-spectrum', 56, 0)}
-    {expanded && <div className="sleeve-content"><button className="mobile-collapse text-button" onClick={() => setExpanded(false)}><CaretDownIcon size={22} />Close player</button>
+    {expanded && <div className="sleeve-content"><button className="mobile-collapse text-button" onClick={() => setExpanded(false)}><CaretDownIcon size={22} />Close player</button>{phone && <div className="sleeve-corner">{extras}</div>}
       <div className="sleeve-main">{lyricsOpen ? <div className="sleeve-artwork showing-lyrics"><LyricsView id={lyricsId} clock={clock} guildId={snapshot?.guild.id} track={track} local={local} /></div>
         : <div className="sleeve-artwork" onPointerMove={look?.tilt} onPointerLeave={look?.untilt}>{visualsOpen && visuals ? <visuals.SleeveVisualizer clock={clock} palette={palette} skin={skin} guildId={snapshot?.guild.id ?? null} local={local} animate={animate} onFail={visualsFailed} onFull={() => setVisualsFull(true)} /> : <Artwork track={track} large />}{spectrum('sleeve-spectrum', 40)}{look && <look.Sleeve track={track?.id || 'idle'} />}{visualsSwitch}</div>}{identity}<div className="player-context" data-glass>{permissionReason && <p className="player-permission" id={reasonId}><WarningCircleIcon size={18} aria-hidden="true" /><span>{permissionReason}</span></p>}{connection === 'live' && session?.status === 'recovering' && <p className="player-state warm-text" role="status">Recovering your place. Playback controls will return when it’s ready.</p>}{sleep && <p className="player-state sleep-state"><MoonIcon size={16} aria-hidden="true" /><span>Sleep timer · {sleep}</span></p>}{connection !== 'live' && session?.status === 'paused' && <p className="player-state warm-text">Last known: paused</p>}</div></div>
       <div ref={sheetRef} id={queueId} className="sleeve-queue" data-glass>{queueOpen && <div className="queue-sheet-now"><span className="sheet-grabber" aria-hidden="true" /><Artwork track={track} /><span className="sheet-now-text"><strong>{track?.title || 'Nothing playing'}</strong><span>{track?.author}</span></span></div>}{queue}</div>
     </div>}
-    <div className="player-footer" data-glass>{!expanded && <CompactProgress clock={clock} track={track} duration={duration} />}{!expanded && <div className="compact-identity"><button ref={identityTriggerRef} type="button" className="player-expand-trigger" aria-label={track ? `Open player for ${track.title}` : 'Open player details'} aria-expanded={false} onClick={() => { openedFromIdentity.current = true; setExpanded(true); }}><Artwork track={track} /><span className="compact-title"><span className="compact-track-title" title={track?.title}>{track?.title || 'Nothing playing'}</span><span className="compact-track-meta" title={track ? `${track.author} · ${track.source}` : undefined}>{metadata}</span></span></button><span className="compact-favorite">{favorite}</span></div>}
+    <div className="player-footer" data-glass>{!expanded && <CompactProgress clock={clock} track={track} duration={duration} />}{!expanded && <div className="compact-identity"><button ref={identityTriggerRef} type="button" className="player-expand-trigger" aria-label={track ? `Open player for ${track.title}` : 'Open player details'} aria-expanded={false} onClick={() => { openedFromIdentity.current = true; setExpanded(true); }}><Artwork track={track} /><span className="compact-title"><span className="compact-track-title" title={track?.title}>{track?.title || 'Nothing playing'}</span><span className="compact-track-meta" title={track ? `${track.author} · ${where ? `playing on ${local ? where : `Discord · ${where}`}` : track.source}` : undefined}>{compactMetadata}</span></span></button><span className="compact-favorite">{favorite}</span></div>}
+      
       <div className="playback-cluster">{controls}{timeline}</div>
-      {extras}
-      {expanded && <button ref={handleRef} type="button" className="up-next-handle" aria-expanded={queueOpen} aria-controls={queueId} onClick={() => setQueueOpen(!queueOpen)}><span className="sheet-grabber" aria-hidden="true" /><span>{queueOpen ? 'Hide queue' : 'Up next'}</span>{!queueOpen && upcoming > 0 && <span className="count">{upcoming} {upcoming === 1 ? 'song' : 'songs'}</span>}</button>}
+      {!(expanded && phone) && extras}
+      {expanded && <button ref={handleRef} type="button" className="up-next-handle" aria-expanded={queueOpen} aria-controls={queueId} onClick={() => setQueueOpen(!queueOpen)}><span className="sheet-grabber" aria-hidden="true" />{queueOpen ? <CaretDownIcon size={16} aria-hidden="true" /> : <CaretUpIcon size={16} aria-hidden="true" />}<span>{queueOpen ? 'Hide queue' : 'Up next'}</span>{!queueOpen && upcoming > 0 && <span className="count">{upcoming} {upcoming === 1 ? 'song' : 'songs'}</span>}</button>}
       {!expanded && permissionReason && <span className="sr-only" id={reasonId}>{permissionReason}</span>}
       <button ref={expandTriggerRef} className="expand-button" aria-expanded={expanded} aria-label={expanded ? 'Close player' : 'Open player'} title={expanded ? 'Close player' : 'Open player'} onClick={() => { openedFromIdentity.current = false; setExpanded(!expanded); }}>{expanded ? <CaretDownIcon size={29} /> : <CaretUpIcon size={29} />}<span>{expanded ? 'Close player' : 'Open player'}</span></button>
     </div>
@@ -260,17 +288,17 @@ export function MoveHereDialog({ portal, onClose }: { portal: Portal; onClose: (
   </Dialog>;
 }
 // The volume slider: it moves at once and sends the level when let go. On a TV remote it steps by five.
-export function Volume({ level, disabled, reset, onCommit }: { level: number; disabled: boolean; reset?: string; onCommit: (level: number) => void }) {
+export function Volume({ level, disabled, reset, scope, onCommit }: { level: number; disabled: boolean; reset?: string; scope?: string; onCommit: (level: number) => void }) {
   const [draft, setDraft] = useState<number | null>(null);
   useEffect(() => { setDraft(null); }, [reset]);
   const commit = () => { if (draft !== null) { onCommit(draft); setDraft(null); } };
   const value = draft ?? level;
-  return <div className="volume-control"><SpeakerHighIcon size={23} /><input className="range" aria-label="Volume" type="range" min="0" max="100" value={value} disabled={disabled} data-tv-step={5}
+  return <div className={`volume-control ${draft !== null ? 'adjusting' : ''}`}><SpeakerHighIcon size={23} /><input className="range" aria-label="Volume" title={scope} aria-description={scope} type="range" min="0" max="100" value={value} disabled={disabled} data-tv-step={5}
     style={{ '--range-progress': `${value}%` } as React.CSSProperties} aria-valuetext={`${value} percent`}
     onChange={event => setDraft(Number(event.target.value))}
     onPointerUp={commit}
     onKeyUp={event => { if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) commit(); }}
-    onBlur={commit} /></div>;
+    onBlur={commit} /><span className="volume-readout" aria-hidden="true">{value}%</span></div>;
 }
 
 // The name this device goes by in the listener's device list.
@@ -320,4 +348,23 @@ export function BackButton({ clock, seekable, disabled, title, onPress }: { cloc
 function CompactProgress({ clock, track, duration }: { clock: Clock; track: Track | null; duration: number }) {
   const position = usePosition(clock);
   return <span className="compact-progress" aria-hidden="true" style={{ '--progress-scale': track && !track.isStream && duration ? Math.min(1, position / duration) : 0 } as React.CSSProperties} />;
+}
+
+// One preset is always on, so the choices are a radio group: one tab stop, arrows move between presets and
+// Space or Enter picks one. A TV remote reaches every preset with its own arrows instead. The tab stop lives
+// here, so it starts on the chosen preset each time the menu opens.
+function SoundPresets({ labelId, filters, chosen, disabled, onChoose }: { labelId: string; filters: { id: string; label: string; description?: string }[]; chosen?: string; disabled: boolean; onChoose: (preset: string) => void }) {
+  const [focused, setFocused] = useState<string | null>(null);
+  const tv = 'tv' in document.documentElement.dataset;
+  return <div role="radiogroup" aria-labelledby={labelId} onKeyDown={event => {
+    const step = { ArrowDown: 1, ArrowRight: 1, ArrowUp: -1, ArrowLeft: -1 }[event.key];
+    if (!step || tv) return;
+    const radios = Array.from(event.currentTarget.querySelectorAll('[role="radio"]')) as HTMLElement[];
+    const next = radios[(radios.indexOf(document.activeElement as HTMLElement) + step + radios.length) % radios.length]; if (!next) return;
+    // The tab stop moves with focus, so Tab leaves the group from the focused preset.
+    event.preventDefault(); setFocused(next.dataset.preset ?? null); next.focus();
+  }} onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setFocused(null); }}>
+    {filters.map(filter => <button key={filter.id} data-preset={filter.id} role="radio" aria-checked={chosen === filter.id} tabIndex={tv || (focused ?? chosen) === filter.id ? 0 : -1} disabled={disabled} onClick={() => onChoose(filter.id)}>
+      <span className={`sound-radio ${chosen === filter.id ? 'chosen' : ''}`} aria-hidden="true" /><span className="menu-device"><span>{filter.label}</span>{filter.description && <small>{filter.description}</small>}</span></button>)}
+  </div>;
 }

@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { LavalinkManager } from 'lavalink-client';
 import {
+  controllerSessionStatus,
   createOrUpdate,
   end,
   getControllerRecord,
@@ -459,4 +460,59 @@ test('a held terminal edit cannot delete a same-channel replacement that follows
   assert.equal(writes, 2);
   assert.equal(getControllerRecord(current.guildId).player, current);
   assert.equal(f.payloads.at(-1).embeds[0].data.title, 'After terminal');
+});
+
+function recoveryService(p) {
+  const recovery = { recovering: false, epoch: 0 };
+  p.LavalinkManager = { playbackRecovery: {
+    isRecovering: () => recovery.recovering,
+    generation: () => recovery.epoch,
+  } };
+  return recovery;
+}
+
+test('a recovering label lapses when a seek or skip cancels the recovery', async () => {
+  const f = fixture();
+  const p = player('recovery-cancelled');
+  const recovery = recoveryService(p);
+  await createOrUpdate(f.client, p);
+  recovery.recovering = true;
+  await showStatus(f.client, p, 'recovering', 'Reconnecting the audio stream.');
+  assert.equal(controllerSessionStatus(p), 'recovering');
+  // Back past three seconds seeks to 0: the service invalidates, and no track starts.
+  recovery.recovering = false;
+  recovery.epoch += 1;
+  assert.equal(controllerSessionStatus(p), 'playing');
+  await refresh(f.client, p);
+  const payload = f.payloads.at(-1);
+  assert.equal(payload.embeds[0].data.author.name, 'Now Playing');
+  const buttons = payload.components.flatMap((row) => row.components);
+  assert.equal(buttons.find((button) => button.data.label === 'Pause').data.disabled, false);
+});
+
+test('a voice reconnect announced before the service flags it stays recovering for its generation', async () => {
+  const f = fixture();
+  const p = player('voice-allocation');
+  const recovery = recoveryService(p);
+  await createOrUpdate(f.client, p);
+  await showStatus(f.client, p, 'recovering', 'Reconnecting to Discord voice.');
+  assert.equal(controllerSessionStatus(p), 'recovering');
+  await refresh(f.client, p);
+  assert.equal(f.payloads.at(-1).embeds[0].data.author.name, 'Recovering audio');
+  recovery.epoch += 1;
+  assert.equal(controllerSessionStatus(p), 'playing');
+});
+
+test('unavailable and finished labels hold until the next track', async () => {
+  const f = fixture();
+  const p = player('sticky');
+  recoveryService(p);
+  await createOrUpdate(f.client, p);
+  await showStatus(f.client, p, 'unavailable', 'The audio service could not recover.');
+  assert.equal(controllerSessionStatus(p), 'unavailable');
+  await createOrUpdate(f.client, p, { state: 'playing' });
+  p.paused = true;
+  assert.equal(controllerSessionStatus(p), 'paused');
+  p.queue.current = null;
+  assert.equal(controllerSessionStatus(p), 'queue-finished');
 });

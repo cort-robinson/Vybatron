@@ -33,7 +33,7 @@ test('1,000 favorites mount at most 50 rows and filtering plus paging retains so
   await expect(page.getByRole('navigation', { name: 'favorites pagination' })).toContainText('1–50 of 500');
   await page.getByRole('button', { name: 'Next page of favorites' }).click();
   await expect(rows.first()).toContainText('Song 0102');
-  await page.getByRole('button', { name: 'Queue favorite Song 0102', exact: true }).click();
+  await page.getByRole('button', { name: /^Queue favorite Song 0102( again)?$/ }).click();
   await expect.poll(() => fixture.commands.length).toBe(1);
   expect(fixture.commands[0]).toEqual({ command: 'favorite', subcommand: 'play', options: { index: 102 }, expectedTrackId: fixture.state.library.favorites[101].id });
   await expect(page.getByRole('button', { name: 'Remove favorite Song 0102', exact: true })).toBeEnabled();
@@ -138,7 +138,7 @@ test('no-results feedback supports keyboard clearing and offline state blocks mu
   await page.locator('.empty-state').getByRole('button', { name: 'Clear search' }).click();
   await expect(page.getByLabel('Search favorites', { exact: true })).toBeFocused();
   await streamAction(page, 'disconnect');
-  await expect(page.getByRole('button', { name: 'Queue favorite Night Drive', exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: /^Queue favorite Night Drive( again)?$/ })).toBeDisabled();
   await expect(page.getByRole('button', { name: 'Remove favorite Night Drive', exact: true })).toBeDisabled();
   expect(fixture.commands).toHaveLength(0);
 });
@@ -146,8 +146,9 @@ test('no-results feedback supports keyboard clearing and offline state blocks mu
 test('outside voice keeps private library edits and creator mix saves while blocking music additions', async ({ page }) => {
   const fixture = await mockPortal(page, { outsideVoice: true });
   await openLibrary(page);
-  await expect(page.getByRole('button', { name: 'Queue favorite Night Drive', exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: /^Queue favorite Night Drive( again)?$/ })).toBeDisabled();
   await expect(page.getByRole('button', { name: 'Remove favorite Night Drive', exact: true })).toBeEnabled();
+  await page.getByRole('button', { name: 'Import and manage favorites' }).click();
   await page.getByRole('button', { name: 'Clear favorites', exact: true }).click();
   await expect(page.getByRole('dialog')).toContainText('across all servers');
   await page.getByRole('button', { name: 'Cancel', exact: true }).click();
@@ -174,7 +175,7 @@ test('long RTL and CJK metadata stays inside separate 44px targets at desktop an
     await row.scrollIntoViewIfNeeded();
     const bounds = await row.evaluate(element => {
       const text = element.querySelector('.track-text')!.getBoundingClientRect();
-      const buttons = Array.from(element.querySelectorAll('button')).map(button => button.getBoundingClientRect());
+      const buttons = Array.from(element.querySelectorAll('button')).map(button => button.getBoundingClientRect()).filter(rect => rect.width > 0);
       return { noOverflow: document.documentElement.scrollWidth <= innerWidth, textEnd: text.right,
         buttons: buttons.map(button => ({ x: button.x, right: button.right, width: button.width, height: button.height })) };
     });
@@ -222,4 +223,15 @@ test('a new song in the same room keeps the library on screen while it refreshes
   await page.waitForTimeout(250);
   expect(await page.getByText('Loading your music…').count()).toBe(0);
   expect(await favorites.count()).toBe(2);
+});
+
+test('on a phone, Import from the Manage menu brings its field into view and focus', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const fixture = await mockPortal(page); fixture.state.library.favorites = songs(40);
+  await openLibrary(page);
+  await page.getByRole('button', { name: 'Import and manage favorites' }).click();
+  await page.getByRole('button', { name: 'Import a playlist' }).click();
+  const field = page.getByRole('textbox', { name: 'Import a playlist' });
+  await expect(field).toBeFocused();
+  await expect(field).toBeInViewport();
 });

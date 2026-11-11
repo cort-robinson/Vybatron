@@ -1,6 +1,18 @@
 import { ephemeralText } from './messages.js';
 import { PermissionFlagsBits } from 'discord.js';
-import { isPlaybackRecovering } from '../playback-recovery.js';
+import { controllerSessionStatus } from './player-controller.js';
+import { SESSION_STATUS } from './session-status.js';
+
+// What still works while a session is recovering (session-status.js). One rule
+// for slash commands, the portal and Discord buttons; the buttons listed are the
+// ones the recovering player leaves enabled (messages.js playerComponents).
+const RECOVERY_COMMANDS = new Set(['skip', 'skipto', 'back', 'stop', 'clear', 'voteskip', 'favorite', 'mix', 'replay', 'remove', 'move', 'shuffle', 'loop', 'radio', 'sleep']);
+const RECOVERY_COMPONENTS = [/^player:v1:(skip|stop|stop-confirm)$/, /^queue:v[12]:jump:/, /^history:v2:replay:/];
+
+export function allowedWhileRecovering(interaction) {
+  const id = interaction.customId || '';
+  return RECOVERY_COMMANDS.has(interaction.commandName) || RECOVERY_COMPONENTS.some(pattern => pattern.test(id));
+}
 
 export function canManageMusic(interaction) {
   return Boolean(interaction.portalAdmin === true || (interaction.user?.id && interaction.guild?.ownerId === interaction.user.id) || interaction.memberPermissions?.has?.(PermissionFlagsBits.ManageGuild)
@@ -65,11 +77,8 @@ export async function requireControl(interaction, { checkDJ = true } = {}) {
   if (checkDJ && !hasDJAccess(interaction)) {
     return reject(interaction, 'Playback controls are reserved for this server’s DJ role. You can still add songs, save favorites, or use /voteskip.');
   }
-  if (isPlaybackRecovering(player)) {
-    const safe = new Set(['skip', 'skipto', 'back', 'stop', 'clear', 'voteskip', 'favorite', 'mix', 'replay', 'remove', 'move', 'shuffle', 'loop', 'radio', 'sleep']);
-    const safeComponent = /^player:v1:(skip|back|stop|stop-confirm)$/.test(interaction.customId || '')
-      || /^queue:v[12]:jump:/.test(interaction.customId || '') || /^history:v2:replay:/.test(interaction.customId || '');
-    if (!safe.has(interaction.commandName) && !safeComponent) return reject(interaction, 'Audio is reconnecting. Your queue is safe; wait a moment, or use Skip or Stop.');
+  if (controllerSessionStatus(player) === SESSION_STATUS.RECOVERING && !allowedWhileRecovering(interaction)) {
+    return reject(interaction, 'Audio is reconnecting. Your queue is safe; wait a moment, or use Skip or Stop.');
   }
   if (interaction.commandName !== 'replay') interaction.portalMutationStarted?.();
   return player;

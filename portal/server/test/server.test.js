@@ -16,6 +16,7 @@ import { Transport } from '../src/transport.js';
 import { eventStream } from '../src/compression.js';
 import { Writable } from 'node:stream';
 import { parseUpstreamTiming } from '../src/timing.js';
+import { validatePlayerRequest } from '../src/player.js';
 
 const actorId = '123456789012345678'; const guildId = '234567890123456789';
 const secret = 'test-only-32-character-secret-abcdef0123456789';
@@ -2067,10 +2068,15 @@ test('Shared player routes need a session, and writes need the origin and CSRF t
   assert.equal((await postPlayer(f, device, { op: 'control', action: 'pause' }, { Origin: 'https://evil.example' })).status, 403);
   assert.equal((await postPlayer(f, device, { op: 'control', action: 'pause' }, { 'X-CSRF-Token': 'wrong' })).status, 403);
   for (const bad of [{ op: 'dance' }, { op: 'control', action: 'volume', value: 101 }, { op: 'control', action: 'pause', value: 1 }, { op: 'clear' },
-    { op: 'report', deviceId: 'short', generation: 1, volume: 5 }, { op: 'rename', deviceId: phoneId, name: 'a\nb' }, { op: 'add', expectedRevision: 0, tracks: [], position: 'end' }]) {
+    { op: 'report', deviceId: 'short', generation: 1, volume: 5 },
+    { op: 'report', deviceId: phoneId, generation: 1, seq: 1, playhead: { entryId: null, positionMs: 0, at: 1, playing: true, waiting: 'yes' } },
+    { op: 'report', deviceId: phoneId, generation: 1, seq: 1, playhead: { entryId: null, positionMs: 0, at: 1, playing: true, extra: true } }, { op: 'rename', deviceId: phoneId, name: 'a\nb' }, { op: 'add', expectedRevision: 0, tracks: [], position: 'end' }]) {
     assert.equal((await postPlayer(f, device, bad)).status, 400, JSON.stringify(bad));
   }
   assert.equal(userCalls(f).length, 0, 'nothing invalid reaches the bot');
+  // A playing song still loading says so, and the bot hears it.
+  const waiting = { op: 'report', deviceId: phoneId, generation: 1, seq: 1, playhead: { entryId: null, positionMs: 0, at: 1, playing: true, waiting: true } };
+  assert.deepEqual(validatePlayerRequest(waiting), waiting);
   const unsigned = await listenerStream(f, { cookie: '' }); assert.equal(unsigned.status, 401); unsigned.close();
   for (const options of [{ deviceId: 'short' }, { kind: 'fridge' }, { name: '' }]) {
     const live = await listenerStream(f, device, options); assert.equal(live.status, 400); live.close();

@@ -514,7 +514,7 @@ export function useListening(remote: RemotePortal): Portal {
     let activating = 0;
     // The generation of the last player this page applied from its stream.
     let seen: number | null = null;
-    type Head = { entryId: string | null; positionMs: number; at: number; playing: boolean };
+    type Head = { entryId: string | null; positionMs: number; at: number; playing: boolean; waiting?: boolean };
     let lastPlayhead: Head | null = null;
     // Inside the Android app: whether the app was playing when this page loaded (null until it says).
     let nativePlaying: boolean | null = device ? null : false;
@@ -601,12 +601,14 @@ export function useListening(remote: RemotePortal): Portal {
     // The playhead, reported whenever it moves other than by playing on: play, pause, seek, a new song.
     const sync = (force = false) => {
       const now = deckRef.current;
-      if (!own || now.waiting) return;
+      if (!own) return;
       const playing = now.status === 'playing' && !!now.entryId;
-      const head = { entryId: now.entryId, positionMs: Math.max(0, Math.min(86_400_000, Math.floor(position(now)))), at: Math.round(clock.now()), playing };
+      // Loading or buffering: other screens hold the bar here until the song moves again.
+      const waiting = playing && now.waiting;
+      const head = { entryId: now.entryId, positionMs: Math.max(0, Math.min(86_400_000, Math.floor(position(now)))), at: Math.round(clock.now()), playing, ...(waiting && { waiting }) };
       const last = lastPlayhead;
-      const expected = last ? last.positionMs + (last.playing ? head.at - last.at : 0) : 0;
-      if (!force && last && last.entryId === head.entryId && last.playing === playing && Math.abs(expected - head.positionMs) < 1500) return;
+      const expected = last ? last.positionMs + (last.playing && !last.waiting ? head.at - last.at : 0) : 0;
+      if (!force && last && last.entryId === head.entryId && last.playing === playing && !!last.waiting === waiting && Math.abs(expected - head.positionMs) < 1500) return;
       lastPlayhead = head;
       report({ playhead: head });
     };
@@ -1166,7 +1168,7 @@ export function useListening(remote: RemotePortal): Portal {
     return {
       ...base, revision,
       session: { ...base.session, status, voiceChannel: null, textChannel: null, current, queue: (player?.queue ?? []).map(item => asTrack(item.track)), hasPrevious: !!player?.history.length,
-        positionMs: mine ? deck.positionMs : player?.playhead.positionMs ?? 0, starting: mine && deck.status === 'playing' && deck.waiting,
+        positionMs: mine ? deck.positionMs : player?.playhead.positionMs ?? 0, starting: mine ? deck.status === 'playing' && deck.waiting : !!player?.playhead.waiting,
         durationMs: mine ? deck.durationMs : entry?.track.durationMs ?? 0, suggestions: [], volume: owner ? deck.volume : player?.volume ?? 100, repeat: owner ? deck.repeat : player?.repeat ?? 'off',
         radio: false, autoplay: 'off', fairQueue: false, listeners: [], canAdd: true, canControl: true, canVote: false, reason: null },
       savedSession: { ...base.savedSession, exists: false, canResume: false },

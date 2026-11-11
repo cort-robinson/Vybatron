@@ -10,7 +10,7 @@ export interface HubTrack { id: string; title: string; author: string; uri: stri
 export interface HubEntry { entryId: string; track: HubTrack }
 export interface HubPlayer {
   guildId: string | null; revision: number; generation: number; generationAt: number; activeDeviceId: string | null; playbackVersion: number;
-  current: HubEntry | null; queue: HubEntry[]; history: HubEntry[]; playhead: { positionMs: number; at: number; playing: boolean }; volume: number; repeat: Repeat;
+  current: HubEntry | null; queue: HubEntry[]; history: HubEntry[]; playhead: { positionMs: number; at: number; playing: boolean; waiting?: boolean }; volume: number; repeat: Repeat;
   updatedAt: number; reportSeq: number;
 }
 interface HubDevice { deviceId: string; name: string; kind: string; lastSeen: number }
@@ -178,7 +178,8 @@ export class SharedPlayerHub {
       }
       if (playhead && playhead.entryId === (player.current?.entryId ?? null)) {
         if (playhead.playing !== player.playhead.playing) player.playbackVersion++;
-        player.playhead = { positionMs: playhead.positionMs, at: playhead.at, playing: playhead.playing && !!player.current };
+        const playing = playhead.playing && !!player.current;
+        player.playhead = { positionMs: playhead.positionMs, at: playhead.at, playing, ...(playing && playhead.waiting === true && { waiting: true }) };
       }
       if (body.volume !== undefined) player.volume = body.volume;
       if (body.repeat !== undefined) player.repeat = body.repeat;

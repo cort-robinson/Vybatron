@@ -137,6 +137,27 @@ test('controls on another device are carried out by the one that plays, which re
   await remote.close();
 });
 
+test('while the device that plays is still loading or buffering, other screens hold the bar', async ({ page, browser }) => {
+  const hub = new SharedPlayerHub();
+  await playing(page, hub);
+  const remote = await second(browser, hub);
+  await remote.page.getByRole('button', { name: 'Open player', exact: true }).click();
+  const seek = remote.page.getByRole('slider', { name: 'Playback position' });
+  // Its own reports wait, so only the buffering report below reaches the remote.
+  hub.delayReports(60_000);
+  hub.player.playhead = { positionMs: 30_000, at: Date.now(), playing: true, waiting: true };
+  await hub.publish();
+  await expect.poll(async () => Number(await seek.inputValue())).toBe(30_000);
+  await remote.page.waitForTimeout(2_000);
+  expect(Number(await seek.inputValue())).toBe(30_000);
+  await expect(remote.page.getByRole('button', { name: 'Pause playback' }).first()).toBeEnabled();
+  // Moving again: the bar moves on from there.
+  hub.player.playhead = { positionMs: 30_000, at: Date.now(), playing: true };
+  await hub.publish();
+  await expect.poll(async () => Number(await seek.inputValue()), { timeout: 5_000 }).toBeGreaterThan(30_000);
+  await remote.close();
+});
+
 test('choosing another device moves playback there and stops the first at once', async ({ page, browser }) => {
   const hub = new SharedPlayerHub();
   await playing(page, hub);

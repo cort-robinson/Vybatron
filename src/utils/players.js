@@ -67,10 +67,10 @@ export function emptyPlayer() {
     current: null, queue: [], history: [], playhead: { positionMs: 0, at: 0, playing: false }, volume: 100, repeat: 'off', reportSeq: 0, updatedAt: 0 };
 }
 
-/** Where the playhead is at server time `now`. */
+/** Where the playhead is at server time `now`. A song still loading (`waiting`) holds its place. */
 export function playheadPosition(player, now) {
-  const { positionMs, at, playing } = player.playhead;
-  const position = playing ? positionMs + Math.max(0, now - at) : positionMs;
+  const { positionMs, at, playing, waiting } = player.playhead;
+  const position = playing && !waiting ? positionMs + Math.max(0, now - at) : positionMs;
   const duration = player.current?.track.durationMs;
   return Math.floor(duration > 0 ? Math.min(position, duration) : position);
 }
@@ -213,7 +213,8 @@ export class SharedPlayers {
       if (advance.track !== undefined && !(track = playerTrack(advance.track))) throw invalid();
     }
     if (playhead !== undefined && (!playhead || !(playhead.entryId === null || validEntryId(playhead.entryId)) || !integer(playhead.positionMs, 0, MAX_POSITION_MS)
-      || !Number.isSafeInteger(playhead.at) || Math.abs(playhead.at - this.now()) > CLOCK_SKEW_MS || typeof playhead.playing !== 'boolean')) throw invalid();
+      || !Number.isSafeInteger(playhead.at) || Math.abs(playhead.at - this.now()) > CLOCK_SKEW_MS || typeof playhead.playing !== 'boolean'
+      || (playhead.waiting !== undefined && typeof playhead.waiting !== 'boolean'))) throw invalid();
     if ((volume !== undefined && !integer(volume, 0, 100)) || (repeat !== undefined && !REPEAT_MODES.includes(repeat))) throw invalid();
     return this.update(actorId, (player, now, stored) => {
       if (generation !== player.generation || deviceId !== player.activeDeviceId) throw this.conflict(actorId, 'replaced', 'Another device is playing now.', stored);
@@ -246,7 +247,9 @@ export class SharedPlayers {
       if (playhead && playhead.entryId === (player.current?.entryId ?? null)) {
         // Play, pause and seek change the playback version; a periodic report doesn't.
         if (playhead.playing !== player.playhead.playing || Math.abs(playhead.positionMs - playheadPosition(player, playhead.at)) > SEEK_MS) player.playbackVersion++;
-        player.playhead = { positionMs: playhead.positionMs, at: playhead.at, playing: playhead.playing && Boolean(player.current) };
+        const playing = playhead.playing && Boolean(player.current);
+        // Meant to play but still loading or buffering: every screen holds the bar where it is.
+        player.playhead = { positionMs: playhead.positionMs, at: playhead.at, playing, ...(playing && playhead.waiting === true && { waiting: true }) };
       }
       if (volume !== undefined) player.volume = volume;
       if (repeat !== undefined) player.repeat = repeat;

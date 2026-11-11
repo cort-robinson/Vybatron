@@ -32,6 +32,10 @@ class SharedPlayerTest {
         assertEquals(listOf("b".padEnd(12, 'x')), player.queue.map { it.entryId })
         // The playhead moves on while it plays, up to the song's end.
         assertEquals(7_000L, player.positionAt(3_000)); assertEquals(240_000L, player.positionAt(10_000_000))
+        // A song still loading or buffering holds its place.
+        val buffering = SharedPlayer.parse(Shared.player(generation = 3, active = "me", current = Shared.entry("a"), playing = true, at = 1_000, positionMs = 5_000)
+            .apply { getJSONObject("playhead").put("waiting", true) })!!
+        assertEquals(5_000L, buffering.positionAt(3_000))
         val native = player.current!!.native()!!
         assertEquals("a".padEnd(12, 'x'), native.entryId); assertEquals(JSONObject.NULL, native.raw.get("requestedBy"))
         assertNull(SharedPlayer.parse(Shared.player().apply { remove("playhead") }))

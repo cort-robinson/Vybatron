@@ -23,6 +23,9 @@ from deploy import Deployer, DeploymentError, IMAGE, LOCK, SHA, read, run, write
 VOLUME = re.compile(r'^[a-z0-9][a-z0-9_.-]{0,127}$')
 GUILD = re.compile(r'^\d{17,20}$')
 AUDIO = ('warp', 'yt-cipher', 'lavalink')
+# The 5-minute recovery check (vybertron-recovery.service, TimeoutStartSec=15min)
+# and the nightly backup hold the same maintenance lock for a short while.
+LOCK_TIMEOUT, LOCK_POLL = 900, 5
 
 
 class PortalDeployer(Deployer):
@@ -406,14 +409,22 @@ def main():
     parser.add_argument('--state-dir', type=Path, default=Path('/var/lib/vybertron-recovery'))
     parser.add_argument('--env-file', type=Path, default=Path('/root/Vybertron/.env'))
     parser.add_argument('--portal-env', type=Path, default=Path('/var/lib/vybertron-portal/portal.env'))
+    parser.add_argument('--lock-timeout', type=float, default=LOCK_TIMEOUT)
     args = parser.parse_args()
     args.state_dir.mkdir(parents=True, exist_ok=True, mode=0o700); args.state_dir.chmod(0o700)
     import fcntl
     with open(LOCK, 'a') as lock:
-        try:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            print(json.dumps({'status': 'failed', 'error': 'portal_maintenance_lock_busy'})); raise SystemExit(1)
+        # Wait out a recovery check or backup instead of failing the release.
+        # Nothing has changed yet, and deploy() re-checks for listeners once it holds the lock.
+        deadline = time.monotonic() + args.lock_timeout
+        while True:
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if time.monotonic() >= deadline:
+                    print(json.dumps({'status': 'failed', 'error': 'portal_maintenance_lock_busy'})); raise SystemExit(1) from None
+                time.sleep(LOCK_POLL)
         deployer = PortalDeployer(args.repo, args.state_dir, env_file=args.env_file, portal_env=args.portal_env)
         try:
             status = deployer.deploy(args.sha, args.guild_id) if args.action == 'deploy' else deployer.rollback()

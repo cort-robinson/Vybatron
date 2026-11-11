@@ -59,6 +59,8 @@ internal fun sourceOf(track: NativeTrack, guildId: String?): AudioSource =
 class DevicePlayer(context: Context, private val base: String, private val cookies: PortalCookies) : LocalPlayer {
     private val main = Handler(Looper.getMainLooper())
     private val worker = Executors.newSingleThreadExecutor()
+    // Waits for the bot to hold a whole song, apart from lookups so a long wait never holds one up.
+    private val fetcher = Executors.newSingleThreadExecutor()
     private val songs = DeviceQueue()
     private var guildId: String? = null
     private var volume = 100
@@ -210,6 +212,7 @@ class DevicePlayer(context: Context, private val base: String, private val cooki
     fun release() {
         token++
         worker.shutdownNow()
+        fetcher.shutdownNow()
         exo.release()
         listeners.clear()
         notices.clear()
@@ -236,8 +239,12 @@ class DevicePlayer(context: Context, private val base: String, private val cooki
 
     private fun seek(positionMs: Long) {
         val current = songs.current ?: return
-        if (exo.currentMediaItem?.mediaId == current.id) exo.seekTo(positionMs)
-        else start(current, positionMs, exo.playWhenReady)
+        if (exo.currentMediaItem?.mediaId != current.id) start(current, positionMs, exo.playWhenReady)
+        else if (exo.isCurrentMediaItemSeekable) exo.seekTo(positionMs)
+        // A song the bot was still fetching arrived without a length, and ExoPlayer can seek such a
+        // stream only within what it has buffered; past that it starts the song over. It loads again,
+        // once the bot has all of it, from the new place.
+        else start(current, positionMs, exo.playWhenReady, whole = true)
     }
 
     private fun next() { if (songs.current != null) advance(manual = true) }
@@ -285,12 +292,31 @@ class DevicePlayer(context: Context, private val base: String, private val cooki
      * Plays [track] from [startMs] if [autoplay]. Whether to play is kept in ExoPlayer's
      * playWhenReady from here on, so a Pause during a lookup or before a retry still holds.
      */
-    private fun start(track: NativeTrack, startMs: Long, autoplay: Boolean) {
+    private fun start(track: NativeTrack, startMs: Long, autoplay: Boolean, whole: Boolean = false) {
         val ticket = ++token
         pendingStart = startMs
         exo.playWhenReady = autoplay
         val lookup = when (val source = sourceOf(track, guildId)) {
-            is AudioSource.Video -> { resolving = false; prepare(track, source.videoId, startMs); return }
+            is AudioSource.Video -> {
+                if (!whole) { resolving = false; prepare(track, source.videoId, startMs); return }
+                // Shown waiting at the new place until then; a later start supersedes it.
+                resolving = true
+                exo.stop()
+                exo.clearMediaItems()
+                val url = audioUrl(source.videoId)
+                fetcher.execute {
+                    // A failed wait loads anyway, and the load reports what went wrong.
+                    runCatching { warmUp(open(url, readTimeoutMs = 120_000), cookies) }
+                    main.post {
+                        if (ticket != token) return@post
+                        resolving = false
+                        prepare(track, source.videoId, startMs)
+                        emit()
+                    }
+                }
+                emit()
+                return
+            }
             is AudioSource.Lookup -> source
             // Nothing to look it up in: the song waits paused, as after a lookup that failed, instead of loading forever.
             AudioSource.Unreachable -> {
@@ -399,11 +425,11 @@ class DevicePlayer(context: Context, private val base: String, private val cooki
         }
     }
 
-    private fun open(url: String): HttpURLConnection {
+    private fun open(url: String, readTimeoutMs: Int = 15_000): HttpURLConnection {
         check(sameOrigin(url)) { "Only the portal is asked" }
         return (URL(url).openConnection() as HttpURLConnection).apply {
             connectTimeout = 15_000
-            readTimeout = 15_000
+            readTimeout = readTimeoutMs
             instanceFollowRedirects = false
             setRequestProperty("User-Agent", USER_AGENT)
             cookies.header()?.let { setRequestProperty("Cookie", it) }

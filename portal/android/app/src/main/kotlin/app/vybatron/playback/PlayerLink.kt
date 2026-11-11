@@ -61,7 +61,8 @@ class PlayerLink(
         fun after(ms: Long, task: () -> Unit): () -> Unit
     }
 
-    private data class Head(val entryId: String?, val positionMs: Long, val at: Long, val playing: Boolean)
+    /** [waiting]: meant to play, but still loading or buffering, so every screen holds the bar here. */
+    private data class Head(val entryId: String?, val positionMs: Long, val at: Long, val playing: Boolean, val waiting: Boolean = false)
     private data class Owned(val generation: Long, var seq: Long)
     private class Report(val generation: Long, val seq: Long, val advance: JSONObject?, var playhead: Head?, val volume: Int?, val repeat: Repeat?) {
         // Once sent, a report is never changed: the store may have applied it even if no answer came.
@@ -413,14 +414,15 @@ class PlayerLink(
 
     /** The playhead, reported whenever it moves other than by playing on: play, pause, seek, a new song. */
     private fun sync(state: JSONObject, force: Boolean) {
-        if (owned == null || state.optBoolean("waiting")) return
+        if (owned == null) return
         val entry = entryOf(NativeTrack.parse(state.opt("current")))
         val playing = state.optString("status") == "playing" && entry != null
+        val waiting = playing && state.optBoolean("waiting")
         val offset = serverNow() - localNow()
-        val head = Head(entry, state.optLong("positionMs").coerceIn(0, SharedPlayer.MAX_POSITION), state.optLong("at", localNow()) + offset, playing)
+        val head = Head(entry, state.optLong("positionMs").coerceIn(0, SharedPlayer.MAX_POSITION), state.optLong("at", localNow()) + offset, playing, waiting)
         val last = lastHead
-        val expected = if (last == null) 0 else last.positionMs + if (last.playing) head.at - last.at else 0
-        if (!force && last != null && last.entryId == head.entryId && last.playing == playing && abs(expected - head.positionMs) < 1_500) return
+        val expected = if (last == null) 0 else last.positionMs + if (last.playing && !last.waiting) head.at - last.at else 0
+        if (!force && last != null && last.entryId == head.entryId && last.playing == playing && last.waiting == waiting && abs(expected - head.positionMs) < 1_500) return
         lastHead = head
         report(playhead = head)
     }
@@ -461,7 +463,10 @@ class PlayerLink(
         item.attempted = true
         val body = JSONObject().put("op", "report").put("deviceId", me.deviceId).put("generation", item.generation).put("seq", item.seq)
         item.advance?.let { body.put("advance", it) }
-        item.playhead?.let { body.put("playhead", JSONObject().put("entryId", it.entryId ?: JSONObject.NULL).put("positionMs", it.positionMs).put("at", it.at).put("playing", it.playing)) }
+        item.playhead?.let { head ->
+            body.put("playhead", JSONObject().put("entryId", head.entryId ?: JSONObject.NULL).put("positionMs", head.positionMs).put("at", head.at)
+                .put("playing", head.playing).apply { if (head.waiting) put("waiting", true) })
+        }
         item.volume?.let { body.put("volume", it) }
         item.repeat?.let { body.put("repeat", it.wire) }
         send(body) { reply -> delivered(item, reply) }

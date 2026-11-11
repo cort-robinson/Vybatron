@@ -23,7 +23,7 @@ object Shared {
 /** This device's player, reduced to its queue and whether it plays. */
 class FakeLocal : LocalPlayer {
     val songs = DeviceQueue()
-    var status = "idle"; var position = 0L; var volume = 100
+    var status = "idle"; var position = 0L; var volume = 100; var waiting = false
     val requests = ArrayList<PlayerRequest>()
     var follows = 0
     private val listeners = ArrayList<(JSONObject) -> Unit>()
@@ -31,7 +31,7 @@ class FakeLocal : LocalPlayer {
     override fun addListener(listener: (JSONObject) -> Unit) { listeners.add(listener) }
     override fun state(): JSONObject = JSONObject()
         .put("current", songs.current?.raw ?: JSONObject.NULL).put("queue", JSONArray(songs.queue.map { it.raw })).put("history", JSONArray(songs.history.map { it.raw }))
-        .put("status", if (songs.current == null) "idle" else status).put("positionMs", position).put("at", Shared.NOW).put("waiting", false)
+        .put("status", if (songs.current == null) "idle" else status).put("positionMs", position).put("at", Shared.NOW).put("waiting", waiting)
         .put("volume", volume).put("repeat", songs.repeat.wire)
 
     override fun handle(request: PlayerRequest): Result<JSONObject> {
@@ -149,6 +149,19 @@ class PlayerLinkTest {
         net.answer()
         val renewed = net.reports().last()
         assertEquals(5 to 1, renewed.getInt("generation") to renewed.getInt("seq"))
+    }
+
+    // Other screens extrapolate the playhead; a song stuck loading or buffering must not move on there.
+    @Test fun aSongStillLoadingOrBufferingIsReportedSoTheBarHolds() {
+        playing()
+        net.answer()
+        local.waiting = true; local.position = 60_000; local.emit()
+        val buffering = net.reports().last().getJSONObject("playhead")
+        assertEquals(60_000, buffering.getLong("positionMs")); assertTrue(buffering.getBoolean("playing")); assertTrue(buffering.getBoolean("waiting"))
+        net.answer()
+        local.waiting = false; local.emit()
+        val moving = net.reports().last().getJSONObject("playhead")
+        assertTrue(moving.getBoolean("playing")); assertFalse(moving.has("waiting"))
     }
 
     @Test fun reportsWaitInOrderWhileOfflineAndASentOneNeverChanges() {

@@ -4,7 +4,7 @@ import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { PLAYER_LIMITS, PlayerError } from '../src/utils/players.js';
+import { PLAYER_LIMITS, PlayerError, playheadPosition } from '../src/utils/players.js';
 import { DEVICE_RETENTION_MS, PLAYER_RETENTION_MS } from '../src/utils/listening-state.js';
 import { openLibrary, closeLibraries } from './library-fixture.js';
 
@@ -194,6 +194,27 @@ test('playhead reports change the playback version only on play, pause and seek'
   ({ player } = await players.report(actor, { deviceId: phone, generation: player.generation, seq: ++seq, volume: 40, repeat: 'queue' }));
   assert.equal(player.volume, 40); assert.equal(player.repeat, 'queue');
   await rejects(report({ positionMs: 0, at: clock.now - 3_600_000, playing: true }), 400, 'invalid_input');
+});
+
+test('a playing song still loading or buffering holds its place until the device says it moves', async t => {
+  const { players, clock } = await fixture(t);
+  await register(players);
+  await players.edit(actor, { op: 'add', expectedRevision: 0, tracks: songs(1), position: 'end' });
+  let { player } = await players.activate(actor, { deviceId: phone });
+  const entryId = player.current.entryId; let seq = 0;
+  const report = playhead => players.report(actor, { deviceId: phone, generation: player.generation, seq: ++seq, playhead: { entryId, ...playhead } });
+  ({ player } = await report({ positionMs: 60_000, at: clock.now, playing: true, waiting: true }));
+  assert.deepEqual(player.playhead, { positionMs: 60_000, at: clock.now, playing: true, waiting: true });
+  clock.now += 5_000;
+  assert.equal(playheadPosition(player, clock.now), 60_000, 'no time passes while it buffers');
+  ({ player } = await report({ positionMs: 60_000, at: clock.now, playing: true }));
+  assert.deepEqual(player.playhead, { positionMs: 60_000, at: clock.now, playing: true });
+  clock.now += 5_000;
+  assert.equal(playheadPosition(player, clock.now), 65_000);
+  // Only a playing song waits, and `waiting` is a flag.
+  ({ player } = await report({ positionMs: 65_000, at: clock.now, playing: false, waiting: true }));
+  assert.deepEqual(player.playhead, { positionMs: 65_000, at: clock.now, playing: false });
+  await rejects(report({ positionMs: 65_000, at: clock.now, playing: true, waiting: 'yes' }), 400, 'invalid_input');
 });
 
 test('a newer generation fences reports from the device it replaced', async t => {

@@ -324,7 +324,7 @@ anywhere else.
 `Player = { guildId: string|null, revision: number, generation: number, generationAt: number,
   activeDeviceId: string|null, playbackVersion: number, current: Entry|null, queue: Entry[] (<=500),
   history: Entry[] (<=50, newest first), playhead: { positionMs: number, at: number (server ms),
-  playing: boolean }, volume: 0-100, repeat: 'off'|'track'|'queue', updatedAt: number }`.
+  playing: boolean, waiting?: true }, volume: 0-100, repeat: 'off'|'track'|'queue', updatedAt: number }`.
 `revision` changes with the current song, queue or history; `playbackVersion` with a song change,
 play, pause or seek; `generation` each time a device becomes the active one. Without an active
 device the player is paused. `updatedAt` strictly increases with every change.
@@ -358,7 +358,8 @@ whole PlayerView. `PlayerView = { player: Player, devices: Device[] }`.
     `skipTo {expectedRevision, entryId}` (the songs before it are skipped).
   - From the active device: `report {deviceId, generation, seq, advance?: {from: entryId|null,
     to: entryId|null, track?: PlayerTrack}, playhead?: {entryId: entryId|null, positionMs, at,
-    playing}, volume?, repeat?}`. `seq` numbers the device's reports from 1 in each generation; a
+    playing, waiting?: boolean}, volume?, repeat?}`. `waiting` marks a playing song that is still
+    loading or buffering: the playhead holds its place until a report without it. `seq` numbers the device's reports from 1 in each generation; a
     report at or below the last one applied changes nothing, so offline reports are sent again in
     order on reconnecting. `at` is server time; a playhead naming a song that isn't current (after
     the report's advance) is ignored. An advance makes `to` current wherever it is: from the queue

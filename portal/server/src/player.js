@@ -41,8 +41,9 @@ const schemas = {
     deviceId: req(validDeviceId), generation: req(count), seq: req(integer(1, Number.MAX_SAFE_INTEGER)),
     advance: opt(value => object(value) && Object.keys(value).every(key => ['from', 'to', 'track'].includes(key))
       && [value.from, value.to].every(id => id === null || entryId(id)) && (value.track === undefined || track(value.track))),
-    playhead: opt(value => object(value) && Object.keys(value).length === 4 && (value.entryId === null || entryId(value.entryId))
-      && position(value.positionMs) && Number.isSafeInteger(value.at) && typeof value.playing === 'boolean'),
+    playhead: opt(value => object(value) && Object.keys(value).length === (value.waiting === undefined ? 4 : 5) && (value.entryId === null || entryId(value.entryId))
+      && position(value.positionMs) && Number.isSafeInteger(value.at) && typeof value.playing === 'boolean'
+      && (value.waiting === undefined || typeof value.waiting === 'boolean')),
     volume: opt(volume), repeat: opt(repeat),
   },
   activate: { deviceId: req(validDeviceId), guildId: opt(snowflake) },

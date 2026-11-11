@@ -30,10 +30,12 @@ data class SharedPlayer(
     val volume: Int,
     val repeat: Repeat,
     val updatedAt: Long,
+    /** Meant to play, but still loading or buffering: the playhead holds its place. */
+    val waiting: Boolean = false,
 ) {
     /** Where the playhead is at server time [now], as the page's `playheadAt` works it out. */
     fun positionAt(now: Long): Long {
-        val moved = if (playing && activeDeviceId != null) positionMs + (now - at).coerceAtLeast(0) else positionMs
+        val moved = if (playing && !waiting && activeDeviceId != null) positionMs + (now - at).coerceAtLeast(0) else positionMs
         val duration = current?.track?.optLong("durationMs") ?: 0
         return (if (duration > 0) minOf(moved, duration) else moved).coerceIn(0, MAX_POSITION)
     }
@@ -61,6 +63,7 @@ data class SharedPlayer(
                 volume = (count(player.opt("volume")) ?: 100).toInt().coerceIn(0, 100),
                 repeat = Repeat.of(player.opt("repeat") as? String) ?: Repeat.OFF,
                 updatedAt = count(player.opt("updatedAt")) ?: return null,
+                waiting = playhead.opt("waiting") == true,
             )
         }
 

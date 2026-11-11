@@ -8,7 +8,8 @@ import type { NativePlayer } from './native';
 export type Repeat = 'off' | 'track' | 'queue';
 export type PlayerTrack = Omit<Track, 'requestedBy' | 'suggested'>;
 export interface PlayerEntry { entryId: string; track: PlayerTrack }
-export interface Playhead { positionMs: number; at: number; playing: boolean }
+// `waiting`: meant to play, but the song is still loading or buffering, so the playhead holds its place.
+export interface Playhead { positionMs: number; at: number; playing: boolean; waiting?: boolean }
 export interface Player {
   guildId: string | null; revision: number; generation: number; generationAt: number; activeDeviceId: string | null; playbackVersion: number;
   current: PlayerEntry | null; queue: PlayerEntry[]; history: PlayerEntry[]; playhead: Playhead; volume: number; repeat: Repeat; updatedAt: number;
@@ -36,8 +37,8 @@ export function validView(value: unknown): value is PlayerView {
 
 /** Where the playhead is at server time `now`. */
 export function playheadAt(player: Player, now: number) {
-  const { positionMs, at, playing } = player.playhead;
-  const position = playing && player.activeDeviceId ? positionMs + Math.max(0, now - at) : positionMs;
+  const { positionMs, at, playing, waiting } = player.playhead;
+  const position = playing && !waiting && player.activeDeviceId ? positionMs + Math.max(0, now - at) : positionMs;
   const duration = player.current?.track.durationMs;
   return Math.max(0, Math.floor(duration ? Math.min(position, duration) : position));
 }

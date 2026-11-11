@@ -32,6 +32,21 @@ import java.net.URLEncoder
 import java.util.concurrent.Executors
 
 /**
+ * Where a song's audio comes from on this device: its own YouTube video, a lookup of its
+ * closest match in a guild, or nowhere yet (no guild to look it up in).
+ */
+internal sealed interface AudioSource {
+    data class Video(val videoId: String) : AudioSource
+    data class Lookup(val guildId: String, val query: String) : AudioSource
+    data object Unreachable : AudioSource
+}
+
+internal fun sourceOf(track: NativeTrack, guildId: String?): AudioSource =
+    track.videoId?.let { AudioSource.Video(it) }
+        ?: guildId?.let { AudioSource.Lookup(it, "${track.author} ${track.title}") }
+        ?: AudioSource.Unreachable
+
+/**
  * This device's player: the queue (DeviceQueue) and ExoPlayer, which plays the portal's
  * audio route for one song at a time. It moves on by itself when a song ends, so the
  * music keeps going after the page is gone. Main thread only, except the lookups it
@@ -274,13 +289,25 @@ class DevicePlayer(context: Context, private val base: String, private val cooki
         val ticket = ++token
         pendingStart = startMs
         exo.playWhenReady = autoplay
-        val videoId = track.videoId
-        if (videoId != null) { resolving = false; prepare(track, videoId, startMs); return }
+        val lookup = when (val source = sourceOf(track, guildId)) {
+            is AudioSource.Video -> { resolving = false; prepare(track, source.videoId, startMs); return }
+            is AudioSource.Lookup -> source
+            // Nothing to look it up in: the song waits paused, as after a lookup that failed, instead of loading forever.
+            AudioSource.Unreachable -> {
+                resolving = false
+                exo.stop()
+                exo.clearMediaItems()
+                exo.pause()
+                notice("Couldn’t find a version of “${track.title}” to play. Try again.", "error")
+                emit()
+                return
+            }
+        }
         resolving = true
         exo.stop()
         exo.clearMediaItems()
-        val guild = guildId ?: return
-        val query = "${track.author} ${track.title}"
+        val guild = lookup.guildId
+        val query = lookup.query
         worker.execute {
             val match = runCatching { search(guild, query) }
             main.post {

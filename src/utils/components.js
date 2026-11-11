@@ -103,11 +103,6 @@ async function handlePlayerComponent(interaction, action, expectedIdentity = nul
   const controlledPlayer = await requireControl(interaction, { checkDJ: action !== 'favorite' });
   if (!controlledPlayer) return null;
 
-  if (getControllerRecord(interaction.guildId)?.state === 'recovering'
-    && !['skip', 'stop', 'stop-confirm'].includes(action)) {
-    return interaction.reply(ephemeralText('Audio is reconnecting. You can skip this track or stop playback while it recovers.'));
-  }
-
   if (action === 'favorite') {
     const track = controlledPlayer.queue.current;
     if (!track || trackIdentity(track) !== expectedIdentity) {
@@ -352,9 +347,6 @@ export async function handleModalSubmit(interaction) {
 
   const player = await requireControl(interaction);
   if (!player) return null;
-  if (getControllerRecord(interaction.guildId)?.state === 'recovering') {
-    return interaction.reply(ephemeralText('Audio is reconnecting. Open Seek again after playback resumes.'));
-  }
   const track = player.queue.current;
   if (!track || trackIdentity(track) !== match[1]) {
     return interaction.reply(ephemeralText('The track changed; open Seek again.'));

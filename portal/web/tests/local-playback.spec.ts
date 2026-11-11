@@ -239,6 +239,113 @@ test('a second tap while a save is loading sends nothing more', async ({ page })
   await expect.poll(() => fixture.commands.filter(c => c.command === 'favorite').length).toBe(2);
 });
 
+// The bot keeps one import preview per listener: the latest finished lookup wins,
+// and confirming any other preview is refused as changed.
+const PLAYLIST = 'https://music.youtube.com/playlist?list=PLroadtrip';
+async function oneImportSlot(page: Page, fixture: Awaited<ReturnType<typeof portal>>, gates: { playlist?: Promise<void>; song?: Promise<void> } = {}) {
+  let slot: string | null = null;
+  let playlistDone = () => {}; const playlistLooked = new Promise<void>(resolve => { playlistDone = resolve; });
+  await page.route('**/api/guilds/*/commands', async route => {
+    const body = route.request().postDataJSON();
+    if (body.command !== 'favorite' || body.subcommand !== 'import') return route.fallback();
+    fixture.commands.push(body);
+    const playlist = body.options.link === PLAYLIST; const reply = { ok: true, snapshot: fixture.state.snapshot };
+    if (body.expectedImportId) {
+      if (body.expectedImportId !== slot) return route.fulfill({ status: 409, json: { error: { code: 'conflict', message: 'This import preview expired or changed. Preview the link again.' } } });
+      slot = null;
+      if (playlist) fixture.state.library.favorites.push(youtubeTrack('road00000001', 'Open Road'), youtubeTrack('road00000002', 'Mile Marker'));
+      else fixture.state.library.favorites.push(youtubeTrack('dX3k_QDnzHE', 'Midnight City'));
+      return route.fulfill({ json: { ...reply, message: playlist ? 'Added 2 tracks.' : 'Added 1 track.' } });
+    }
+    if (playlist) { await gates.playlist; slot = 'p'.repeat(32); }
+    // A one-song lookup that started during the playlist's finishes just after it.
+    else { if (gates.song) await gates.song; slot = 'c'.repeat(32); }
+    const preview = playlist ? onePreview({ id: slot, title: 'Road trip', found: 2, toAdd: 2, tracks: [{ title: 'Open Road', author: 'Northline' }, { title: 'Mile Marker', author: 'Solara' }] }) : onePreview();
+    if (playlist) setTimeout(playlistDone, 300);
+    return route.fulfill({ json: { ...reply, message: 'Preview ready.', preview } });
+  });
+  return { playlistLooked };
+}
+const imports = (fixture: Awaited<ReturnType<typeof portal>>) => fixture.commands.filter(c => c.command === 'favorite' && c.subcommand === 'import')
+  .map(c => [c.options?.link === PLAYLIST ? 'playlist' : 'song', c.expectedImportId?.[0] || null]);
+async function openImport(page: Page) {
+  await page.getByRole('button', { name: 'My Music', exact: true }).click();
+  await expect(page.getByLabel('Search favorites', { exact: true })).toBeVisible();
+  const open = page.getByRole('button', { name: 'Import a playlist', exact: true });
+  if (await open.count() && await open.getAttribute('aria-expanded') === 'false') await open.click();
+  await page.getByLabel('Import a playlist').fill(PLAYLIST);
+}
+
+test('a heart tapped during a playlist lookup waits for that import instead of replacing its preview', async ({ page }, info) => {
+  const fixture = await portal(page, { inVoice: false });
+  let release = () => {}; const playlist = new Promise<void>(resolve => { release = resolve; });
+  const { playlistLooked } = await oneImportSlot(page, fixture, { playlist });
+  // Before the fix the heart's lookup ran beside the playlist's and finished last.
+  await page.route('**/api/guilds/*/commands', async route => {
+    const body = route.request().postDataJSON();
+    if (body.subcommand === 'import' && !body.expectedImportId && body.options.link !== PLAYLIST) await playlistLooked;
+    return route.fallback();
+  });
+  await addSongs(page);
+  await expect(title(page)).toHaveText('Midnight City');
+  await openImport(page);
+  await page.getByRole('button', { name: 'Preview import' }).click();
+  await expect(page.getByRole('button', { name: 'Looking up…' })).toBeDisabled();
+  await page.getByTestId('player').getByRole('button', { name: 'Save current song to favorites' }).filter({ visible: true }).click();
+  await expect.soft(page.getByRole('status').filter({ hasText: 'after your playlist import' })).toBeVisible();
+  if (process.env.IMPORT_SCREENSHOTS) await page.screenshot({ path: info.outputPath('heart-waits.png') });
+  release();
+  const dialog = page.getByRole('dialog', { name: 'Import Road trip' });
+  await expect(dialog).toBeVisible();
+  await page.waitForTimeout(600); // let a lookup that raced the playlist's land, if one was sent
+  await dialog.getByRole('button', { name: 'Add 2 songs' }).click();
+  await expect(dialog).toBeHidden();
+  // The song's preview is only asked for once the playlist import is done, so both save.
+  await expect.poll(() => imports(fixture)).toEqual([['playlist', null], ['playlist', 'p'], ['song', null], ['song', 'c']]);
+  await expect(page.getByTestId('player').getByRole('button', { name: 'Remove current song from favorites' }).filter({ visible: true })).toBeVisible();
+  expect(fixture.state.library.favorites.map(track => track.title)).toEqual(expect.arrayContaining(['Open Road', 'Mile Marker', 'Midnight City']));
+});
+
+test('leaving the import form during a lookup keeps a waiting heart behind that lookup', async ({ page }) => {
+  const fixture = await portal(page, { inVoice: false });
+  let release = () => {}; const playlist = new Promise<void>(resolve => { release = resolve; });
+  await oneImportSlot(page, fixture, { playlist });
+  await addSongs(page);
+  await expect(title(page)).toHaveText('Midnight City');
+  await openImport(page);
+  await page.getByRole('button', { name: 'Preview import' }).click();
+  await expect(page.getByRole('button', { name: 'Looking up…' })).toBeDisabled();
+  await page.getByTestId('player').getByRole('button', { name: 'Save current song to favorites' }).filter({ visible: true }).click();
+  await page.getByRole('button', { name: 'Home', exact: true }).click();
+  // The bot is still looking the playlist up; a song lookup now would be refused.
+  await page.waitForTimeout(300);
+  expect(imports(fixture)).toEqual([['playlist', null]]);
+  release();
+  await expect.poll(() => imports(fixture)).toEqual([['playlist', null], ['song', null], ['song', 'c']]);
+  await expect(page.getByTestId('player').getByRole('button', { name: 'Remove current song from favorites' }).filter({ visible: true })).toBeVisible();
+});
+
+test('a playlist preview waits while a song from this device is saving', async ({ page }, info) => {
+  const fixture = await portal(page, { inVoice: false });
+  let release = () => {}; const song = new Promise<void>(resolve => { release = resolve; });
+  await oneImportSlot(page, fixture, { song });
+  await addSongs(page);
+  await expect(title(page)).toHaveText('Midnight City');
+  await page.getByTestId('player').getByRole('button', { name: 'Save current song to favorites' }).filter({ visible: true }).click();
+  await openImport(page);
+  const preview = page.getByRole('button', { name: 'Preview import' });
+  if (process.env.IMPORT_SCREENSHOTS) { await page.setViewportSize({ width: 1280, height: 1000 }); await page.screenshot({ path: info.outputPath('playlist-waits.png') }); }
+  await expect(preview).toBeDisabled();
+  await expect(page.getByText('Saving a song to your favorites.', { exact: false })).toBeVisible();
+  release();
+  await expect(preview).toBeEnabled();
+  await preview.click();
+  const dialog = page.getByRole('dialog', { name: 'Import Road trip' });
+  await dialog.getByRole('button', { name: 'Add 2 songs' }).click();
+  await expect(dialog).toBeHidden();
+  expect(imports(fixture)).toEqual([['song', null], ['song', 'c'], ['playlist', null], ['playlist', 'p']]);
+});
+
 test('a song from a source the import can\'t read explains instead of failing', async ({ page }) => {
   const fixture = await portal(page, { inVoice: false });
   // A queued song keeps its own catalog link until it plays through its YouTube match.
@@ -307,4 +414,56 @@ test('in Discord the seek bar holds while the bot says a song is still starting'
   await expect(page.getByRole('button', { name: 'Pause playback' })).toBeEnabled();
   await page.waitForTimeout(2500);
   await expect(seek).toHaveValue('0');
+});
+
+// This device's player refuses one song outright (not a tap-first refusal), with no media error to follow.
+async function refuse(page: Page, videoId: string) {
+  await page.addInitScript(id => {
+    const play = HTMLMediaElement.prototype.play;
+    HTMLMediaElement.prototype.play = function () {
+      const page = window as unknown as { deckAudio?: HTMLMediaElement; deckPaused: boolean };
+      if (!page.deckAudio) this.addEventListener('pause', () => { page.deckPaused = true; });
+      page.deckAudio = this;
+      return this.dataset.video === id ? Promise.reject(new DOMException('The element has no supported sources.', 'NotSupportedError')) : play.call(this);
+    };
+  }, videoId);
+}
+
+test('a song whose audio won’t start on this device gets one retry, then is skipped', async ({ page }) => {
+  await refuse(page, 'dX3k_QDnzHE');
+  const fixture = await portal(page, { inVoice: false });
+  // The bot is busy for that song, which is worth one quiet retry.
+  await page.route('**/api/guilds/*/audio/dX3k_QDnzHE', route => route.request().resourceType() === 'fetch'
+    ? route.fulfill({ status: 503, json: { error: { code: 'busy', message: 'The bot is busy.' } } }) : route.fallback());
+  await addSongs(page);
+  await expect.poll(async () => (await calls(page)).filter(call => call.startsWith('play:dX3k_QDnzHE')).length, { timeout: 5000 }).toBe(2);
+  await expect(page.getByText('“Midnight City”: The bot is busy. Skipping it.')).toBeVisible();
+  await expect(title(page)).toHaveText('Wait');
+  await expect.poll(() => calls(page)).toContain('play:Fk3RbKWbmtg@0');
+  // The song that plays is reported as playing, so the listener's other devices follow it.
+  const wait = () => fixture.shared.player.current?.track.title === 'Wait' && fixture.shared.player.playhead.playing;
+  await expect.poll(wait).toBe(true);
+  expect(fixture.commands).toEqual([]);
+});
+
+test('a paused song on this device keeps reporting its place after its audio stalls', async ({ page }) => {
+  await refuse(page, 'none');
+  const fixture = await portal(page, { inVoice: false });
+  await addSongs(page);
+  await page.getByRole('button', { name: 'Open player', exact: true }).click();
+  const seek = page.getByRole('slider', { name: 'Playback position' });
+  await expect.poll(async () => Number(await seek.inputValue())).toBeGreaterThan(1000);
+  await page.getByRole('button', { name: 'Pause playback' }).click();
+  await expect.poll(() => fixture.shared.player.playhead.playing).toBe(false);
+  await expect.poll(() => page.evaluate(() => (window as unknown as { deckPaused?: boolean }).deckPaused)).toBe(true);
+  // A stall the element announces as it pauses, which no longer applies.
+  await page.evaluate(() => (window as unknown as { deckAudio: HTMLMediaElement }).deckAudio.dispatchEvent(new Event('waiting')));
+  const before = fixture.shared.player.playhead.positionMs;
+  // One seek, five seconds on.
+  await seek.focus();
+  for (let press = 0; press < 5; press++) await page.keyboard.down('ArrowRight');
+  await page.keyboard.up('ArrowRight');
+  // The seek is reported. (The mock's audio has no byte ranges, so the element itself can't land there.)
+  const reported = () => fixture.shared.ops('report').some(({ body: { playhead } }) => playhead && !playhead.playing && playhead.positionMs > before + 4000);
+  await expect.poll(reported).toBe(true);
 });

@@ -60,11 +60,13 @@ it.
    or expired code says so without telling which. An approval records the approving listener in
    the pending sign-in once and can't be changed: a second approval of the same code is refused.
 4. **Finish.** The TV polls `POST /auth/device/poll` every 5 seconds with its cookie. Once approved,
-   the poll claims the pending sign-in, removing it in the same step with no wait in between, so a
-   second poll at the same moment finds nothing. Only then does the portal check the approving
-   listener with the bot, as Discord sign-in does (`/v1/bootstrap`), create a new session for that
-   listener and set the session cookie on the TV. A pending sign-in is also deleted on expiry or
-   denial.
+   the poll claims the pending sign-in in the same step with no wait in between, so a second poll
+   at the same moment hears it's still pending and never makes a session. Only then does the
+   portal check the approving listener with the bot, as Discord sign-in does (`/v1/bootstrap`),
+   create a new session for that listener, delete the pending sign-in and set the session cookie on
+   the TV. If the bot refuses the listener, the sign-in ends; if the bot or the session store fails
+   in a way the TV retries (a 429 or 5xx), the approval stands for its next poll while the code
+   lives. A pending sign-in is also deleted on expiry or denial.
 
 `start` and `poll` set or use a cookie before anyone is signed in, so they can't use the session's
 CSRF token. Both require the exact portal `Origin` header (not just the same site) and a JSON

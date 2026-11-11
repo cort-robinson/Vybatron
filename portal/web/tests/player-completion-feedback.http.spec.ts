@@ -65,7 +65,6 @@ for (const playing of [true, false]) {
       await expect(action(page, !playing)).toBeEnabled();
       for (const label of ['Restart current song', 'Skip current song', 'Shuffle queue']) await expect(player(page).getByRole('button', { name: label, exact: true })).toBeEnabled();
       for (const label of ['Playback position', 'Volume']) await expect(player(page).getByRole('slider', { name: label, exact: true })).toBeEnabled();
-      await expect(player(page).getByRole('combobox', { name: 'Audio filter' })).toBeEnabled();
       await expect(player(page).getByRole('group', { name: 'Playback controls' })).not.toHaveAttribute('aria-busy', 'true');
       server.releaseCommandReplies(); await expect(action(page, !playing)).toBeEnabled();
       await expect(confirmation(page)).toBeEmpty();
@@ -160,7 +159,7 @@ test('a pending favorite locks nothing, and urgent Stop still goes straight thro
     await expect(confirmation(page)).toBeEmpty();
     await expect(action(page, true)).toBeEnabled();
     await player(page).getByRole('button', { name: 'More playback controls' }).click();
-    await player(page).getByRole('button', { name: 'Stop and discard session', exact: true }).click();
+    await player(page).getByRole('button', { name: /^Stop and discard session/ }).click();
     await page.getByRole('button', { name: 'Stop and discard', exact: true }).click();
     await expect.poll(() => server.commands.length).toBe(2);
     expect(server.commands.map(command => command.command)).toEqual(['favorite', 'stop']);

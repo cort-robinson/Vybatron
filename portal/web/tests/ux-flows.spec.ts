@@ -32,7 +32,7 @@ const role = (page: Page, name: string | RegExp, kind: Parameters<Page['getByRol
 const openPlayer = async (ctx: Ctx) => act(ctx, await role(ctx.page, 'Open player').count() ? role(ctx.page, 'Open player') : role(ctx.page, /^Open player for/));
 const nav = (ctx: Ctx, name: string) => act(ctx, role(ctx.page, name), 'nav');
 const more = async (ctx: Ctx) => { if (!(await role(ctx.page, 'More playback controls').count())) await openPlayer(ctx); await act(ctx, role(ctx.page, 'More playback controls'), 'menu'); };
-const openSearch = async (ctx: Ctx) => { if (!ctx.phone) return act(ctx, role(ctx.page, 'Search music')); if (await role(ctx.page, 'Search').count()) return nav(ctx, 'Search'); return act(ctx, role(ctx.page, 'Add music')); };
+const openSearch = async (ctx: Ctx) => { if (!ctx.phone) return act(ctx, role(ctx.page, 'Add music')); if (await role(ctx.page, 'Search').count()) return nav(ctx, 'Search'); return act(ctx, role(ctx.page, 'Add music')); };
 // The shortest route the UI offers: a control on the row, else the row's menu.
 const direct = async (ctx: Ctx, name: RegExp, menu: RegExp, item: string) => { const quick = role(ctx.page, name); if (await quick.count()) return act(ctx, quick); await act(ctx, role(ctx.page, menu), 'menu'); await act(ctx, role(ctx.page, item)); };
 const queuePage = async (ctx: Ctx) => nav(ctx, await role(ctx.page, 'Queue').count() ? 'Queue' : 'Session');

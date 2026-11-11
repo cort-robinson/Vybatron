@@ -105,13 +105,62 @@
   .queue .queue-note { font-size: 14px; padding-inline: 0; }
 }
 
-/* Phones show the reorder handle at the row's end; touch reorder lifts the row under the finger (Queue.tsx). */
+/* Phones put the reorder grip at the row's start, apart from its menu; touch reorder lifts the row under the finger (Queue.tsx). */
 @media (max-width: 1023px) {
-  .queue .track-list > .track-row:has(> .drag-handle) { grid-template-columns: 22px minmax(0, 1fr) 44px 44px; }
-  .queue .track-row > .drag-handle { order: 1; width: 44px; opacity: .8; }
+  .queue .track-list > .track-row:has(> .drag-handle) { grid-template-columns: 36px minmax(0, 1fr) 44px; padding-left: 2px; }
+  .queue .track-list > .track-row:has(> .drag-handle) > .track-index { display: none; }
+  .queue .track-row > .drag-handle { order: -1; width: 36px; }
 }
 @media (min-width: 1024px) { .queue-compact .drag-handle { display: none; } }
 .queue .track-row.lifted { z-index: 5; background: var(--raised); box-shadow: var(--shadow-menu); transition: none; }
 .queue .track-row.lifted::before, .queue .track-row.lifted + .track-row::before { opacity: 0; }
 /* Holding a row opens its menu (longPress.ts), so a hold must not select text or raise the system callout. */
 @media (pointer: coarse) { .queue .track-row { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; } }
+
+.queue-now { display: flex; align-items: center; gap: 16px; margin-bottom: 28px; padding: 14px 18px 14px 14px; border: 1px solid var(--line); border-radius: 14px; background: color-mix(in oklab, var(--accent) 9%, transparent); }
+.queue-now .artwork { width: 64px; height: 64px; flex: none; }
+.queue-now .track-text { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.queue-now .track-text small { color: var(--accent); font-size: 13px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+.queue-now .track-text strong { font-size: 19px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.queue-now .track-text span { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.queue-now .requester { display: flex; align-items: center; gap: 10px; color: var(--text-soft); }
+@media (max-width: 1023px) { .queue-now { margin-bottom: 20px; padding: 10px 12px 10px 10px; } .queue-now .artwork { width: 52px; height: 52px; } }
+.row-requester { display: none; }
+.row-rank { display: none; }
+.track-byline { display: flex; flex-wrap: wrap; align-items: center; gap: 0 8px; min-width: 0; }
+.track-byline > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 1023px) {
+  .row-requester { display: inline-flex; flex: none; align-items: center; gap: 5px; color: var(--muted); font-size: 13px; white-space: nowrap; }
+  .row-requester .avatar { width: 16px; height: 16px; }
+  .queue .track-row > .track-main:has(> .row-rank) { position: relative; }
+  .queue .track-row:has(> .drag-handle) .row-rank { display: grid; place-items: center; position: absolute; left: 3px; bottom: 3px; z-index: 1; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 6px; background: rgb(0 0 0 / .72); color: #fff; font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .track-byline:has(> .row-requester) { flex-direction: column; align-items: flex-start; gap: 1px; }
+  .track-byline:has(> .row-requester) > span:first-child { max-width: 100%; }
+  /* The now-playing card names its requester in words too, like the rows below it. */
+  .queue-now .requester { display: none; }
+  .queue .queue-now .track-text small.queue-now-by { display: block; }
+}
+/* Phones: saving the session lives in the player's More menu, and the drag grip stays quieter than the row menu. */
+@media (max-width: 1023px) {
+  .queue:not(.queue-compact) .queue-heading-actions .text-button { display: none; }
+}
+.queue-now .track-text small.queue-now-by { display: none; color: var(--muted); font-size: 13px; font-weight: 400; letter-spacing: 0; text-transform: none; }
+.queue-now:has(.queue-now-open) { position: relative; cursor: pointer; }
+.queue-now-open { flex: none; min-height: 40px; padding: 8px 16px; font-size: 14px; }
+.queue-now-open::after { content: ''; position: absolute; inset: 0; border-radius: inherit; }
+/* Phones: the strip itself opens the player, so the caret stays out of the way of the mini player's own. */
+/* Phones: the whole card opens the player (the button's ::after covers it), so only a quiet chevron marks it. */
+@media (max-width: 1023px) {
+  .queue .queue-now .button.queue-now-open { min-height: 44px; width: 32px; min-width: 32px; padding: 0; justify-content: center; border-color: transparent; background: none; box-shadow: none; color: var(--muted); }
+  .queue .queue-now .queue-now-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .queue .queue-now .artwork { width: 48px; height: 48px; }
+  .queue .queue-now .queue-now-up { display: none; }
+}
+.row-duration { display: none; }
+@media (max-width: 1023px) { .row-duration { display: inline; } }
+
+.queue-now-go { display: none; }
+@media (max-width: 1023px) { .queue-now-go { display: block; } }
+.queue-now .queue-now-by { align-items: center; gap: 5px; }
+.queue-now .queue-now-by .avatar { width: 16px; height: 16px; }
+@media (max-width: 1023px) { .queue .queue-now .track-text small.queue-now-by { display: flex; } }

@@ -21,12 +21,14 @@ import {
 // like casting, carrying its songs, place, volume and repeat.
 export type PlaybackTarget = 'discord' | 'local';
 type Status = 'idle' | 'playing' | 'paused';
-// What this device does with the player while it is the active device.
-interface Deck {
-  owner: boolean; entryId: string | null; track: PlayerTrack | null; status: Status;
+// What this device does with the player while it is the active device. Only a playing deck
+// waits, while its audio loads or catches up; an idle or paused one never does.
+type Deck = {
+  owner: boolean; entryId: string | null; track: PlayerTrack | null;
   // Position at `at`; playing positions advance from there once the audio is moving, not while it loads.
-  positionMs: number; at: number; waiting: boolean; durationMs: number; volume: number; repeat: Repeat;
-}
+  positionMs: number; at: number; durationMs: number; volume: number; repeat: Repeat;
+} & ({ status: 'idle' | 'paused'; waiting: false } | { status: 'playing'; waiting: boolean });
+type DeckChange = Partial<Omit<Deck, 'status' | 'waiting'>> & { status?: Status; waiting?: boolean };
 // One of the listener's devices, as the player menu offers it.
 export interface DeviceChoice extends Device { self: boolean; playable: boolean; note: string }
 export type Portal = Omit<RemotePortal, 'run'> & {
@@ -122,7 +124,7 @@ interface Engine {
   stop: () => void;
 }
 interface EngineParts {
-  commit: (change: Partial<Deck>) => void; deck: () => Deck; shown: () => Player | null;
+  commit: (change: DeckChange) => void; deck: () => Deck; shown: () => Player | null;
   // A song change this device made, reported and shown before the store confirms it.
   advance: (step: Advance) => void;
   report: (body: { volume?: number; repeat?: Repeat }) => void;
@@ -137,6 +139,8 @@ function webEngine(parts: EngineParts): Engine {
   let loaded: string | null = null;
   // Each load supersedes the previous one, including its late lookup or media events.
   let token = 0;
+  // The load whose failure is being handled: a failed start and its media error are one failure.
+  let failing = -1;
   const retried = new Set<string>(); const warmed = new Set<string>();
   // One audio element for the whole session: phones keep it playing in the
   // background and on the lock screen, and it plays audio only, never video.
@@ -187,12 +191,20 @@ function webEngine(parts: EngineParts): Engine {
     media.volume = deck().volume / 100;
     describe(track);
     if (!autoplay) return;
+    const turn = token;
     commit({ waiting: true });
     media.play().catch((error: unknown) => {
-      // A newer song replaced this one (AbortError), or the browser wants a tap first.
-      if (loaded !== videoId || (error as Error)?.name !== 'NotAllowedError') return;
-      commit({ status: 'paused', positionMs: startMs, at: Date.now(), waiting: false });
-      notify('Tap play to start listening on this device.', 'info');
+      // A newer song or a pause replaced this start (AbortError).
+      const name = (error as Error)?.name;
+      if (loaded !== videoId || turn !== token || name === 'AbortError') return;
+      // The browser wants a tap first.
+      if (name === 'NotAllowedError') {
+        commit({ status: 'paused', positionMs: startMs, at: Date.now(), waiting: false });
+        notify('Tap play to start listening on this device.', 'info');
+        return;
+      }
+      // Any other refusal is a song that won't start: one retry, then skip, as for a media error.
+      void failed(videoId);
     });
   };
   // A song with a YouTube link starts synchronously, inside the tap that asked
@@ -215,6 +227,8 @@ function webEngine(parts: EngineParts): Engine {
   };
   // Media errors carry no reason; the portal's answer for the same song does.
   const failed = async (videoId: string) => {
+    if (failing === token) return;
+    failing = token;
     const turn = token; const now = deck();
     let status = 0; let message = 'This song couldn’t load on this device.';
     try {
@@ -354,7 +368,7 @@ function nativeEngine(device: NativePlayer, parts: EngineParts, subscribed: (pla
     if (same(player.history[0]?.track, song)) return player.history[0];
     return queued ?? player.history.find(entry => same(entry.track, song)) ?? (same(player.current?.track, song) ? player.current! : { entryId: newEntryId(), track: bare(song) });
   };
-  const fields = (state: NativeState): Partial<Deck> => ({ track: state.current ? bare(state.current) : null, status: state.status, positionMs: state.positionMs, at: state.at,
+  const fields = (state: NativeState): DeckChange => ({ track: state.current ? bare(state.current) : null, status: state.status, positionMs: state.positionMs, at: state.at,
     waiting: state.waiting, durationMs: state.durationMs, volume: state.volume, repeat: state.repeat });
   const apply = (state: NativeState) => {
     const before = last; last = state; revision = state.revision;
@@ -521,8 +535,11 @@ export function useListening(remote: RemotePortal): Portal {
 
     const shown = (): Player | null => server && steps.reduce(advanced, server.player);
     const publish = () => { const player = shown(); setView(server && player ? { player, devices: server.devices } : null); };
-    const commit = (change: Partial<Deck>) => {
-      const next = { ...deckRef.current, ...change }; deckRef.current = next; setDeck(next);
+    const commit = (change: DeckChange) => {
+      const merged = { ...deckRef.current, ...change };
+      // Waiting holds only while the deck plays: a stall as it pauses or a start that failed never holds back its reports.
+      const next: Deck = merged.status === 'playing' ? { ...merged, status: 'playing' } : { ...merged, status: merged.status, waiting: false };
+      deckRef.current = next; setDeck(next);
       if ('mediaSession' in navigator && next.entryId) navigator.mediaSession.playbackState = next.status === 'playing' ? 'playing' : 'paused';
       if (own) sync();
     };

@@ -87,7 +87,7 @@ test('signing in with a code shows the code, the address and a QR code, then sig
   const flow = await codeSignIn(page, ['pending', 'approved']); await flow.route(() => fixture.signIn());
   await page.goto('/');
   await expect(page.getByRole('link', { name: /Continue with Discord/ })).toBeVisible();
-  await page.getByRole('button', { name: 'Sign in with a code' }).click();
+  await page.getByRole('button', { name: 'Sign in using another device' }).click();
   await expect(page.getByText('BCDF-GHJK', { exact: true })).toBeVisible();
   await expect(page.getByText('portal.example.test/link', { exact: true })).toBeVisible();
   const qr = page.getByRole('img', { name: 'QR code for portal.example.test/link with this code' });
@@ -104,7 +104,7 @@ test('an expired or turned-down code offers a new one, and Discord sign-in stays
   await mockPortal(page, { signedOut: true });
   const flow = await codeSignIn(page, ['denied']); await flow.route(() => undefined);
   await page.goto('/');
-  await page.getByRole('button', { name: 'Sign in with a code' }).click();
+  await page.getByRole('button', { name: 'Sign in using another device' }).click();
   await expect(page.getByRole('alert')).toHaveText('That code was turned down. Get a new code to try again.', { timeout: 10_000 });
   await page.unroute('**/auth/device/poll');
   await page.route('**/auth/device/poll', route => route.fulfill({ json: { status: 'expired' } }));
@@ -149,7 +149,7 @@ test('on a TV, signing in starts with a code readable from across the room, and 
   expect(backBox.y + backBox.height).toBeLessThanOrEqual(540);
   await back.click();
   await expect(page.getByRole('link', { name: /Continue with Discord/ })).toBeVisible();
-  await page.getByRole('button', { name: 'Sign in with a code' }).click();
+  await page.getByRole('button', { name: 'Sign in using another device' }).click();
   await expect(page.getByText('MNPQ-RSTV', { exact: true })).toBeVisible();
 });
 
@@ -168,7 +168,7 @@ test('the code and QR code show under the production CSP without a violation', a
     await route.fulfill({ response, headers: { ...response.headers(), 'content-security-policy': policy } });
   });
   await page.goto('/');
-  await page.getByRole('button', { name: 'Sign in with a code' }).click();
+  await page.getByRole('button', { name: 'Sign in using another device' }).click();
   await expect(page.getByRole('img', { name: /^QR code for/ })).toBeVisible();
   const violations = await page.evaluate(() => (window as unknown as { violations: string[] }).violations);
   expect(violations).toEqual([]);

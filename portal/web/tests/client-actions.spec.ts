@@ -213,7 +213,7 @@ test('Home and Server favorites share one stats read, and Home comes back withou
   await expect(page.getByRole('heading', { name: 'On repeat in this server' })).toBeVisible();
   await expect(page.locator('.recap-grid')).toBeVisible();
   await page.getByRole('button', { name: 'My Music', exact: true }).click();
-  await page.getByRole('tab', { name: 'Server favorites' }).click();
+  await page.getByRole('tab', { name: 'Popular' }).click();
   await expect(page.getByRole('region', { name: 'On repeat' }).getByRole('listitem')).toHaveCount(4);
   const spinner = await watchFor(page, '.home-view .loading-state');
   await page.getByRole('button', { name: 'Home', exact: true }).click();

@@ -45,7 +45,7 @@ REVERT: everything here is scoped to :root[data-skin='overdrive']; Settings → 
 /* Sign-in: the cover and spectrum stand on the horizon and the sign-in copy sits on the clear floor below. */
 .auth-page .ambient-scene { --horizon: calc(50% + 28px); --sun: clamp(300px, 58vmin, 640px); --sun-x: 50%; }
 @media (max-width: 1023px), (max-height: 760px) { .auth-page .ambient-scene { --horizon: calc(50% + 4px); } }
-.auth-page .ambient-scene .od-skyline { height: clamp(72px, 14vh, 156px); }
+.auth-page .ambient-scene .od-skyline { height: clamp(72px, 14vh, 156px); opacity: 1; }
 .auth-page .od-horizon { opacity: .92; }
 
 .od-sky { position: absolute; left: 0; right: 0; top: 0; height: var(--horizon); background: var(--od-scanlines),
@@ -63,7 +63,9 @@ REVERT: everything here is scoped to :root[data-skin='overdrive']; Settings → 
 }
 .ambient-scene:not(.immersive) .od-sun { top: calc(var(--horizon) - var(--sun) * .52); opacity: .34; mix-blend-mode: screen; transition-duration: 160ms; transition-delay: 0ms; }
 .auth-page .ambient-scene .od-sun { opacity: .78; mix-blend-mode: normal; }
-.od-skyline { position: absolute; left: 0; bottom: calc(100% - var(--horizon)); width: 100%; height: clamp(72px, 14vh, 156px); overflow: visible; }
+/* A phone's cover fills the width and hides the disc, leaving only cut-off slats; the open player there drops the sun. */
+@media (max-width: 599px) { .ambient-scene.immersive .od-sun { opacity: 0; } }
+.od-skyline { position: absolute; left: 0; bottom: calc(100% - var(--horizon)); width: 100%; height: clamp(72px, 14vh, 156px); overflow: visible; transition: opacity 500ms var(--ease-out); }
 .od-skyline-far { fill: color-mix(in oklab, var(--glow-2) 55%, var(--ground)); opacity: .85; }
 .od-skyline-near { fill: color-mix(in oklab, var(--ground), black 30%); stroke: color-mix(in oklab, var(--accent) 55%, transparent); stroke-width: 1; vector-effect: non-scaling-stroke; stroke-linejoin: bevel; }
 .od-window { fill: color-mix(in oklab, var(--accent) 80%, white); opacity: .85; animation: od-blink 9s steps(1) infinite paused; }
@@ -72,6 +74,9 @@ REVERT: everything here is scoped to :root[data-skin='overdrive']; Settings → 
   background: var(--od-scanlines), linear-gradient(to bottom, color-mix(in oklab, var(--neon) 20%, var(--ground)), color-mix(in oklab, var(--glow-2) 25%, var(--ground)) 40%, var(--ground) 90%);
 }
 .od-floor::before { content: ''; position: absolute; z-index: 1; left: 0; right: 0; top: 0; height: 2px; background: var(--rail); box-shadow: 0 0 22px 3px color-mix(in oklab, var(--neon) 45%, transparent); }
+/* Sign-in copy stands on the floor: the grid fades out behind it so the words read cleanly. */
+.auth-page .od-floor::after { content: ''; position: absolute; z-index: 1; inset: 0; pointer-events: none;
+  background: radial-gradient(ellipse 72% 62% at 50% 34%, color-mix(in oklab, var(--ground) 92%, transparent) 30%, transparent 100%); }
 .od-plane {
   --cell: 72px; position: absolute; left: -100%; right: -100%; bottom: 0; height: 1000px; transform-origin: 50% 100%; transform: rotateX(80deg);
   background-image: linear-gradient(to right, var(--grid-line) 0 2px, transparent 2px), linear-gradient(to bottom, var(--grid-line) 0 2px, transparent 2px);
@@ -125,7 +130,8 @@ REVERT: everything here is scoped to :root[data-skin='overdrive']; Settings → 
   .listeners .avatar { box-shadow: 0 0 0 1px color-mix(in oklab, var(--accent) 40%, transparent); }
 
   /* ── Page frame ─────────────────────────────────────────────────────── */
-  .topbar { border-bottom-color: transparent; background: var(--rail) bottom / 100% 1px no-repeat; }
+  /* The sticky header keeps a dark tint under its rail, so covers scrolling beneath it don't smear behind the title. */
+  .topbar { border-bottom-color: transparent; background: var(--rail) bottom / 100% 1px no-repeat, color-mix(in oklab, var(--ground) 92%, transparent); }
   .sleeve-topbar { background: none; }
   .page-title h1 { text-shadow: 0 0 34px color-mix(in oklab, var(--accent) 35%, transparent); }
   .header-search { border-radius: 4px 14px 4px 14px; background: var(--hud), var(--field); --hud-c: color-mix(in oklab, var(--accent) 40%, transparent); }
@@ -164,16 +170,24 @@ REVERT: everything here is scoped to :root[data-skin='overdrive']; Settings → 
   .tabs { border-bottom-color: transparent; background: linear-gradient(90deg, var(--line-strong), var(--line-soft) 70%, transparent) bottom / 100% 1px no-repeat; }
   .tabs .tab-indicator { background: linear-gradient(90deg, var(--accent), var(--neon)); box-shadow: 0 0 12px color-mix(in oklab, var(--accent) 70%, transparent); }
   .switch > span { border-radius: 4px 11px; }
-  .switch > span::after { border-radius: 2px 7px; }
   .switch[aria-checked='true'] > span { background: linear-gradient(90deg, var(--accent), color-mix(in oklab, var(--accent), var(--neon) 45%)); box-shadow: 0 0 14px -2px var(--accent); }
   .spinner { border-color: var(--accent); border-right-color: transparent; border-left-color: var(--neon); }
   .menu-panel { border-radius: 6px 16px 6px 16px; background: var(--hud), var(--raised); --hud-c: color-mix(in oklab, var(--accent) 45%, transparent); }
+  /* Sheets sit on the screen's bottom edge, where the lower brackets would be cut off: they keep the top pair only. */
+  /* Edge-anchored sheets skip the corner brackets, which the screen edge would clip into stray ticks. */
+  .menu-panel.menu-sheet, .dialog.mix-dialog { background: var(--raised); }
+  .menu-panel.menu-sheet.unused, .dialog.mix-dialog.unused { background: linear-gradient(var(--hud-c), var(--hud-c)) top left / 14px 1.5px no-repeat, linear-gradient(var(--hud-c), var(--hud-c)) top left / 1.5px 14px no-repeat, linear-gradient(var(--hud-c), var(--hud-c)) top right / 14px 1.5px no-repeat, linear-gradient(var(--hud-c), var(--hud-c)) top right / 1.5px 14px no-repeat, var(--raised); }
+  /* Over the open player's queue, the More menu needs a firmer edge to read as its own layer. */
+  .player-more > .menu-panel { border-color: color-mix(in oklab, var(--accent) 34%, var(--line-strong)); box-shadow: var(--shadow-menu), 0 24px 60px -12px rgb(0 0 0 / .7); }
   .toast, .update-notice { border-radius: 4px 14px 4px 14px; }
   .toast.success { border-color: color-mix(in oklab, var(--accent) 40%, transparent); box-shadow: var(--shadow-menu), 0 0 30px -14px var(--accent); }
   .dialog { border-radius: 8px 24px 8px 24px; background: var(--hud), var(--rail) top / 100% 1px no-repeat, color-mix(in oklab, var(--ground), white 5%); }
   .search-field { border-radius: 4px 12px 4px 12px; }
   .suggestion-chip { border-radius: 4px 12px 4px 12px; }
   .continue-feature { border-radius: 6px 18px 6px 18px; background: var(--hud), linear-gradient(100deg, color-mix(in oklab, var(--accent) 14%, transparent), color-mix(in oklab, var(--neon) 7%, transparent) 60%, transparent), var(--surface); box-shadow: 0 18px 38px -26px color-mix(in oklab, var(--accent) 55%, black), 0 0 0 1px color-mix(in oklab, var(--accent) 14%, transparent); }
+  /* Content cards share the plate's cut corners; chips, fields and selects stay round. */
+  :is(.shelf-row-sparse .shelf-card, .queue-now, .library-tools) { border-radius: 6px 16px 6px 16px; }
+  .playlist-actions .icon-button { border-radius: 4px 12px 4px 12px; }
   .continue-art { border-radius: 4px 10px 4px 10px; }
   .recap-tiles > div { border-radius: 4px 12px 4px 12px; background: var(--hud), var(--surface); box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--accent) 14%, transparent); }
   .recap-list .recap-art { border-radius: 3px 8px 3px 8px; }
@@ -181,6 +195,8 @@ REVERT: everything here is scoped to :root[data-skin='overdrive']; Settings → 
   /* Home shelves: each heading carries a short energon bar; cards lift into the neon on hover. */
   .home-shelf-header h2 { display: flex; align-items: center; gap: 14px; }
   .home-shelf-header h2::after { content: ''; flex: 0 0 auto; width: 34px; height: 3px; border-radius: 1px; background: linear-gradient(90deg, var(--accent), var(--neon)); box-shadow: 0 0 10px color-mix(in oklab, var(--accent) 60%, transparent); }
+  /* A heading that wraps keeps its dash after the last word instead of stranding it at the far edge. */
+  @media (max-width: 600px) { .home-shelf-header h2 { display: block; } .home-shelf-header h2::after { display: inline-block; vertical-align: middle; margin-left: 12px; } }
   .shelf-art .artwork, .playlist-cover { border-radius: 4px 12px 4px 12px; transition: transform 320ms var(--ease-out), box-shadow 320ms var(--ease-out); }
   .shelf-row > li:hover .shelf-art .artwork, .playlist-tile:hover .playlist-cover { transform: translateY(-4px); box-shadow: 0 0 0 1px color-mix(in oklab, var(--accent) 50%, transparent), 0 22px 34px -18px color-mix(in oklab, var(--neon) 70%, black); }
   .shelf-rank { border-radius: 3px 9px 3px 9px; box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--accent) 25%, transparent); }
@@ -199,12 +215,13 @@ REVERT: everything here is scoped to :root[data-skin='overdrive']; Settings → 
   .player-expand-trigger:hover .compact-track-title { text-shadow: 0 0 16px color-mix(in oklab, var(--accent) 60%, transparent); }
   .player-expand-trigger > .artwork { border-radius: 4px 12px 4px 12px; box-shadow: 0 12px 26px -12px color-mix(in oklab, var(--glow-1), black 20%), 0 0 0 1px color-mix(in oklab, var(--accent) 22%, transparent); }
   .timeline > span:first-child { text-shadow: 0 0 12px color-mix(in oklab, var(--accent) 70%, transparent); }
-  .filter-control { border-radius: 4px 14px 4px 14px; }
-  .filter-dot { box-shadow: 0 0 8px var(--accent); }
-  .filter-control.warm .filter-dot { box-shadow: 0 0 8px var(--amber); }
+  /* The sound chip stays a pill, like the Lyrics and destination chips beside it. */
+  .filter-dot { filter: drop-shadow(0 0 5px var(--accent)); }
+  .filter-control.warm .filter-dot { filter: drop-shadow(0 0 5px var(--amber)); }
   .expand-button:hover svg { filter: drop-shadow(0 0 6px var(--accent)); }
 
   /* Reactor: the play control sits inside a ring that turns while the room plays. */
+  @media (max-width: 599px) { .collapsed .transport .play-button { --play-ring: 4px; } }
   .transport .play-button { --play-ring: 7px; position: relative; background-image: radial-gradient(circle at 50% 28%, rgb(255 255 255 / .38), transparent 62%); }
   .transport .play-button::before { content: ''; position: absolute; inset: calc(-1 * var(--play-ring)); border-radius: 50%; pointer-events: none;
     background: conic-gradient(from 0deg, transparent 0 8%, var(--accent) 20%, transparent 32% 50%, var(--neon) 70%, transparent 82%);
@@ -234,23 +251,23 @@ REVERT: everything here is scoped to :root[data-skin='overdrive']; Settings → 
   .od-cover-hud, .od-cover-scan, .od-cover-plate { position: absolute; left: 50%; translate: -50% 0; pointer-events: none; }
   /* Behind the cover, unseen until the cover travels on its own as the player opens or closes:
      its landing spot then shows this shade, not the eclipsed sun. */
-  .od-cover-plate { z-index: -1; top: calc((100cqh - var(--cover) - 12px - var(--spectrum)) / 2); width: var(--cover); height: var(--cover); border-radius: 6px 20px 6px 20px; background: color-mix(in oklab, var(--ground), black 25%); box-shadow: 0 30px 70px -30px rgb(0 0 0 / .8); }
-  .od-cover-hud { --gap: 14px; top: calc((100cqh - var(--cover) - 12px - var(--spectrum)) / 2 - var(--gap)); width: calc(var(--cover) + var(--gap) * 2); height: calc(var(--cover) + var(--gap) * 2); }
+  .od-cover-plate { z-index: -1; top: calc((100cqh - var(--cover) - var(--spectrum-gap) - var(--spectrum)) / 2); width: var(--cover); height: var(--cover); border-radius: 6px 20px 6px 20px; background: color-mix(in oklab, var(--ground), black 25%); box-shadow: 0 30px 70px -30px rgb(0 0 0 / .8); }
+  .od-cover-hud { --gap: 14px; top: calc((100cqh - var(--cover) - var(--spectrum-gap) - var(--spectrum)) / 2 - var(--gap)); width: calc(var(--cover) + var(--gap) * 2); height: calc(var(--cover) + var(--gap) * 2); }
   .od-hud i { position: absolute; width: 26px; height: 26px; border: 2px solid var(--hud-c); filter: drop-shadow(0 0 6px color-mix(in oklab, var(--accent) 60%, transparent)); }
   .od-hud i:nth-child(1) { left: 0; top: 0; border-right: 0; border-bottom: 0; }
   .od-hud i:nth-child(2) { right: 0; top: 0; border-left: 0; border-bottom: 0; }
   .od-hud i:nth-child(3) { left: 0; bottom: 0; border-right: 0; border-top: 0; }
   .od-hud i:nth-child(4) { right: 0; bottom: 0; border-left: 0; border-top: 0; }
-  .od-cover-scan { top: calc((100cqh - var(--cover) - 12px - var(--spectrum)) / 2); width: var(--cover); height: var(--cover); overflow: hidden; border-radius: 6px 20px 6px 20px; }
+  .od-cover-scan { top: calc((100cqh - var(--cover) - var(--spectrum-gap) - var(--spectrum)) / 2); width: var(--cover); height: var(--cover); overflow: hidden; border-radius: 6px 20px 6px 20px; }
   .od-cover-scan::before { content: ''; position: absolute; left: 0; right: 0; top: 0; height: 34%; translate: 0 -110%; mix-blend-mode: screen;
     background: linear-gradient(to bottom, transparent, color-mix(in oklab, var(--accent) 22%, transparent) 70%, color-mix(in oklab, var(--neon) 50%, transparent) 94%, rgb(255 255 255 / .7) 98%, transparent);
     animation: od-scan 1.3s cubic-bezier(.3, .1, .2, 1) 120ms 1 both; }
   .motion-live .od-cover-scan::after { content: ''; position: absolute; left: 0; right: 0; top: 0; height: 2px; translate: 0 -10px; background: color-mix(in oklab, var(--accent) 55%, white); opacity: .4; box-shadow: 0 0 14px 2px var(--accent); mix-blend-mode: screen; animation: od-sweep 9s linear 2s infinite; }
   /* The caption sits where the skyline, sun bands, and floor grid run, so the title, artist, and any
      state note ride a smoked plate. A wide title glow would be clipped by the plate's line clamp. */
-  .sleeve-main > .player-identity, .sleeve-main > .player-context:has(> p) { width: fit-content; max-width: min(100%, 560px); padding: 8px 24px 10px; border-radius: 4px 14px 4px 14px; background: color-mix(in oklab, var(--ground) 80%, transparent); }
+  .sleeve-main > .player-identity, .sleeve-main > .player-context:has(> p) { width: fit-content; max-width: min(100%, 560px); padding: 10px 26px 12px; border-radius: 4px 14px 4px 14px; background: color-mix(in oklab, var(--ground) 72%, transparent); backdrop-filter: blur(18px) saturate(1.2); box-shadow: 0 0 0 1px color-mix(in oklab, var(--accent) 18%, transparent), 0 18px 40px -18px rgb(0 0 0 / .8); }
   .sleeve-main > .player-context:has(> p) { padding-block: 8px; }
-  .sleeve-main .player-title-row h2 { text-shadow: 0 2px 0 color-mix(in oklab, var(--neon) 35%, transparent); }
+  .sleeve-main .player-title-row h2 { text-shadow: 0 1px 0 color-mix(in oklab, var(--neon) 20%, transparent); }
   .sleeve-queue { border-radius: 6px 22px 6px 22px; background: var(--hud), var(--rail) top / 100% 1px no-repeat, color-mix(in oklab, var(--ground) 62%, transparent); }
   .expanded .player-footer { border-top-color: transparent; }
 
@@ -258,17 +275,23 @@ REVERT: everything here is scoped to :root[data-skin='overdrive']; Settings → 
   .signin-sleeve { border-radius: 6px 22px 6px 22px; box-shadow: var(--shadow-sleeve), 0 0 0 1px color-mix(in oklab, var(--accent) 35%, transparent), 0 30px 80px -24px color-mix(in oklab, var(--neon) 80%, transparent); }
   .discord-signin { border-radius: 4px 16px 4px 16px; }
   .sign-in > p, .signin-footnote { text-shadow: 0 1px 12px rgb(0 0 0 / .9); }
+  /* The skyline already sits where the resting spectrum would, so sign-in shows the sleeve over the sun alone. */
+  .signin-spectrum { display: none; }
+  .sign-in > p { margin-top: 100px; }
 }
 
 /* Plated corners where the browser can draw true bevels (outline and focus follow them). */
 @supports (corner-shape: bevel) {
-  :root[data-skin='overdrive'] :is(.button, .guild-card, .navigation button, .header-search, .track-row, .menu-panel, .dialog, .sleeve-queue, .continue-feature, .toast, .filter-control, .pill, .mobile-add) { corner-shape: bevel; }
+  :root[data-skin='overdrive'] :is(.button, .guild-card, .navigation button, .header-search, .track-row, .menu-panel, .dialog, .sleeve-queue, .continue-feature, .toast, .pill, .search-field, .shelf-row-sparse .shelf-card, .playlist-actions .icon-button, .queue-now, .library-tools, .mobile-add) { corner-shape: bevel; }
 }
 
 /* ── Phone and tablet ───────────────────────────────────────────────────── */
 @media (max-width: 1023px) {
   :root[data-skin='overdrive'] {
     .ambient-scene.immersive { --horizon: 64%; --sun: clamp(260px, 88vw, 520px); --sun-x: 50%; }
+    /* Phones stack the open player's title card a fixed 334px above the bottom, so the horizon lands just above it
+       and the whole skyline shows instead of two rooftops poking out past the card's corners. */
+    @media (max-width: 600px) { .ambient-scene.immersive { --horizon: calc(100% - 342px); } }
     .guild-card { background: none; }
     /* The deck and the tabs are solid over the floor. As glass they blurred the rolling grid behind
        them again on every frame, yet showed only a faint neon cast of it, which these grounds carry. */
@@ -290,6 +313,8 @@ REVERT: everything here is scoped to :root[data-skin='overdrive']; Settings → 
 }
 @media (max-width: 1023px) {
   :root[data-skin='overdrive'] .sleeve-main > :is(.player-identity, .player-context:has(> p)) { padding: 6px 16px 8px; }
+  /* Phones: the plate spans the cover's width so the sun's slats end behind it instead of poking out at its sides. */
+  :root[data-skin='overdrive'] .sleeve-main > .player-identity.player-identity { width: 100%; }
 }
 @media (max-width: 1023px) and (min-width: 600px) and (max-height: 500px) {
   :root[data-skin='overdrive'] :is(.od-cover-hud, .od-cover-scan, .od-cover-plate) { display: none; }

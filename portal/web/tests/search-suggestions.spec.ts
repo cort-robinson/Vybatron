@@ -36,7 +36,7 @@ test('an empty search suggests the listener’s music and explores artists witho
   expect(searches).toEqual([]);
   expect((await new AxeBuilder({ page }).include('.search-dialog').analyze()).violations).toEqual([]);
 
-  await dialog.getByRole('button', { name: 'Add Neon Tide to queue' }).click();
+  await dialog.getByRole('button', { name: 'Add to queue: Neon Tide' }).click();
   await expect.poll(() => fixture.commands.at(-1)).toMatchObject({ command: 'play', options: { query: neon.uri } });
 
   await chips.first().click();

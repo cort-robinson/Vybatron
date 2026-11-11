@@ -97,8 +97,8 @@ const openMenu = (page: Page) => page.getByTestId('player').getByRole('button', 
 async function addSongs(page: Page) {
   await page.getByRole('button', { name: 'Add music' }).first().click();
   await page.getByRole('searchbox', { name: 'Music search' }).fill('midnight');
-  await page.getByRole('button', { name: 'Add Midnight City to queue' }).click();
-  await page.getByRole('button', { name: 'Add Wait to queue' }).click();
+  await page.getByRole('button', { name: 'Add to queue: Midnight City' }).click();
+  await page.getByRole('button', { name: 'Add to queue: Wait' }).click();
   await page.keyboard.press('Escape');
 }
 
@@ -170,9 +170,9 @@ test('Play now jumps the shared player to the chosen song, and the app loads it'
   const fixture = await app(page);
   await page.getByRole('button', { name: 'Add music' }).first().click();
   await page.getByRole('searchbox', { name: 'Music search' }).fill('midnight');
-  await page.getByRole('button', { name: 'Add Midnight City to queue' }).click();
-  await page.getByRole('button', { name: 'Add Wait to queue' }).click();
-  await page.getByRole('button', { name: 'Add Midnight City to queue' }).click();
+  await page.getByRole('button', { name: 'Add to queue: Midnight City' }).click();
+  await page.getByRole('button', { name: 'Add to queue: Wait' }).click();
+  await page.getByRole('button', { name: 'Add again: Midnight City' }).click();
   await page.keyboard.press('Escape');
   await expect.poll(async () => (await sent(page, 'player.setQueue')).at(-1)?.queue).toHaveLength(2);
 

@@ -7,7 +7,7 @@ test('a search result plays next in one step', async ({ page }) => {
   const fixture = await mockPortal(page); await page.goto('/');
   await page.getByRole('button', { name: 'Add music', exact: true }).first().click();
   await page.getByRole('searchbox', { name: 'Music search' }).fill('Midnight City');
-  await page.getByRole('button', { name: 'Play Midnight City next' }).click();
+  await page.getByRole('button', { name: 'Play next: Midnight City' }).click();
   await expect.poll(() => fixture.commands.map(command => command.command)).toEqual(['playnext']);
 });
 
@@ -48,7 +48,7 @@ test('phone navigation keeps Search in the bottom bar and Server and Settings in
   await expect(field).toBeFocused();
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await field.fill('Midnight City');
-  await page.getByRole('button', { name: 'Add Midnight City to queue' }).click();
+  await page.getByRole('button', { name: 'Add to queue: Midnight City' }).click();
   await expect.poll(() => fixture.commands.map(command => command.command)).toEqual(['play']);
   await page.getByRole('button', { name: 'Account options' }).filter({ visible: true }).click();
   await page.getByRole('button', { name: 'Server', exact: true }).filter({ visible: true }).click();
@@ -160,7 +160,7 @@ test('search results and Popular say when a song is already queued, and adding i
   await page.goto('/');
   await page.getByRole('button', { name: 'Add music', exact: true }).first().click();
   await page.getByRole('searchbox', { name: 'Music search' }).fill('Midnight City');
-  const again = page.getByRole('button', { name: 'Add Midnight City to queue again' });
+  const again = page.getByRole('button', { name: 'Add again: Midnight City' });
   await expect(again).toBeVisible();
   await expect(page.locator('.result-list li').filter({ has: again })).toContainText('In queue');
   await again.click();
@@ -182,7 +182,7 @@ test('on a phone, the queued label of a search result shows in full on its own l
   await page.goto('/');
   await page.getByRole('button', { name: 'Search', exact: true }).click();
   await page.getByRole('searchbox', { name: 'Music search' }).fill('Midnight City');
-  const label = page.locator('.result-list li').filter({ has: page.getByRole('button', { name: 'Add Midnight City to queue again' }) }).locator('.track-queue-state');
+  const label = page.locator('.result-list li').filter({ has: page.getByRole('button', { name: 'Add again: Midnight City' }) }).locator('.track-queue-state');
   await expect(label.locator('.queue-label')).toHaveText('In queue');
   await expect(label).toBeInViewport({ ratio: 1 });
   const [box, text] = await Promise.all([label.boundingBox(), label.locator('..').boundingBox()]);

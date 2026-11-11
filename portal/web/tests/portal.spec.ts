@@ -186,7 +186,7 @@ test('play-next and history replay require DJ control and send the fresh revisio
   await page.getByRole('button', { name: 'Add music', exact: true }).first().click();
   await page.getByRole('searchbox', { name: 'Music search' }).fill('Midnight City');
   await expect(page.getByRole('button', { name: 'Add to queue', exact: true })).toBeEnabled();
-  await expect(page.getByRole('button', { name: 'Play Midnight City next', exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Play next: Midnight City', exact: true })).toBeDisabled();
   await page.getByRole('button', { name: 'Close dialog' }).click();
   await page.getByRole('button', { name: 'My Music', exact: true }).click(); await page.getByRole('tab', { name: 'History' }).click();
   await expect(page.getByRole('button', { name: 'Replay Afterglow' })).toBeDisabled();
@@ -199,9 +199,9 @@ test('play-next and history replay require DJ control and send the fresh revisio
   fixture.state.snapshot.session.canControl = true; fixture.state.snapshot.session.reason = null; fixture.state.snapshot.revision = 'revision-dj-ready';
   await streamAction(page, 'reconnect', fixture.state.snapshot);
   await page.getByRole('button', { name: 'Add music', exact: true }).first().click();
-  await expect(page.getByRole('button', { name: 'Play Midnight City next', exact: true })).toBeEnabled();
-  await page.getByRole('button', { name: 'Play Midnight City next', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Play Midnight City next', exact: true })).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Play next: Midnight City', exact: true })).toBeEnabled();
+  await page.getByRole('button', { name: 'Play next: Midnight City', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Play next: Midnight City', exact: true })).toBeEnabled();
   expect(fixture.commands[0]).toEqual({ command: 'playnext', options: { query: 'https://example.com/music/midnight-city' }, expectedRevision: 'revision-dj-ready' });
   await page.getByRole('button', { name: 'Close dialog' }).click();
   await page.getByRole('button', { name: 'My Music', exact: true }).click(); await page.getByRole('tab', { name: 'History' }).click();

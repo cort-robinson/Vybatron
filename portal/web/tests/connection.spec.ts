@@ -355,3 +355,26 @@ test('a silent stream expires freshness and accepts recovery GET state without a
     expect(server.commands).toHaveLength(0);
   } finally { await page.close(); await server.close(); }
 });
+
+test('a lapsed lease reads as disconnected before the throttled policy timer runs', async ({ page }) => {
+  const server = await startHttpFixture();
+  try {
+    await page.clock.install(); await connected(page, server);
+    const reads = server.snapshotReads.length;
+    server.holdSnapshotReads();
+    // A background tab or a waking device: the clock passes the 25 s lease, but
+    // the policy timer that would notice hasn't run yet.
+    await page.clock.setSystemTime(await page.evaluate(() => Date.now()) + 25_001);
+    await page.getByRole('button', { name: 'Pause playback' }).click();
+    // The refusal names the real cause, the banner explains it, and recovery starts now.
+    await expect(page.getByRole('alert')).toHaveText('Reconnect for fresh state before making changes.');
+    await expect(page.getByText('Join the music voice channel', { exact: false })).toHaveCount(0);
+    await expect(page.locator('.connection-banner')).toContainText('Getting fresh state');
+    await expect.poll(() => server.capturedSnapshots.size).toBe(1);
+    server.releaseSnapshotReads();
+    await expect(page.getByRole('button', { name: 'Pause playback' })).toBeEnabled();
+    await expect(page.locator('.connection-banner')).toHaveCount(0);
+    await expect.poll(() => server.snapshotReads.length).toBe(reads + 1);
+    expect(server.commands).toHaveLength(0);
+  } finally { await page.close(); await server.close(); }
+});

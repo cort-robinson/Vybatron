@@ -14,48 +14,52 @@ test('Home is the landing surface, with shelves in order and stats loaded beside
   expect(answered[0]).toBe('/api/guilds/testing/stats');
   await expect(page.getByRole('button', { name: 'Home', exact: true })).toHaveAttribute('aria-current', 'page');
   const headings = page.locator('.home-shelf h2');
-  await expect(headings).toHaveText(['Continue listening', 'On repeat in this server', 'Your mixes', 'Rediscover', 'Forgotten gems', 'Listening recap']);
+  // With a short history, the server's favorites lead and Recently played follows the stats shelves.
+  await expect(headings).toHaveText([/^On repeat in this server/, 'Made for you', 'Rediscover', 'Forgotten gems', 'Recently played', 'Listening recap']);
   expect(fixture.requests).toContain('/api/guilds/testing');
 
-  const continuing = shelf(page, 'Continue listening');
-  await expect(continuing).toContainText('Playing now in General');
-  await expect(continuing).toContainText('Evening Light');
+  const continuing = shelf(page, 'Recently played');
+  // The player already shows the current song, so Recently played lists only what came before it.
+  await expect(continuing).not.toContainText('Playing now');
   await expect(continuing.getByRole('listitem')).toHaveCount(1);
-  await continuing.getByRole('button', { name: 'View now playing' }).click();
-  await expect(page.getByRole('button', { name: 'Close player' }).first()).toBeVisible();
 });
 
 test('every shelf queues through the normal commands', async ({ page }) => {
   const fixture = await mockPortal(page);
+  // A one-song shelf leaves Add all to its song's own button, so give these shelves a second song.
+  const { personal, serverFavorites } = fixture.state.stats;
+  personal.rediscover.push({ ...personal.rediscover[0], track: { ...personal.rediscover[0].track, id: 'rediscover-second', title: 'Second rediscovery' } });
+  serverFavorites.forgottenGems.push({ ...serverFavorites.forgottenGems[0], track: { ...serverFavorites.forgottenGems[0].track, id: 'gem-second', title: 'Second gem' } });
   await page.goto('/');
   const sent = async (action: () => Promise<void>) => { const count = fixture.commands.length; await action(); await expect.poll(() => fixture.commands.length).toBe(count + 1); return fixture.commands.at(-1); };
 
-  expect(await sent(() => shelf(page, 'Continue listening').getByRole('button', { name: 'Add Afterglow to the queue' }).click()))
+  expect(await sent(() => shelf(page, 'Recently played').getByRole('button', { name: 'Add Afterglow to the queue' }).click()))
     .toEqual({ command: 'play', options: { query: 'https://example.com/music/afterglow' } });
-  expect(await sent(() => shelf(page, 'On repeat in this server').getByRole('button', { name: 'Shuffle On repeat' }).click()))
+  expect(await sent(() => shelf(page, 'On repeat in this server').getByRole('button', { name: 'Add On repeat shuffled' }).click()))
     .toEqual({ command: 'top', subcommand: 'play', options: { list: 'on-repeat', shuffle: true } });
-  const mixes = shelf(page, 'Your mixes');
+  const mixes = shelf(page, 'Made for you');
   await expect(mixes.getByRole('heading', { level: 3 })).toHaveText(['Your mix', 'Your top tracks', 'Solara mix']);
-  await expect(mixes).toContainText('New picks');
-  expect(await sent(() => mixes.getByRole('button', { name: 'Play Your mix' }).click()))
+  await expect(mixes).toContainText('From your requests and favorites');
+  expect(await sent(() => mixes.getByRole('button', { name: /^Add all of Your mix( again)?$/ }).click()))
     .toEqual({ command: 'mymix', subcommand: 'play', options: { playlist: 'mix', shuffle: false } });
-  expect(await sent(() => mixes.getByRole('button', { name: 'Shuffle Solara mix' }).click()))
+  expect(await sent(() => mixes.getByRole('button', { name: 'Add Solara mix shuffled' }).click()))
     .toEqual({ command: 'mymix', subcommand: 'play', options: { playlist: 'artist', artist: 'Solara', shuffle: true } });
 
   // The window switch refetches and plays the selected range.
   const statsReads = fixture.requests.filter(path => path.endsWith('/stats')).length;
   await mixes.getByLabel('Time range for Your top tracks').selectOption('7d');
   await expect.poll(() => fixture.requests.filter(path => path.endsWith('/stats')).length).toBe(statsReads + 1);
-  await expect(mixes).toContainText('past week');
-  expect(await sent(() => mixes.getByRole('button', { name: 'Play Your top tracks' }).click()))
+  // The range shows in the card's own picker rather than repeated in its description.
+  await expect(mixes.getByLabel('Time range for Your top tracks')).toHaveValue('7d');
+  expect(await sent(() => mixes.getByRole('button', { name: /^Add all of Your top tracks( again)?$/ }).click()))
     .toEqual({ command: 'mymix', subcommand: 'play', options: { playlist: 'top', shuffle: false, window: '7d' } });
 
   const rediscover = shelf(page, 'Rediscover');
   expect(await sent(() => rediscover.getByRole('button', { name: 'Add Night Drive to the queue' }).click()))
     .toEqual({ command: 'favorite', subcommand: 'play', options: { index: 1 }, expectedTrackId: fixture.state.stats.personal.rediscover[0].track.id });
-  expect(await sent(() => rediscover.getByRole('button', { name: 'Play all of Rediscover' }).click()))
+  expect(await sent(() => rediscover.getByRole('button', { name: 'Add all of Rediscover' }).click()))
     .toEqual({ command: 'mymix', subcommand: 'play', options: { playlist: 'rediscover', shuffle: false } });
-  expect(await sent(() => shelf(page, 'Forgotten gems').getByRole('button', { name: 'Play all of Forgotten gems' }).click()))
+  expect(await sent(() => shelf(page, 'Forgotten gems').getByRole('button', { name: 'Add all of Forgotten gems' }).click()))
     .toEqual({ command: 'top', subcommand: 'play', options: { list: 'forgotten-gems', shuffle: false } });
   await expect(page.locator('.home-view')).not.toContainText('requested by', { ignoreCase: true });
 });
@@ -72,15 +76,15 @@ test('Home explains empty, partial, unavailable and no-permission states', async
   library.favorites = [];
   await page.goto('/');
   await expect(page.locator('.home-view .permission-note')).toContainText('Join the listening voice channel');
-  const continuing = shelf(page, 'Continue listening');
+  const continuing = shelf(page, 'Recently played');
   await expect(continuing).toContainText('Pick up where you left off');
   await expect(continuing).toContainText('12 songs in General');
   await expect(continuing).toContainText('Join General to resume');
   await expect(continuing.getByRole('button', { name: 'Resume session' })).toBeDisabled();
-  await expect(shelf(page, 'On repeat in this server').getByRole('button', { name: 'Play all of On repeat' })).toBeDisabled();
+  await expect(shelf(page, 'On repeat in this server').getByRole('button', { name: 'Add all of On repeat' })).toBeDisabled();
   await expect(shelf(page, 'On repeat in this server').getByRole('button', { name: /Add .* to the queue/ }).first()).toBeDisabled();
-  await expect(shelf(page, 'Your mixes').getByRole('heading', { level: 3 })).toHaveText(['Your top tracks'], { timeout: 7_000 });
-  await expect(shelf(page, 'Your mixes')).toContainText('No requests in this range');
+  await expect(shelf(page, 'Made for you').getByRole('heading', { level: 3 })).toHaveText(['Your top tracks'], { timeout: 7_000 });
+  await expect(shelf(page, 'Made for you')).toContainText('No requests in this range');
   await expect(shelf(page, 'Rediscover')).toContainText('Heart songs you love');
   await expect(shelf(page, 'Forgotten gems')).toContainText('No forgotten gems yet');
 
@@ -88,9 +92,9 @@ test('Home explains empty, partial, unavailable and no-permission states', async
   // Stats read moments ago are kept in this tab, so a fresh page load meets the outage.
   await page.reload();
   await expect(page.locator('.home-unavailable')).toContainText('Playback is unaffected');
-  await expect(page.locator('.home-unavailable')).toContainText('Continue listening above still works');
-  await expect(shelf(page, 'Continue listening')).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Your mixes' })).toHaveCount(0);
+  await expect(page.locator('.home-unavailable')).toContainText('Recently played above still works');
+  await expect(shelf(page, 'Recently played')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Made for you' })).toHaveCount(0);
 });
 
 test('a brand-new listener sees why each personal shelf is empty', async ({ page }) => {
@@ -104,8 +108,8 @@ test('a brand-new listener sees why each personal shelf is empty', async ({ page
   library.history = []; library.favorites = [];
   await page.goto('/');
   await expect(shelf(page, 'On repeat in this server')).toContainText('Nothing on repeat yet');
-  await expect(shelf(page, 'Your mixes')).toContainText('Your mixes fill in as you request songs');
-  await expect(shelf(page, 'Continue listening')).toContainText('Evening Light');
+  await expect(shelf(page, 'Made for you')).toContainText('Your mixes fill in as you request songs');
+  await expect(shelf(page, 'Recently played')).toContainText('Nothing to pick up yet');
 });
 
 test('clearing request stats confirms, explains what stays, and refreshes the personal shelves', async ({ page }) => {
@@ -113,7 +117,7 @@ test('clearing request stats confirms, explains what stays, and refreshes the pe
   await page.goto('/');
   const privacy = page.getByRole('region', { name: 'Your request stats' });
   await expect(privacy).toContainText('Server totals stay, anonymized');
-  await expect(shelf(page, 'Your mixes').getByRole('heading', { name: 'Solara mix' })).toBeVisible();
+  await expect(shelf(page, 'Made for you').getByRole('heading', { name: 'Solara mix' })).toBeVisible();
   await privacy.getByRole('button', { name: 'Clear my request stats' }).click();
   const dialog = page.getByRole('dialog', { name: 'Clear your request stats?' });
   await expect(dialog).toContainText('in every server');
@@ -126,7 +130,7 @@ test('clearing request stats confirms, explains what stays, and refreshes the pe
   await expect(page.getByRole('status').filter({ hasText: 'Cleared you from 4 requests' })).toBeVisible();
   expect(fixture.requestClears).toHaveLength(1);
   await expect(page.getByRole('dialog')).toHaveCount(0);
-  await expect(shelf(page, 'Your mixes').getByRole('heading', { name: 'Solara mix' })).toHaveCount(0);
+  await expect(shelf(page, 'Made for you').getByRole('heading', { name: 'Solara mix' })).toHaveCount(0);
   await expect(shelf(page, 'On repeat in this server').getByRole('listitem')).toHaveCount(4);
   const recap = shelf(page, 'Listening recap');
   await expect(recap).toContainText('You haven’t requested songs here in the past month.');
@@ -237,7 +241,7 @@ for (const [name, viewport] of [['desktop', { width: 1440, height: 900 }], ['pho
     await page.setViewportSize(viewport);
     await mockPortal(page);
     await page.goto('/');
-    await expect(shelf(page, 'Your mixes').getByRole('heading', { level: 3 })).toHaveCount(3);
+    await expect(shelf(page, 'Made for you').getByRole('heading', { level: 3 })).toHaveCount(3);
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     expect(overflow).toBeLessThanOrEqual(0);
     // Every shelf action stays reachable at a touch-friendly size.
@@ -249,19 +253,17 @@ for (const [name, viewport] of [['desktop', { width: 1440, height: 900 }], ['pho
   });
 }
 
-test('on a phone the playing card opens from a caret and a saved session keeps a full-width Resume', async ({ page }) => {
+test('on a phone the mini player stands in for the playing card, and a saved session keeps a full-width Resume', async ({ page }) => {
   await page.setViewportSize({ width: 393, height: 852 });
   const fixture = await mockPortal(page);
   await page.goto('/');
-  const open = shelf(page, 'Continue listening').getByRole('button', { name: 'View now playing' });
-  await expect(open).toBeVisible();
-  expect((await open.boundingBox())!.width).toBeLessThanOrEqual(48);
+  await expect(shelf(page, 'Recently played').getByRole('button', { name: 'View now playing' })).toBeHidden();
 
   const { snapshot } = fixture.state;
   snapshot.session.current = null; snapshot.session.queue = []; snapshot.session.status = 'idle';
   Object.assign(snapshot.savedSession, { exists: true, savedAt: 1_791_147_600_000, trackCount: 12, voiceChannel: { id: 'voice', name: 'General' }, canResume: true });
   await page.reload();
-  const card = shelf(page, 'Continue listening').locator('.continue-feature');
+  const card = shelf(page, 'Recently played').locator('.continue-feature');
   const resume = card.getByRole('button', { name: 'Resume session' });
   await expect(resume).toBeVisible();
   const [cardBox, resumeBox] = [(await card.boundingBox())!, (await resume.boundingBox())!];

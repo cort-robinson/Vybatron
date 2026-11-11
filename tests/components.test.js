@@ -360,3 +360,20 @@ test('recovery also rejects stale transport and seek submissions at the handler 
   assert.equal(p.seekCalls.length, 0);
   assert.match(modal.calls[0][1].content, /reconnecting/);
 });
+
+test('controls reopen once a seek or skip cancels the recovery the controller announced', async () => {
+  const p = player();
+  const recovery = { recovering: true, epoch: 0 };
+  p.LavalinkManager = { getPlayer: () => p, playbackRecovery: {
+    isRecovering: () => recovery.recovering, generation: () => recovery.epoch,
+  } };
+  const blocked = interaction('player:v1:toggle', p);
+  await showStatus(blocked.client, p, 'recovering', 'Reconnecting.');
+  await handleMessageComponent(blocked);
+  assert.equal(p.pauseCalls, 0);
+  recovery.recovering = false;
+  recovery.epoch += 1;
+  const toggle = interaction('player:v1:toggle', p);
+  await handleMessageComponent(toggle);
+  assert.equal(p.pauseCalls, 1);
+});

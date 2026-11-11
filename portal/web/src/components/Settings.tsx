@@ -9,10 +9,10 @@ export type AmbientMode = 'on' | 'subtle' | 'off';
 export interface InstallPrompt extends Event { prompt: () => Promise<void>; userChoice: Promise<{ outcome: string }> }
 
 const lookDescription: Record<Skin, string> = {
-  overdrive: 'A neon horizon, chrome wordmark, HUD-framed panels and a reactor-ring play button. Classic restores the original receiver.',
-  fantastic: 'Earth-828, 1964: a ringed planet over a Googie skyline, Kirby krackle in the sky, and the cover playing on a vintage TV set. Flame on.',
-  haunted: 'All Hallows’ Eve: a full moon over a hollow of bare trees, lit windows and jack-o’-lanterns, with fog in the low ground and the cover hung in a candlelit frame.',
-  classic: 'The original smoked-glass receiver. Overdrive adds a neon horizon; Fantastic Four tunes in a retro-future broadcast; Haunted lights a moonlit hollow.',
+  overdrive: 'A synthwave look: neon sunset, city skyline and glowing controls.',
+  fantastic: 'A retro comic-book look: a ringed planet, a 1960s skyline and the cover on a vintage TV.',
+  haunted: 'A Halloween look: a full moon, bare trees and jack-o’-lanterns, with the cover in a candlelit frame.',
+  classic: 'The original look: calm smoked glass, lit by the cover’s colors.',
 };
 
 // Your own settings: how the portal looks and runs on this device, and your account. The server's
@@ -21,16 +21,17 @@ export function SettingsView({ portal, active, ambient, setAmbient, skin, setSki
   return <div className="settings-view" hidden={!active}>
     <section className="personal-settings" aria-labelledby="settings-look"><div className="section-heading"><div><h2 id="settings-look">Look and feel</h2><p className="section-description">These choices apply to this device.</p></div></div><div className="settings-list">
       <div className="setting-row"><div><label htmlFor="portal-look">Portal look</label><p>{lookDescription[skin]}</p></div><select id="portal-look" value={skin} onChange={event => setSkin(event.target.value as Skin)}><option value="overdrive">Overdrive</option><option value="fantastic">Fantastic Four</option><option value="haunted">Haunted</option><option value="classic">Classic</option></select></div>
-      <div className="setting-row"><div><label htmlFor="ambient-mode">Ambient motion</label><p>Album-colored lighting and the decorative spectrum display. Both settle on pause and respect reduced motion.</p></div><select id="ambient-mode" value={ambient} onChange={event => setAmbient(event.target.value as AmbientMode)}><option value="on">Immersive</option><option value="subtle">Subtle</option><option value="off">Off</option></select></div>
-      <div className="setting-row"><div><h3>Performance mode</h3><p>{performance ? 'Lighter rendering is on: solid panels instead of glass blur, no blurred cover light, and a still scene and spectrum. Controls and playback are unchanged.' : 'Full effects: glass blur, cover-colored light, and a moving scene. Turn this on if the portal feels slow or drains battery.'}</p></div><button role="switch" aria-checked={performance} className="switch" aria-label="Performance mode" onClick={() => setPerformance(!performance)}><span />{performance ? 'On' : 'Off'}</button></div>
+      <div className="setting-row"><div><label htmlFor="ambient-mode">Ambient motion</label><p>{performance ? 'Paused while Performance mode is on; your choice returns when you turn it off.' : 'Lighting from the cover’s colors and the moving spectrum. Both rest while paused.'}</p></div><select id="ambient-mode" value={ambient} onChange={event => setAmbient(event.target.value as AmbientMode)}><option value="on">Immersive</option><option value="subtle">Subtle</option><option value="off">Off</option></select></div>
+      <div className="setting-row"><div><h3>Performance mode</h3><p>{performance ? 'On: simpler panels and a still scene. Playback is unchanged.' : 'Simpler panels and a still background, for a smoother portal and longer battery.'}</p></div><button role="switch" aria-checked={performance} className="switch" aria-label="Performance mode" onClick={() => setPerformance(!performance)}><span />{performance ? 'On' : 'Off'}</button></div>
       <FrameRateSetting />
-      <div className="setting-row"><div><h3>Install the app</h3><p>{installPrompt ? 'Open Vybatron in its own window, like an app.' : 'Use your browser’s Install app or Add to Home Screen option when available.'}</p></div><button className="button secondary" disabled={!installPrompt} onClick={install}><DownloadSimpleIcon size={19} />Install app</button></div>
+      {installPrompt && <div className="setting-row"><div><h3>Install the app</h3><p>Open Vybatron in its own window, like an app.</p></div><button className="button secondary" onClick={install}><DownloadSimpleIcon size={19} />Install app</button></div>}
     </div></section>
-    <section className="personal-settings" aria-labelledby="settings-account"><h2 id="settings-account">Account</h2><div className="settings-list">
-      {portal.bootstrap?.inviteUrl && <div className="setting-row"><div><h3>Add to another server</h3><p>Pick any server where you have Manage Server permission. Discord shows what Vybatron can access before you confirm.</p></div><a className="button secondary" href={portal.bootstrap.inviteUrl} target="_blank" rel="noopener noreferrer"><DiscordLogoIcon size={19} weight="fill" />Add to server</a></div>}
+    <section className="personal-settings" aria-labelledby="settings-account"><div className="section-heading"><div><h2 id="settings-account">Account</h2><p className="section-description">Your Discord sign-in and the servers Vybatron is in.</p></div></div><div className="settings-list">
+      {portal.bootstrap?.inviteUrl && <div className="setting-row"><div><h3>Add Vybatron to a server</h3><p>Pick any server where you have Manage Server permission. Discord shows what Vybatron can access before you confirm.</p></div><a className="button secondary setting-link" href={portal.bootstrap.inviteUrl} target="_blank" rel="noopener noreferrer"><DiscordLogoIcon size={19} weight="fill" />Add to a server</a></div>}
       <AutoplayTaste portal={portal} />
       <div className="setting-row"><div><h3>This device’s session</h3><p>Discord sign-in lasts up to seven days per device.</p></div><button className="text-button" onClick={() => void portal.logout()}>Sign out</button></div>
     </div></section>
+    {!installPrompt && <p className="settings-footnote">To install Vybatron as an app, use your browser’s Install app or Add to Home Screen option.</p>}
   </div>;
 }
 
@@ -55,5 +56,5 @@ function AutoplayTaste({ portal }: { portal: Portal }) {
 
 function FrameRateSetting() {
   const rate = useFrameRate();
-  return <div className="setting-row"><div><label htmlFor="visualizer-frame-rate">Visualizer frame rate</label><p id="visualizer-frame-rate-description">{rate === 'native' ? 'As often as your display refreshes, which may be 120 times a second or more. The smoothest motion, and the most battery.' : `Up to ${rate} frames a second. Higher is smoother; lower saves battery.`}</p></div><select id="visualizer-frame-rate" aria-describedby="visualizer-frame-rate-description" value={rate} onChange={event => chooseFrameRate(event.target.value === 'native' ? 'native' : Number(event.target.value) as FrameRate)}>{FRAME_RATES.map(option => <option key={option} value={option}>{option === 'native' ? 'Native' : `${option} fps`}</option>)}</select></div>;
+  return <div className="setting-row"><div><label htmlFor="visualizer-frame-rate">Visualizer frame rate</label><p id="visualizer-frame-rate-description">{rate === 'native' ? 'As often as your display refreshes, which may be 120 times a second or more. The smoothest motion, and the most battery.' : 'Higher is smoother; lower saves battery.'}</p></div><select id="visualizer-frame-rate" aria-describedby="visualizer-frame-rate-description" value={rate} onChange={event => chooseFrameRate(event.target.value === 'native' ? 'native' : Number(event.target.value) as FrameRate)}>{FRAME_RATES.map(option => <option key={option} value={option}>{option === 'native' ? 'Native' : `${option} fps`}</option>)}</select></div>;
 }

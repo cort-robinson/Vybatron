@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from 'react';
 import type { Command, ImportPreview } from './types';
 import type { Portal } from './playback';
+import { claimImport, waitForImport } from './importSlot';
 
 // Discord saves the song its player holds. A song on this device isn't in that player, so its public
 // link goes through the favorites import instead: a one-song preview, then its commit.
@@ -22,6 +23,7 @@ export const fromList = <T extends Command>(command: T) => { listed.add(command)
 export const isListed = (command: Command) => listed.has(command);
 
 // One save at a time: the bot allows one import preview per listener, and a second tap would be refused.
+// A playlist import uses that same preview too, so a save waits for the import slot (importSlot.ts).
 let saving = false;
 const listeners = new Set<() => void>();
 const setSaving = (value: boolean) => { saving = value; listeners.forEach(listener => listener()); };
@@ -39,11 +41,14 @@ export async function saveByLink(portal: Portal, uri: string | null | undefined)
   if (saving) return false;
   if (!uri || !savable(uri)) { portal.notify('Songs from this source can’t be saved to favorites from this device yet.', 'info'); return false; }
   setSaving(true);
+  let lease = claimImport('song');
   try {
+    if (!lease) { portal.notify('This song will be saved after your playlist import.', 'info'); lease = await waitForImport('song'); }
     const link = { command: 'favorite', subcommand: 'import', options: { link: uri } } satisfies Command;
     const preview = await portal.previewImport(link);
     if (!preview) return false; // previewImport has already said why.
     if (!preview.id) { portal.notify(declined(preview), 'info'); return false; }
+    lease.confirming();
     return await portal.run({ ...link, expectedImportId: preview.id }, 'library');
-  } finally { setSaving(false); }
+  } finally { lease?.release(); setSaving(false); }
 }

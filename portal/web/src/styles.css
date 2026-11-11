@@ -80,14 +80,16 @@ button, a, input, select { -webkit-tap-highlight-color: transparent; }
 button, select { cursor: pointer; }
 button { color: inherit; border: 0; }
 button:disabled, input:disabled, select:disabled { cursor: not-allowed; }
-button:disabled { opacity: .4; }
+button:disabled { opacity: .5; }
 input, select { font-size: 16px; color: var(--text); background: var(--field); border: 1px solid var(--field-line); border-radius: 10px; padding: 11px 13px; min-height: 44px; caret-color: var(--accent); transition: border-color 160ms, background-color 160ms; }
 input:hover:not(:disabled), select:hover:not(:disabled) { border-color: rgb(255 255 255 / .24); }
 input::placeholder { color: var(--muted); opacity: 1; }
 input:disabled, select:disabled { opacity: .65; }
 input[type='search']::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none; width: 16px; height: 16px; background: var(--muted); /* Drawn with gradients: the CSP forbids data: URLs. */ --cross: linear-gradient(45deg, transparent calc(50% - 1px), #000 calc(50% - 1px) calc(50% + 1px), transparent calc(50% + 1px)), linear-gradient(-45deg, transparent calc(50% - 1px), #000 calc(50% - 1px) calc(50% + 1px), transparent calc(50% + 1px)); -webkit-mask: var(--cross); mask: var(--cross); cursor: pointer; }
 input[type='search']::-webkit-search-cancel-button:hover { background: var(--text); }
-select { appearance: auto; }
+/* One themed select everywhere: a drawn chevron (no data: URLs; the production CSP forbids them). */
+select { appearance: none; padding-right: 38px; background-image: linear-gradient(45deg, transparent calc(50% - 1px), var(--text-soft) calc(50% - 1px) calc(50% + 1px), transparent calc(50% + 1px)), linear-gradient(135deg, transparent calc(50% - 1px), var(--text-soft) calc(50% - 1px) calc(50% + 1px), transparent calc(50% + 1px));
+  background-position: calc(100% - 22px) 50%, calc(100% - 16px) 50%; background-size: 6px 6px; background-repeat: no-repeat; text-overflow: ellipsis; }
 select option { background: var(--surface); color: var(--text); }
 a { color: var(--accent); text-underline-offset: 4px; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
@@ -190,7 +192,9 @@ svg { flex-shrink: 0; }
 .guild-status.paused .status-dot, .guild-status.recovering .status-dot { background: var(--amber); }
 .guild-status.unavailable .status-dot { background: var(--red); }
 .guild-status-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.guild-listeners { display: none; }
+.guild-listeners { display: inline; }
+/* The desktop sidebar card gives the listener count its own line, without a leading separator. */
+@media (min-width: 1024px) { .sidebar .guild-listeners { display: block; } .sidebar .guild-sep { display: none; } }
 /* The desktop sidebar has the height to wrap the status, so the voice room is never cut short. */
 @media (min-width: 1024px) {
   .guild-status { white-space: normal; align-items: flex-start; }
@@ -208,7 +212,7 @@ svg { flex-shrink: 0; }
 .navigation button { isolation: isolate; }
 .nav-indicator { position: absolute; inset: 0; z-index: -1; border-radius: inherit; background: var(--selected-surface); pointer-events: none; }
 .nav-indicator::before { content: ''; position: absolute; left: 0; top: 50%; height: 22px; margin-top: -11px; width: 3px; border-radius: 3px; background: var(--accent); }
-.sidebar-session { margin-top: 30px; padding: 16px 12px 0; border-top: 1px solid var(--line); color: var(--muted); font-size: 14px; display: flex; flex-direction: column; gap: 9px; }
+.sidebar-session { display: none; margin-top: 30px; padding: 16px 12px 0; border-top: 1px solid var(--line); color: var(--muted); font-size: 14px; flex-direction: column; gap: 9px; }
 .sidebar-session > strong { display: flex; gap: 8px; align-items: center; font-size: 15px; color: var(--text); font-weight: 700; }
 .listeners { display: flex; flex-direction: column; gap: 8px; }
 .listeners > div { display: flex; padding-left: 4px; }
@@ -231,6 +235,11 @@ svg { flex-shrink: 0; }
 .topbar-actions { display: flex; align-items: center; gap: 14px; }
 .header-search { display: flex; align-items: center; gap: 12px; padding: 0 16px; height: 52px; min-height: 44px; width: clamp(240px, 31vw, 451px); background: var(--field); border: 1px solid var(--field-line); border-radius: 12px; color: var(--muted); text-align: left; font-size: 16px; transition: border-color 160ms, background-color 160ms; }
 .header-search span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.header-search { width: clamp(320px, 40vw, 560px); padding-right: 6px; }
+.header-search > span:not(.header-search-add) { flex: 1; min-width: 0; }
+.header-search-add { display: inline-flex; align-items: center; gap: 6px; flex: none; height: 40px; padding: 0 14px; border-radius: 8px; background: var(--accent); color: var(--primary-ink); font-weight: 700; font-size: 15px; }
+.header-search:hover .header-search-add { background: var(--primary-hover); }
+.header-search.blocked .header-search-add { background: var(--secondary); color: var(--text-soft); }
 .header-search:hover { border-color: color-mix(in oklab, var(--accent) 60%, transparent); background: rgb(255 255 255 / .07); }
 .button { min-height: 45px; display: inline-flex; align-items: center; justify-content: center; gap: 10px; border-radius: 12px; padding: 11px 20px; font-weight: 700; font-size: 16px; text-decoration: none; white-space: nowrap; transition: background-color 160ms, color 160ms, box-shadow 220ms var(--ease-out), transform 160ms var(--ease-out), border-color 160ms; }
 .button:active:not(:disabled) { transform: translateY(1px); }
@@ -261,16 +270,16 @@ svg { flex-shrink: 0; }
 .count { color: var(--muted); font-size: 14px; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .pill { display: inline-flex; gap: 7px; align-items: center; padding: 6px 11px; border-radius: 999px; border: 1px solid var(--line-strong); color: var(--text-soft); font-size: 14px; white-space: nowrap; }
 .section-description { color: var(--muted); font-size: 14px; margin-top: 7px; max-width: 70ch; }
-.queue-columns { display: grid; grid-template-columns: 35px 54px minmax(230px, 1fr) minmax(130px, 21%) 128px 45px 43px; gap: 12px; align-items: center; color: var(--muted); font-size: 13px; font-weight: 650; font-stretch: var(--wide); letter-spacing: .08em; text-transform: uppercase; padding: 8px 10px 12px; border-bottom: 1px solid var(--line); }
-.queue-columns > :nth-child(5) { text-align: center; }
+.queue-columns { display: grid; grid-template-columns: 28px 40px minmax(230px, 1fr) minmax(130px, 21%) 72px 45px 43px; gap: 12px; align-items: center; color: var(--muted); font-size: 13px; font-weight: 650; font-stretch: var(--wide); letter-spacing: .08em; text-transform: uppercase; padding: 8px 10px 12px; border-bottom: 1px solid var(--line); }
+.queue-columns > :nth-child(5) { text-align: right; }
 .track-list { padding-top: 6px; }
-.track-row { display: grid; grid-template-columns: 35px 54px minmax(230px, 1fr) minmax(130px, 21%) 128px 45px 43px; gap: 12px; min-height: 88px; align-items: center; padding: 8px 10px; border-radius: 14px; position: relative; transition: background-color 160ms; }
+.track-row { display: grid; grid-template-columns: 28px 40px minmax(230px, 1fr) minmax(130px, 21%) 72px 45px 43px; gap: 12px; min-height: 68px; align-items: center; padding: 6px 10px; border-radius: 14px; position: relative; transition: background-color 160ms; }
 .track-row + .track-row::before { content: ''; position: absolute; left: 10px; right: 10px; top: 0; border-top: 1px solid var(--line-soft); }
 .track-row:hover { background: var(--hover-surface); }
 .track-row:hover::before, .track-row:hover + .track-row::before { opacity: 0; }
 .track-row.drop-target { background: var(--accent-soft); box-shadow: inset 0 2px 0 var(--accent); }
 .track-index { color: var(--muted); font-size: 16px; font-weight: 600; font-stretch: var(--wide); text-align: left; font-variant-numeric: tabular-nums; }
-.drag-handle { display: flex; align-items: center; justify-content: center; color: var(--muted); cursor: grab; height: 44px; touch-action: none; opacity: .55; transition: opacity 160ms; }
+.drag-handle { display: flex; align-items: center; justify-content: center; color: var(--text-soft); cursor: grab; height: 44px; touch-action: none; opacity: .8; transition: opacity 160ms; }
 .track-row:hover .drag-handle:not(.disabled) { opacity: 1; }
 .drag-handle.disabled { opacity: .25; cursor: default; }
 .track-main { display: flex; gap: 20px; align-items: center; min-width: 0; }
@@ -283,7 +292,7 @@ picture.artwork { display: block; overflow: hidden; }
 .requester { display: flex; align-items: center; gap: 12px; min-width: 0; font-size: 14px; color: var(--text-soft); }
 .requester .avatar { width: 30px; height: 30px; }
 .requester > span:not(.avatar) { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.track-duration { text-align: center; font-size: 14px; font-stretch: var(--wide); font-variant-numeric: tabular-nums; color: var(--muted); }
+.track-duration { text-align: right; font-size: 14px; font-stretch: var(--wide); font-variant-numeric: tabular-nums; color: var(--muted); }
 .row-menu { position: relative; }
 .menu-panel { position: absolute; z-index: 70; min-width: 210px; right: 0; top: 47px; background: var(--raised); border: 1px solid var(--line-strong); border-radius: 14px; box-shadow: var(--shadow-menu); padding: 6px; animation: menu-in 180ms var(--ease-out); }
 @keyframes menu-in { from { opacity: 0; transform: translateY(-4px) scale(.98); } }
@@ -291,6 +300,12 @@ picture.artwork { display: block; overflow: hidden; }
 .menu-panel button, .menu-panel a { background: transparent; width: 100%; display: flex; gap: 10px; align-items: center; min-height: 44px; text-align: left; font-size: 16px; border-radius: 9px; padding: 8px 10px; color: var(--text-soft); text-decoration: none; }
 .menu-panel button:hover:not(:disabled), .menu-panel a:hover { background: var(--secondary-hover); color: var(--text); }
 .menu-panel > p.menu-section { border-bottom: 0; border-top: 1px solid var(--line); margin: 4px 0 0; padding-top: 11px; }
+.menu-panel > hr.menu-divider { border: 0; border-top: 1px solid var(--line); margin: 4px 0; }
+.menu-panel > .menu-identity { display: flex; align-items: center; gap: 12px; padding: 8px 10px 12px; margin-bottom: 4px; border-bottom: 1px solid var(--line); }
+.menu-identity .avatar { width: 40px; height: 40px; }
+.menu-identity > span { display: flex; flex-direction: column; min-width: 0; }
+.menu-identity strong { font-size: 16px; }
+.menu-panel .menu-identity small { color: var(--muted); font-size: 13px; padding: 0; margin: 0; }
 /* Destructive actions start their own group, apart from the choices above them. */
 .menu-panel > :not(.danger-text) + button.danger-text { margin-top: 9px; position: relative; }
 .menu-panel > :not(.danger-text) + button.danger-text::before { content: ''; position: absolute; left: 0; right: 0; top: -5px; border-top: 1px solid var(--line); }
@@ -354,6 +369,9 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
 .persistent-player.collapsed { touch-action: none; }
 .persistent-player.swiping { will-change: transform, opacity; }
 .player-spectrum { position: absolute; inset: 0; width: 100%; height: 100%; opacity: .22; -webkit-mask-image: linear-gradient(to top, #000 0%, rgb(0 0 0 / .4) 40%, transparent 78%); mask-image: linear-gradient(to top, #000 0%, rgb(0 0 0 / .4) 40%, transparent 78%); }
+/* The bars stay faint under the song's title and artist, so the text reads cleanly, and come up to full beside it. */
+.player-spectrum { --meta-end: 300px; -webkit-mask-image: linear-gradient(to top, #000 0%, rgb(0 0 0 / .4) 40%, transparent 78%), linear-gradient(to right, rgb(0 0 0 / .25) var(--meta-end), #000 calc(var(--meta-end) + 80px)); mask-image: linear-gradient(to top, #000 0%, rgb(0 0 0 / .4) 40%, transparent 78%), linear-gradient(to right, rgb(0 0 0 / .25) var(--meta-end), #000 calc(var(--meta-end) + 80px)); -webkit-mask-composite: source-in; mask-composite: intersect; }
+@media (max-width: 600px) { .player-spectrum { --meta-end: 55%; } }
 .player-footer { position: relative; height: 100%; display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); align-items: center; gap: 0 24px; padding: 0 16px 0 20px; }
 .playback-timeline { display: flex; align-items: center; gap: 12px; min-width: 0; width: 100%; }
 .playback-timeline .timeline { flex: 1; }
@@ -364,6 +382,7 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
 .player-confirmation .spinner { width: 14px; height: 14px; flex-shrink: 0; }
 .compact-progress, .mobile-add { display: none; }
 /* Glide the passive progress hairline between clock ticks instead of stepping. */
+.compact-progress { background: rgb(255 255 255 / .12); }
 .compact-progress::before { content: ''; position: absolute; inset: 0; background: var(--progress-fill, var(--accent)); transform-origin: left; transform: scaleX(var(--progress-scale, 0)); transition: transform 500ms linear; }
 .compact-identity { grid-column: 1; grid-row: 1; display: flex; align-items: center; gap: 8px; min-width: 0; }
 .player-expand-trigger { display: flex; align-items: center; gap: 14px; padding: 0; min-width: 0; min-height: 44px; flex: 0 1 auto; text-align: left; background: transparent; border-radius: 10px; }
@@ -382,8 +401,22 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
 .sleeve-main .player-permission { justify-content: center; }
 .player-title-row h2 { min-width: 0; flex: 1; font-size: clamp(28px, 2.8vw, 42px); line-height: 1.12; font-weight: 800; font-stretch: var(--wide); letter-spacing: -.03em; white-space: normal; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; text-wrap: initial; padding-bottom: .06em; }
 .player-identity p { color: var(--text-soft); font-size: 16px; line-height: 1.5; margin-top: 8px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.player-destination { position: relative; display: flex; }
+/* Lyrics and where it plays sit under the song as labeled chips; a spacer opposite the heart keeps the title centered. */
+.title-balance { flex: none; width: 44px; }
+.player-chips { display: flex; justify-content: center; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.player-chip { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 4px 14px; border-radius: 999px; background: rgb(255 255 255 / .07); color: var(--text-soft); font-size: 14px; font-weight: 600; }
+.player-chip:hover { background: rgb(255 255 255 / .12); color: var(--text); }
+.player-chip.active-control { background: color-mix(in oklab, var(--accent) 18%, transparent); color: var(--accent); }
+.player-destination-trigger { display: inline-flex; align-items: center; gap: 7px; min-height: 44px; padding: 4px 14px; border-radius: 999px; background: color-mix(in oklab, var(--accent) 12%, transparent); color: var(--accent); font-size: 14px; font-weight: 600; }
+.player-destination-trigger:hover { background: color-mix(in oklab, var(--accent) 20%, transparent); }
+.player-destination-trigger svg { flex: none; }
+.player-destination > .menu-panel { top: auto; bottom: calc(100% + 8px); right: auto; left: 50%; translate: -50% 0; width: 288px; text-align: left; }
+.menu-panel > p.menu-section:first-of-type { border-top: 0; margin-top: 0; padding-top: 6px; }
 .metadata-dot { margin: 0 8px; color: var(--muted); }
 .track-source { color: var(--muted); }
+.compact-destination { display: inline-flex; align-items: center; gap: 5px; color: var(--text-soft); }
+.compact-destination svg { flex: none; color: var(--accent); }
 .player-context { width: min(100%, 560px); display: flex; flex-direction: column; gap: 6px; }
 .player-permission { display: flex; align-items: flex-start; gap: 8px; font-size: 14px; color: var(--text-soft); line-height: 1.5; }
 .player-permission svg { margin-top: 2px; color: var(--amber); }
@@ -428,7 +461,7 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
 .range:disabled { cursor: not-allowed; opacity: .45; }
 .timeline.is-live .range::-webkit-slider-runnable-track { background: var(--range-track); }
 .player-extras { grid-column: 3; grid-row: 1; justify-self: end; margin-right: 52px; display: flex; align-items: center; gap: 8px; min-width: 0; }
-.volume-control { display: flex; align-items: center; gap: 10px; color: var(--text-soft); width: 136px; min-width: 0; margin-right: 4px; }
+.volume-control { display: flex; align-items: center; gap: 10px; color: var(--text-soft); width: 176px; min-width: 0; margin-right: 4px; }
 .filter-control { display: flex; align-items: center; position: relative; border: 1px solid var(--line-strong); background: rgb(255 255 255 / .04); border-radius: 999px; min-height: 44px; width: 126px; flex-shrink: 0; transition: border-color 160ms; }
 .filter-control:hover { border-color: rgb(255 255 255 / .26); }
 /* The select spans the whole pill so its hit area and focus ring match the visible control. */
@@ -436,17 +469,19 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
 .filter-control:has(select:focus-visible) { outline: 2px solid var(--accent); outline-offset: 3px; }
 .filter-control select:focus-visible { outline: none; }
 .filter-control > svg { position: absolute; right: 10px; pointer-events: none; }
-.filter-dot { position: absolute; left: 12px; width: 9px; height: 9px; border-radius: 50%; background: var(--accent); pointer-events: none; }
-.filter-control.warm .filter-dot { background: var(--amber); }
+/* A speaker mark, tinted by the preset, says this pill is the sound. */
+.filter-dot { position: absolute; left: 10px; color: var(--accent); pointer-events: none; }
+.filter-control.warm .filter-dot { color: var(--amber); }
+.filter-control select { padding-left: 32px; }
 .player-more { position: relative; flex-shrink: 0; }
-.player-more > .menu-panel { top: auto; bottom: 54px; width: 288px; max-height: min(480px, calc(100dvh - 120px)); overflow-y: auto; animation-name: menu-up; }
+.player-more > .menu-panel { top: auto; bottom: 54px; width: 288px; max-height: calc(100dvh - 120px); overflow-y: auto; animation-name: menu-up; }
 @keyframes fade-in { from { opacity: 0; } }
 @keyframes menu-up { from { opacity: 0; transform: translateY(4px) scale(.98); } }
 .expand-button { grid-column: 3; grid-row: 1; justify-self: end; width: 44px; height: 44px; border-radius: 12px; display: flex; align-items: center; justify-content: center; padding: 0; background: transparent; color: var(--text-soft); transition: color 160ms, background-color 160ms; }
 .expand-button:hover { color: var(--accent); background: var(--hover-surface); }
 .expand-button svg { width: 24px; height: 24px; }
 .expand-button span { display: none; }
-.sleeve-topbar .page-title { visibility: hidden; }
+.sleeve-topbar .page-title h1 { visibility: hidden; }
 /* Over the open player's lit cover the search field needs a firmer ground to stay legible. */
 .sleeve-topbar { --field: color-mix(in oklab, var(--ground) 72%, transparent); }
 .sleeve-topbar { border-bottom-color: transparent; }
@@ -465,28 +500,32 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
 /* Closing the player, the deck's title settles back in while its cover lands. */
 .compact-title { animation: fade-in 240ms ease-out; }
 .sleeve-main { min-width: 0; min-height: 0; height: 100%; display: grid; grid-template-rows: minmax(0, 1fr) auto auto; gap: 16px; justify-items: center; }
-.sleeve-artwork { --spectrum: 52px; --cover: min(100cqw, 100cqh - var(--spectrum) - 12px); container-type: size; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; width: 100%; height: 100%; min-height: 0; min-width: 0; }
+/* The gap above the spectrum strip goes when the strip does, so frames drawn around the cover stay on it. */
+.sleeve-artwork { --spectrum: 52px; --spectrum-gap: min(12px, var(--spectrum) * 99); --cover: min(100cqw, 100cqh - var(--spectrum) - var(--spectrum-gap)); container-type: size; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--spectrum-gap); width: 100%; height: 100%; min-height: 0; min-width: 0; }
 .sleeve-artwork > .artwork { display: block; width: var(--cover); height: var(--cover); aspect-ratio: 1; object-fit: cover; border-radius: 18px; box-shadow: var(--shadow-sleeve); }
 /* A song change dissolves the cover: the previous image (ui.tsx Artwork) fades out over the next
    one in the same box on an even curve (an ease-out curve finished it so early it read as a cut).
    Opacity only, so it also runs under reduced motion. */
 .artwork-ghost { display: none; }
 .sleeve-artwork { position: relative; }
-.sleeve-artwork > .artwork-ghost { display: block; position: absolute; left: 50%; translate: -50% 0; top: calc((100cqh - var(--cover) - 12px - var(--spectrum)) / 2); width: var(--cover); height: var(--cover); object-fit: cover; border-radius: 18px; pointer-events: none; animation: cover-dissolve 620ms cubic-bezier(.45, 0, .25, 1) both; }
+.sleeve-artwork > .artwork-ghost { display: block; position: absolute; left: 50%; translate: -50% 0; top: calc((100cqh - var(--cover) - var(--spectrum-gap) - var(--spectrum)) / 2); width: var(--cover); height: var(--cover); object-fit: cover; border-radius: 18px; pointer-events: none; animation: cover-dissolve 620ms cubic-bezier(.45, 0, .25, 1) both; }
 @keyframes cover-dissolve { to { opacity: 0; } }
 .sleeve-artwork > .artwork-empty { display: grid; place-items: center; }
 .sleeve-spectrum { width: var(--cover); height: var(--spectrum); flex-shrink: 0; }
 /* The visualizer switch rides the cover's lower corner (the spectrum's gap only counts when it shows),
    and fades in once the cover has flown into place. */
-.sleeve-visuals { position: absolute; z-index: 2; top: calc((100cqh + var(--cover) - min(12px, var(--spectrum) * 99) - var(--spectrum)) / 2 - 10px); right: calc((100cqw - var(--cover)) / 2 + 10px); translate: 0 -100%; display: flex; gap: 6px; animation: fade-in 240ms 380ms ease-out backwards; }
+.sleeve-visuals { position: absolute; z-index: 2; top: calc((100cqh + var(--cover) - var(--spectrum-gap) - var(--spectrum)) / 2 - 10px); right: calc((100cqw - var(--cover)) / 2 + 10px); translate: 0 -100%; display: flex; gap: 6px; animation: fade-in 240ms 380ms ease-out backwards; }
 .sleeve-visuals .icon-button { width: 40px; height: 40px; border-radius: 50%; color: var(--text); background: color-mix(in oklab, var(--ground) 64%, transparent); box-shadow: inset 0 0 0 1px var(--line-strong); }
 .sleeve-visuals .icon-button:hover:not(:disabled) { color: var(--accent); background: color-mix(in oklab, var(--ground) 84%, transparent); }
 .sleeve-visuals .active-control { color: var(--accent); }
+/* The switch names itself so it doesn't read as one more ornament on the cover. */
+.sleeve-visuals .visuals-toggle { width: auto; gap: 6px; padding: 0 13px 0 10px; border-radius: 999px; font-size: 13px; font-weight: 600; }
 /* A landscape phone's cover is small; its switches shrink with it. */
 @media (max-width: 1023px) and (min-width: 600px) and (max-height: 500px) {
   .sleeve-visuals { gap: 4px; top: calc((100cqh + var(--cover)) / 2 - 6px); right: calc((100cqw - var(--cover)) / 2 + 6px); }
   .sleeve-visuals .icon-button { width: 32px; height: 32px; }
   .sleeve-visuals svg { width: 18px; height: 18px; }
+  .sleeve-visuals .visuals-toggle { width: auto; padding: 0 11px 0 8px; font-size: 12px; }
 }
 .sleeve-queue { align-self: start; max-height: 100%; min-width: 0; min-height: 0; overflow-y: auto; padding: 18px 16px 18px; background: color-mix(in oklab, var(--ground) 62%, transparent); backdrop-filter: var(--chrome-blur); --glass: var(--chrome-blur); border: 1px solid var(--line); border-radius: 20px; }
 .sleeve-queue .section-heading { padding-inline: 8px; }
@@ -525,20 +564,57 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
 .mix-track-list .artwork { width: 44px; height: 44px; border-radius: 6px; }
 .mix-track-list .track-text { flex: 1; }
 .mix-track-list > li > span { font-size: 14px; color: var(--muted); font-stretch: var(--wide); font-variant-numeric: tabular-nums; }
-.settings-list { max-width: 950px; }
-.setting-row { display: flex; align-items: center; justify-content: space-between; gap: 35px; padding: 22px 0; border-bottom: 1px solid var(--line); }
+.settings-list { max-width: 760px; }
+/* Wide screens set the form on a panel, so its narrower measure reads as deliberate. */
+@media (min-width: 1024px) { .settings-list { padding: 4px 28px; border: 1px solid var(--line); border-radius: 16px; background: color-mix(in oklab, var(--ground) 70%, transparent); } .settings-list > .setting-row:last-child { border-bottom: 0; } .settings-footnote { padding-inline: 28px; } }
+/* On phones the Defaults tab already names the section, so only its one-line summary stays. */
+@media (min-width: 0px) { .server-intro h2 { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; } .server-intro .section-description { margin-top: 0; } }
+.setting-row > .button.setting-link { flex: none; width: auto; min-height: 44px; }
+/* Results arrive as you type, so the submit is a quiet icon for Enter-less searches and links. */
+.search-form .search-submit { min-width: 84px; padding-inline: 16px; justify-content: center; }
+/* The first result keeps the filled Add; later rows use the quieter outline so a long list doesn't become a column of slabs. */
+.result-list > li + li .button.primary.add-result { background: none; color: var(--accent); border: 1px solid var(--field-line); box-shadow: none; }
+.mix-tracks .icon-button.add-again { color: var(--muted); }
+.mix-tracks .icon-button:not(.add-again) { color: var(--accent); }
+:is(.library-track-list, .history-list) .icon-button:has(.result-action-label) { color: var(--accent); }
+.search-field { position: relative; }
+.search-clear { display: grid; place-items: center; flex: none; width: 36px; height: 36px; margin-right: 4px; border-radius: 50%; color: var(--muted); background: none; }
+.search-clear:hover { color: var(--text); background: var(--hover-surface); }
+.search-field input::-webkit-search-cancel-button { display: none; }
+.signin-footnote { padding: 10px 28px; color: var(--text-soft); background: radial-gradient(closest-side, color-mix(in oklab, var(--ground) 85%, transparent), transparent); }
+.setting-row > .setting-refresh { display: inline-flex; align-items: center; gap: 6px; flex: none; min-height: 44px; font-size: 14px; color: var(--accent); }
+.search-destination { margin: 8px 0 0; color: var(--muted); font-size: 14px; }
+.settings-footnote { max-width: 760px; margin-top: 14px; color: var(--muted); font-size: 14px; }
+.setting-row { display: flex; align-items: center; justify-content: space-between; gap: 35px; padding: 16px 0; border-bottom: 1px solid var(--line); }
 .setting-row > div:first-child { min-width: 0; max-width: 55ch; }
 .setting-row label, .setting-row h3 { font-size: 16px; font-weight: 700; }
 .setting-row p { font-size: 14px; color: var(--muted); margin-top: 6px; max-width: 48ch; }
+/* Every page lines its controls up in one right-hand column. */
+@media (min-width: 1024px) {
+  .setting-row > select, .setting-action { flex: 0 0 300px; width: 300px; }
+  .setting-action { justify-content: flex-end; }
+  .setting-action select { flex: 1; min-width: 0; }
+  .setting-row > .button { flex: 0 0 300px; justify-content: center; }
+}
 .setting-action { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
-.setting-action select, .setting-action .discord-id-input { min-width: 180px; max-width: 250px; font-size: 14px; }
-.number-input { max-width: 90px; }
+.setting-action select, .setting-action .discord-id-input { min-width: 180px; font-size: 14px; }
+.setting-action:has(.number-input) { gap: 6px; }
+/* Default volume is a slider like the player's, with its level beside it. */
+.setting-action:has(> .range) { gap: 12px; align-items: center; }
+.setting-action > .range { flex: 1; min-width: 0; }
+.setting-readout { min-width: 4ch; color: var(--muted); font-size: 14px; font-variant-numeric: tabular-nums; text-align: right; }
+/* The volume field matches the selects, with its unit inside the field. */
+.setting-action .number-input { flex: 1; max-width: none; padding-right: 36px; }
+.setting-action:has(.number-input) { position: relative; }
+.setting-action:has(.number-input) > span { position: absolute; right: 14px; color: var(--muted); pointer-events: none; }
+.setting-action:has(.number-input):has(> .button) > span { right: calc(14px + 12px + var(--save-width, 84px)); }
 .switch { min-height: 44px; display: flex; gap: 13px; align-items: center; padding: 8px 10px; color: var(--text-soft); background: none; font-size: 16px; border-radius: 10px; }
-.switch > span { width: 38px; height: 22px; border-radius: 22px; background: var(--range-track); position: relative; transition: background-color 200ms; }
-.switch > span::after { content: ''; height: 16px; width: 16px; border-radius: 50%; background: var(--text-soft); position: absolute; top: 3px; left: 3px; transition: transform 240ms var(--ease-out), background-color 200ms; }
+.switch > span { width: 38px; height: 22px; border-radius: 22px; background: var(--range-track); box-shadow: inset 0 0 0 1px var(--line-strong); position: relative; transition: background-color 200ms; }
+.switch > span::after { content: ''; height: 16px; width: 16px; border-radius: 50% !important; background: var(--text-soft); position: absolute; top: 3px; left: 3px; transition: transform 240ms var(--ease-out), background-color 200ms; }
 .switch[aria-checked='true'] > span { background: var(--accent); }
 .switch[aria-checked='true'] > span::after { transform: translateX(16px); background: var(--primary-ink); }
 .personal-settings { margin-top: 42px; }
+.personal-settings + .personal-settings { margin-top: 56px; }
 .personal-settings:not(:has(> h2)) { margin-top: 4px; }
 .personal-settings select { font-size: 14px; min-width: 145px; }
 .diagnostic-list { margin-top: 10px; max-width: 780px; }
@@ -574,11 +650,20 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
 .search-field { display: flex; align-items: center; gap: 12px; padding: 0 14px; border: 1px solid var(--field-line); background: var(--field); border-radius: 12px; flex: 1; min-width: 0; color: var(--muted); transition: border-color 160ms; }
 .search-field:focus-within { border-color: color-mix(in oklab, var(--accent) 70%, transparent); }
 /* One focus ring on the whole field, not a second one inset around the bare input. */
-.search-field:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 3px; }
+/* One focus ring: the field's own border lights up with a soft halo. */
+.search-field:has(input:focus-visible) { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 30%, transparent); }
 .search-field input:focus-visible { outline: none; }
 .search-field input { background: none; padding: 13px 0; border: none; width: 100%; outline-offset: 4px; font-size: 16px; min-width: 0; }
-.import-actions { display: flex; align-items: center; gap: 7px; margin: 15px 0 21px; }
+.import-actions { display: flex; align-items: center; gap: 7px; margin: 18px 0 6px; padding: 6px 8px 6px 14px; border: 1px solid var(--line); border-radius: 12px; background: color-mix(in oklab, var(--surface, #0b1020) 60%, transparent); }
 .import-actions > span { font-size: 14px; color: var(--muted); display: flex; align-items: center; gap: 7px; margin-right: auto; }
+.import-actions > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Under real results the typed-text shortcut steps back to a plain line. */
+.import-actions.quiet { padding-inline: 0; border-color: transparent; background: none; }
+.import-actions.quiet .text-button { font-size: 14px; color: var(--muted); }
+.import-actions.quiet .text-button:hover:not(:disabled) { color: var(--text); }
+.import-actions.quiet > span { margin-right: 0; flex: none; }
+.import-actions.quiet .text-button { min-width: 0; display: inline-flex; align-items: center; gap: 6px; }
+@media (max-width: 1023px) { .import-actions.quiet { padding-block: 4px; } .import-actions.quiet > span, .import-actions.quiet .text-button { font-size: 13px; } }
 .import-actions .text-button { font-size: 16px; padding: 7px 8px; color: var(--text-soft); }
 .notice-line { color: var(--muted); font-size: 14px; padding: 11px 0; }
 .search-dialog .empty-state { min-height: 255px; }
@@ -599,6 +684,10 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
 .result-list .track-text { flex: 1; }
 .result-list .track-text strong { font-size: 16px; }
 .result-list .track-text > span { font-size: 14px; }
+.result-actions { display: flex; align-items: center; gap: 4px; flex: none; }
+/* Result actions carry a word next to the icon wherever there is room for it. */
+:is(.result-list, .library-track-list) .icon-button:has(.result-action-label) { width: auto; padding: 0 12px 0 10px; gap: 6px; font-size: 14px; font-weight: 600; color: var(--text-soft); }
+:is(.result-list, .library-track-list) .icon-button:has(.result-action-label):hover:not(:disabled) { color: var(--text); }
 .result-length { font-size: 14px; color: var(--muted); font-stretch: var(--wide); font-variant-numeric: tabular-nums; }
 .add-result { min-height: 44px; padding: 8px 14px; font-size: 14px; }
 .toast { position: fixed; bottom: calc(var(--player) + var(--nav) + 17px); left: calc(var(--sidebar) + 28px); display: flex; align-items: center; gap: 16px; padding: 8px 10px 8px 18px; background: var(--raised); border: 1px solid var(--line-strong); border-radius: 14px; max-width: min(510px, calc(100vw - 40px)); z-index: 90; box-shadow: var(--shadow-menu); pointer-events: none; animation: toast-in 320ms var(--ease-out); }
@@ -613,7 +702,9 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
 
 /* Sign-in: the receiver warming up. */
 .auth-page { min-height: 100dvh; isolation: isolate; display: flex; flex-direction: column; align-items: center; padding: 35px 25px 20px; }
-.auth-page > .brand { align-self: flex-start; }
+.auth-page > .brand { align-self: center; }
+/* Wide screens centre a large wordmark over the sleeve, so sign-in leads with the name, as on phones. */
+@media (min-width: 961px) { .auth-page > .brand { align-self: center; font-size: 34px; gap: 14px; margin-top: 12px; } }
 .sign-in { margin: auto 0; text-align: center; display: flex; flex-direction: column; align-items: center; padding: 45px 20px 55px; }
 .signin-sleeve { width: 200px; height: 200px; box-shadow: var(--shadow-sleeve); border-radius: 20px; overflow: hidden; }
 .signin-sleeve img { width: 100%; height: 100%; object-fit: cover; }
@@ -628,7 +719,7 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
   .topbar { padding-left: 28px; gap: 16px; }
   h1 { font-size: 30px; }
   .topbar-actions { gap: 12px; }
-  .header-search { width: clamp(200px, 24vw, 300px); }
+  .header-search { width: clamp(280px, 36vw, 420px); }
   .topbar .button { font-size: 16px; padding-inline: 16px; }
   .page-content { padding-left: 28px; }
   .track-row, .queue-columns { grid-template-columns: 24px 28px minmax(0, 1fr) 100px 50px 44px 44px; gap: 10px; }
@@ -649,7 +740,7 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
   .expanded .volume-control { width: 106px; }
 }
 @media (max-width: 1150px) and (min-width: 1024px) {
-  .header-search { width: 210px; }
+  .header-search { width: 300px; }
   .topbar { gap: 12px; padding-right: 20px; }
   .requester > span:not(.avatar) { display: none; }
   .track-row, .queue-columns { grid-template-columns: 24px 24px minmax(0, 1fr) 44px 44px 44px 44px; gap: 8px; }
@@ -666,7 +757,7 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
   .navigation button { min-height: 54px; padding-block: 12px; }
 }
 @media (max-width: 1023px) {
-  :root { --sidebar: 0px; --mobile-header: calc(72px + env(safe-area-inset-top, 0px)); --topbar: 0px; --player: 72px; --nav: calc(64px + env(safe-area-inset-bottom, 0px)); --connection-notice: 96px; --expanded-controls: 212px; }
+  :root { --sidebar: 0px; --mobile-header: calc(72px + env(safe-area-inset-top, 0px)); --topbar: 0px; --player: 72px; --nav: calc(64px + env(safe-area-inset-bottom, 0px)); --connection-notice: 96px; }
   .app-shell { padding-bottom: calc(var(--player) + var(--nav)); }
   .sidebar { position: relative; inset: auto; width: 100%; height: var(--mobile-header); padding: calc(8px + env(safe-area-inset-top, 0px)) max(12px, env(safe-area-inset-right, 0px)) 8px max(12px, env(safe-area-inset-left, 0px)); flex-direction: row; align-items: center; justify-content: space-between; gap: 8px; border-right: none; border-bottom: 1px solid var(--line); background: color-mix(in oklab, var(--ground) 94%, transparent); backdrop-filter: none; --glass: none; z-index: 35; }
   .sidebar > .brand, .sidebar > .guild-card, .sidebar > .navigation, .sidebar > .account { flex-shrink: 0; }
@@ -679,6 +770,11 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
   .guild-info select { font-size: 16px; min-height: 44px; }
   .guild-status { font-size: 14px; line-height: 20px; }
   .guild-caret { top: 14px; right: 8px; }
+  /* The switcher's chevron follows the server name, so the name reads as the control. */
+  @supports (field-sizing: content) {
+    .guild-info select { field-sizing: content; width: auto; max-width: 100%; align-self: flex-start; padding-right: 24px; background-image: linear-gradient(45deg, transparent calc(50% - 1px), var(--text-soft) calc(50% - 1px) calc(50% + 1px), transparent calc(50% + 1px)), linear-gradient(135deg, transparent calc(50% - 1px), var(--text-soft) calc(50% - 1px) calc(50% + 1px), transparent calc(50% + 1px)); background-position: calc(100% - 14px) 55%, calc(100% - 8px) 55%; background-size: 6px 6px; background-repeat: no-repeat; }
+    .guild-caret { display: none; }
+  }
   .navigation { position: fixed; bottom: 0; left: 0; right: 0; height: var(--nav); display: flex; flex-direction: row; justify-content: space-around; align-items: stretch; margin: 0; padding: 0 max(8px, env(safe-area-inset-right, 0px)) env(safe-area-inset-bottom, 0px) max(8px, env(safe-area-inset-left, 0px)); border-top: 1px solid var(--line); background: var(--chrome); backdrop-filter: var(--chrome-blur); z-index: 60; }
   .navigation button { margin: 0; border-radius: 0; padding: 6px 8px 9px; flex: 1; min-width: 0; align-items: center; justify-content: center; flex-direction: column; gap: 2px; font-size: 14px; min-height: 44px; }
   .navigation button svg { width: 24px; height: 24px; }
@@ -696,6 +792,8 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
   .guild-card { border: 0; background: none; padding: 0; }
   .guild-card:hover { border-color: transparent; }
   .guild-listeners { display: inline; }
+/* The desktop sidebar card gives the listener count its own line, without a leading separator. */
+@media (min-width: 1024px) { .sidebar .guild-listeners { display: block; } .sidebar .guild-sep { display: none; } }
   .page-title { min-width: 0; }
   h1 { font-size: 26px; }
   .header-search { display: none; }
@@ -708,7 +806,7 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
   .heading-line { gap: 12px; flex-wrap: wrap; }
   .pill { font-size: 14px; padding: 5px 7px; white-space: normal; }
   .queue-columns { display: none; }
-  .track-row { grid-template-columns: 20px minmax(0, 1fr) 44px; min-height: 64px; padding: 8px 0; gap: 6px; }
+  .track-row { grid-template-columns: 20px minmax(0, 1fr) 44px; min-height: 64px; padding: 8px 4px 8px 12px; gap: 6px; }
   .queue:not(.queue-compact) .track-row > .favorite { display: none; }
   .track-index { font-size: 14px; color: var(--muted); }
   .requester, .track-row > .track-duration { display: none; }
@@ -771,17 +869,18 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
   .has-connection-notice .persistent-player.expanded { --notice-height: var(--connection-notice); top: calc(var(--mobile-header) + var(--connection-notice)); }
   .expanded-main { padding: 0; min-height: 0; }
   .sleeve-content { grid-template-columns: minmax(0, 1fr); grid-template-rows: 44px minmax(0, 1fr); padding: 0 max(24px, env(safe-area-inset-right, 0px)) 12px max(24px, env(safe-area-inset-left, 0px)); gap: 8px; overflow-y: auto; overscroll-behavior-y: contain; }
-  .mobile-collapse { display: inline-flex; grid-row: 1; justify-self: start; gap: 8px; padding-inline: 0; min-height: 44px; font-size: 16px; color: var(--muted); }
-  .sleeve-main { grid-row: 2; grid-template-rows: auto auto auto; gap: 10px; height: auto; align-self: start; }
-  .sleeve-artwork { --spectrum: 34px; height: clamp(126px, calc(100dvh - var(--mobile-header) - var(--nav) - var(--expanded-controls) - var(--notice-height) - 200px), 406px); }
+  .mobile-collapse { display: inline-flex; grid-row: 1; justify-self: start; gap: 8px; padding-inline: 0; min-height: 44px; font-size: 16px; color: var(--text-soft); }
+  /* The cover takes the height the caption and chips leave, so a two-line title or a skin's caption plate
+     never pushes the stack past the screen. Below the floor the cover stops shrinking and the sleeve scrolls. */
+  .sleeve-main { --cover-floor: 126px; grid-row: 2; grid-template-rows: minmax(var(--cover-floor), 1fr) auto auto; gap: 10px; height: 100%; align-self: start; }
+  .sleeve-artwork { --spectrum: 34px; height: 100%; max-height: 470px; align-self: end; }
   .sleeve-main .player-title-row { gap: 8px; align-items: center; }
-  .persistent-player.expanded:has(.player-permission) .sleeve-artwork { height: clamp(110px, calc(100dvh - var(--mobile-header) - var(--nav) - var(--expanded-controls) - var(--notice-height) - 250px), 406px); }
   .sleeve-main .player-identity h2 { font-size: clamp(22px, 6vw, 30px); line-height: 1.25; text-align: center; }
   .sleeve-main .player-identity p { font-size: 14px; margin-top: 4px; text-align: center; }
   .player-context { gap: 4px; }
   .sleeve-queue { display: none; }
   /* Up next: a handle under the controls opens the queue as a sheet over the cover; the transport stays put. */
-  .up-next-handle { display: flex; align-items: center; justify-content: center; gap: 8px; position: relative; width: 100%; max-width: 480px; min-height: 44px; padding: 14px 12px 2px; background: none; color: var(--text-soft); font-size: 15px; font-weight: 650; touch-action: none; }
+  .up-next-handle { display: flex; align-items: center; justify-content: center; gap: 8px; position: relative; width: 100%; max-width: 480px; min-height: 44px; margin-top: 8px; padding: 14px 12px 4px; background: none; color: var(--text-soft); font-size: 15px; font-weight: 650; touch-action: none; }
   .up-next-handle > .sheet-grabber { position: absolute; top: 4px; left: 50%; translate: -50% 0; }
   .up-next-handle > .count { font-weight: 450; }
   .queue-open .sleeve-main { display: none; }
@@ -814,13 +913,14 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
   .connection-banner span:not(.spinner) { font-size: 14px; line-height: 1.4; }
   .connection-banner .text-button { padding: 8px; font-size: 14px; }
   .player-open .connection-banner { position: fixed; left: 0; right: 0; top: var(--mobile-header); z-index: 45; }
-  .tabs { gap: 24px; margin-bottom: 24px; overflow-x: auto; scrollbar-width: none; }
+  .tabs { gap: 18px; margin-bottom: 24px; overflow-x: auto; scrollbar-width: none; }
   .tabs::-webkit-scrollbar { display: none; }
   /* Overflowing tabs fade at the trailing edge until scrolled to the end. */
   @supports (animation-timeline: scroll()) {
     .tabs { mask-image: linear-gradient(to right, #000 calc(100% - var(--tabs-fade)), transparent); animation: tabs-fade linear both; animation-timeline: scroll(self inline); }
   }
-  .tabs button { font-size: 16px; gap: 6px; white-space: nowrap; }
+  .tabs button { font-size: 15px; gap: 6px; white-space: nowrap; }
+  .tabs button > span { padding: 1px 6px; font-size: 13px; }
   .tabs button > span { font-size: 14px; }
   .library-track-list > li, .history-list > li { gap: 12px; min-height: 88px; }
   /* On a phone the artist keeps the line; the catalog is in the row's menu and the player. */
@@ -836,14 +936,17 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
   .mixes-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px 16px; }
   .mix-open h3 { font-size: 16px; margin-top: 12px; }
   .mix-open p, .mix-actions .text-button { font-size: 14px; }
-  .setting-row { flex-wrap: wrap; gap: 16px; padding: 24px 0; }
-  .setting-row > div:first-child { flex: 1; min-width: min(100%, 200px); }
+  .setting-row { flex-wrap: wrap; gap: 12px; padding: 16px 0; }
+  .setting-row > div:first-child { flex: 1; min-width: min(100%, 180px); }
   .setting-row label, .setting-row h3 { font-size: 16px; }
   .setting-row p { font-size: 14px; }
   .setting-action { width: 100%; gap: 12px; }
   .setting-action select, .setting-action .discord-id-input { flex: 1; max-width: none; min-width: 0; font-size: 16px; }
   .personal-settings > h2 { font-size: 22px; }
+  /* As on Server, a choice sits under its explanation at full width; a switch stays beside its label. */
   .personal-settings .setting-row > div:first-child { min-width: 180px; }
+  .personal-settings .setting-row:not(:has(> .switch)) > div:first-child { flex-basis: 100%; }
+  .personal-settings .setting-row > :is(select, .button) { width: 100%; justify-content: center; }
   .personal-settings select { min-width: 130px; font-size: 16px; }
   .activity-list > li { flex-wrap: wrap; gap: 12px; }
   .activity-list time { width: 100%; padding-left: 31px; }
@@ -861,16 +964,23 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
   .search-field { padding: 0 10px; gap: 8px; }
   .search-field svg { width: 20px; }
   .search-field input { font-size: 16px; }
-  .import-actions { flex-wrap: wrap; gap: 4px 12px; margin-top: 12px; }
+  .import-actions { flex-wrap: wrap; gap: 0 12px; margin-top: 12px; padding: 8px 10px 4px 14px; }
   .import-actions > span { width: 100%; font-size: 14px; }
   .import-actions .text-button { font-size: 14px; }
+  /* Phones put the fallback under its question, so the whole query stays readable. */
+  .import-actions.quiet { flex-direction: column; align-items: flex-start; gap: 2px; padding: 4px 0; }
+  .import-actions.quiet .text-button { padding-inline: 0; }
+  .import-actions.quiet > span { width: auto; }
+  .import-actions.quiet .text-button { white-space: normal; text-align: left; }
   .result-list > li { gap: 10px; }
   .result-list .artwork { width: 44px; height: 44px; }
-  .result-length { display: none; }
+  .result-list .track-text { min-width: 0; flex: 1 1 0; }
+  .result-actions .add-result { margin-left: auto; }
+  .result-list .icon-button:has(.result-action-label) { padding: 0 10px; font-size: 13px; }
   .result-list .track-text strong { font-size: 16px; }
   .result-list .track-text > span { font-size: 14px; }
-  .add-result { padding: 8px 10px; min-width: 44px; justify-content: center; }
-  .add-result span { display: none; }
+.result-actions { display: flex; align-items: center; gap: 4px; flex: none; }
+  .add-result { min-height: 44px; padding: 8px 14px; }
   .toast { left: 12px; right: 12px; top: auto; bottom: calc(var(--player) + var(--nav) + 10px); max-width: none; padding-left: 14px; gap: 8px; }
   /* A pending-confirmation pill floats above the compact deck; toasts clear it. */
   .app-shell:has(.collapsed .player-confirmation:not(:empty)) .toast { bottom: calc(var(--player) + var(--nav) + 56px); }
@@ -893,13 +1003,14 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
   .search-dialog .search-form { position: sticky; top: 0; z-index: 1; margin-inline: -16px; padding: 8px 16px; background: color-mix(in oklab, var(--ground), white 5%); }
   .search-results .section-heading, .search-suggestions .section-heading { margin-top: 16px; }
   /* Compact deck: title and artist only; the source shows in the expanded player. */
-  .compact-track-meta .metadata-dot, .compact-track-meta .track-source { display: none; }
+  /* Phones show where it plays in the header ("Playing · General"), so the deck keeps just the artist. */
+  .compact-track-meta .metadata-dot, .compact-track-meta .track-source, .compact-track-meta .compact-destination { display: none; }
   /* The waveform mark carries the brand; the wordmark yields its width to the server name. */
   .sidebar { gap: 10px; }
   .sidebar > .brand span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   .guild-card { width: auto; max-width: none; flex: 1; }
   .guild-icon { display: none; }
-  .guild-status { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .guild-status { min-width: 0; white-space: nowrap; }
   .guild-info { gap: 0; }
   .guild-info select { font-size: 16px; }
   .guild-status { font-size: 14px; }
@@ -929,14 +1040,12 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
 /* Short phones: the open player gives the cover the spectrum's strip and tucks the seek bar's empty
    lower half under the transport, so the cover and the caption keep their room. */
 @media (max-width: 599px) and (max-height: 700px) {
-  :root { --expanded-controls: 204px; }
   .sleeve-artwork { --spectrum: 0px; }
   .sleeve-spectrum { display: none; }
   .expanded .playback-cluster > .playback-timeline { margin-bottom: -8px; }
 }
 @media (max-width: 599px) and (max-height: 600px) {
-  .sleeve-artwork { height: clamp(108px, calc(100dvh - var(--mobile-header) - var(--nav) - var(--expanded-controls) - var(--notice-height) - 200px), 406px); }
-  .persistent-player.expanded:has(.player-permission) .sleeve-artwork { height: clamp(96px, calc(100dvh - var(--mobile-header) - var(--nav) - var(--expanded-controls) - var(--notice-height) - 250px), 406px); }
+  .sleeve-main { --cover-floor: 96px; }
 }
 /* Short wide surfaces use the width for artwork and controls instead of stacking. */
 @media (max-width: 1023px) and (min-width: 600px) and (max-height: 500px) {
@@ -961,6 +1070,8 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
   .player-context { grid-column: 2; grid-row: 2; align-self: start; }
   .sleeve-main .player-identity, .sleeve-main .player-context { text-align: left; }
   .sleeve-main .player-title-row { justify-content: flex-start; }
+  .sleeve-main .title-balance { display: none; }
+  .player-chips { justify-content: flex-start; }
   .sleeve-main .player-permission, .sleeve-main .sleep-state { justify-content: flex-start; }
   .expanded .player-footer { grid-column: 2; grid-row: 1 / -1; padding: 8px 12px 12px; border-top: 0; border-left: 1px solid var(--line); justify-content: center; background: transparent; backdrop-filter: none; --glass: none; }
   .expanded .transport { gap: 4px; }
@@ -969,7 +1080,6 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
 }/* Tablets: the collapsed deck adds favorite and restart; the open deck runs the timeline across the
    top and puts volume, transport, and filter/more on one row instead of three. */
 @media (min-width: 600px) and (max-width: 1023px) and (min-height: 501px) {
-  :root { --expanded-controls: 168px; }
   .compact-favorite { display: flex; }
   .collapsed .player-footer { grid-template-columns: minmax(0, 1fr) auto 44px; gap: 0 8px; padding-inline: max(16px, env(safe-area-inset-left, 0px)) max(12px, env(safe-area-inset-right, 0px)); }
   .collapsed .transport > :nth-child(2) { display: inline-flex; }
@@ -983,8 +1093,7 @@ body > .menu-sheet-layer > .menu-panel.menu-sheet { position: relative; inset: a
   .expanded .filter-control { grid-column: 3; grid-row: 2; justify-self: end; margin-right: 52px; }
   .expanded .player-more { grid-column: 3; grid-row: 2; justify-self: end; }
   .up-next-handle { grid-column: 1 / -1; grid-row: 3; justify-self: center; }
-  .sleeve-artwork { height: clamp(126px, calc(100dvh - var(--mobile-header) - var(--nav) - var(--expanded-controls) - var(--notice-height) - 200px), 640px); }
-  .persistent-player.expanded:has(.player-permission) .sleeve-artwork { height: clamp(110px, calc(100dvh - var(--mobile-header) - var(--nav) - var(--expanded-controls) - var(--notice-height) - 250px), 640px); }
+  .sleeve-artwork { max-height: 640px; }
 }
 
 /* Continuity. Each transition kind names only the elements that travel for it; everything else
@@ -1163,7 +1272,9 @@ p, .continue-text > span, .section-description, .field-hint { text-wrap: pretty;
   [data-tv] .sidebar > .brand { margin: 0 6px 12px; font-size: 14px; }
   [data-tv] .sidebar > .brand svg { width: 22px; }
   [data-tv] .guild-card { width: auto; max-width: none; padding: 0 4px; }
-  [data-tv] .guild-icon, [data-tv] .guild-listeners { display: none; }
+  [data-tv] .guild-icon, [data-tv] .guild-listeners { display: inline; }
+/* The desktop sidebar card gives the listener count its own line, without a leading separator. */
+@media (min-width: 1024px) { .sidebar .guild-listeners { display: block; } .sidebar .guild-sep { display: none; } }
   [data-tv] .guild-info select { font-size: 14px; min-height: 40px; }
   [data-tv] .guild-status { font-size: 12px; line-height: 16px; }
   [data-tv] .navigation { position: static; height: auto; flex-direction: column; justify-content: flex-start; align-items: stretch; margin: 12px 0 0; padding: 0; gap: 2px; border: 0; background: none; backdrop-filter: none; z-index: auto; }
@@ -1226,3 +1337,116 @@ p, .continue-text > span, .section-description, .field-hint { text-wrap: pretty;
 [data-tv] .tv-home :is(.icon-button, .tv-action):focus { outline-color: var(--text); outline-width: .6vmin; outline-offset: .6vmin; transform: scale(1.08); }
 [data-tv] .tv-home .menu-panel button:focus { outline-color: var(--text); background: var(--secondary-hover); color: var(--text); }
 .tv-queue.dialog { width: min(1100px, 86vw); max-width: 86vw; }
+
+/* Desktop: the open player names the page it returns to, and the nav stops claiming that page. */
+.sleeve-back { display: inline-flex; align-items: center; gap: 8px; font-size: 16px; font-weight: 650; color: var(--text-soft); }
+.sleeve-back:hover { color: var(--text); }
+@media (min-width: 1024px) {
+  .app-shell.player-open .navigation button.selected { color: var(--muted); }
+  .app-shell.player-open .navigation button.selected svg { color: inherit; filter: none; }
+  .app-shell.player-open .navigation .nav-indicator { opacity: 0; }
+}
+.search-draft-label { color: var(--muted); }
+.search-draft { color: var(--text-soft); }
+.mobile-page-heading { display: none; }
+@media (max-width: 1023px) { .mobile-page-heading { display: flex; align-items: center; gap: 4px; margin: 0 0 14px -10px; font-size: 26px; font-weight: 800; font-stretch: var(--wide); letter-spacing: -0.02em; } }
+/* The More menu names the song it acts on, so it never reads as a menu for a queue row. */
+.menu-panel > p.menu-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-soft); font-weight: 650; }
+/* Section headings in a menu read like its title, so the groups look like peers. */
+.menu-panel > p.menu-section { color: var(--text-soft); font-weight: 650; }
+/* Small player text stays legible where the spectrum runs behind it. */
+.collapsed :is(.compact-title, .timeline > span) { text-shadow: 0 1px 2px var(--ground), 0 0 10px var(--ground), 0 0 18px var(--ground); }
+.menu-panel > p.menu-title + p.menu-section { border-top: 0; margin-top: 0; padding-top: 6px; }
+/* Phones: page title, section title and row labels step down clearly, and forms sit tighter. */
+@media (max-width: 1023px) {
+  .page-content :is(.settings-view, .server-view) :is(h2, .section-heading h2) { font-size: 19px; }
+  .personal-settings + .personal-settings { margin-top: 28px; }
+  .library-view .tabs { margin-bottom: 16px; }
+  .library-view .section-heading { margin-bottom: 12px; }
+  .library-view .library-search { margin-bottom: 14px; }
+}
+/* Long list rows read as one unit under the pointer. */
+@media (pointer: fine) { .library-track-list > li:hover, .history-list > li:hover { background: var(--hover-surface); border-radius: 12px; } }
+.setting-status { color: var(--muted); font-size: 14px; }
+/* Desktop keeps search and Add music in reach while a long page scrolls. */
+@media (min-width: 1024px) { .topbar:not(.sleeve-topbar) { position: sticky; top: 0; z-index: 25; background: color-mix(in oklab, var(--ground) 82%, transparent); backdrop-filter: var(--chrome-blur); } }
+/* Opening More over the open player's queue sets the queue back so the menu reads on its own. */
+.sleeve-queue { transition: opacity 180ms; }
+.persistent-player.expanded:has(.player-more > .menu-panel) .sleeve-queue { opacity: .3; }
+.signin-footnote { line-height: 1.5; text-wrap: balance; }
+/* Phones: results arrive as you type, so the submit button shrinks to its icon (its name stays). */
+@media (max-width: 600px) { .search-page .search-form .button { padding-inline: 14px; min-width: 52px; justify-content: center; } .search-page .search-form .button > svg { display: block; } .search-page .search-submit-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; } }
+.volume-readout { min-width: 3ch; color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; text-align: right; }
+.chip-prefix { color: var(--text-soft); font-weight: 500; }
+.chip-prefix-short { display: none; color: var(--text-soft); font-weight: 500; }
+.volume-sheet { display: none; }
+.track-queue-state { color: var(--muted); }
+/* Queue state reads as a status, not a second artist line: a small marker leads it. */
+:is(.queue-state, .track-queue-state .queue-label, .mix-track-state)::before { content: '\2713\00A0'; color: var(--accent); }
+:is(.queue-state, .mix-track-state).is-playing::before, .track-queue-state.is-playing .queue-label::before { content: '\266A\00A0'; }
+/* Small player-bar text keeps a ground halo so the spectrum behind it never breaks up the letters. */
+:is(.compact-track-meta, .timeline > span) { text-shadow: 0 0 6px var(--ground), 0 0 3px var(--ground), 0 0 1px var(--ground); }
+/* Section headings that scroll over the horizon sit on a soft backing, so the skyline never runs through them. */
+:is(.home-shelf-header, .section-heading) :is(h2, p) { text-shadow: 0 0 18px var(--ground), 0 0 8px var(--ground), 0 0 3px var(--ground); }
+/* The player bar's song name and artist sit on a backing too; the spectrum keeps running around them. */
+.collapsed .timeline > span { padding: 0 4px; border-radius: 6px; background: color-mix(in oklab, var(--ground) 72%, transparent); }
+/* Sound presets are a choice of one, so they read as radio options with the mark where the eye starts. */
+.sound-radio { flex: none; width: 18px; height: 18px; margin-inline: 1px; border-radius: 50%; border: 2px solid var(--muted); }
+.sound-radio.chosen { border-color: var(--accent); background: radial-gradient(circle, var(--accent) 0 4px, transparent 5px); }
+/* Phone rows give the queue note its own line so the song's details never cut it short. */
+@media (max-width: 960px) { :is(.library-track-list, .result-list, .server-favorite-list) .track-queue-state { display: block; } :is(.library-track-list, .result-list, .server-favorite-list) .queue-sep { display: none; } }
+/* The narrowest covers keep each song's length: the source and the queue note give way first. */
+@media (max-width: 360px) {
+  .result-list .result-source { display: none; }
+}
+/* Phones set settings on the same backed panel as desktop, so the skyline never runs through a field. */
+@media (max-width: 360px) { .library-track-list .result-action-label { display: none; } .library-track-list .icon-button:has(.result-action-label) { padding-inline: 0; width: 44px; justify-content: center; } .setting-row > .switch { margin-inline-start: -10px; } .tabs { gap: 14px; } .tabs button { font-size: 14px; } }
+/* Fields and their panel stay solid over the scenery on every width. */
+.settings-list :is(select, input:not([type='range'])) { background-color: var(--ground); }
+@media (min-width: 1024px) { .settings-list { background: color-mix(in oklab, var(--ground) 92%, transparent); } }
+@media (max-width: 1023px) { .settings-list { padding: 0 14px; border: 1px solid var(--line); border-radius: 14px; background: color-mix(in oklab, var(--ground) 92%, transparent); } .settings-list > .setting-row:last-child { border-bottom: 0; } }
+.menu-panel .volume-control { display: flex; width: 100%; padding: 6px 10px 12px; }
+/* Phones: the open player's volume and More buttons sit in its top-right corner, across from Close player. */
+@media (max-width: 599px) {
+  .sleeve-content > .sleeve-corner, .sleeve-content > .mobile-collapse { grid-row: 1; grid-column: 1; }
+  /* Tall phones keep the song card next to the controls; spare height sits above the cover. "safe" starts at
+     the top instead when the stack is taller than the screen, so none of it overflows out of reach. */
+  .persistent-player.expanded:not(.queue-open) .sleeve-main { align-self: safe end; }
+  .sleeve-content > .sleeve-corner { justify-self: end; align-self: center; }
+  .persistent-player.expanded .sleeve-corner .player-extras { width: auto; max-width: none; gap: 4px; }
+  .sleeve-corner .player-extras > .volume-control { display: none; }
+  .persistent-player.expanded .volume-sheet { display: block; }
+}
+@media (max-width: 599px) { .chip-prefix { display: none; } .chip-prefix-short { display: inline; } }
+/* The narrowest covers (older Fold cover screens) keep Lyrics and the destination on one line. */
+@media (max-width: 360px) { .chip-prefix-short { display: none; } .sleeve-main .player-chips { flex-wrap: nowrap; } .sleeve-main .player-chips :is(button, .player-destination-trigger) { white-space: nowrap; padding-inline: 10px; } }
+
+/* Desktop queue rows stay compact so a long queue scans in one screen. */
+@media (min-width: 1024px) { .queue:not(.queue-compact) .track-row .artwork { width: 48px; height: 48px; } }
+/* Phones: settings rows sit tighter; the explanation stays readable. */
+@media (max-width: 1023px) { .setting-row { padding: 12px 0; gap: 10px; } .setting-row p { margin-top: 4px; line-height: 1.45; } }
+/* Phones keep each result on one line: Add plus the row menu, which also holds Play next. */
+.menu-panel > .phone-only-item { display: none; }
+.result-length-inline { display: none; }
+@media (max-width: 600px) {
+  .result-list .result-length, .result-list .next-result { display: none; }
+  .result-list .add-tail { display: none; }
+  .result-list .result-length-inline { display: inline; }
+  /* The keyboard's Search key submits; the field keeps the full width. */
+  .search-form .search-submit { display: none; }
+  .result-actions .add-result { margin-left: 0; padding: 8px 12px; }
+  .menu-panel > .phone-only-item { display: flex; }
+}
+/* Wide decks have room for the full "Sound:" pill and a volume readout; tighter ones keep the slider. */
+@media (min-width: 1024px) { .filter-control { width: 164px; } }
+@media (max-width: 1023px) {
+  .volume-readout { display: none; }
+  /* Narrow players show the level only while it changes. */
+  .volume-control { position: relative; }
+  .volume-control.adjusting .volume-readout { display: block; position: absolute; right: 0; bottom: calc(100% + 4px); padding: 2px 8px; border-radius: 8px; background: var(--surface-raised, #141a2e); color: var(--text); pointer-events: none; }
+}
+.filter-prefix { display: none; position: absolute; left: 32px; color: var(--muted); font-size: 14px; pointer-events: none; }
+@media (min-width: 1024px) { .filter-prefix { display: block; } .filter-control select { padding-left: 82px; } }
+
+/* Tall phones lift the cover so the spare height sits between the spectrum and the title card, where the skyline fills it. */
+@media (max-width: 600px) and (max-aspect-ratio: 1/2) { .persistent-player.expanded .sleeve-artwork { padding-bottom: clamp(0px, 100dvh - 205vw, 110px); } }

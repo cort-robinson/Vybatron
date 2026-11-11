@@ -76,12 +76,12 @@ test('one keystroke, one unchanged live frame and one skip re-render only what t
   const rows = page.locator('main .queue .track-list > li.track-row');
   await expect(rows).toHaveCount(30);
 
-  await page.getByRole('button', { name: 'Search music' }).click();
+  await page.getByRole('button', { name: 'Add music', exact: true }).first().click();
   const field = page.getByRole('dialog', { name: 'Add music' }).getByRole('searchbox', { name: 'Music search' });
   await expect(field).toBeFocused();
   const keystroke = await measure(page, 'one search keystroke', () => page.keyboard.type('n'));
   await expect(field).toHaveValue('n');
-  await expect(page.getByRole('button', { name: 'Search music' })).toContainText('n');
+  await expect(page.getByRole('button', { name: 'Add music', exact: true }).first()).toContainText('n');
   await page.keyboard.press('Escape');
   await expect(page.getByRole('dialog', { name: 'Add music' })).toHaveCount(0);
 

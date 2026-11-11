@@ -1646,3 +1646,24 @@ test('an unknown song is skipped as before', async () => {
   assert.equal(f.player.queue.current.info.identifier, 'Zi_XLOBDo_Y');
   assert.equal(f.failed.length, 1);
 });
+
+test('a seek during a voice allocation keeps the session recovering until the voice pair completes', async () => {
+  const { sessionStatus, statusLabel } = await import('../src/utils/session-status.js');
+  const f = fixture({ requestTimeoutMs: 200, voiceServerGraceMs: 1 });
+  await f.start();
+  await f.forward({ t: 'VOICE_SERVER_UPDATE', d: { guild_id: 'g1', token: 'allocation-token', endpoint: null } });
+  // lavalink.js announces this reconnect on the controller before the service flags it.
+  const label = statusLabel(f.player, 'recovering');
+  await f.recovery.handleVoiceClosed(f.player, { code: 1006 });
+  await f.player.seek(0);
+  assert.equal(sessionStatus(f.player, label), 'recovering');
+  // The seek moved the generation, so the pair takes Discord's fresh session.
+  await f.forward({ t: 'VOICE_STATE_UPDATE', d: { guild_id: 'g1', user_id: '123',
+    channel_id: 'v1', session_id: 'fresh-session' } });
+  await f.forward({ t: 'VOICE_SERVER_UPDATE', d: { guild_id: 'g1',
+    token: 'allocated-token', endpoint: 'voice-allocated.example' } });
+  await sleep(20);
+  assert.deepEqual(f.writes.filter((write) => write.voice).map((write) => write.voice.sessionId), ['fresh-session']);
+  assert.equal(f.failed.length, 0);
+  assert.notEqual(sessionStatus(f.player, label), 'recovering');
+});

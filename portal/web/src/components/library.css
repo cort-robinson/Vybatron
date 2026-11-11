@@ -5,11 +5,16 @@
 .library-view .section-description,
 .library-note { color: var(--muted); font-size: 14px; line-height: 1.65; }
 .library-note { margin-top: 15px; max-width: 70ch; }
-.library-search { display: flex; flex-direction: column; gap: 8px; margin: 0 0 24px; max-width: 620px; }
+.library-search { display: flex; flex-direction: column; gap: 8px; margin: 0 0 24px; }
 .library-search > label { color: var(--muted); font-size: 14px; }
 .library-search-controls { display: flex; align-items: center; gap: 12px; }
 .library-search input { min-width: 0; width: 100%; font-size: 14px; }
-.library-search-controls input { flex: 1; }
+.library-search-controls input { flex: 1; padding-left: 40px; }
+.library-search-controls { position: relative; }
+.library-search-icon { position: absolute; left: 14px; top: 22px; translate: 0 -50%; color: var(--muted); pointer-events: none; }
+@media (min-width: 961px) { .library-view .library-search-controls input { flex: 0 1 420px; } .library-view .library-search-controls > .library-import-toggle { margin-left: auto; } }
+.library-search-controls > .library-import-toggle { display: inline-flex; align-items: center; gap: 7px; }
+.track-length-inline { display: none; }
 .library-search-controls .text-button { flex-shrink: 0; font-size: 14px; }
 .library-view .tabs { gap: clamp(14px, 3vw, 28px); }
 .library-view .tabs button { font-size: 14px; }
@@ -22,6 +27,8 @@
 .library-view .mix-actions .icon-button { width: 44px; min-width: 44px; }
 .library-view .library-track-list > li,
 .library-view .history-list > li { min-width: 0; }
+/* Labeled row actions (Add, Radio, Replay) grow to fit their word. */
+.library-view :is(.library-track-list, .history-list) .icon-button:has(.result-action-label) { width: auto; min-width: 44px; padding: 0 12px 0 10px; gap: 6px; font-size: 14px; font-weight: 600; color: var(--text-soft); }
 .library-view .artwork { flex-shrink: 0; }
 .library-view .track-duration { margin-inline: 8px; }
 .library-view .mix-save-form > label { font-size: 14px; }
@@ -57,7 +64,8 @@
   .library-view .tabs { gap: 18px; }
   .library-view .tabs button { font-size: 14px; }
   .library-view .tabs button > span { font-size: 14px; }
-  .library-view .library-track-list > li { display: grid; grid-template-columns: 44px minmax(0, 1fr) 44px 44px 44px; gap: 8px; }
+  .library-view .library-track-list > li { display: grid; grid-template-columns: 44px minmax(0, 1fr) 58px 58px 44px; gap: 4px; }
+  .library-view .history-list .icon-button:has(.result-action-label) { flex-direction: column; gap: 1px; width: 58px; min-height: 48px; padding: 2px 0; font-size: 12px; white-space: nowrap; }
   .library-view .library-track-list .artwork { width: 44px; height: 46px; }
   .library-view .library-track-list .track-duration { display: none; }
   .library-view .history-list > li { display: grid; grid-template-columns: 44px minmax(0, 1fr) 44px 44px; gap: 5px 10px; }
@@ -65,7 +73,6 @@
   .library-view .history-list .track-text { grid-column: 2; }
   .library-view .history-list time { grid-column: 2; grid-row: 2; width: auto; margin: 0; padding: 0; font-size: 14px; }
   .library-view .history-list .icon-button { grid-column: 3; grid-row: 1 / 3; }
-  .library-view .history-list .icon-button.radio-start { grid-column: 4; }
   .library-view .mix-save-form { flex-wrap: wrap; }
   .library-view .mix-save-form > label { flex: 1 1 200px; }
   .library-view .mix-save-form .button { font-size: 14px; }
@@ -74,6 +81,19 @@
   .pagination-actions { gap: 8px; }
 }
 @media (max-width: 960px) {
+  /* Phones give the search its own full line; import and the list menu sit under it. */
+  /* Phones keep search and the Import menu (import a playlist, clear favorites) on one row. */
+  .library-view .library-search-controls { flex-wrap: nowrap; gap: 8px; }
+  .library-view .library-search-controls input { flex: 1 1 0; min-width: 0; max-width: none; }
+  .library-search-controls > .library-options { flex: none; }
+  .library-view .library-search { margin-bottom: 8px; }
+  .library-search-controls > .library-import-toggle { display: none; }
+  /* Favorites rows keep Add on the row; radio and removing move into the row's menu. */
+  .library-view .library-track-list > li:has(> .favorite-row-menu) { grid-template-columns: 44px minmax(0, 1fr) auto 44px; gap: 6px; }
+  .library-view .library-track-list > li > .favorite { display: none; }
+  .library-view .library-track-list .track-length-inline { display: inline; }
+  .library-search-controls .wide-label { display: none; }
+  .library-view .library-track-list .icon-button:has(.result-action-label) { flex-direction: row; gap: 6px; width: auto; padding: 0 12px; font-size: 14px; }
   .server-list-actions { width: 100%; }
   .server-list-actions .button { flex: 1; }
   .server-favorite-list > li { gap: 12px; }
@@ -84,7 +104,6 @@
   .library-view .tabs button { gap: 4px; }
   .library-view .tabs button > span { padding-inline: 3px; }
   .library-view .library-search-controls { flex-wrap: wrap; gap: 4px; }
-  .library-view .library-search-controls input { flex-basis: 100%; }
   .library-view .library-track-list > li { gap: 6px; }
   .list-pagination .button { padding-inline: 10px; }
   .pagination-page { font-size: 14px; }
@@ -92,6 +111,16 @@
 
 /* Playlist import: a link form and a preview dialog with counts. */
 .library-view .playlist-import-form { margin-top: 36px; padding: 0; border-bottom: 0; }
+.library-tools { margin-top: 28px; padding: 18px 20px; border: 1px solid var(--line); border-radius: 14px; background: color-mix(in oklab, var(--surface) 55%, transparent); }
+.library-tools .playlist-import-form { margin-top: 0; padding-bottom: 0; }
+.library-tools .playlist-import-form > label { max-width: 560px; }
+@media (max-width: 600px) { .library-tools .playlist-import-form .button { width: 100%; justify-content: center; } }
+.library-search-controls > .library-options { flex: none; }
+.library-manage { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding-inline: 8px; font-size: 14px; white-space: nowrap; }
+.library-manage .narrow-label { display: none; }
+@media (max-width: 960px) { .library-manage .narrow-label { display: inline; } .library-manage .wide-label { display: none; } }
+.menu-panel .menu-import { display: none; }
+@media (max-width: 960px) { .menu-panel .menu-import { display: flex; } }
 /* Importing is its own task under the list: a titled field with its help right beneath it. */
 .library-view .playlist-import-form > label { color: var(--text); font-size: 15px; font-weight: 650; }
 .library-view .playlist-import-form input { font-weight: 400; }
@@ -106,3 +135,6 @@
 .import-tracks strong { font-size: 14px; overflow-wrap: anywhere; }
 .import-tracks span { color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
 .library-view .mix-create { margin-top: 36px; }
+
+.server-favorite-list .icon-button { color: var(--accent); }
+.server-favorite-list .icon-button.add-again { color: var(--muted); }

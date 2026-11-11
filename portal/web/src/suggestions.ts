@@ -6,6 +6,13 @@ export interface Suggestion { track: Track; reason: string }
 
 const HALF_LIFE_MS = 3 * 24 * 60 * 60_000;
 export const trackKey = (track: Track) => track.uri || track.id;
+export type QueuedState = 'playing' | 'queued' | null;
+// Whether a song is already playing or waiting in the shared queue, so lists can say so before a repeat add.
+export function queuedState(session?: Pick<GuildSnapshot['session'], 'current' | 'queue'> | null): (track: Track) => QueuedState {
+  const playing = session?.current ? trackKey(session.current) : '';
+  const queued = new Set((session?.queue || []).map(trackKey));
+  return track => trackKey(track) === playing ? 'playing' : queued.has(trackKey(track)) ? 'queued' : null;
+}
 export const normalize = (value: string) => value.normalize('NFKC').toLocaleLowerCase().trim();
 const artistName = (track: Track) => track.author.replace(/\s*-\s*Topic$/i, '').trim();
 export const isLink = (value: string) => /^[a-z][a-z\d+.-]*:\/\//i.test(value.trim());

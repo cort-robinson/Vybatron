@@ -10,7 +10,7 @@ for (const width of [1280, 390]) {
       await page.getByRole('button', { name: 'Open player', exact: true }).click();
       const open = async () => {
         await page.getByRole('button', { name: 'More playback controls' }).click();
-        await page.getByRole('button', { name: command === 'clear' ? 'Clear upcoming queue' : 'Stop and discard session', exact: true }).click();
+        await page.getByRole('button', { name: command === 'clear' ? /^Clear upcoming queue$/ : /^Stop and discard session/ }).click();
       };
       await open();
       const dialog = page.getByRole('dialog');

@@ -3,7 +3,7 @@ import { mockPortal } from './fixtures';
 
 async function openServerFavorites(page: Page) {
   await page.goto('/'); await page.getByRole('button', { name: 'My Music', exact: true }).click();
-  await page.getByRole('tab', { name: 'Server favorites' }).click();
+  await page.getByRole('tab', { name: 'Popular' }).click();
 }
 
 test('server favorites show both ranked lists and queue them with Play all or Shuffle', async ({ page }) => {
@@ -16,11 +16,11 @@ test('server favorites show both ranked lists and queue them with Play all or Sh
   await expect(gems.getByRole('listitem')).toHaveCount(1);
   await expect(page.getByRole('tabpanel')).not.toContainText('requested by', { ignoreCase: true });
 
-  await onRepeat.getByRole('button', { name: 'Play all of On repeat' }).click();
+  await onRepeat.getByRole('button', { name: 'Add all of On repeat' }).click();
   await expect.poll(() => fixture.commands.length).toBe(1);
   expect(fixture.commands[0]).toEqual({ command: 'top', subcommand: 'play', options: { list: 'on-repeat', shuffle: false } });
-  await expect(gems.getByRole('button', { name: 'Shuffle Forgotten gems' })).toBeEnabled();
-  await gems.getByRole('button', { name: 'Shuffle Forgotten gems' }).click();
+  await expect(gems.getByRole('button', { name: 'Add Forgotten gems shuffled' })).toBeEnabled();
+  await gems.getByRole('button', { name: 'Add Forgotten gems shuffled' }).click();
   await expect.poll(() => fixture.commands.length).toBe(2);
   expect(fixture.commands[1]).toEqual({ command: 'top', subcommand: 'play', options: { list: 'forgotten-gems', shuffle: true } });
 });
@@ -30,9 +30,9 @@ test('server favorites respect add permission and explain empty and failed state
   fixture.state.snapshot.session.canAdd = false;
   fixture.state.stats.serverFavorites.forgottenGems = [];
   await openServerFavorites(page);
-  await expect(page.getByRole('button', { name: 'Play all of On repeat' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Add all of On repeat' })).toBeDisabled();
   await expect(page.getByRole('region', { name: 'Forgotten gems' })).toContainText('No forgotten gems yet');
-  await expect(page.getByRole('button', { name: 'Shuffle Forgotten gems' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Add Forgotten gems shuffled' })).toHaveCount(0);
 
   fixture.state.stats.serverFavorites.onRepeat = [];
   await page.getByRole('button', { name: 'Refresh server favorites' }).click();
@@ -53,13 +53,13 @@ test('server favorites tab joins keyboard tab navigation', async ({ page }) => {
   await page.getByRole('tab', { name: /Favorites/ }).first().focus();
   const settled = () => page.waitForFunction(() => !document.documentElement.dataset.motion);
   await page.keyboard.press('End');
-  await expect(page.getByRole('tab', { name: 'Server favorites' })).toBeFocused();
+  await expect(page.getByRole('tab', { name: 'Popular' })).toBeFocused();
   await settled();
   await page.keyboard.press('ArrowRight');
   await expect(page.getByRole('tab', { name: /^Favorites/ })).toBeFocused();
   await settled();
   await page.keyboard.press('ArrowLeft');
-  await expect(page.getByRole('tab', { name: 'Server favorites' })).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByRole('tab', { name: 'Popular' })).toHaveAttribute('aria-selected', 'true');
 });
 
 for (const [name, viewport] of [['desktop', { width: 1440, height: 900 }], ['phone', { width: 390, height: 844 }]] as const) {

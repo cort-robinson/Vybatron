@@ -1,11 +1,11 @@
-FROM node:24.22.2-alpine@sha256:8a32c8cf649a49915a66e81e7a609223c708d0adabf288ee3f4077d765542f85 AS web-build
+FROM node:24.22.2-alpine@sha256:a34ab6d7f6f4813f4d0c5469d74685604b962fbdbf5793a7bc7b4998ecb867c8 AS web-build
 WORKDIR /build/portal/web
 COPY portal/web/package.json portal/web/package-lock.json ./
 RUN npm ci
 COPY portal/web/ ./
 RUN npm run build
 
-FROM node:24.22.2-alpine@sha256:8a32c8cf649a49915a66e81e7a609223c708d0adabf288ee3f4077d765542f85 AS runtime
+FROM node:24.22.2-alpine@sha256:a34ab6d7f6f4813f4d0c5469d74685604b962fbdbf5793a7bc7b4998ecb867c8 AS runtime
 WORKDIR /app/portal/server
 COPY portal/server/package.json portal/server/package-lock.json ./
 RUN npm ci --omit=dev

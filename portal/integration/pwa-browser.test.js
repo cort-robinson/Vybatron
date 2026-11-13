@@ -94,6 +94,11 @@ test('production PWA installs under real CSP, serves an offline shell, and never
   const source = await worker.text();
   const files = JSON.parse(source.match(/^const FILES = (\[.*\]);$/m)?.[1] || 'null');
   assert.ok(Array.isArray(files) && files.includes('/index.html'));
+  // Installed up front: the first screen's files. The rest are served on demand and never stored.
+  const installed = JSON.parse(source.match(/^const PRECACHED = (\[.*\]);$/m)?.[1] || 'null');
+  assert.ok(Array.isArray(installed) && installed.includes('/index.html') && installed.every(resource => files.includes(resource)));
+  const onDemand = files.filter(resource => !installed.includes(resource));
+  assert.ok(onDemand.some(resource => /\/milkdrop-/.test(resource)) && onDemand.every(resource => /\/milkdrop-|\/fallback-cover-(?:640|1024)|\.woff$|\.woff2$/.test(resource)), JSON.stringify(onDemand));
   for (const resource of files) {
     const response = await fetch(origin + resource, { signal: AbortSignal.timeout(5_000) });
     assert.equal(response.status, 200, `Unservable precache URL: ${resource}`);
@@ -107,7 +112,7 @@ test('production PWA installs under real CSP, serves an offline shell, and never
   assert.ok(fontPaths.some(resource => resource.includes('vietnamese')), 'Small font subsets must be self-hosted too');
   const css = (await Promise.all(files.filter(resource => resource.endsWith('.css')).map(resource => readFile(path.join(dist, resource), 'utf8')))).join('\n');
   assert.doesNotMatch(css, /url\(["']?data:/i, 'CSP must not require inline font data');
-  const expectedPaths = [...files].sort();
+  const expectedPaths = [...installed].sort();
   await mkdir(artifacts, { recursive: true });
   browser = await chromium.launch({ channel: process.env.CI ? undefined : 'chrome' });
   t.diagnostic(`${process.env.CI ? 'Bundled Chromium' : 'Installed Chrome'} ${browser.version()}`);

@@ -60,13 +60,15 @@ test('autocomplete limits results and caches normalized queries', async () => {
   assert.equal(resolveAutocompleteTrack(first[0].value, 'u2').track, null);
 });
 
-test('autocomplete caches choices per user so requester ownership stays correct', async () => {
+test('autocomplete shares one search between users and keeps each user’s choices their own', async () => {
   let searches = 0;
   const search = async () => { searches += 1; return { tracks: tracks(1) }; };
   const first = await getTrackChoices(interaction('same query', search, 'u1'));
   const second = await getTrackChoices(interaction('same query', search, 'u2'));
-  assert.equal(searches, 2);
+  assert.equal(searches, 1);
   assert.notEqual(first[0].value, second[0].value);
+  assert.equal(resolveAutocompleteTrack(second[0].value, 'u2').track.requester.id, 'u2');
+  assert.equal(resolveAutocompleteTrack(first[0].value, 'u2').track, null);
 });
 
 test('autocomplete fails closed when nodes or search are unavailable', async () => {

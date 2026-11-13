@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { portalFixture } from './portal-fixtures.js';
+import { deferred, portalFixture } from './portal-fixtures.js';
 import { track } from './fixtures.js';
 import { LIBRARY_LIMITS, trackReference } from '../src/utils/library.js';
 import { collectionPayload } from '../src/utils/library-actions.js';
@@ -90,6 +90,35 @@ test('loading a mix queues what is still available and names how many were left 
   const load = slash(f, 'mix', 'load', { name: 'partial' }); await mix(load);
   assert.match(lastText(load), /Added 2 tracks from \*\*partial\*\*\. 1 unavailable tracks were left out\./);
   assert.deepEqual(f.player.queue.tracks.slice(before).map(item => item.info.identifier), ['keep0000000', 'keep0000001']);
+});
+
+test('with nothing playing, a mix starts its first song before the rest are looked up', async t => {
+  const gate = deferred(); const looked = [];
+  const f = await portalFixture(t, { idle: true, search: async query => {
+    const id = new URL(query).searchParams.get('v'); looked.push(id);
+    if (id !== 'song0000000') await gate.promise;
+    return id === 'song0000002' ? { loadType: 'empty', tracks: [] } : { loadType: 'track', tracks: [track(id)] };
+  } });
+  await f.library.updateGuild('100', guild => { guild.mixes.long = { ownerId: '200', tracks: refs('song', 6), savedAt: 1 }; });
+  const load = slash(f, 'mix', 'load', { name: 'long' }); const loading = mix(load);
+  await t.waitFor(() => assert.equal(f.manager.getPlayer('100')?.queue.current?.info.identifier, 'song0000000'));
+  const player = f.manager.getPlayer('100');
+  assert.equal(player.playing, true, 'the first song plays while the others are still being looked up');
+  assert.equal(player.queue.tracks.length, 0);
+  gate.resolve(); await loading;
+  assert.deepEqual(player.queue.tracks.map(item => item.info.identifier), ['song0000001', 'song0000003', 'song0000004', 'song0000005'], 'the rest follow in saved order');
+  assert.match(lastText(load), /Added 5 tracks from \*\*long\*\*\. 1 unavailable tracks were left out\./);
+  assert.equal(looked.length, 6, 'each saved song is looked up once');
+});
+
+test('a mix whose first song is unavailable still plays the rest', async t => {
+  const f = await portalFixture(t, { idle: true, search: query => /song0000000/.test(query) ? { loadType: 'empty', tracks: [] } : { loadType: 'track', tracks: [track(new URL(query).searchParams.get('v'))] } });
+  await f.library.updateGuild('100', guild => { guild.mixes.skipfirst = { ownerId: '200', tracks: refs('song', 3), savedAt: 1 }; });
+  const load = slash(f, 'mix', 'load', { name: 'skipfirst' }); await mix(load);
+  const player = f.manager.getPlayer('100');
+  assert.equal(player.queue.current.info.identifier, 'song0000001');
+  assert.deepEqual(player.queue.tracks.map(item => item.info.identifier), ['song0000002']);
+  assert.match(lastText(load), /Added 2 tracks from \*\*skipfirst\*\*\. 1 unavailable tracks were left out\./);
 });
 
 test('a mix with nothing available leaves no new player behind', async t => {

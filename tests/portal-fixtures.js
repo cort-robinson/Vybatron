@@ -4,12 +4,15 @@ import os from 'node:os';
 import path from 'node:path';
 import { ChannelType, PermissionsBitField, PermissionFlagsBits as P } from 'discord.js';
 import { startPortalBridge } from '../src/portal/index.js';
+import { resetSearchCache } from '../src/utils/query.js';
 import { attachSessionSnapshots } from '../src/utils/sessions.js';
 import { track } from './fixtures.js';
 import { openLibrary, closeLibraries } from './library-fixture.js';
 
 export function deferred() { let resolve; const promise = new Promise(done => { resolve = done; }); return { promise, resolve }; }
 export async function portalFixture(t, options = {}) {
+  // Each fixture is a fresh bot: it remembers no earlier search.
+  resetSearchCache();
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'vybertron-portal-'));
   const library = await openLibrary(path.join(dir, 'library.json'));
   const client = new EventEmitter(); const manager = new EventEmitter();

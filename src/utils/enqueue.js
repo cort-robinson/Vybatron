@@ -63,31 +63,32 @@ export function getOrCreatePlayer(interaction, channel, { textChannelId = intera
 }
 
 export async function resolveReferences(player, references, requester, { limit = LIBRARY_LIMITS.mixTracks, timeoutMs = 10_000, totalTimeoutMs = 60_000 } = {}) {
-  const tracks = []; const missing = [];
-  // Resolve in bounded batches. A saved library never restores expired encoded
-  // tracks, and an unavailable item cannot abort the entire mix.
+  // Resolve with four lookups in flight at a time. A saved library never restores
+  // expired encoded tracks, and an unavailable item cannot abort the entire mix.
+  // Each finished lookup starts the next, so one slow item holds up only itself.
   const selection = references.slice(0, limit);
   const deadline = Date.now() + totalTimeoutMs;
-  for (let start = 0; start < selection.length; start += 4) {
-    if (Date.now() >= deadline) { missing.push(...selection.slice(start)); break; }
-    const results = await Promise.allSettled(selection.slice(start, start + 4).map(async ref => {
-      const remaining = Math.max(1, deadline - Date.now());
-      const result = await searchMusic(player, ref.uri, requester, { timeoutMs: Math.min(timeoutMs, remaining), spotifyTimeoutMs: Math.min(timeoutMs, remaining), nativeTimeoutMs: Math.min(1500, remaining) });
-      const spotify = ref.sourceName === 'spotify' ? parseSpotifyUrl(ref.uri) : null;
-      const track = spotify?.type === 'track' && spotify.id === ref.identifier && result?.spotifyImport?.matchedCount === 1
-        ? result.tracks[0]
-        // A bare link (a portal transfer) takes what the link itself names.
-        : !ref.sourceName ? result?.tracks?.[0]
-        : result?.tracks?.find(t => t.info?.sourceName === ref.sourceName && (!ref.identifier || t.info?.identifier === ref.identifier));
-      if (!track) throw new Error('Saved track is unavailable.');
-      return track;
-    }));
-    results.forEach((result, offset) => {
-      if (result.status === 'fulfilled') tracks.push(result.value);
-      else missing.push(selection[start + offset]);
-    });
-  }
-  return { tracks, missing };
+  const resolved = new Array(selection.length).fill(null);
+  let next = 0;
+  await Promise.all(Array.from({ length: Math.min(4, selection.length) }, async () => {
+    while (next < selection.length && Date.now() < deadline) {
+      const index = next++;
+      const ref = selection[index];
+      try {
+        const remaining = Math.max(1, deadline - Date.now());
+        const result = await searchMusic(player, ref.uri, requester, { timeoutMs: Math.min(timeoutMs, remaining), spotifyTimeoutMs: Math.min(timeoutMs, remaining), nativeTimeoutMs: Math.min(1500, remaining) });
+        const spotify = ref.sourceName === 'spotify' ? parseSpotifyUrl(ref.uri) : null;
+        resolved[index] = (spotify?.type === 'track' && spotify.id === ref.identifier && result?.spotifyImport?.matchedCount === 1
+          ? result.tracks[0]
+          // A bare link (a portal transfer) takes what the link itself names.
+          : !ref.sourceName ? result?.tracks?.[0]
+          : result?.tracks?.find(t => t.info?.sourceName === ref.sourceName && (!ref.identifier || t.info?.identifier === ref.identifier))) || null;
+      } catch {
+        // Left out as unavailable.
+      }
+    }
+  }));
+  return { tracks: resolved.filter(Boolean), missing: selection.filter((_, index) => !resolved[index]) };
 }
 
 export function sameCurrent(player, expected) { return Boolean(player.queue?.current && trackIdentity(player.queue.current) === expected); }

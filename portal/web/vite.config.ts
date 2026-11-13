@@ -33,6 +33,11 @@ export default defineConfig(({ mode }) => {
       proxy: { '/api': { target }, '/auth': { target }, '/health': { target } },
     },
     // The portal CSP permits self-hosted fonts only, including small subsets.
-    build: { sourcemap: false, target: 'es2022', assetsInlineLimit: 0 },
+    build: {
+      sourcemap: false, target: 'es2022', assetsInlineLimit: 0,
+      // React changes rarely and the app changes with every deploy. In its own file, devices
+      // keep React cached across deploys instead of downloading it again inside the app's script.
+      rolldownOptions: { output: { codeSplitting: { groups: [{ name: 'react', test: /node_modules[\\/](?:react|react-dom|scheduler)[\\/]/ }] } } },
+    },
   };
 });

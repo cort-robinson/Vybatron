@@ -604,6 +604,14 @@ class DecodeScheduleTests(unittest.TestCase):
         self.backend.failures = [{'id': 'event-1', 'at': (self.clock - 3600) * 1000, 'identifier': 'RYnFIRc0k6E'}]
         self.assertEqual(self.cycle(), 0)
 
+    def test_a_recent_failure_allows_a_skip_only_once_it_is_handled(self):
+        recent = {'id': 'event-2', 'at': (self.clock + 300 - 60) * 1000, 'identifier': 'RYnFIRc0k6E'}
+        self.assertFalse(r.telemetry_clear([recent], [], self.clock + 300))
+        self.assertTrue(r.telemetry_clear([recent], ['event-2'], self.clock + 300))
+        self.backend.failures = [recent]
+        self.coordinator.state['handled_failures'] = ['event-2']
+        self.assertEqual(self.cycle(), 0)
+
     def test_a_future_dated_failure_decodes(self):
         self.backend.failures = [{'id': 'event-1', 'at': (self.clock + 3600) * 1000, 'identifier': 'RYnFIRc0k6E'}]
         self.assertEqual(self.cycle(), 1)
@@ -621,6 +629,9 @@ class DecodeScheduleTests(unittest.TestCase):
                {'ok': True, 'searchOk': False, 'tracks': [{'ok': True, 'category': 'audio', 'frames': 250}] * 2},
                {'ok': True, 'tracks': [{'ok': True, 'category': 'audio', 'frames': 250}] * 2},
                {'ok': 1, 'searchOk': True, 'tracks': [{'ok': True, 'category': 'audio', 'frames': 250}] * 2},
+               {'ok': True, 'searchOk': True, 'tracks': [{'ok': True, 'category': [], 'frames': 250}] * 2},
+               {'ok': True, 'searchOk': True, 'tracks': [{'ok': True, 'category': {}, 'frames': 250}] * 2},
+               {'ok': True, 'searchOk': True, 'tracks': [[], []]},
                None, 'ok', []]
         for evidence in bad:
             self.coordinator.state['last_probe'] = evidence

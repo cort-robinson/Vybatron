@@ -193,17 +193,21 @@ def read_boot_id(path='/proc/sys/kernel/random/boot_id'):
 
 
 def canary_evidence(value):
-    """A cached probe that proves every canary decoded, or None."""
+    """A cached probe that proves every canary decoded, or None.
+
+    The cache is a file on disk: whatever is wrong with it, including a shape
+    the validators trip over, it is simply not evidence and the run decodes.
+    """
     try:
         probe = probe_result(value)
-    except RecoveryError:
+        tracks = probe['tracks']
+        if (probe['ok'] is not True or probe['searchOk'] is not True or len(tracks) != len(TRACKS)
+                or not all(track['ok'] is True and track['category'] == 'audio'
+                           and type(track.get('frames')) is int and track['frames'] >= 250 for track in tracks)):
+            return None
+        return probe
+    except Exception:  # noqa: BLE001
         return None
-    tracks = probe['tracks']
-    if (probe['ok'] is not True or probe['searchOk'] is not True or len(tracks) != len(TRACKS)
-            or not all(track['ok'] is True and track['category'] == 'audio'
-                       and type(track.get('frames')) is int and track['frames'] >= 250 for track in tracks)):
-        return None
-    return probe
 
 
 def telemetry_clear(failures, handled, now):

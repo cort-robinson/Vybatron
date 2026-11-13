@@ -215,3 +215,22 @@ test('Seek from the controller channel replies without a link to a controller th
   assert.doesNotMatch(text, /Open player/);
   d.release(); await settled();
 });
+
+test('a reply from another channel drops the link when the deleted controller cannot be replaced', { timeout: 3000 }, async t => {
+  const f = await portalFixture(t);
+  const d = heldDiscord(f);
+  await createOrUpdate(f.client, f.player).catch(() => {});
+  d.release(); await settled();
+
+  // The controller was deleted and the bot can no longer send its replacement.
+  const channel = f.channels.get('400');
+  channel.messages = { fetch: async () => null };
+  channel.send = async () => { throw Object.assign(new Error('Missing Permissions'), { code: 50013 }); };
+
+  const { replies, done } = slash(f, pause, 'pause', { channelId: '401' });
+  await done;
+  assert.equal(f.player.paused, true);
+  const text = replies[0].content ?? JSON.stringify(replies[0]);
+  assert.match(text, /paused/i);
+  assert.doesNotMatch(text, /Open player/, 'no link to the deleted controller');
+});

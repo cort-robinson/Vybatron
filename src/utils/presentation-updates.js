@@ -117,12 +117,16 @@ export async function directControlPresentation(interaction, player, { voice = f
   }
   if (!presentationPlayerActive(interaction.client, player)) return;
   requestRefresh(interaction.client, player, { controller: false, voice, presence });
+  // Only a confirmed controller message can be linked. A render that is late,
+  // failed (the scheduler observes it and settles with no message) or rejected
+  // leaves the stored id unconfirmed, so the reply goes out without the link.
   let timer;
-  const late = new Promise(resolve => { timer = setTimeout(resolve, linkWaitMs, 'late'); });
-  // The scheduler observes a failed render; here it only means the link is unknown.
-  const rendered = commandTimingSpan('presentation', () => refresh(interaction.client, player)).catch(() => 'late');
-  try { if (await Promise.race([rendered, late]) === 'late') omitControllerLink(interaction); }
-  finally { clearTimeout(timer); }
+  const late = new Promise(resolve => { timer = setTimeout(resolve, linkWaitMs, null); });
+  const rendered = refresh(interaction.client, player).catch(() => null);
+  try {
+    const message = await commandTimingSpan('presentation', () => Promise.race([rendered, late]));
+    if (!message?.id) omitControllerLink(interaction);
+  } finally { clearTimeout(timer); }
 }
 
 export function getPresentationDiagnostics() {

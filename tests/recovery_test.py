@@ -28,7 +28,9 @@ plugins:
 
 
 def result(ok=True, category='source'):
-    return {'ok': ok, 'searchOk': True, 'tracks': [{'ok': ok, 'category': 'audio' if ok else category}] * 2}
+    # As the short probe reports it: 250 decoded frames per passing canary.
+    track = {'ok': True, 'category': 'audio', 'frames': 250} if ok else {'ok': False, 'category': category, 'frames': 0}
+    return {'ok': ok, 'searchOk': True, 'tracks': [dict(track) for _ in r.TRACKS]}
 
 
 def partial(category='source'):
@@ -48,13 +50,18 @@ class FakeBackend:
         self.results, self.verify_ok, self.deploy_error, self.fix_recovery = {}, True, False, False
         self.mirror_error = None
         self.services = None  # Fingerprint of the service containers; None never skips a decode.
+        self.search, self.canaries = True, [True] * len(r.TRACKS)
+        self.monotonic, self.boot = 5000.0, '0f2c3d4e-1a2b-4c3d-8e9f-0a1b2c3d4e5f'
 
     def current(self):
         return r.version_of(self.config_path.read_text())
 
     def observe(self):
-        return {'kind': self.kind, 'playing': self.playing, 'version': self.current(), 'search': True,
-                'failures': self.failures, 'services': self.services}
+        return {'kind': self.kind, 'playing': self.playing, 'version': self.current(), 'search': self.search,
+                'canaries': self.canaries, 'failures': self.failures, 'services': self.services}
+
+    def clock(self):
+        return {'monotonic': self.monotonic, 'boot': self.boot}
 
     def probe(self, version, full=False, installed=False, tracks=None):
         self.calls.append(('probe', version, full, installed))
@@ -505,23 +512,37 @@ class DecodeScheduleTests(unittest.TestCase):
         self.addCleanup(git.stop)
         self.cycle()  # First run always decodes and records the basis.
 
-    def cycle(self, delta=300, **kwargs):
-        self.clock += delta
-        before = len([call for call in self.backend.calls if call[0] == 'probe'])
+    def cycle(self, delta=300, wall=None, **kwargs):
+        """Advance both clocks by delta; wall overrides the wall-clock step."""
+        self.clock += delta if wall is None else wall
+        self.backend.monotonic += delta
+        before = self.probes()
         self.coordinator.cycle(self.clock, **kwargs)
-        return len([call for call in self.backend.calls if call[0] == 'probe']) - before
+        return self.probes() - before
+
+    def probes(self):
+        return len([call for call in self.backend.calls if call[0] == 'probe'])
+
+    def mirrors(self):
+        return len([call for call in self.backend.calls if call[0] == 'mirror'])
+
+    def attention(self):
+        return [event for event in self.coordinator.state.get('outbox', []) if 'needs attention' in event['message']]
 
     def test_first_run_decodes_and_records_the_basis(self):
         state = self.coordinator.state
-        self.assertEqual(len([c for c in self.backend.calls if c[0] == 'probe']), 1)
+        self.assertEqual(self.probes(), 1)
         self.assertEqual(state['last_check'], 'decode')
-        self.assertEqual(state['decode_basis'], {'at': self.clock, 'version': OLD, 'services': 'services-1'})
+        self.assertEqual(state['decode_basis'], {
+            'at': self.clock, 'monotonic': self.backend.monotonic, 'boot': self.backend.boot, 'version': OLD,
+            'services': 'services-1', 'canaries': r.TRACKS, 'probe': result()})
 
     def test_idle_and_unchanged_skips_the_decode_but_stays_healthy(self):
+        mirrors = self.mirrors()
         self.assertEqual(self.cycle(), 0)
         self.assertEqual(self.coordinator.state['status'], 'healthy')
         self.assertEqual(self.coordinator.state['last_check'], 'cheap')
-        self.assertIn(('mirror',), self.backend.calls)
+        self.assertEqual(self.mirrors(), mirrors + 1)  # This cheap run mirrored, not just setUp's.
 
     def test_idle_decodes_again_once_the_interval_passes(self):
         skipped = sum(self.cycle() == 0 for _ in range(r.IDLE_DECODE_INTERVAL // 300 - 1))
@@ -530,10 +551,90 @@ class DecodeScheduleTests(unittest.TestCase):
         self.assertEqual(self.coordinator.state['decode_basis']['at'], self.clock)
         self.assertEqual(self.cycle(), 0)
 
+    def test_a_backward_wall_clock_jump_decodes(self):
+        for _ in range(5):  # Cheap runs through +25 minutes.
+            self.assertEqual(self.cycle(), 0)
+        # The wall clock goes back to +1 minute while 5 more real minutes pass.
+        self.assertEqual(self.cycle(wall=-(24 * 60)), 1)
+
+    def test_a_forward_wall_clock_jump_decodes(self):
+        self.assertEqual(self.cycle(wall=600), 1)  # 10 wall minutes, 5 real.
+        self.assertEqual(self.cycle(), 0)
+        self.assertEqual(self.cycle(wall=r.CLOCK_TOLERANCE + 301), 1)
+
+    def test_small_clock_disagreement_within_tolerance_still_skips(self):
+        self.assertEqual(self.cycle(wall=300 + r.CLOCK_TOLERANCE), 0)
+
+    def test_a_reboot_decodes_even_when_the_wall_clock_looks_fine(self):
+        self.backend.boot = '11111111-2222-4333-8444-555555555555'
+        self.backend.monotonic = 10.0  # Monotonic time restarts at boot.
+        self.assertEqual(self.cycle(), 1)
+        self.assertEqual(self.coordinator.state['decode_basis']['boot'], self.backend.boot)
+        self.assertEqual(self.cycle(), 0)
+
+    def test_an_unreadable_boot_id_never_skips_and_records_no_basis(self):
+        self.backend.boot = None
+        self.assertEqual(self.cycle(), 1)
+        self.assertNotIn('decode_basis', self.coordinator.state)
+        self.assertEqual(self.cycle(), 1)
+
+    def test_a_failed_live_search_decodes(self):
+        self.backend.search = False
+        self.assertEqual(self.cycle(), 1)  # A fresh decode, not cached evidence.
+        self.assertEqual(self.coordinator.state['last_check'], 'decode')
+        self.assertNotEqual(self.coordinator.state['status'], 'healthy')
+
+    def test_a_failed_or_missing_canary_lookup_decodes(self):
+        for canaries in [[True, False], [False, False], [True], [True, True, True], None, [True, 1], 'yes']:
+            self.backend.canaries = canaries
+            self.assertEqual(self.cycle(), 1, canaries)
+            self.backend.canaries = [True] * len(r.TRACKS)
+            self.assertEqual(self.cycle(), 0)
+
+    def test_unreadable_or_malformed_playback_telemetry_decodes(self):
+        good = {'id': 'event-1', 'at': (self.clock - 3600) * 1000, 'identifier': 'RYnFIRc0k6E'}
+        for failures in [None, {}, 'none', [None], [{}], [{**good, 'id': 7}], [{**good, 'at': 'x'}],
+                         [{**good, 'at': float('nan')}], [{**good, 'identifier': 'short'}], [good] * 33]:
+            self.backend.failures = failures
+            self.assertGreaterEqual(self.cycle(), 1, failures)
+            self.backend.failures = []
+            self.cycle()  # Back to a skippable state.
+
+    def test_old_and_handled_failures_still_allow_a_skip(self):
+        self.backend.failures = [{'id': 'event-1', 'at': (self.clock - 3600) * 1000, 'identifier': 'RYnFIRc0k6E'}]
+        self.assertEqual(self.cycle(), 0)
+
+    def test_a_future_dated_failure_decodes(self):
+        self.backend.failures = [{'id': 'event-1', 'at': (self.clock + 3600) * 1000, 'identifier': 'RYnFIRc0k6E'}]
+        self.assertEqual(self.cycle(), 1)
+
     def test_playing_or_unknown_players_decode_every_run(self):
-        for playing in [1, None, 2]:
+        for playing in [1, None, 2, False, 0.0, '0']:
             self.backend.playing = playing
-            self.assertEqual(self.cycle(), 1)
+            self.assertEqual(self.cycle(), 1, playing)
+
+    def test_incomplete_or_malformed_cached_evidence_decodes(self):
+        bad = [{'ok': True, 'searchOk': True, 'tracks': []},
+               {'ok': True, 'searchOk': True, 'tracks': [{'ok': True, 'category': 'audio', 'frames': 250}]},
+               {'ok': True, 'searchOk': True, 'tracks': [{'ok': True, 'category': 'audio'}] * 2},
+               {'ok': True, 'searchOk': True, 'tracks': [{'ok': True, 'category': 'audio', 'frames': 10}] * 2},
+               {'ok': True, 'searchOk': False, 'tracks': [{'ok': True, 'category': 'audio', 'frames': 250}] * 2},
+               {'ok': True, 'tracks': [{'ok': True, 'category': 'audio', 'frames': 250}] * 2},
+               {'ok': 1, 'searchOk': True, 'tracks': [{'ok': True, 'category': 'audio', 'frames': 250}] * 2},
+               None, 'ok', []]
+        for evidence in bad:
+            self.coordinator.state['last_probe'] = evidence
+            self.coordinator.state['decode_basis']['probe'] = evidence
+            self.assertEqual(self.cycle(), 1, evidence)
+            self.assertEqual(self.coordinator.state['status'], 'healthy')
+
+    def test_a_malformed_basis_decodes(self):
+        for key, value in [('at', 'x'), ('at', None), ('monotonic', float('inf')), ('boot', 7),
+                           ('services', None), ('version', NEW), ('canaries', r.TRACKS[:1])]:
+            self.coordinator.state['decode_basis'][key] = value
+            self.assertEqual(self.cycle(), 1, key)
+        self.coordinator.state['decode_basis'] = 'cached'
+        self.assertEqual(self.cycle(), 1)
 
     def test_a_restart_or_redeploy_decodes_on_the_next_run(self):
         self.backend.services = 'services-2'
@@ -554,19 +655,40 @@ class DecodeScheduleTests(unittest.TestCase):
         self.assertEqual(self.cycle(), 1)
         self.assertEqual(self.cycle(), 0)
 
+    def test_last_check_never_reports_an_earlier_runs_decode(self):
+        self.assertEqual(self.coordinator.state['last_check'], 'decode')
+        self.backend.kind = 'network'
+        self.cycle()
+        self.assertEqual(self.coordinator.state['last_check'], 'cheap')
+        r.save_json(self.backend.directory / 'deployment.json', {'phase': 'releasing'})
+        self.cycle()
+        self.assertEqual(self.coordinator.state['last_check'], 'none')
+        self.assertEqual(self.coordinator.state['status'], 'pending_deployment')
+
     def test_a_failed_decode_clears_the_basis_and_alerts_after_two_runs(self):
         self.backend.results[OLD] = result(False)
         self.assertEqual(self.cycle(delta=r.IDLE_DECODE_INTERVAL), 2)  # Includes the retry.
         self.assertNotIn('decode_basis', self.coordinator.state)
+        self.assertEqual(self.attention(), [])  # The first failed run stays quiet.
         self.assertEqual(self.cycle(), 2)
         self.assertEqual(self.coordinator.state['status'], 'source')
-        self.assertTrue(any('needs attention' in event['message'] for event in self.coordinator.state['outbox']))
+        self.assertEqual(len(self.attention()), 1)
+
+    def test_one_failing_canary_alerts_after_three_runs(self):
+        self.backend.results[OLD] = partial()
+        self.assertEqual(self.cycle(delta=r.IDLE_DECODE_INTERVAL), 2)
+        self.assertEqual(self.cycle(), 2)
+        self.assertEqual(self.coordinator.state['status'], 'canary_degraded')
+        self.assertEqual(self.attention(), [])
+        self.assertEqual(self.cycle(), 2)
+        self.assertEqual(len(self.attention()), 1)
 
     def test_real_playback_failures_are_probed_immediately(self):
         self.backend.failures = [{'id': 'event-1', 'at': (self.clock + 300) * 1000, 'identifier': 'RYnFIRc0k6E'}]
         before = len(self.backend.probed_tracks)
         self.assertGreaterEqual(self.cycle(), 1)
         self.assertEqual(self.backend.probed_tracks[before], ['https://www.youtube.com/watch?v=RYnFIRc0k6E'])
+        self.assertEqual(self.coordinator.state['last_check'], 'decode')
 
     def test_manual_check_always_decodes(self):
         self.assertEqual(self.cycle(observe_only=True), 1)
@@ -580,14 +702,41 @@ class DecodeScheduleTests(unittest.TestCase):
         self.backend.idle = False
         self.assertEqual(self.cycle(), 1)
 
+    def test_a_future_or_malformed_upstream_check_time_counts_as_due(self):
+        self.backend.settings['auto_update'] = True
+        self.cycle()
+        self.assertEqual(self.cycle(), 0)
+        for value in [self.clock + 3600, 'x', None]:
+            self.coordinator.state['upstream_checked_at'] = value
+            self.backend.available = []
+            self.assertEqual(self.cycle(), 1, value)
+
     def test_services_fingerprint_changes_with_container_identity_or_restart(self):
-        containers = {'vybertron-bot': {'Id': 'a', 'State': {'StartedAt': 't1'}},
-                      'vybertron-lavalink': {'Id': 'b', 'State': {'StartedAt': 't1'}}}
+        containers = {name: {'Id': name + '-id', 'State': {'StartedAt': 't1'}} for name in r.SERVICES}
         first = r.services_fingerprint(containers)
+        self.assertTrue(first)
         containers['vybertron-lavalink']['State']['StartedAt'] = 't2'
         self.assertNotEqual(r.services_fingerprint(containers), first)
         containers['vybertron-lavalink'] = {'Id': 'c', 'State': {'StartedAt': 't1'}}
         self.assertNotEqual(r.services_fingerprint(containers), first)
+
+    def test_services_fingerprint_is_unknown_without_every_identity(self):
+        full = {name: {'Id': name + '-id', 'State': {'StartedAt': 't1'}} for name in r.SERVICES}
+        for change in [lambda c: c.pop('vybertron-bot'), lambda c: c['vybertron-bot'].pop('Id'),
+                       lambda c: c['vybertron-bot']['State'].pop('StartedAt'),
+                       lambda c: c['vybertron-bot']['State'].update(StartedAt=''),
+                       lambda c: c['vybertron-bot'].update(State=None), lambda c: c.update(extra={})]:
+            containers = {name: {'Id': item['Id'], 'State': dict(item['State'])} for name, item in full.items()}
+            change(containers)
+            self.assertIsNone(r.services_fingerprint(containers))
+
+    def test_boot_id_reads_only_a_well_formed_identifier(self):
+        path = Path(self.temp.name) / 'boot_id'
+        self.assertIsNone(r.read_boot_id(path))
+        path.write_text('0f2c3d4e-1a2b-4c3d-8e9f-0a1b2c3d4e5f\n')
+        self.assertEqual(r.read_boot_id(path), '0f2c3d4e-1a2b-4c3d-8e9f-0a1b2c3d4e5f')
+        path.write_text('not-a-boot-id\n')
+        self.assertIsNone(r.read_boot_id(path))
 
 
 class PluginMirrorTests(unittest.TestCase):

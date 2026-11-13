@@ -2,25 +2,43 @@
 
 The systemd timer checks the running stack about five minutes after each completed
 run. Every run checks the containers, WARP health and shared network namespaces,
-Discord/Lavalink connectivity, the yt-cipher helper, a live YouTube search and the
-bot's report of recent real playback failures. It also decodes five seconds of
-audio from each of two known videos in an isolated Java container. It never joins a
-Discord voice channel or saves audio.
+Discord/Lavalink connectivity, the yt-cipher helper, a live YouTube search, a
+metadata lookup of each canary video through the live Lavalink, and the bot's
+report of recent real playback failures. It also decodes five seconds of audio from
+each of two known videos in an isolated Java container. It never joins a Discord
+voice channel or saves audio.
 The samples include a broadly available short video and a full music track;
 explicit regional/private-video restrictions do not trigger plugin updates.
 
-The decode is the expensive part (a JVM start plus two YouTube streams), so it is
-skipped while the stack is idle and unchanged: Lavalink reports zero playing
-players, the previous run was healthy, no real playback failure is waiting, no
-plugin update check is due, and the last passing decode was under 30 minutes ago
-against the same YouTube plugin version and the same service containers (ID and
-start time). Anything else decodes on that run: a playing or unknown player count,
-any failure (every run then decodes until healthy again), a deploy, recovery,
-restart or plugin change, `check`, or a due update check. So while someone listens
-the decode still runs every five minutes, and an idle stack decodes about every 30
-minutes; a decode-only fault that starts while idle is found within about 30
-minutes and alerts one run later. `status` and the run line show `last_check`
-(`decode` or `cheap`).
+The decode is the expensive part (a JVM start plus two YouTube streams), so an
+automatic run reuses the last decode instead only when all of this is established:
+
+- the previous run was healthy, and this run's cheap checks all passed: services
+  ready, the live search, every canary's lookup, and the loaded plugin version;
+- Lavalink reports exactly zero playing players;
+- the bot's playback-failure report was read, is well formed, and holds no
+  unhandled failure from the last 15 minutes;
+- no plugin update check is due or deferred;
+- the last decode passed for every canary, against the same YouTube plugin
+  version and the same service containers (ID and start time); and
+- it was under 30 minutes ago on both the wall clock and this boot's monotonic
+  clock, the two agree within 30 seconds, and the boot ID is readable and unchanged.
+
+Anything missing, unreadable or malformed counts as not established, so the run
+decodes. That includes a playing or unknown player count, unreadable telemetry, a
+clock jump or a reboot. So does any failure (every run then decodes until healthy
+again), a deploy, recovery, restart or plugin change, `check`, and a due update
+check. While someone listens, the decode still runs every run (about every five
+minutes). An idle, unchanged stack decodes at the first run 30 minutes or more
+after the last passing decode, about every 30 to 35 minutes.
+
+A decode-only fault that starts while idle is found by that next decode. After
+that, every run decodes, and alerts follow the thresholds below. A fault that fails
+both canaries alerts on the second failed run (about five minutes later). A fault
+that fails only one canary alerts on the third (about ten minutes later). Search,
+cipher, network and service faults are seen on the next run either way. `status`
+and the run line show `last_check`: `decode`, `cheap` (cheap checks only) or
+`none` (the run stopped before checking, for example during a deployment).
 
 Persistent infrastructure failures allow at most two service recovery attempts in
 six hours, at least thirty minutes apart. A missing WARP daemon already has a

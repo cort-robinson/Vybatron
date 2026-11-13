@@ -10,6 +10,7 @@ import argparse
 import contextlib
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -52,6 +53,11 @@ DEGRADED_ALERT_RUNS = 3
 # most this often. Any failure, restart, redeploy, plugin change or playing
 # player brings back a decode on every run.
 IDLE_DECODE_INTERVAL = 30 * 60
+# Wall-clock and monotonic time since the cached decode may disagree by at
+# most this much; any larger gap means the clock jumped, so decode.
+CLOCK_TOLERANCE = 30
+BOOT_ID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
+SERVICES = ['vybertron-warp', 'vybertron-lavalink', 'vybertron-yt-cipher', 'vybertron-bot']
 
 
 class RecoveryError(Exception):
@@ -156,37 +162,120 @@ def trim_probe_cache(cache, active):
 
 
 def services_fingerprint(containers):
-    """Changes whenever any service container is recreated or restarted."""
+    """Changes whenever any service container is recreated or restarted.
+
+    None (never reuse a decode) unless every service reports an ID and a start time.
+    """
     parts = []
+    if not isinstance(containers, dict) or sorted(containers) != sorted(SERVICES):
+        return None
     for name in sorted(containers):
         item = containers[name]
-        parts.append(f"{name}={item.get('Id', '')}@{(item.get('State') or {}).get('StartedAt', '')}")
+        state = item.get('State') if isinstance(item, dict) else None
+        if (not isinstance(item.get('Id') if isinstance(item, dict) else None, str) or not item['Id']
+                or not isinstance(state, dict) or not isinstance(state.get('StartedAt'), str) or not state['StartedAt']):
+            return None
+        parts.append(f"{name}={item['Id']}@{state['StartedAt']}")
     return hashlib.sha256('\n'.join(parts).encode()).hexdigest()[:32]
 
 
-def decode_due(state, observation, current, now, observe_only=False, update_due=False):
-    """Whether this run must decode audio, or can rely on the cheap checks.
+def finite(value):
+    return type(value) in (int, float) and math.isfinite(value)
 
-    A decode is skipped only when every one of these holds: an automatic run
-    (manual `check` always decodes), the previous run was healthy, Lavalink
-    reports zero playing players (an unknown count decodes), no real playback
-    failure is waiting, no plugin update check is due or deferred, and the last
-    passing decode was under IDLE_DECODE_INTERVAL ago against the same plugin
-    version and the same service containers (so any deploy, recovery,
-    restart or plugin change decodes on the next run).
+
+def read_boot_id(path='/proc/sys/kernel/random/boot_id'):
+    """This boot's identifier, or None when it can't be read exactly."""
+    try:
+        value = Path(path).read_text().strip()
+    except OSError:
+        return None
+    return value if BOOT_ID.fullmatch(value) else None
+
+
+def canary_evidence(value):
+    """A cached probe that proves every canary decoded, or None."""
+    try:
+        probe = probe_result(value)
+    except RecoveryError:
+        return None
+    tracks = probe['tracks']
+    if (probe['ok'] is not True or probe['searchOk'] is not True or len(tracks) != len(TRACKS)
+            or not all(track['ok'] is True and track['category'] == 'audio'
+                       and type(track.get('frames')) is int and track['frames'] >= 250 for track in tracks)):
+        return None
+    return probe
+
+
+def telemetry_clear(failures, handled, now):
+    """True only when the bot's playback telemetry was read, is well formed,
+    and holds no unhandled failure from the last 15 minutes (or the future)."""
+    if not isinstance(failures, list) or len(failures) > 32 or not isinstance(handled, list):
+        return False
+    for item in failures:
+        if (not isinstance(item, dict) or not isinstance(item.get('id'), str)
+                or not re.fullmatch(r'[A-Za-z0-9_-]{1,64}', item['id']) or not finite(item.get('at'))
+                or not isinstance(item.get('identifier'), str)
+                or not re.fullmatch(r'[A-Za-z0-9_-]{11}', item['identifier'])):
+            return False
+        if item['id'] not in handled and now - item['at'] / 1000 < 900:
+            return False
+    return True
+
+
+def decode_window_open(basis, now, clock):
+    """The cached decode is recent on both clocks, from this boot, with no jump."""
+    at, mono, boot = basis.get('at'), basis.get('monotonic'), basis.get('boot')
+    current_mono, current_boot = clock.get('monotonic'), clock.get('boot')
+    if not all(finite(value) for value in (now, at, mono, current_mono)):
+        return False
+    if not isinstance(boot, str) or not BOOT_ID.fullmatch(boot) or current_boot != boot:
+        return False  # Unreadable boot ID, or a reboot reset monotonic time.
+    wall, elapsed = now - at, current_mono - mono
+    return (0 <= wall < IDLE_DECODE_INTERVAL and 0 <= elapsed < IDLE_DECODE_INTERVAL
+            and abs(wall - elapsed) <= CLOCK_TOLERANCE)
+
+
+def reusable_decode(state, observation, current, now, clock, observe_only=False, update_due=False):
+    """The cached canary decode this run may reuse instead of decoding, or None.
+
+    Every input must be positively established; anything missing, malformed,
+    unreadable or stale means decode. Reuse needs all of: an automatic run
+    (manual `check` always decodes), no plugin update check due or deferred,
+    a healthy previous run, this run's cheap checks all passing (services
+    ready, live search, every canary's live lookup, the loaded plugin version),
+    exactly zero playing players, readable playback telemetry with no waiting
+    failure, the same service containers and plugin version as the cached
+    decode, a window under IDLE_DECODE_INTERVAL on both the wall clock and
+    this boot's monotonic clock, and complete passing evidence for every canary.
     """
     basis = state.get('decode_basis')
-    return not (not observe_only
-                and state.get('status') == 'healthy'
-                and observation.get('playing') == 0
-                and observation.get('services')
-                and isinstance(basis, dict)
-                and basis.get('services') == observation['services']
-                and basis.get('version') == current
-                and isinstance(basis.get('at'), (int, float))
-                and 0 <= now - basis['at'] < IDLE_DECODE_INTERVAL
-                and (state.get('last_probe') or {}).get('ok') is True
-                and not update_due)
+    if observe_only or update_due or not isinstance(basis, dict) or not isinstance(observation, dict):
+        return None
+    canaries = observation.get('canaries')
+    playing = observation.get('playing')
+    services = observation.get('services')
+    if (state.get('status') != 'healthy' or observation.get('kind') != 'ready'
+            or observation.get('search') is not True or observation.get('version') != current
+            or not isinstance(canaries, list) or len(canaries) != len(TRACKS) or not all(item is True for item in canaries)
+            or type(playing) is not int or playing != 0
+            or not telemetry_clear(observation.get('failures'), state.get('handled_failures', []), now)
+            or not isinstance(services, str) or not services or basis.get('services') != services
+            or basis.get('version') != current or basis.get('canaries') != TRACKS
+            or not decode_window_open(basis, now, clock)):
+        return None
+    return canary_evidence(basis.get('probe'))
+
+
+def decode_basis(probe, observation, current, now, clock):
+    """What a later run needs to reuse this decode, or None if it can't be."""
+    evidence = canary_evidence(probe)
+    services = observation.get('services') if isinstance(observation, dict) else None
+    if (evidence is None or not isinstance(services, str) or not services or not finite(now)
+            or not finite(clock.get('monotonic')) or not isinstance(clock.get('boot'), str)
+            or not BOOT_ID.fullmatch(clock['boot'])):
+        return None
+    return {'at': now, 'monotonic': clock['monotonic'], 'boot': clock['boot'], 'version': current,
+            'services': services, 'canaries': list(TRACKS), 'probe': evidence}
 
 
 def version_of(config):
@@ -275,7 +364,7 @@ class Backend:
             return {'kind': 'namespace', 'playing': None}
         if containers['vybertron-warp']['State'].get('Health', {}).get('Status') != 'healthy':
             return {'kind': 'network', 'playing': None}
-        script = """
+        script = 'const TRACKS=' + json.dumps(TRACKS) + ';' + """
 const headers={Authorization:process.env.LAVALINK_PASSWORD};
 const healthBase='http://127.0.0.1:'+(Number(process.env.VYBERTRON_HEALTH_PORT)||3000);
 async function read(url, auth=true) {
@@ -285,14 +374,19 @@ async function read(url, auth=true) {
 // yt-cipher is distroless (no shell for a Docker healthcheck); it shares
 // WARP's namespace, so the bot reaches it through the lavalink alias.
 const cipher=fetch('http://lavalink:8001/',{signal:AbortSignal.timeout(6000)}).then(r=>r.ok).catch(()=>false);
-const [stats,info,health,search,playback,cipherOk]=await Promise.all([
+// Each canary's metadata through the live Lavalink (no audio is streamed).
+const lookups=Promise.all(TRACKS.map(url=>read('http://lavalink:2333/v4/loadtracks?identifier='+encodeURIComponent(url))
+ .then(r=>r?.loadType==='track')));
+const [stats,info,health,search,playback,cipherOk,canaries]=await Promise.all([
  read('http://lavalink:2333/v4/stats'), read('http://lavalink:2333/v4/info'),
  read(healthBase+'/health',false),
  read('http://lavalink:2333/v4/loadtracks?identifier=ytsearch%3Aloser%20tame%20impala'),
- read(healthBase+'/playback',false), cipher]);
+ read(healthBase+'/playback',false), cipher, lookups]);
+// Unreadable telemetry is null, never an empty list: unknown is not "no failures".
 console.log(JSON.stringify({api:!!stats,bot:health?.ready===true,cipher:cipherOk,playing:stats?.playingPlayers??null,
  version:info?.plugins?.find(p=>p.name==='youtube-plugin')?.version,
- search:search?.loadType==='search'&&search.data?.length>0,failures:playback?.failures??[]}));
+ search:search?.loadType==='search'&&search.data?.length>0,canaries,
+ failures:Array.isArray(playback?.failures)?playback.failures:null}));
 """
         result = json.loads(command(['docker', 'exec', '-i', 'vybertron-bot', 'node', '--input-type=module'], data=script, timeout=20))
         result['services'] = services_fingerprint(containers)
@@ -302,6 +396,10 @@ console.log(JSON.stringify({api:!!stats,bot:health?.ready===true,cipher:cipherOk
 
     def current(self):
         return version_of(self.config_path.read_text())
+
+    def clock(self):
+        # Monotonic time is per boot, so the boot ID says whether two readings compare.
+        return {'monotonic': time.monotonic(), 'boot': read_boot_id()}
 
     def artifact(self, version):
         if not VERSION.fullmatch(version):
@@ -578,7 +676,7 @@ class Coordinator:
             self.event('Vybatron has recovered. Discord connectivity, search, and audio checks are healthy again.')
         elif healthy and not self.state.get('started'):
             self.state['started'] = True
-            self.event('Vybatron monitoring is enabled. Connectivity and search are checked about every five minutes, and decoded audio every five minutes while music plays (every 30 minutes when idle and unchanged). Official YouTube plugin updates are checked every six hours and after persistent playback failures; updates must pass full playback tests and wait for an empty player/queue. Failed updates are rolled back. Routine successful checks stay quiet.')
+            self.event('Vybatron monitoring is enabled. Connectivity and search are checked about every five minutes, and decoded audio every five minutes while music plays (about every 30 minutes when idle and unchanged). Official YouTube plugin updates are checked every six hours and after persistent playback failures; updates must pass full playback tests and wait for an empty player/queue. Failed updates are rolled back. Routine successful checks stay quiet.')
         elif (not healthy and failures >= (DEGRADED_ALERT_RUNS if kind == 'canary_degraded' else 2)
               and self.state.get('incident_notified') != kind):
             self.state['incident_notified'] = kind
@@ -650,6 +748,9 @@ class Coordinator:
                 self.backend.end_update()
 
     def cycle(self, now, observe_only=False):
+        # Reset first, so an early return never reports an earlier run's decode.
+        self.state['last_check'] = 'none'
+        clock = self.backend.clock()
         deployment = read_json(self.backend.directory / 'deployment.json')
         if deployment and deployment.get('phase') not in ['complete', 'rolled_back']:
             return self.finish('pending_deployment', now, 'an interrupted deployment must be resolved before automatic recovery')
@@ -659,6 +760,7 @@ class Coordinator:
             self.recover_pending()
         self.state.pop('rollback_healthy', None)
         observation = self.backend.observe()
+        self.state['last_check'] = 'cheap'
         kind = observation['kind']
         if kind != 'ready':
             recoveries = [stamp for stamp in self.state.get('recoveries', []) if now - stamp < RECOVERY_WINDOW]
@@ -693,16 +795,20 @@ class Coordinator:
         if observation.get('version') != current:
             return self.finish('configuration_drift', now, 'the loaded plugin differs from the configured version')
         handled = self.state.get('handled_failures', [])
-        live_failures = [item for item in observation.get('failures', [])
+        live_failures = [item for item in (observation.get('failures') or [])
                          if isinstance(item, dict) and isinstance(item.get('id'), str)
                          and re.fullmatch(r'[A-Za-z0-9_-]{1,64}', item['id'])
                          and item['id'] not in handled and isinstance(item.get('at'), (int, float))
                          and 0 <= now - item['at'] / 1000 < 900
                          and re.fullmatch(r'[A-Za-z0-9_-]{11}', str(item.get('identifier', '')))]
+        # A missing, malformed or future upstream check time counts as due.
+        checked = self.state.get('upstream_checked_at', 0)
+        upstream_check_due = not finite(checked) or not 0 <= now - checked < UPDATE_INTERVAL
         if live_failures:
             # A fresh probe can succeed while the long-running source is broken.
             # Recheck the actual failed video, not just the fixed canaries.
             target = 'https://www.youtube.com/watch?v=' + live_failures[-1]['identifier']
+            self.state['last_check'] = 'decode'
             probe = self.backend.probe(current, installed=True, tracks=[target])
             self.state['last_live_failure_probe'] = probe
             if probe['ok']:
@@ -728,34 +834,40 @@ class Coordinator:
                 finally:
                     self.backend.end_update()
                 probe = self.backend.probe(current, installed=True)
-        elif decode_due(self.state, observation, current, now, observe_only,
-                        update_due=self.backend.settings.get('auto_update', False) and bool(
-                            self.state.get('candidate') or now - self.state.get('upstream_checked_at', 0) >= UPDATE_INTERVAL)):
-            probe = self.backend.probe(current, installed=True)
         else:
-            # Idle and unchanged since a passing decode: the cheap checks above
-            # (including live YouTube search) passed, so reuse that result.
-            probe = None
-        if probe is None:
-            probe = self.state['last_probe']
-            self.state['last_check'] = 'cheap'
-        else:
-            if not probe['ok']:
-                # Retry once so a single flaky canary request is not counted.
+            update_due = self.backend.settings.get('auto_update', False) and bool(
+                self.state.get('candidate') or upstream_check_due)
+            # Idle and unchanged since a complete passing decode, and every
+            # cheap check this run passed: reuse that evidence. Else decode.
+            probe = reusable_decode(self.state, observation, current, now, clock, observe_only, update_due)
+            if probe is None:
+                self.state['last_check'] = 'decode'
                 probe = self.backend.probe(current, installed=True)
+                if not probe['ok']:
+                    # Retry once so a single flaky canary request is not counted.
+                    probe = self.backend.probe(current, installed=True)
+                self.state['last_probe'] = probe
+                basis = decode_basis(probe, observation, current, now, clock)
+                if basis:
+                    self.state['decode_basis'] = basis
+                else:
+                    self.state.pop('decode_basis', None)
+        if self.state['last_check'] == 'decode' and live_failures:
+            # The live-failure path decoded a single video or reran the canaries.
             self.state['last_probe'] = probe
-            self.state['last_check'] = 'decode'
-            if probe['ok']:
-                self.state['decode_basis'] = {'at': now, 'version': current, 'services': observation.get('services')}
-            else:
-                self.state.pop('decode_basis', None)
-        healthy = probe['ok'] and observation.get('search', False)
+            self.state.pop('decode_basis', None)
+            if not probe['ok']:
+                probe = self.backend.probe(current, installed=True)
+                self.state['last_probe'] = probe
+            basis = decode_basis(probe, observation, current, now, clock)
+            if basis:
+                self.state['decode_basis'] = basis
+        healthy = probe['ok'] is True and observation.get('search') is True
         categories = {track.get('category') for track in probe['tracks'] if not track.get('ok')}
         if 'probe_environment' in categories:
             return self.finish('monitor_error', now, 'the isolated audio probe runtime needs attention')
         failures = self.state.get('failures', 0) + (not healthy)
-        due = (now - self.state.get('upstream_checked_at', 0) >= UPDATE_INTERVAL
-               or self.state.get('candidate') or (not healthy and failures >= 2))
+        due = upstream_check_due or self.state.get('candidate') or (not healthy and failures >= 2)
         if (due and not observe_only and self.backend.settings.get('auto_update', False)
                 and not categories.intersection({'credentials', 'unavailable'})):
             try:

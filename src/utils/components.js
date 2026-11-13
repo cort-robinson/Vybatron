@@ -27,14 +27,13 @@ import {
   togglePlayback,
 } from './operations.js';
 import { formatDuration, safeText, trackIdentity } from './presentation.js';
-import { updateTrackPresence } from './presence.js';
-import { clearVoiceStatusBeforeLeaving, updateVoiceStatus } from './voice-status.js';
+import { clearVoiceStatusBeforeLeaving } from './voice-status.js';
 import { buildHelpPayload } from './help.js';
 import { inviteUrlFor } from './invite.js';
 import { buildHistoryPayload, historySessionKey, replayHistoryTrack } from './history.js';
 import { buildLyricsPayload, findSessionTrack, trackLyrics } from './lyrics.js';
 import { cancelGuildMutations } from './requests.js';
-import { retirePresentationPlayer } from './presentation-updates.js';
+import { requestRefresh, retirePresentationPlayer } from './presentation-updates.js';
 import { cancelImport, commitImport } from './playlist-import.js';
 
 async function disableStaleComponents(interaction) {
@@ -124,9 +123,7 @@ async function handlePlayerComponent(interaction, action, expectedIdentity = nul
   if (action === 'toggle') {
     await interaction.deferUpdate();
     await togglePlayback(controlledPlayer);
-    updateTrackPresence(interaction.client, controlledPlayer);
-    await refresh(interaction.client, controlledPlayer);
-    await updateVoiceStatus(interaction.client, controlledPlayer);
+    requestRefresh(interaction.client, controlledPlayer, { presence: true, voice: true });
     return null;
   }
 
@@ -145,10 +142,7 @@ async function handlePlayerComponent(interaction, action, expectedIdentity = nul
     await interaction.deferUpdate();
     const result = await goBack(controlledPlayer);
     if (result.error) return interaction.followUp(ephemeralText(result.error));
-    if (result.restarted) {
-      updateTrackPresence(interaction.client, controlledPlayer);
-      await refresh(interaction.client, controlledPlayer);
-    }
+    if (result.restarted) requestRefresh(interaction.client, controlledPlayer, { presence: true });
     return null;
   }
 
@@ -158,7 +152,7 @@ async function handlePlayerComponent(interaction, action, expectedIdentity = nul
     }
     await interaction.deferUpdate();
     await shuffleQueue(controlledPlayer);
-    await refresh(interaction.client, controlledPlayer);
+    requestRefresh(interaction.client, controlledPlayer);
     return null;
   }
 
@@ -166,7 +160,7 @@ async function handlePlayerComponent(interaction, action, expectedIdentity = nul
     const mode = nextLoopMode(controlledPlayer.repeatMode);
     await interaction.deferUpdate();
     await setLoopMode(controlledPlayer, mode);
-    await refresh(interaction.client, controlledPlayer);
+    requestRefresh(interaction.client, controlledPlayer);
     return null;
   }
 
@@ -256,7 +250,7 @@ async function handleHistoryComponent(interaction, action, ownerId, session, pag
   const result = await replayHistoryTrack(player, Number(positionText), identity);
   await interaction.editReply(buildHistoryPayload(player, page, ownerId));
   if (result.error) return interaction.followUp(ephemeralText(result.error));
-  await refresh(interaction.client, player);
+  requestRefresh(interaction.client, player);
   return interaction.followUp(ephemeralText(
     `${result.started ? 'Replaying' : 'Queued'} ${safeText(result.track.info.title, { maxLength: 180 })}${result.started ? '.' : ' to replay next.'}`
   ));
@@ -359,8 +353,7 @@ export async function handleModalSubmit(interaction) {
   const result = await seekToTimestamp(player, interaction.fields.getTextInputValue('timestamp'));
   if (result.error) return interaction.editReply(textPayload(result.error));
 
-  updateTrackPresence(interaction.client, player);
-  await refresh(interaction.client, player);
+  requestRefresh(interaction.client, player, { presence: true });
   const link = getMessageLink(interaction.guildId);
   const suffix = link ? ` Open player: ${link}` : '';
   return interaction.editReply(textPayload(`Jumped to ${formatDuration(result.position)}.${suffix}`));

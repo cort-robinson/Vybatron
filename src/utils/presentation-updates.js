@@ -1,7 +1,6 @@
-import { refresh, requestControllerRefresh } from './player-controller.js';
+import { requestControllerRefresh } from './player-controller.js';
 import { updateVoiceStatus } from './voice-status.js';
 import { updateTrackPresence } from './presence.js';
-import { commandTimingSpan } from '../portal/timing.js';
 
 export const PRESENTATION_LIMITS = Object.freeze({ ordinary: 4, terminal: 2, records: 256 });
 const writes = new Map();
@@ -96,15 +95,13 @@ export function requestRefresh(client, player, { controller = true, voice = fals
   }
 }
 
+// Native and web controls reply as soon as the playback change is done. The
+// controller and voice-status writers are per-guild, latest-wins and render the
+// player's state when they run, so a burst of controls still ends on the final
+// state, and their failures are counted by the writer. Awaiting them here only
+// delayed the reply and held the guild lane for a cosmetic Discord edit.
 export async function directControlPresentation(interaction, player, { voice = false, presence = false } = {}) {
-  if (!presentationPlayerActive(interaction.client, player)) return;
-  if (typeof interaction.portalRecheck === 'function') {
-    requestRefresh(interaction.client, player, { voice, presence });
-    return;
-  }
-  if (presence) updateTrackPresence(interaction.client, player);
-  await commandTimingSpan('presentation', () => refresh(interaction.client, player));
-  if (voice) await commandTimingSpan('presentation', () => updateVoiceStatus(interaction.client, player));
+  requestRefresh(interaction.client, player, { voice, presence });
 }
 
 export function getPresentationDiagnostics() {

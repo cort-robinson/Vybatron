@@ -12,7 +12,7 @@ confirmation".
 | --- | --- | --- |
 | Authorization round (identity, raw guild/roles, actor, bot, channels) | 4 sequential Discord REST waves | 1 round when Gateway shows the actor in voice (Stop included), otherwise 2 |
 | Authorizations per queue/transport command (skip, skipto, loop, shuffle, remove, move, clear, radio, voteskip, stop) | 4 (admission, lane preflight, native guard, final disclosure) | 2 (native guard, final disclosure) |
-| Awaited controller message edit for loop/shuffle/remove/move/clear/radio-on | inside the web reply | background writer (native slash commands unchanged) |
+| Awaited controller message edit for loop/shuffle/remove/move/clear/radio-on | inside the web reply | background writer (native slash commands and buttons now too) |
 | Discord-side changes (slash/button, track end, voice join) reaching the portal | next 3 s poll, then a fresh read | bot change feed wakes same-guild streams immediately |
 | Snapshot polling per open stream | every 3 s | every 10 s while the feed is healthy (3 s fallback) |
 | Player on screen after a click | after the full round trip | immediately (optimistic), reconciled with the bot reply |

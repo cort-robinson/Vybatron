@@ -1,4 +1,4 @@
-import { refresh, requestControllerRefresh } from './player-controller.js';
+import { omitControllerLink, refresh, requestControllerRefresh } from './player-controller.js';
 import { updateVoiceStatus } from './voice-status.js';
 import { updateTrackPresence } from './presence.js';
 import { commandTimingSpan } from '../portal/timing.js';
@@ -96,15 +96,37 @@ export function requestRefresh(client, player, { controller = true, voice = fals
   }
 }
 
-export async function directControlPresentation(interaction, player, { voice = false, presence = false } = {}) {
-  if (!presentationPlayerActive(interaction.client, player)) return;
-  if (typeof interaction.portalRecheck === 'function') {
+// Native and web controls reply as soon as the playback change is done. The
+// controller and voice-status writers are per-guild, latest-wins and render the
+// player's state when they run, so a burst of controls still ends on the final
+// state, and their failures are counted by the writer. Awaiting them here only
+// delayed the reply and held the guild lane for a cosmetic Discord edit.
+//
+// The one exception is a native reply sent from another channel: it links to
+// the controller message, and a deleted controller only gets its replacement
+// (and new message id) during the refresh, so that reply waits for it. The wait
+// is bounded: an edit that never settles must not hold the guild lane, so after
+// `linkWaitMs` the reply goes out without the link and the writer carries on.
+export const CONTROLLER_LINK_WAIT_MS = 2000;
+export async function directControlPresentation(interaction, player, { voice = false, presence = false, linkWaitMs = CONTROLLER_LINK_WAIT_MS } = {}) {
+  const linksController = typeof interaction.portalRecheck !== 'function'
+    && Boolean(interaction.channelId) && player?.textChannelId !== interaction.channelId;
+  if (!linksController) {
     requestRefresh(interaction.client, player, { voice, presence });
     return;
   }
-  if (presence) updateTrackPresence(interaction.client, player);
-  await commandTimingSpan('presentation', () => refresh(interaction.client, player));
-  if (voice) await commandTimingSpan('presentation', () => updateVoiceStatus(interaction.client, player));
+  if (!presentationPlayerActive(interaction.client, player)) return;
+  requestRefresh(interaction.client, player, { controller: false, voice, presence });
+  // Only a confirmed controller message can be linked. A render that is late,
+  // failed (the scheduler observes it and settles with no message) or rejected
+  // leaves the stored id unconfirmed, so the reply goes out without the link.
+  let timer;
+  const late = new Promise(resolve => { timer = setTimeout(resolve, linkWaitMs, null); });
+  const rendered = refresh(interaction.client, player).catch(() => null);
+  try {
+    const message = await commandTimingSpan('presentation', () => Promise.race([rendered, late]));
+    if (!message?.id) omitControllerLink(interaction);
+  } finally { clearTimeout(timer); }
 }
 
 export function getPresentationDiagnostics() {

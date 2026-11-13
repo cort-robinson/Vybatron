@@ -10,13 +10,11 @@ from __future__ import annotations
 import argparse
 import contextlib
 import hashlib
-import inspect
 import json
 import os
 from pathlib import Path
 import re
 import shutil
-import stat
 import tempfile
 import time
 
@@ -28,41 +26,6 @@ AUDIO = ('warp', 'yt-cipher', 'lavalink')
 # The 5-minute recovery check (vybertron-recovery.service, TimeoutStartSec=15min)
 # and the nightly backup hold the same maintenance lock for a short while.
 LOCK_TIMEOUT, LOCK_POLL = 900, 5
-# Deploy unpacks each release's source into releases/<sha>. After a verified
-# release, keep this many of the newest (the running one plus the previous ones
-# a manual rollback or re-release might use) and anything a container still uses.
-KEEP_RELEASES = 3
-REVISION_LABEL = 'org.opencontainers.image.revision'
-COMPOSE_LABELS = ('com.docker.compose.project.working_dir', 'com.docker.compose.project.config_files')
-CONTAINER_ID = re.compile(r'[0-9a-f]{64}')
-# Exactly the name _prune_releases gives a release while removing it (ASCII only).
-TOMBSTONE = re.compile(r'\.pruning-[0-9a-f]{40}-[0-9]{1,20}')
-# Status codes reported under "prune"; anything else is reported as prune_error.
-PRUNE_CODE = re.compile(r'[A-Za-z0-9_]{1,80}')
-# Removal works relative to one open directory descriptor, never by path.
-FD_OPERATIONS = (hasattr(os, 'O_DIRECTORY') and hasattr(os, 'O_NOFOLLOW')
-                 and {os.open, os.stat, os.rename} <= os.supports_dir_fd and os.scandir in os.supports_fd)
-
-
-class PruneSkipped(Exception):
-    """What is in use can't be established exactly, so nothing is removed."""
-
-
-def prune_code(describe, error):
-    """A status code for the prune entry; formatting can never raise."""
-    try:
-        value = describe(error)
-        return value if isinstance(value, str) and PRUNE_CODE.fullmatch(value) else 'prune_error'
-    except Exception:
-        return 'prune_error'
-
-
-def fd_removal_supported():
-    try:
-        return (FD_OPERATIONS and getattr(shutil.rmtree, 'avoids_symlink_attacks', False) is True
-                and 'dir_fd' in inspect.signature(shutil.rmtree).parameters)
-    except (TypeError, ValueError):
-        return False
 
 
 class PortalDeployer(Deployer):
@@ -310,209 +273,6 @@ class PortalDeployer(Deployer):
                      data=script, timeout=10)
 
     def deploy(self, target, guild_id):
-        self.prune_result = None
-        status = self.release(target, guild_id)
-        if status == 'deployed':
-            # Only after verify_running passed. Pruning is optional: nothing in
-            # it, including building its status entry, changes this outcome.
-            try:
-                self.prune_result = self.prune_releases(self.released_journal)
-            except Exception:
-                self.prune_result = {'status': 'failed', 'error': 'prune_error'}
-        return status
-
-    def referenced_paths(self):
-        """Every host path any container (running or stopped) uses.
-
-        Raises PruneSkipped unless Docker answered for exactly the listed
-        containers with every field the reference check reads.
-        """
-        try:
-            ids = self.command(['docker', 'ps', '--all', '--quiet', '--no-trunc']).split()
-            if not all(CONTAINER_ID.fullmatch(value) for value in ids) or len(set(ids)) != len(ids):
-                raise PruneSkipped('container_state_unknown')
-            containers = json.loads(self.command(['docker', 'inspect', *ids])) if ids else []
-        except (DeploymentError, ValueError):
-            raise PruneSkipped('container_state_unknown') from None
-        # Every field read below must be present with the expected type; a
-        # present null is doubt, not absence.
-        if (not isinstance(containers, list) or len(containers) != len(ids)
-                or not all(isinstance(item, dict) and isinstance(item.get('Id'), str) for item in containers)
-                or sorted(item['Id'] for item in containers) != sorted(ids)):
-            raise PruneSkipped('container_state_unknown')
-        paths = []
-        for container in containers:
-            mounts, config = container.get('Mounts'), container.get('Config')
-            if not isinstance(mounts, list) or not isinstance(config, dict) or not isinstance(config.get('Labels'), dict):
-                raise PruneSkipped('container_state_unknown')
-            for mount in mounts:
-                if (not isinstance(mount, dict) or not isinstance(mount.get('Type'), str) or not mount['Type']
-                        or not isinstance(mount.get('Source'), str)):
-                    raise PruneSkipped('container_state_unknown')
-                if not mount['Source'] and mount['Type'] == 'tmpfs':
-                    continue  # A tmpfs has no host path.
-                paths.append(mount['Source'])
-            labels = config['Labels']
-            for key in COMPOSE_LABELS:
-                if key not in labels:
-                    continue
-                if not isinstance(labels[key], str):
-                    raise PruneSkipped('container_state_unknown')
-                paths.extend(labels[key].split(','))
-        # Every reference must be a usable absolute path; anything else is doubt.
-        if not all(value and os.path.isabs(value) and '\0' not in value for value in paths):
-            raise PruneSkipped('container_state_unknown')
-        return set(paths)
-
-    def image_revision(self, image):
-        """The exact revision an image was built from, or PruneSkipped."""
-        if not isinstance(image, str) or not IMAGE.fullmatch(image):
-            raise PruneSkipped('rollback_revision_unknown')
-        try:
-            info = json.loads(self.command(['docker', 'image', 'inspect', image]))
-        except (DeploymentError, ValueError):
-            raise PruneSkipped('rollback_revision_unknown') from None
-        if (not isinstance(info, list) or len(info) != 1 or not isinstance(info[0], dict)
-                or info[0].get('Id') != image or not isinstance(info[0].get('Config'), dict)
-                or not isinstance(info[0]['Config'].get('Labels'), dict)):
-            raise PruneSkipped('rollback_revision_unknown')
-        revision = info[0]['Config']['Labels'].get(REVISION_LABEL)
-        if not isinstance(revision, str) or not SHA.fullmatch(revision):
-            raise PruneSkipped('rollback_revision_unknown')
-        return revision
-
-    def prune_releases(self, journal, keep=KEEP_RELEASES):
-        """Remove old releases/<sha> source directories. Returns a status, never raises.
-
-        Pruning is optional housekeeping: whenever what is in use can't be
-        established exactly, it removes nothing and reports why.
-        """
-        try:
-            return self._prune_releases(journal, keep)
-        except PruneSkipped as skipped:
-            return {'status': 'skipped', 'reason': prune_code(str, skipped)}
-        except Exception as error:
-            return {'status': 'failed', 'error': prune_code(
-                lambda e: str(e) if isinstance(e, DeploymentError) else type(e).__name__, error)}
-
-    def _prune_releases(self, journal, keep):
-        root = self.repo.parent
-        # Only the Deploy layout (…/releases/<sha>). A manual release from a
-        # checkout such as /root/Vybertron has no sibling releases to manage.
-        if root.name != 'releases' or not SHA.fullmatch(self.repo.name) or root.is_symlink():
-            return {'status': 'skipped', 'reason': 'not_a_release_directory'}
-        if not fd_removal_supported():
-            raise PruneSkipped('platform_cannot_prune_safely')
-        resolved = root.resolve(strict=True)
-        # Everything below lists, checks, renames and removes relative to this
-        # one descriptor, so replacing releases/ (or a parent) with a symlink
-        # afterwards cannot redirect a removal elsewhere.
-        fd = os.open(resolved, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
-        try:
-            opened = os.fstat(fd)
-
-            def still_named():
-                try:
-                    named = [os.lstat(root), os.lstat(resolved)]
-                except OSError:
-                    return False
-                return all(stat.S_ISDIR(item.st_mode) and (item.st_dev, item.st_ino) == (opened.st_dev, opened.st_ino)
-                           for item in named)
-            if not still_named():
-                raise PruneSkipped('releases_directory_changed')
-            protected = {self.repo.name} | self.rollback_releases(journal)
-            referenced = self.referenced_releases(root, resolved)
-            # The just-verified bot and portal were composed from this directory.
-            # If no container says so, the references aren't what this code expects.
-            if self.repo.name not in referenced:
-                raise PruneSkipped('current_release_not_in_use')
-            protected |= referenced
-            if not still_named():
-                raise PruneSkipped('releases_directory_changed')
-            return self.remove_old(fd, protected, keep)
-        finally:
-            os.close(fd)
-
-    def rollback_releases(self, journal):
-        """The releases whose images ran before this one, or PruneSkipped.
-
-        release() always records 'portal': the running portal image, or None
-        when no portal container existed yet (the first portal release).
-        """
-        previous = journal.get('previous_images') if isinstance(journal, dict) else None
-        if not isinstance(previous, dict) or previous.get('bot') is None or 'portal' not in previous:
-            raise PruneSkipped('rollback_revision_unknown')
-        return {self.image_revision(previous[name]) for name in ('bot', 'portal')
-                if not (name == 'portal' and previous['portal'] is None)}
-
-    def referenced_releases(self, root, resolved):
-        roots = {Path(os.path.abspath(root)), resolved}
-        referenced = set()
-        for value in self.referenced_paths():
-            for path in {Path(os.path.abspath(value)), Path(os.path.realpath(value))}:
-                for base in roots:
-                    if base == path or base.is_relative_to(path):
-                        # A mount of releases/ or above reaches every release.
-                        raise PruneSkipped('container_mounts_releases_directory')
-                    if path.is_relative_to(base):
-                        referenced.add(path.relative_to(base).parts[0])
-        return referenced
-
-    def remove_old(self, fd, protected, keep):
-        releases, tombstones = [], []
-        with os.scandir(fd) as entries:
-            for entry in entries:
-                # Skip anything Deploy or this pruning did not create: in-progress
-                # *.tmp staging, symlinks (which could point outside), plain files.
-                try:
-                    if entry.is_symlink() or not entry.is_dir(follow_symlinks=False):
-                        continue
-                    if TOMBSTONE.fullmatch(entry.name):
-                        tombstones.append(entry.name)
-                    elif SHA.fullmatch(entry.name):
-                        releases.append((os.stat(entry.name, dir_fd=fd, follow_symlinks=False).st_mtime, entry.name))
-                except FileNotFoundError:
-                    continue
-        releases.sort(reverse=True)
-        protected = protected | {name for _, name in releases[:keep]}
-        removed, failed = [], []
-        for _, name in releases:
-            if name in protected:
-                continue
-            # Rename first, so an interrupted removal never leaves a partial
-            # releases/<sha> that a later Deploy of that SHA would trust.
-            try:
-                self.remove_inside(fd, name, rename_to='.pruning-' + name + '-' + str(time.time_ns()))
-                removed.append(name)
-            except Exception:
-                failed.append(name)
-        for name in tombstones:
-            if name in protected:
-                continue  # A container still uses this leftover; keep it.
-            with contextlib.suppress(Exception):
-                self.remove_inside(fd, name)
-        result = {'status': 'failed' if failed else 'ok',
-                  'kept': sorted(protected & {name for _, name in releases}), 'removed': sorted(removed)}
-        if failed:
-            result['error'] = 'portal_prune_remove_failed'
-            result['failed'] = sorted(failed)
-        return result
-
-    @staticmethod
-    def remove_inside(fd, name, rename_to=None):
-        """Remove the directory `name` directly inside the open directory `fd`."""
-        for value in (name, rename_to) if rename_to is not None else (name,):
-            if not isinstance(value, str) or value in ('', '.', '..') or '/' in value or '\0' in value:
-                raise DeploymentError('portal_prune_path_outside_releases')
-        if not stat.S_ISDIR(os.stat(name, dir_fd=fd, follow_symlinks=False).st_mode):
-            raise DeploymentError('portal_prune_path_outside_releases')
-        if rename_to is not None:
-            os.rename(name, rename_to, src_dir_fd=fd, dst_dir_fd=fd)
-            name = rename_to
-        # Relative to fd, and rmtree refuses a symlink and never follows links inside.
-        shutil.rmtree(name, dir_fd=fd)
-
-    def release(self, target, guild_id):
         candidate = self.verify_inputs(target, guild_id)
         images = self.images()
         portal = self.optional_container('portal')
@@ -562,7 +322,6 @@ class PortalDeployer(Deployer):
             self.verify_running(selected, journal)
             journal.update(phase='complete', released_at=time.time(), released_images=candidate)
             self.save(journal)
-            self.released_journal = journal
             return 'deployed'
         except Exception:
             if journal:
@@ -669,11 +428,7 @@ def main():
         deployer = PortalDeployer(args.repo, args.state_dir, env_file=args.env_file, portal_env=args.portal_env)
         try:
             status = deployer.deploy(args.sha, args.guild_id) if args.action == 'deploy' else deployer.rollback()
-            output = {'status': status, 'sha': args.sha}
-            prune = getattr(deployer, 'prune_result', None)
-            if prune:
-                output['prune'] = prune
-            print(json.dumps(output))
+            print(json.dumps({'status': status, 'sha': args.sha}))
         except DeploymentError as error:
             print(json.dumps({'status': 'failed', 'error': str(error)})); raise SystemExit(1) from None
         except Exception:

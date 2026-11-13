@@ -234,3 +234,31 @@ test('a reply from another channel drops the link when the deleted controller ca
   assert.match(text, /paused/i);
   assert.doesNotMatch(text, /Open player/, 'no link to the deleted controller');
 });
+
+test('a second reply from another channel carries no link while a deleted controller is still being replaced', { timeout: 3000 }, async t => {
+  const f = await portalFixture(t);
+  const d = heldDiscord(f);
+  await createOrUpdate(f.client, f.player).catch(() => {});
+  d.release(); await settled();
+
+  const sendGate = deferred();
+  const replacement = { id: 'replacement', async edit() { return replacement; } };
+  const channel = f.channels.get('400');
+  channel.messages = { fetch: async id => (id === 'replacement' ? replacement : null) };
+  channel.send = async () => { await sendGate.promise; return replacement; };
+
+  // Pause from the controller's own channel replies at once and frees the guild lane.
+  await slash(f, pause, 'pause').done;
+  assert.equal(presentationWritePending('controller:100'), true, 'the replacement is still being sent');
+  // The same command from another channel takes the already-paused branch.
+  const again = slash(f, pause, 'pause', { channelId: '401' });
+  await again.done;
+  const text = again.replies[0].content ?? JSON.stringify(again.replies[0]);
+  assert.match(text, /already paused/i);
+  assert.doesNotMatch(text, /Open player/, 'no link to the deleted controller');
+
+  sendGate.resolve(); await settled();
+  const later = slash(f, pause, 'pause', { channelId: '401' });
+  await later.done;
+  assert.match(later.replies[0].content ?? JSON.stringify(later.replies[0]), /Open player: \S+\/400\/replacement/);
+});

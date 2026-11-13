@@ -1,4 +1,5 @@
-import { fail } from './errors.js';
+import { setTimeout as delay } from 'node:timers/promises';
+import { PortalError, fail } from './errors.js';
 
 // Audio for portal listeners playing on their own device. Lavalink decodes the
 // song through the same pipeline as Discord playback (our vybatron-audio plugin)
@@ -7,7 +8,11 @@ import { fail } from './errors.js';
 // in-memory LRU and served by range once complete. A request from the start
 // streams while the song is still arriving, so playback begins in seconds.
 // Nothing is written to disk.
-export const AUDIO_LIMITS = Object.freeze({ trackBytes: 40 * 1024 * 1024, cacheBytes: 64 * 1024 * 1024, downloads: 2, timeoutMs: 120_000 });
+// A listener who skips past songs still loading leaves their downloads to nobody;
+// the song they land on takes the slot of one nobody holds any more (see `get`).
+// `reclaimMs` bounds how long it then waits for Lavalink, which frees its own
+// export permit only once it notices the hang-up on its next write.
+export const AUDIO_LIMITS = Object.freeze({ trackBytes: 40 * 1024 * 1024, cacheBytes: 64 * 1024 * 1024, downloads: 2, timeoutMs: 120_000, reclaimMs: 10_000 });
 // The plugin first; the YouTube plugin's own stream route only serves some videos.
 const SOURCES = [['/vybatron/audio/', '', 'audio/ogg'], ['/youtube/stream/', '?itag=140', 'audio/mp4'], ['/youtube/stream/', '?itag=251', 'audio/webm']];
 // The plugin ends a whole song with Ogg's end-of-stream page and a failed one
@@ -40,9 +45,16 @@ export function createAudioCache(client, { limits = AUDIO_LIMITS, fetchImpl = fe
     const node = client.lavalink?.nodeManager?.leastUsedNodes?.()[0];
     if (!node?.connected || !node.options?.host) fail(503, 'audio_unavailable', 'Audio is temporarily unavailable. Try again shortly.');
     const { host, port, authorization, secure } = node.options;
-    const signal = AbortSignal.timeout(limits.timeoutMs);
+    const signal = AbortSignal.any([AbortSignal.timeout(limits.timeoutMs), entry.abandon.signal]);
+    const until = Date.now() + (entry.reclaiming ? limits.reclaimMs ?? AUDIO_LIMITS.reclaimMs : 0);
     for (const [path, query, type] of SOURCES) {
-      const response = await fetchImpl(`${secure ? 'https' : 'http'}://${host}:${port}${path}${id}${query}`, { headers: { Authorization: authorization }, signal });
+      let response;
+      for (;;) {
+        response = await fetchImpl(`${secure ? 'https' : 'http'}://${host}:${port}${path}${id}${query}`, { headers: { Authorization: authorization }, signal });
+        if (response.status !== 429 || Date.now() >= until) break;
+        await response.body?.cancel().catch(() => {});
+        await delay(100, undefined, { signal });
+      }
       if (response.ok) { entry.type = type; void receive(response, entry); return type; }
       await response.body?.cancel().catch(() => {});
       if (response.status === 429) fail(429, 'busy', 'Songs are still loading. Try again in a moment.');
@@ -67,20 +79,45 @@ export function createAudioCache(client, { limits = AUDIO_LIMITS, fetchImpl = fe
     } catch (error) {
       response.body?.cancel?.().catch(() => {});
       entry.fail(error);
-    } finally { downloads--; for (const listener of entry.listeners) listener(null); }
+    } finally { release(entry); for (const listener of entry.listeners) listener(null); }
+  };
+  const release = entry => { if (entry.slot) { entry.slot = false; downloads--; } };
+  // Who still wants a download: each request holds it until its response closes.
+  // A caller with no signal (a visualizer's analysis, or a warm-up) keeps it to the end.
+  const hold = (entry, signal) => {
+    if (!signal) { entry.kept = true; return; }
+    if (signal.aborted) return;
+    entry.holders++;
+    const drop = () => { entry.holders--; };
+    signal.addEventListener('abort', drop, { once: true });
+    void entry.done.finally(() => signal.removeEventListener('abort', drop)).catch(() => {});
+  };
+  const abandoned = entry => entry.slot && !entry.complete && !entry.kept && entry.holders === 0;
+  // Hangs up on Lavalink, frees the slot at once and forgets the partial song.
+  const abandon = entry => {
+    const error = new PortalError(409, 'abandoned', 'Nobody is listening to this song any more.');
+    release(entry); entry.abandon.abort(error); entry.fail(error);
   };
   // A background fetch (a visualizer's analysis) shares a cached song but starts a download only
   // while none is running, so it never takes a slot a listener's playback is about to need.
-  const get = (id, { background = false } = {}) => {
+  // A listener's song that finds every slot taken takes the one nobody holds, oldest first.
+  const get = (id, { background = false, signal } = {}) => {
     if (!validVideoId(id)) fail(400, 'invalid_audio', 'Choose a supported song.');
     const existing = entries.get(id);
-    if (existing) { existing.used = ++tick; return existing.started.then(() => existing); }
-    if (downloads >= (background ? 1 : limits.downloads)) fail(429, 'busy', 'Songs are still loading. Try again in a moment.');
+    if (existing) { existing.used = ++tick; hold(existing, signal); return existing.started.then(() => existing); }
+    let reclaiming = false;
+    if (downloads >= (background ? 1 : limits.downloads)) {
+      const idle = !background && [...entries.values()].filter(abandoned).sort((a, b) => a.used - b.used)[0];
+      if (!idle) fail(429, 'busy', 'Songs are still loading. Try again in a moment.');
+      abandon(idle); reclaiming = true;
+    }
     downloads++;
-    const entry = { used: ++tick, type: null, bytes: 0, chunks: [], data: null, complete: false, error: null, listeners: new Set() };
-    entry.done = new Promise((resolve, reject) => { entry.settle = resolve; entry.fail = error => { entry.error = error; if (entries.get(id) === entry) entries.delete(id); reject(error); }; });
+    const entry = { used: ++tick, type: null, bytes: 0, chunks: [], data: null, complete: false, error: null, listeners: new Set(),
+      slot: true, holders: 0, kept: false, reclaiming, abandon: new AbortController() };
+    entry.done = new Promise((resolve, reject) => { entry.settle = resolve; entry.fail = error => { if (entry.error) return; entry.error = error; if (entries.get(id) === entry) entries.delete(id); reject(error); }; });
     void entry.done.catch(() => {});
-    entry.started = download(id, entry).catch(error => { downloads--; entry.fail(error); throw error; });
+    hold(entry, signal);
+    entry.started = download(id, entry).catch(error => { release(entry); entry.fail(error); throw error; });
     entries.set(id, entry);
     return entry.started.then(() => entry);
   };
@@ -165,7 +202,8 @@ export function playableAudio(audio, songs, { pinMs = 30 * 60_000, now = Date.no
       while (pinned.size > 500) pinned.delete(pinned.keys().next().value);
       if (!reported.has(entry)) {
         reported.add(entry);
-        entry.done.then(() => songs?.sourceResult?.(watchUrl(source), true), () => songs?.sourceResult?.(watchUrl(source), false));
+        // A download abandoned because everyone skipped past it says nothing about its source.
+        entry.done.then(() => songs?.sourceResult?.(watchUrl(source), true), error => { if (error?.code !== 'abandoned') songs?.sourceResult?.(watchUrl(source), false); });
       }
       return { entry, source };
     }

@@ -1,11 +1,26 @@
 # Automatic recovery on the production host
 
 The systemd timer checks the running stack about five minutes after each completed
-run. It checks WARP health and shared network namespaces, Discord/Lavalink
-connectivity, YouTube search, and five seconds of decoded audio from each of two
-known videos. It never joins a Discord voice channel or saves audio.
+run. Every run checks the containers, WARP health and shared network namespaces,
+Discord/Lavalink connectivity, the yt-cipher helper, a live YouTube search and the
+bot's report of recent real playback failures. It also decodes five seconds of
+audio from each of two known videos in an isolated Java container. It never joins a
+Discord voice channel or saves audio.
 The samples include a broadly available short video and a full music track;
 explicit regional/private-video restrictions do not trigger plugin updates.
+
+The decode is the expensive part (a JVM start plus two YouTube streams), so it is
+skipped while the stack is idle and unchanged: Lavalink reports zero playing
+players, the previous run was healthy, no real playback failure is waiting, no
+plugin update check is due, and the last passing decode was under 30 minutes ago
+against the same YouTube plugin version and the same service containers (ID and
+start time). Anything else decodes on that run: a playing or unknown player count,
+any failure (every run then decodes until healthy again), a deploy, recovery,
+restart or plugin change, `check`, or a due update check. So while someone listens
+the decode still runs every five minutes, and an idle stack decodes about every 30
+minutes; a decode-only fault that starts while idle is found within about 30
+minutes and alerts one run later. `status` and the run line show `last_check`
+(`decode` or `cheap`).
 
 Persistent infrastructure failures allow at most two service recovery attempts in
 six hours, at least thirty minutes apart. A missing WARP daemon already has a

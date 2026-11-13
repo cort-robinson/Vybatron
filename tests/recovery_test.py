@@ -47,12 +47,14 @@ class FakeBackend:
         self.failures, self.probed_tracks, self.queued = [], [], []
         self.results, self.verify_ok, self.deploy_error, self.fix_recovery = {}, True, False, False
         self.mirror_error = None
+        self.services = None  # Fingerprint of the service containers; None never skips a decode.
 
     def current(self):
         return r.version_of(self.config_path.read_text())
 
     def observe(self):
-        return {'kind': self.kind, 'playing': self.playing, 'version': self.current(), 'search': True, 'failures': self.failures}
+        return {'kind': self.kind, 'playing': self.playing, 'version': self.current(), 'search': True,
+                'failures': self.failures, 'services': self.services}
 
     def probe(self, version, full=False, installed=False, tracks=None):
         self.calls.append(('probe', version, full, installed))
@@ -485,6 +487,107 @@ class RecoveryTests(unittest.TestCase):
         state = self.cycle()
         self.assertEqual(state['status'], 'healthy')
         self.assertNotIn('mirror_error', state)
+
+
+class DecodeScheduleTests(unittest.TestCase):
+    """The JVM decode runs every five minutes unless idle and unchanged."""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.backend = FakeBackend(Path(self.temp.name))
+        self.backend.services = 'services-1'
+        self.backend.settings['auto_update'] = False
+        self.coordinator = r.Coordinator(self.backend)
+        self.clock = 100000
+        git = patch.object(r, 'command', return_value=CONFIG)
+        git.start()
+        self.addCleanup(git.stop)
+        self.cycle()  # First run always decodes and records the basis.
+
+    def cycle(self, delta=300, **kwargs):
+        self.clock += delta
+        before = len([call for call in self.backend.calls if call[0] == 'probe'])
+        self.coordinator.cycle(self.clock, **kwargs)
+        return len([call for call in self.backend.calls if call[0] == 'probe']) - before
+
+    def test_first_run_decodes_and_records_the_basis(self):
+        state = self.coordinator.state
+        self.assertEqual(len([c for c in self.backend.calls if c[0] == 'probe']), 1)
+        self.assertEqual(state['last_check'], 'decode')
+        self.assertEqual(state['decode_basis'], {'at': self.clock, 'version': OLD, 'services': 'services-1'})
+
+    def test_idle_and_unchanged_skips_the_decode_but_stays_healthy(self):
+        self.assertEqual(self.cycle(), 0)
+        self.assertEqual(self.coordinator.state['status'], 'healthy')
+        self.assertEqual(self.coordinator.state['last_check'], 'cheap')
+        self.assertIn(('mirror',), self.backend.calls)
+
+    def test_idle_decodes_again_once_the_interval_passes(self):
+        skipped = sum(self.cycle() == 0 for _ in range(r.IDLE_DECODE_INTERVAL // 300 - 1))
+        self.assertEqual(skipped, r.IDLE_DECODE_INTERVAL // 300 - 1)
+        self.assertEqual(self.cycle(), 1)
+        self.assertEqual(self.coordinator.state['decode_basis']['at'], self.clock)
+        self.assertEqual(self.cycle(), 0)
+
+    def test_playing_or_unknown_players_decode_every_run(self):
+        for playing in [1, None, 2]:
+            self.backend.playing = playing
+            self.assertEqual(self.cycle(), 1)
+
+    def test_a_restart_or_redeploy_decodes_on_the_next_run(self):
+        self.backend.services = 'services-2'
+        self.assertEqual(self.cycle(), 1)
+        self.assertEqual(self.cycle(), 0)
+        self.backend.services = None  # Unreadable fingerprint never skips.
+        self.assertEqual(self.cycle(), 1)
+
+    def test_a_plugin_change_decodes_on_the_next_run(self):
+        r.atomic_write(self.backend.config_path, r.pin_config(CONFIG, NEW))
+        self.assertEqual(self.cycle(), 1)
+
+    def test_any_failure_returns_to_a_decode_every_run_until_healthy(self):
+        self.backend.kind = 'network'
+        self.assertEqual(self.cycle(), 0)  # Cheap checks find it, no decode needed.
+        self.assertEqual(self.coordinator.state['status'], 'network')
+        self.backend.kind = 'ready'
+        self.assertEqual(self.cycle(), 1)
+        self.assertEqual(self.cycle(), 0)
+
+    def test_a_failed_decode_clears_the_basis_and_alerts_after_two_runs(self):
+        self.backend.results[OLD] = result(False)
+        self.assertEqual(self.cycle(delta=r.IDLE_DECODE_INTERVAL), 2)  # Includes the retry.
+        self.assertNotIn('decode_basis', self.coordinator.state)
+        self.assertEqual(self.cycle(), 2)
+        self.assertEqual(self.coordinator.state['status'], 'source')
+        self.assertTrue(any('needs attention' in event['message'] for event in self.coordinator.state['outbox']))
+
+    def test_real_playback_failures_are_probed_immediately(self):
+        self.backend.failures = [{'id': 'event-1', 'at': (self.clock + 300) * 1000, 'identifier': 'RYnFIRc0k6E'}]
+        before = len(self.backend.probed_tracks)
+        self.assertGreaterEqual(self.cycle(), 1)
+        self.assertEqual(self.backend.probed_tracks[before], ['https://www.youtube.com/watch?v=RYnFIRc0k6E'])
+
+    def test_manual_check_always_decodes(self):
+        self.assertEqual(self.cycle(observe_only=True), 1)
+
+    def test_a_due_or_deferred_plugin_update_check_decodes(self):
+        self.backend.settings['auto_update'] = True
+        self.assertEqual(self.cycle(), 1)  # Upstream never checked: due.
+        self.assertEqual(self.cycle(), 0)
+        self.coordinator.state['candidate'] = NEW
+        self.backend.playing = 0
+        self.backend.idle = False
+        self.assertEqual(self.cycle(), 1)
+
+    def test_services_fingerprint_changes_with_container_identity_or_restart(self):
+        containers = {'vybertron-bot': {'Id': 'a', 'State': {'StartedAt': 't1'}},
+                      'vybertron-lavalink': {'Id': 'b', 'State': {'StartedAt': 't1'}}}
+        first = r.services_fingerprint(containers)
+        containers['vybertron-lavalink']['State']['StartedAt'] = 't2'
+        self.assertNotEqual(r.services_fingerprint(containers), first)
+        containers['vybertron-lavalink'] = {'Id': 'c', 'State': {'StartedAt': 't1'}}
+        self.assertNotEqual(r.services_fingerprint(containers), first)
 
 
 class PluginMirrorTests(unittest.TestCase):

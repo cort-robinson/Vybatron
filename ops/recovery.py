@@ -45,6 +45,13 @@ MAX_ALERTS_PER_RUN = 5
 # flap (~15 min of consecutive degraded runs before alerting). Outages still
 # alert after two runs.
 DEGRADED_ALERT_RUNS = 3
+# The isolated decode probe starts a JVM and streams two YouTube videos. While
+# nothing is playing and nothing has changed since a passing decode, the cheap
+# checks (containers, WARP, Lavalink API, bot, cipher, live YouTube search and
+# real playback failures) still run every five minutes, and the decode runs at
+# most this often. Any failure, restart, redeploy, plugin change or playing
+# player brings back a decode on every run.
+IDLE_DECODE_INTERVAL = 30 * 60
 
 
 class RecoveryError(Exception):
@@ -146,6 +153,40 @@ def trim_probe_cache(cache, active):
         if item.resolve().parent != root:
             raise RecoveryError('invalid_probe_cache_path')
         shutil.rmtree(item)
+
+
+def services_fingerprint(containers):
+    """Changes whenever any service container is recreated or restarted."""
+    parts = []
+    for name in sorted(containers):
+        item = containers[name]
+        parts.append(f"{name}={item.get('Id', '')}@{(item.get('State') or {}).get('StartedAt', '')}")
+    return hashlib.sha256('\n'.join(parts).encode()).hexdigest()[:32]
+
+
+def decode_due(state, observation, current, now, observe_only=False, update_due=False):
+    """Whether this run must decode audio, or can rely on the cheap checks.
+
+    A decode is skipped only when every one of these holds: an automatic run
+    (manual `check` always decodes), the previous run was healthy, Lavalink
+    reports zero playing players (an unknown count decodes), no real playback
+    failure is waiting, no plugin update check is due or deferred, and the last
+    passing decode was under IDLE_DECODE_INTERVAL ago against the same plugin
+    version and the same service containers (so any deploy, recovery,
+    restart or plugin change decodes on the next run).
+    """
+    basis = state.get('decode_basis')
+    return not (not observe_only
+                and state.get('status') == 'healthy'
+                and observation.get('playing') == 0
+                and observation.get('services')
+                and isinstance(basis, dict)
+                and basis.get('services') == observation['services']
+                and basis.get('version') == current
+                and isinstance(basis.get('at'), (int, float))
+                and 0 <= now - basis['at'] < IDLE_DECODE_INTERVAL
+                and (state.get('last_probe') or {}).get('ok') is True
+                and not update_due)
 
 
 def version_of(config):
@@ -254,6 +295,7 @@ console.log(JSON.stringify({api:!!stats,bot:health?.ready===true,cipher:cipherOk
  search:search?.loadType==='search'&&search.data?.length>0,failures:playback?.failures??[]}));
 """
         result = json.loads(command(['docker', 'exec', '-i', 'vybertron-bot', 'node', '--input-type=module'], data=script, timeout=20))
+        result['services'] = services_fingerprint(containers)
         result['kind'] = ('audio_service' if not result['api'] else 'bot' if not result['bot']
                           else 'cipher' if not result.get('cipher') else 'ready')
         return result
@@ -536,7 +578,7 @@ class Coordinator:
             self.event('Vybatron has recovered. Discord connectivity, search, and audio checks are healthy again.')
         elif healthy and not self.state.get('started'):
             self.state['started'] = True
-            self.event('Vybatron monitoring is enabled. Connectivity, search, and decoded audio are checked about every five minutes. Official YouTube plugin updates are checked every six hours and after persistent playback failures; updates must pass full playback tests and wait for an empty player/queue. Failed updates are rolled back. Routine successful checks stay quiet.')
+            self.event('Vybatron monitoring is enabled. Connectivity and search are checked about every five minutes, and decoded audio every five minutes while music plays (every 30 minutes when idle and unchanged). Official YouTube plugin updates are checked every six hours and after persistent playback failures; updates must pass full playback tests and wait for an empty player/queue. Failed updates are rolled back. Routine successful checks stay quiet.')
         elif (not healthy and failures >= (DEGRADED_ALERT_RUNS if kind == 'canary_degraded' else 2)
               and self.state.get('incident_notified') != kind):
             self.state['incident_notified'] = kind
@@ -686,12 +728,27 @@ class Coordinator:
                 finally:
                     self.backend.end_update()
                 probe = self.backend.probe(current, installed=True)
+        elif decode_due(self.state, observation, current, now, observe_only,
+                        update_due=self.backend.settings.get('auto_update', False) and bool(
+                            self.state.get('candidate') or now - self.state.get('upstream_checked_at', 0) >= UPDATE_INTERVAL)):
+            probe = self.backend.probe(current, installed=True)
         else:
-            probe = self.backend.probe(current, installed=True)
-        if not probe['ok']:
-            # Retry once so a single flaky canary request is not counted.
-            probe = self.backend.probe(current, installed=True)
-        self.state['last_probe'] = probe
+            # Idle and unchanged since a passing decode: the cheap checks above
+            # (including live YouTube search) passed, so reuse that result.
+            probe = None
+        if probe is None:
+            probe = self.state['last_probe']
+            self.state['last_check'] = 'cheap'
+        else:
+            if not probe['ok']:
+                # Retry once so a single flaky canary request is not counted.
+                probe = self.backend.probe(current, installed=True)
+            self.state['last_probe'] = probe
+            self.state['last_check'] = 'decode'
+            if probe['ok']:
+                self.state['decode_basis'] = {'at': now, 'version': current, 'services': observation.get('services')}
+            else:
+                self.state.pop('decode_basis', None)
         healthy = probe['ok'] and observation.get('search', False)
         categories = {track.get('category') for track in probe['tracks'] if not track.get('ok')}
         if 'probe_environment' in categories:
@@ -836,7 +893,7 @@ def main():
             coordinator.finish('monitor_error', time.time(), 'the recovery monitor could not complete its checks (' + code + ')')
         if args.action == 'run':
             deliver_alerts(coordinator)
-        summary = {key: coordinator.state.get(key) for key in ['status', 'checked_at', 'version', 'detail', 'update_error']}
+        summary = {key: coordinator.state.get(key) for key in ['status', 'checked_at', 'version', 'detail', 'update_error', 'last_check']}
         if summary['status'] != 'healthy':
             # Credential-free categories identify which canary flaps over time.
             tracks = (coordinator.state.get('last_probe') or {}).get('tracks', [])

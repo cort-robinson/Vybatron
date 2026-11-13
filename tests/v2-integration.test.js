@@ -17,6 +17,7 @@ import { trackReference } from '../src/utils/library.js';
 import { attachSessionSnapshots, savedSession } from '../src/utils/sessions.js';
 import { guardedMutation } from '../src/utils/requests.js';
 import { maintenanceStatus } from '../src/utils/maintenance.js';
+import { resetSearchCache } from '../src/utils/query.js';
 import { track } from './fixtures.js';
 import { openLibrary, closeLibraries } from './library-fixture.js';
 
@@ -54,6 +55,8 @@ async function libraryFixture(t) {
 // The manager uses real event ordering. Like Lavalink's native destroy(), the
 // fake player leaves queue.current in memory after disconnecting and deletion.
 function environment(library, { existing = true, current = null, search } = {}) {
+  // Each environment is a fresh bot: it remembers no earlier search.
+  resetSearchCache();
   const manager = new EventEmitter();
   manager.players = new Map();
   manager.getPlayer = guildId => manager.players.get(guildId);

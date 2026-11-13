@@ -80,17 +80,32 @@ export function mayEditMix(interaction, mix) { return !mix || mix.ownerId === in
 export async function loadCollection(interaction, channel, references, label) {
   const { player, created } = getOrCreatePlayer(interaction, channel);
   let added = false;
-  try {
-    const { tracks, missing } = await resolveReferences(player, references, interaction.user);
-    if (!tracks.length) return interaction.editReply(textPayload('These saved tracks are currently unavailable. Try /play with a fresh result.'));
-    if (!await recheckEnqueueRequest(interaction, player, channel)) return;
+  // Each step is followed by a fresh check that the request still stands.
+  const add = async tracks => {
+    if (!await recheckEnqueueRequest(interaction, player, channel)) return false;
     interaction.portalMutationStarted?.();
     await enqueueTracks(interaction.client, player, tracks); added = true;
-    if (!await recheckEnqueueRequest(interaction, player, channel)) return;
+    if (!await recheckEnqueueRequest(interaction, player, channel)) return false;
     if (!player.connected) await player.connect();
-    if (!await recheckEnqueueRequest(interaction, player, channel)) return;
+    if (!await recheckEnqueueRequest(interaction, player, channel)) return false;
     if (!player.playing && !player.paused) await player.play();
-    if (!await recheckEnqueueRequest(interaction, player, channel)) return;
+    return recheckEnqueueRequest(interaction, player, channel);
+  };
+  try {
+    const selection = references.slice(0, LIBRARY_LIMITS.mixTracks);
+    const tracks = []; const missing = [];
+    // With nothing playing, the first song starts as soon as it is found, and
+    // the rest of the list is looked up while it plays.
+    const idle = !player.queue.current && !player.queue.tracks.length && !player.playing && !player.paused;
+    const lead = idle && selection.length > 1 ? await resolveReferences(player, selection.slice(0, 1), interaction.user) : null;
+    if (lead) {
+      missing.push(...lead.missing);
+      if (lead.tracks.length) { if (!await add(lead.tracks)) return; tracks.push(...lead.tracks); }
+    }
+    const rest = await resolveReferences(player, lead ? selection.slice(1) : selection, interaction.user);
+    missing.push(...rest.missing);
+    if (!tracks.length && !rest.tracks.length) return interaction.editReply(textPayload('These saved tracks are currently unavailable. Try /play with a fresh result.'));
+    if (rest.tracks.length) { if (!await add(rest.tracks)) return; tracks.push(...rest.tracks); }
     await refresh(interaction.client, player);
     return interaction.editReply(textPayload(withControllerLink(`Added ${tracks.length} ${tracks.length === 1 ? 'track' : 'tracks'} from **${safeText(label, { maxLength: 100 })}**.${missing.length ? ` ${missing.length} unavailable tracks were left out.` : ''}`, interaction, player)));
   } finally {

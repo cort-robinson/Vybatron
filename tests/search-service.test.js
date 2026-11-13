@@ -1,7 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { searchMusic, searchFailureMessage } from '../src/utils/search.js';
+import { resetSearchCache, searchSongs } from '../src/utils/query.js';
 import { track } from './fixtures.js';
+
+test.beforeEach(() => resetSearchCache());
 
 const spotify = 'https://open.spotify.com/track/3n3Ppam7vgaVa1iaRUc9Lp';
 
@@ -45,6 +48,7 @@ test('song searches prefer YouTube Music and fall back to YouTube when it finds 
   assert.equal(await searchMusic(preferred, 'song and artist', {}), song);
   assert.deepEqual(music, [['song and artist', 'ytmsearch']]);
   for (const failure of [() => ({ loadType: 'empty', tracks: [] }), () => ({ loadType: 'error', tracks: [] }), () => { throw new Error('music client offline'); }, () => new Promise(() => {})]) {
+    resetSearchCache();
     const sources = [];
     const player = { search: async ({ source }) => { sources.push(source); return source === 'ytmsearch' ? failure() : song; } };
     assert.equal(await searchMusic(player, 'song and artist', {}, { timeoutMs: 50 }), song);
@@ -57,4 +61,49 @@ test('catalog links load directly without a song search', async () => {
   const result = { loadType: 'track', tracks: [track()] };
   const player = { search: async query => { assert.deepEqual(query, { query: link }); return result; } };
   assert.equal(await searchMusic(player, link, {}), result);
+});
+
+test('a repeated song search within a minute is answered from memory with fresh copies', async () => {
+  let searches = 0;
+  // As the audio client builds a track: the requester is also kept in its user data, which is what a play request sends.
+  const searcher = { search: async (_query, user) => { searches += 1; return { loadType: 'search', tracks: [{ ...track(), requester: user, userData: { requester: user } }] }; } };
+  const first = await searchSongs(searcher, 'Song And Artist', { id: 'u1' });
+  const second = await searchSongs(searcher, ' song and artist ', { id: 'u2' });
+  const third = await searchSongs(searcher, 'song and artist', { id: 'u3' });
+  assert.equal(searches, 1);
+  assert.equal(second.tracks[0].info.identifier, first.tracks[0].info.identifier);
+  assert.equal(second.tracks[0].encoded, first.tracks[0].encoded);
+  assert.equal(first.tracks[0].userData.requester.id, 'u1');
+  assert.equal(second.tracks[0].requester.id, 'u2');
+  assert.equal(second.tracks[0].userData.requester.id, 'u2');
+  assert.equal(third.tracks[0].requester.id, 'u3');
+  assert.notEqual(second.tracks[0], first.tracks[0]);
+  assert.notEqual(third.tracks[0], second.tracks[0]);
+  assert.notEqual(third.tracks[0].info, second.tracks[0].info);
+});
+
+test('empty and failed song searches are not remembered', async () => {
+  let searches = 0;
+  const searcher = { search: async () => { searches += 1; return { loadType: 'empty', tracks: [] }; } };
+  await searchSongs(searcher, 'nothing here', {});
+  await searchSongs(searcher, 'nothing here', {});
+  assert.equal(searches, 4);
+});
+
+test('a slow YouTube Music search starts regular YouTube early and still wins if it answers in time', async () => {
+  const song = { loadType: 'search', tracks: [track()] };
+  const other = { loadType: 'search', tracks: [track('lmnopqrstuv')] };
+  let fallbackStartedAt = null; const startedAt = Date.now();
+  const slow = { search: ({ source }) => {
+    if (source === 'ytsearch') { fallbackStartedAt = Date.now() - startedAt; return Promise.resolve(other); }
+    return new Promise(resolve => setTimeout(() => resolve(song), 100));
+  } };
+  // Music answers inside its share (60% of 200 ms): its result is used.
+  assert.equal(await searchSongs(slow, 'slow music', {}, { timeoutMs: 200 }), song);
+  assert.ok(fallbackStartedAt !== null && fallbackStartedAt < 100, 'regular YouTube started before Music answered');
+  // Music never answers: regular YouTube, already loaded, answers when Music's share ends.
+  let fallbacks = 0;
+  const hung = { search: ({ source }) => source === 'ytsearch' ? (fallbacks += 1, Promise.resolve(other)) : new Promise(() => {}) };
+  assert.equal(await searchSongs(hung, 'hung music', {}, { timeoutMs: 100 }), other);
+  assert.equal(fallbacks, 1);
 });

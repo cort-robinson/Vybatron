@@ -35,6 +35,20 @@ test('saved mix resolution preserves order, skips missing tracks and rejects cha
   assert.equal(result.missing.length, 2);
 });
 
+test('one slow saved-source lookup does not hold up the lookups behind it', async () => {
+  const references = Array.from({ length: 9 }, (_, i) => ({ sourceName: 'youtube', identifier: String(i).padStart(11, '0'), uri: `https://youtu.be/${String(i).padStart(11, '0')}` }));
+  const finished = [];
+  const player = { async search({ query }) {
+    const id = query.split('/').at(-1);
+    await new Promise(resolve => setTimeout(resolve, id.endsWith('0') ? 60 : 1));
+    finished.push(id); return { tracks: [track(id)] };
+  } };
+  const result = await resolveReferences(player, references, { id: '200' });
+  // The slow first item finishes last, and the result is still in saved order.
+  assert.equal(finished.at(-1), references[0].identifier);
+  assert.deepEqual(result.tracks.map(t => t.info.identifier), references.map(r => r.identifier));
+});
+
 test('hung saved-source lookups time out without late queue writes', async () => {
   const player = { search: () => new Promise(() => {}) };
   const result = await resolveReferences(player, [{ uri: 'https://youtu.be/abcdefghijk' }], { id: '200' }, { timeoutMs: 5 });

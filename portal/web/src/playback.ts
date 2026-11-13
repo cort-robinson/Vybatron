@@ -169,8 +169,10 @@ function webEngine(parts: EngineParts): Engine {
     const videoId = youtubeId(shown()?.queue[0]?.track.uri);
     if (!videoId || warmed.has(videoId)) return;
     warmed.add(videoId);
+    // A refused warm-up (the bot is busy with other downloads) may be asked again later.
     void fetch(source(videoId), { headers: { Range: 'bytes=0-0' }, credentials: 'same-origin' })
-      .then(response => response.body?.cancel()).catch(() => warmed.delete(videoId));
+      .then(response => { if (!response.ok) setTimeout(() => warmed.delete(videoId), 5_000); return response.body?.cancel(); })
+      .catch(() => warmed.delete(videoId));
   };
   const describe = (track: PlayerTrack) => {
     if (!('mediaSession' in navigator) || typeof MediaMetadata === 'undefined') return;
@@ -324,7 +326,12 @@ function webEngine(parts: EngineParts): Engine {
     },
     follow: player => {
       const now = deck();
-      if ((player.current?.entryId ?? null) === now.entryId) return;
+      if ((player.current?.entryId ?? null) === now.entryId) {
+        // The same song, but what comes next may have changed: a song queued or
+        // moved up while this one plays is downloaded ahead too.
+        if (now.status === 'playing' && !now.waiting) warmNext();
+        return;
+      }
       if (!player.current) { idle(); return; }
       play(player.current, playheadAt(player, clock.now()), now.status === 'playing' || player.playhead.playing);
     },

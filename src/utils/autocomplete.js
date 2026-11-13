@@ -1,6 +1,6 @@
 import { catalogUrl } from './library.js';
 import { isUrl, plainText, trackIdentity } from './presentation.js';
-import { searchSongs, validatePlaybackQuery } from './query.js';
+import { resetSearchCache, searchSongs, validatePlaybackQuery } from './query.js';
 
 const CACHE_TTL_MS = 15_000;
 const CACHE_LIMIT = 100;
@@ -130,4 +130,5 @@ export function resetAutocompleteCache() {
   searchCache.clear();
   selectionCache.clear();
   resultCache.clear();
+  resetSearchCache();
 }

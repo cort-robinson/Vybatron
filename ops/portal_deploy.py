@@ -15,6 +15,7 @@ import json
 import os
 from pathlib import Path
 import re
+import secrets
 import shutil
 import stat
 import tempfile
@@ -35,8 +36,12 @@ KEEP_RELEASES = 3
 REVISION_LABEL = 'org.opencontainers.image.revision'
 COMPOSE_LABELS = ('com.docker.compose.project.working_dir', 'com.docker.compose.project.config_files')
 CONTAINER_ID = re.compile(r'[0-9a-f]{64}')
-# Exactly the name _prune_releases gives a release while removing it (ASCII only).
-TOMBSTONE = re.compile(r'\.pruning-[0-9a-f]{40}-[0-9]{1,20}')
+# A private holding directory _prune_releases creates to remove one release
+# (ASCII only). The release is moved to its fixed child HELD, then removed.
+TOMBSTONE = re.compile(r'\.pruning-[0-9a-f]{32}')
+HELD = 'release'
+RELEASES_DIR = Path('/var/lib/vybertron-portal/releases')
+MOUNTINFO = Path('/proc/self/mountinfo')
 # Status codes reported under "prune"; anything else is reported as prune_error.
 PRUNE_CODE = re.compile(r'[A-Za-z0-9_]{1,80}')
 # Removal works relative to one open directory descriptor, never by path.
@@ -57,6 +62,52 @@ def prune_code(describe, error):
         return 'prune_error'
 
 
+def mount_points(mountinfo):
+    """Every mount point in a mountinfo file, or PruneSkipped if it can't be read exactly."""
+    try:
+        lines = Path(mountinfo).read_bytes().splitlines()
+    except OSError:
+        raise PruneSkipped('mountinfo_unavailable') from None
+    points = []
+    for line in lines:
+        fields = line.split(b' ')
+        # id parent major:minor root mount-point options [optional...] - type source super
+        if len(fields) < 10 or b'-' not in fields[6:] or len(fields) - fields.index(b'-', 6) != 4:
+            raise PruneSkipped('mountinfo_unavailable')
+        raw = fields[4]
+        # The kernel escapes space, tab, newline and backslash as \ooo.
+        if re.search(rb'\\(?![0-7]{3})', raw):
+            raise PruneSkipped('mountinfo_unavailable')
+        point = os.fsdecode(re.sub(rb'\\([0-7]{3})', lambda m: bytes([int(m[1], 8) & 0xff]), raw))
+        if not point.startswith('/'):
+            raise PruneSkipped('mountinfo_unavailable')
+        points.append(Path(os.path.normpath(point)))
+    if not points:
+        raise PruneSkipped('mountinfo_unavailable')
+    return points
+
+
+def open_pinned(path):
+    """Open an absolute directory one component at a time from /, never following a symlink."""
+    parts = Path(path).parts
+    if not parts or parts[0] != '/' or any(part in ('.', '..') for part in parts[1:]):
+        raise PruneSkipped('releases_path_not_trusted')
+    fd = os.open('/', os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        for part in parts[1:]:
+            try:
+                child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
+            except OSError:
+                # ELOOP for a symlink, ENOTDIR or ENOENT for anything else.
+                raise PruneSkipped('releases_path_not_trusted') from None
+            os.close(fd)
+            fd = child
+        return fd
+    except BaseException:
+        os.close(fd)
+        raise
+
+
 def fd_removal_supported():
     try:
         return (FD_OPERATIONS and getattr(shutil.rmtree, 'avoids_symlink_attacks', False) is True
@@ -66,8 +117,13 @@ def fd_removal_supported():
 
 
 class PortalDeployer(Deployer):
-    def __init__(self, repo, directory, *, env_file, portal_env, runner=run, sleep=time.sleep):
+    def __init__(self, repo, directory, *, env_file, portal_env, runner=run, sleep=time.sleep,
+                 releases_dir=None, mountinfo=MOUNTINFO):
         super().__init__(repo, directory, runner=runner, sleep=sleep)
+        # The trusted directory that holds releases/<sha>. Pruning only runs
+        # when it is configured and the release being deployed sits directly in it.
+        self.releases_dir = Path(os.path.abspath(releases_dir)) if releases_dir else None
+        self.mountinfo = mountinfo
         self.env_file, self.portal_env = env_file.resolve(), portal_env.resolve()
         self.journal_path = self.directory / 'portal-deployment.json'
         self.image_path = self.directory / 'portal-images.json'
@@ -396,42 +452,51 @@ class PortalDeployer(Deployer):
                 lambda e: str(e) if isinstance(e, DeploymentError) else type(e).__name__, error)}
 
     def _prune_releases(self, journal, keep):
-        root = self.repo.parent
-        # Only the Deploy layout (…/releases/<sha>). A manual release from a
-        # checkout such as /root/Vybertron has no sibling releases to manage.
-        if root.name != 'releases' or not SHA.fullmatch(self.repo.name) or root.is_symlink():
+        root = self.releases_dir
+        # Only the Deploy layout (<configured releases dir>/<sha>). A manual
+        # release from a checkout such as /root/Vybertron prunes nothing.
+        if root is None or self.repo.parent != root or not SHA.fullmatch(self.repo.name):
             return {'status': 'skipped', 'reason': 'not_a_release_directory'}
         if not fd_removal_supported():
             raise PruneSkipped('platform_cannot_prune_safely')
-        resolved = root.resolve(strict=True)
-        # Everything below lists, checks, renames and removes relative to this
-        # one descriptor, so replacing releases/ (or a parent) with a symlink
-        # afterwards cannot redirect a removal elsewhere.
-        fd = os.open(resolved, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        # Pin the trusted path: every component from / is opened relative to
+        # its parent with O_NOFOLLOW, and no path string is resolved after
+        # that. Everything below lists, checks, renames and removes relative to
+        # these descriptors, so swapping releases/ or any parent for a symlink
+        # can't redirect a removal elsewhere.
+        parent = open_pinned(root.parent)
         try:
-            opened = os.fstat(fd)
+            try:
+                fd = os.open(root.name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent)
+            except OSError:
+                raise PruneSkipped('releases_path_not_trusted') from None
+            try:
+                opened = os.fstat(fd)
 
-            def still_named():
-                try:
-                    named = [os.lstat(root), os.lstat(resolved)]
-                except OSError:
-                    return False
-                return all(stat.S_ISDIR(item.st_mode) and (item.st_dev, item.st_ino) == (opened.st_dev, opened.st_ino)
-                           for item in named)
-            if not still_named():
-                raise PruneSkipped('releases_directory_changed')
-            protected = {self.repo.name} | self.rollback_releases(journal)
-            referenced = self.referenced_releases(root, resolved)
-            # The just-verified bot and portal were composed from this directory.
-            # If no container says so, the references aren't what this code expects.
-            if self.repo.name not in referenced:
-                raise PruneSkipped('current_release_not_in_use')
-            protected |= referenced
-            if not still_named():
-                raise PruneSkipped('releases_directory_changed')
-            return self.remove_old(fd, protected, keep)
+                def still_named():
+                    try:
+                        named = os.stat(root.name, dir_fd=parent, follow_symlinks=False)
+                    except OSError:
+                        return False
+                    return stat.S_ISDIR(named.st_mode) and (named.st_dev, named.st_ino) == (opened.st_dev, opened.st_ino)
+                protected = {self.repo.name} | self.rollback_releases(journal)
+                referenced = self.referenced_releases(root)
+                # The just-verified bot and portal were composed from this directory.
+                # If no container says so, the references aren't what this code expects.
+                if self.repo.name not in referenced:
+                    raise PruneSkipped('current_release_not_in_use')
+                protected |= referenced
+                # rmtree would empty a bind mount at or below releases/ (same-
+                # filesystem bind mounts share st_dev), so any such mount skips.
+                if any(point == root or point.is_relative_to(root) for point in mount_points(self.mountinfo)):
+                    raise PruneSkipped('mount_inside_releases')
+                if not still_named():
+                    raise PruneSkipped('releases_directory_changed')
+                return self.remove_old(fd, protected, keep)
+            finally:
+                os.close(fd)
         finally:
-            os.close(fd)
+            os.close(parent)
 
     def rollback_releases(self, journal):
         """The releases whose images ran before this one, or PruneSkipped.
@@ -445,17 +510,17 @@ class PortalDeployer(Deployer):
         return {self.image_revision(previous[name]) for name in ('bot', 'portal')
                 if not (name == 'portal' and previous['portal'] is None)}
 
-    def referenced_releases(self, root, resolved):
-        roots = {Path(os.path.abspath(root)), resolved}
+    def referenced_releases(self, root):
+        # The pinned walk proved root has no symlink components, so it is its
+        # own resolved form. Container paths are compared as given and resolved.
         referenced = set()
         for value in self.referenced_paths():
             for path in {Path(os.path.abspath(value)), Path(os.path.realpath(value))}:
-                for base in roots:
-                    if base == path or base.is_relative_to(path):
-                        # A mount of releases/ or above reaches every release.
-                        raise PruneSkipped('container_mounts_releases_directory')
-                    if path.is_relative_to(base):
-                        referenced.add(path.relative_to(base).parts[0])
+                if root == path or root.is_relative_to(path):
+                    # A mount of releases/ or above reaches every release.
+                    raise PruneSkipped('container_mounts_releases_directory')
+                if path.is_relative_to(root):
+                    referenced.add(path.relative_to(root).parts[0])
         return referenced
 
     def remove_old(self, fd, protected, keep):
@@ -479,10 +544,10 @@ class PortalDeployer(Deployer):
         for _, name in releases:
             if name in protected:
                 continue
-            # Rename first, so an interrupted removal never leaves a partial
-            # releases/<sha> that a later Deploy of that SHA would trust.
+            # Move it out of its releases/<sha> name first, so an interrupted
+            # removal never leaves a partial release a later Deploy would trust.
             try:
-                self.remove_inside(fd, name, rename_to='.pruning-' + name + '-' + str(time.time_ns()))
+                self.remove_inside(fd, name, hold=True)
                 removed.append(name)
             except Exception:
                 failed.append(name)
@@ -499,16 +564,42 @@ class PortalDeployer(Deployer):
         return result
 
     @staticmethod
-    def remove_inside(fd, name, rename_to=None):
-        """Remove the directory `name` directly inside the open directory `fd`."""
-        for value in (name, rename_to) if rename_to is not None else (name,):
-            if not isinstance(value, str) or value in ('', '.', '..') or '/' in value or '\0' in value:
-                raise DeploymentError('portal_prune_path_outside_releases')
+    def plain_name(value):
+        if not isinstance(value, str) or value in ('', '.', '..') or '/' in value or '\0' in value:
+            raise DeploymentError('portal_prune_path_outside_releases')
+
+    @staticmethod
+    def make_holding(fd):
+        """Create a new, empty, private .pruning-<random> directory inside fd."""
+        for _ in range(8):
+            name = '.pruning-' + secrets.token_hex(16)
+            if not TOMBSTONE.fullmatch(name):
+                continue
+            try:
+                os.mkdir(name, 0o700, dir_fd=fd)  # Fails if it already exists.
+                return name
+            except FileExistsError:
+                continue
+        raise DeploymentError('portal_prune_holding_unavailable')
+
+    @classmethod
+    def remove_inside(cls, fd, name, hold=False):
+        """Remove the directory `name` directly inside the open directory `fd`.
+
+        With hold, it is first moved to HELD inside a holding directory this
+        call just created, so the rename can never replace anything existing.
+        """
+        cls.plain_name(name)
         if not stat.S_ISDIR(os.stat(name, dir_fd=fd, follow_symlinks=False).st_mode):
             raise DeploymentError('portal_prune_path_outside_releases')
-        if rename_to is not None:
-            os.rename(name, rename_to, src_dir_fd=fd, dst_dir_fd=fd)
-            name = rename_to
+        if hold:
+            holding = cls.make_holding(fd)
+            held = os.open(holding, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
+            try:
+                os.rename(name, HELD, src_dir_fd=fd, dst_dir_fd=held)
+            finally:
+                os.close(held)
+            name = holding
         # Relative to fd, and rmtree refuses a symlink and never follows links inside.
         shutil.rmtree(name, dir_fd=fd)
 
@@ -651,6 +742,8 @@ def main():
     parser.add_argument('--env-file', type=Path, default=Path('/root/Vybertron/.env'))
     parser.add_argument('--portal-env', type=Path, default=Path('/var/lib/vybertron-portal/portal.env'))
     parser.add_argument('--lock-timeout', type=float, default=LOCK_TIMEOUT)
+    parser.add_argument('--releases-dir', type=Path, default=RELEASES_DIR,
+                        help='Trusted directory Deploy stages releases/<sha> in; only it is pruned')
     args = parser.parse_args()
     args.state_dir.mkdir(parents=True, exist_ok=True, mode=0o700); args.state_dir.chmod(0o700)
     import fcntl
@@ -666,7 +759,8 @@ def main():
                 if time.monotonic() >= deadline:
                     print(json.dumps({'status': 'failed', 'error': 'portal_maintenance_lock_busy'})); raise SystemExit(1) from None
                 time.sleep(LOCK_POLL)
-        deployer = PortalDeployer(args.repo, args.state_dir, env_file=args.env_file, portal_env=args.portal_env)
+        deployer = PortalDeployer(args.repo, args.state_dir, env_file=args.env_file, portal_env=args.portal_env,
+                                  releases_dir=args.releases_dir)
         try:
             status = deployer.deploy(args.sha, args.guild_id) if args.action == 'deploy' else deployer.rollback()
             output = {'status': status, 'sha': args.sha}

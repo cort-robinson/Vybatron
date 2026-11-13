@@ -1,4 +1,5 @@
 import importlib.util
+import inspect
 import json
 import os
 from pathlib import Path
@@ -365,6 +366,21 @@ def container(index, mounts=(), working_dir=None, config_files=None):
             'Config': {'Labels': labels}}
 
 
+NORMAL_MOUNTS = (
+    '22 1 259:2 / / rw,relatime shared:1 - ext4 /dev/nvme0n1p2 rw\n'
+    '23 22 0:21 / /proc rw,nosuid shared:12 - proc proc rw\n'
+    '24 22 0:22 / /tmp rw shared:13 - tmpfs tmpfs rw\n'
+    '25 22 259:2 /var/lib/docker /var/lib/docker rw shared:1 - ext4 /dev/nvme0n1p2 rw\n')
+
+
+def prune_deployer(repo, state, runner, releases, mountinfo, **kwargs):
+    accepted = inspect.signature(PortalDeployer).parameters
+    extra = {name: value for name, value in [('releases_dir', releases), ('mountinfo', mountinfo)] if name in accepted}
+    return PortalDeployer(repo, state, env_file=kwargs.pop('env_file', state.parent / 'x.env'),
+                          portal_env=kwargs.pop('portal_env', state.parent / 'p.env'),
+                          runner=runner, sleep=lambda _: None, **extra, **kwargs)
+
+
 class ReleasePruneTests(unittest.TestCase):
     """Old releases/<sha> source directories are pruned after a verified release."""
 
@@ -384,8 +400,10 @@ class ReleasePruneTests(unittest.TestCase):
                                      config_files=[self.current / 'docker-compose.yml'])]
         self.images = None
         self.failing = None
-        self.deployer = PortalDeployer(self.current, self.root / 'private', env_file=self.root / 'x.env',
-            portal_env=self.root / 'p.env', runner=self.host, sleep=lambda _: None)
+        # Mount points that are all outside releases/ (an ancestor is fine).
+        self.mountinfo = self.root / 'mountinfo'
+        self.mountinfo.write_text(NORMAL_MOUNTS + '26 22 0:40 / ' + str(self.root) + ' rw - tmpfs tmpfs rw\n')
+        self.deployer = prune_deployer(self.current, self.root / 'private', self.host, self.releases, self.mountinfo)
 
     def host(self, args, **kwargs):
         if self.failing and self.failing(args):
@@ -630,6 +648,114 @@ class ReleasePruneTests(unittest.TestCase):
         self.assert_outside_intact(outside, self.shas[:3])
         self.assertEqual(len(list((self.root / 'moved').iterdir())), 6)
 
+    def nest_releases(self):
+        """Move releases/ under data/, where a parent swap can be staged."""
+        data = self.root / 'data'
+        data.mkdir()
+        self.releases.rename(data / 'releases')
+        self.releases = data / 'releases'
+        self.current = self.releases / self.shas[-1]
+        self.containers = [container(1, working_dir=self.current, config_files=[self.current / 'docker-compose.yml'])]
+        self.deployer = prune_deployer(self.current, self.root / 'private', self.host, self.releases, self.mountinfo)
+        return data
+
+    def test_a_parent_replaced_before_opening_cannot_redirect_removal(self):
+        data = self.nest_releases()
+        outside = self.root / 'outside'
+        self.outside_with(self.shas)  # outside/<sha> for every SHA, each with a sentinel.
+        (outside.parent / 'outside-tree').mkdir()
+        outside.rename(outside.parent / 'outside-tree' / 'releases')
+        tree = outside.parent / 'outside-tree'
+        # After the deployer resolved its paths, data/ becomes a symlink to a
+        # tree with matching SHAs.
+        data.rename(self.root / 'data-moved')
+        data.symlink_to(tree, target_is_directory=True)
+        result = self.prune()
+        self.assert_outside_intact(tree / 'releases', self.shas)
+        self.assertEqual(result, {'status': 'skipped', 'reason': 'releases_path_not_trusted'})
+        self.assertEqual(len(list((self.root / 'data-moved' / 'releases').iterdir())), 6)
+
+    def test_a_parent_replaced_after_opening_cannot_redirect_removal(self):
+        data = self.nest_releases()
+        self.outside_with(self.shas)
+        tree = self.root / 'outside-tree'
+        tree.mkdir()
+        (self.root / 'outside').rename(tree / 'releases')
+        original = self.host
+
+        def host(args, **kwargs):
+            if args[:2] == ['docker', 'inspect'] and not data.is_symlink():
+                data.rename(self.root / 'data-moved')
+                data.symlink_to(tree, target_is_directory=True)
+            return original(args, **kwargs)
+        self.deployer.runner = host
+        self.prune()
+        self.assert_outside_intact(tree / 'releases', self.shas)
+
+    def write_mounts(self, *points):
+        lines = [f'{40 + n} 22 259:2 /x {point} rw,relatime shared:1 - ext4 /dev/nvme0n1p2 rw\n'
+                 for n, point in enumerate(points)]
+        self.mountinfo.write_text(NORMAL_MOUNTS + ''.join(lines))
+
+    def test_a_mount_at_or_inside_releases_skips_pruning(self):
+        spaced = self.releases / self.shas[0] / 'my dir'
+        spaced.mkdir()
+        (spaced / 'data').write_text('bind-mounted')
+        leftover = self.releases / ('.pruning-' + 'd' * 32)
+        leftover.mkdir()
+        escaped = str(spaced).replace(' ', '\\040')
+        for point in [escaped, str(self.releases / self.shas[1] / 'lavalink'), str(leftover),
+                      str(self.releases), str(self.releases / self.shas[-1])]:
+            self.write_mounts(point)
+            self.assert_skipped(self.prune(), 'mount_inside_releases')
+            self.assertEqual((spaced / 'data').read_text(), 'bind-mounted')
+            self.assertTrue(leftover.is_dir())
+
+    def test_mount_points_beside_or_above_releases_do_not_block_pruning(self):
+        self.write_mounts(str(self.root), str(self.root / 'releases-other'), str(self.releases) + '2',
+                          str(self.releases).replace(' ', '\\040') + '\\040x')
+        self.assertEqual(self.prune()['status'], 'ok')
+
+    def test_unreadable_or_malformed_mountinfo_skips_pruning(self):
+        self.mountinfo.unlink()
+        self.assert_skipped(self.prune(), 'mountinfo_unavailable')
+        for text in ['', 'garbage\n', '22 1 259:2 / / rw shared:1 ext4 /dev/x rw\n',
+                     NORMAL_MOUNTS + '30 22 0:1 / relative/path rw - ext4 x rw\n',
+                     NORMAL_MOUNTS + '30 22 0:1 / /bad\\9 rw - ext4 x rw\n']:
+            self.mountinfo.write_text(text)
+            self.assert_skipped(self.prune(), 'mountinfo_unavailable')
+
+    def test_a_protected_directory_with_the_tombstone_name_is_never_replaced(self):
+        # The old scheme renamed onto .pruning-<sha>-<time_ns>; the new one onto
+        # a fixed child of a freshly created holding directory.
+        fixed_ns = 1700000000000000000
+        old_scheme = self.releases / ('.pruning-' + self.shas[2] + '-' + str(fixed_ns))
+        new_scheme = self.releases / ('.pruning-' + '0' * 32)
+        for path in [old_scheme, new_scheme]:
+            path.mkdir()
+        self.containers += [container(2, mounts=[old_scheme]), container(3, mounts=[new_scheme])]
+        tokens = iter(['0' * 32, 'e' * 32, 'f' * 32, '9' * 32])
+        with unittest.mock.patch('time.time_ns', return_value=fixed_ns), \
+                unittest.mock.patch('secrets.token_hex', lambda _: next(tokens)):
+            self.prune()
+        self.assertTrue(old_scheme.is_dir() and new_scheme.is_dir())
+        self.assertEqual(list(new_scheme.iterdir()), [])
+        self.assertNotIn(self.shas[2], self.remaining())
+
+    def test_holding_directories_are_private_and_fully_removed(self):
+        made = []
+        real_mkdir = os.mkdir
+
+        def mkdir(path, mode=0o777, *, dir_fd=None):
+            made.append((path, mode))
+            return real_mkdir(path, mode, dir_fd=dir_fd)
+        with unittest.mock.patch.object(module.os, 'mkdir', mkdir):
+            result = self.prune()
+        self.assertEqual(result['removed'], sorted(self.shas[:3]))
+        self.assertEqual(len(made), 3)
+        self.assertTrue(all(module.TOMBSTONE.fullmatch(name) and mode == 0o700 for name, mode in made))
+        self.assertEqual(self.remaining(), sorted(self.shas[-3:]))
+
     def test_a_platform_without_safe_fd_removal_skips_pruning(self):
         with unittest.mock.patch.object(module.shutil.rmtree, 'avoids_symlink_attacks', False):
             self.assert_skipped(self.prune(), 'platform_cannot_prune_safely')
@@ -644,29 +770,31 @@ class ReleasePruneTests(unittest.TestCase):
     def test_only_the_deploy_layout_is_pruned(self):
         checkout = self.root / 'Vybertron'
         checkout.mkdir()
-        deployer = PortalDeployer(checkout, self.root / 'private', env_file=self.root / 'x.env',
-            portal_env=self.root / 'p.env', runner=self.host)
+        deployer = prune_deployer(checkout, self.root / 'private', self.host, self.releases, self.mountinfo)
         self.assertEqual(deployer.prune_releases({})['status'], 'skipped')
+        unconfigured = PortalDeployer(self.current, self.root / 'private', env_file=self.root / 'x.env',
+                                      portal_env=self.root / 'p.env', runner=self.host)
+        self.assertEqual(unconfigured.prune_releases({})['status'], 'skipped')
         self.assertEqual(len(self.remaining()), 6)
 
     def test_tolerates_half_written_and_missing_directories(self):
         half = self.releases / self.shas[0]
         (half / '.portal-release.json').unlink()
-        tombstone = self.releases / ('.pruning-' + self.shas[0] + '-1700000000000000000')
-        tombstone.mkdir()  # Left by an interrupted prune.
+        tombstone = self.releases / ('.pruning-' + 'c' * 32)
+        (tombstone / 'release' / 'ops').mkdir(parents=True)  # Left by an interrupted prune.
         self.assertEqual(self.prune()['status'], 'ok')
         self.assertNotIn(tombstone.name, self.remaining())
         shutil.rmtree(self.releases)
-        self.assertEqual(self.prune()['status'], 'failed')
+        self.assertEqual(self.prune(), {'status': 'skipped', 'reason': 'releases_path_not_trusted'})
 
     def test_tombstone_cleanup_honours_container_references_and_exact_names(self):
-        referenced = self.releases / ('.pruning-' + self.shas[0] + '-1700000000000000001')
-        stale = self.releases / ('.pruning-' + self.shas[1] + '-1700000000000000002')
+        referenced = self.releases / ('.pruning-' + '1' * 32)
+        stale = self.releases / ('.pruning-' + '2' * 32)
         lookalikes = [self.releases / name for name in [
-            '.pruning-old-1', '.pruning-' + self.shas[0], '.pruning-' + self.shas[0] + '-',
-            '.pruning-' + self.shas[0] + '-12x', '.pruning-' + 'A' * 40 + '-1', '.pruning-' + 'a' * 39 + '-1',
-            '.pruning-' + self.shas[0] + '-1-extra', '.pruning-' + self.shas[0] + '-\u0661\u0662\u0663',
-            '.pruning-' + self.shas[0] + '-1\n']]
+            '.pruning-old-1', '.pruning-' + 'a' * 31, '.pruning-' + 'a' * 33, '.pruning-' + 'A' * 32,
+            '.pruning-' + 'a' * 32 + '-1', '.pruning-' + 'g' * 32, '.pruning-' + 'a' * 31 + '\u0661',
+            '.pruning-' + 'a' * 32 + '\n', '.pruning-' + self.shas[0] + '-1700000000000000001',
+            'pruning-' + 'a' * 32]]
         for path in [referenced, stale, *lookalikes]:
             path.mkdir()
         self.containers.append(container(2, mounts=[referenced / 'lavalink']))
@@ -757,8 +885,10 @@ class ReleasePruneDeployTests(unittest.TestCase):
             if args[:3] == ['docker', 'image', 'inspect'] and args[3] == OLD:
                 return json.dumps([{'Id': OLD, 'Config': {'Labels': {'org.opencontainers.image.revision': '2' * 40}}}])
             return original(args, **kwargs)
-        self.deployer = PortalDeployer(self.repo, self.state, env_file=self.env,
-            portal_env=self.portal_env, runner=run, sleep=lambda _: None)
+        mountinfo = self.root / 'mountinfo'
+        mountinfo.write_text(NORMAL_MOUNTS)
+        self.deployer = prune_deployer(self.repo, self.state, run, releases, mountinfo,
+                                       env_file=self.env, portal_env=self.portal_env)
 
     def test_verified_release_prunes_older_sources(self):
         self.assertEqual(self.deploy(), 'deployed')

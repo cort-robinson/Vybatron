@@ -76,7 +76,7 @@ test('verified Seek, Volume and Filter also complete while their cosmetic edit i
   assert.equal(c.edits.length, 2, 'all held web refreshes collapse to one latest render');
 });
 
-test('native Pause retains awaited controller then voice presentation semantics', async t => {
+test('native Pause replies before its controller edit and voice-status write settle, which still run in order', async t => {
   const f = await portalFixture(t);
   const c = cosmetics(f);
   await createOrUpdate(f.client, f.player);
@@ -85,13 +85,14 @@ test('native Pause retains awaited controller then voice presentation semantics'
     member: f.members.get('200'), user: f.users.get('200'), commandName: 'pause',
     async reply() { reply.resolve(); },
   });
-  let finished = false; void operation.then(() => { finished = true; });
-  await c.editEntered.promise; await tick();
-  assert.equal(finished, false); assert.equal(c.statuses.length, 0);
-  c.editGate.resolve(); await c.statusEntered.promise; await tick();
-  assert.equal(finished, false);
-  c.statusGate.resolve(); await operation; await reply.promise;
-  assert.equal(finished, true);
+  await operation; await reply.promise;
+  assert.equal(f.player.paused, true);
+  await c.editEntered.promise; await c.statusEntered.promise;
+  assert.equal(c.edits.length, 1); assert.equal(c.statuses.length, 1);
+  c.editGate.resolve(); c.statusGate.resolve();
+  await Promise.all([refresh(f.client, f.player), updateVoiceStatus(f.client, f.player)]);
+  assert.equal(c.edits.at(-1).embeds[0].data.author.name, 'Paused');
+  assert.match(c.statuses.at(-1).payload.body.status, /^⏸/);
 });
 
 test('playback failure schedules no success cosmetics; cosmetic failures do not fail successful audio', async t => {

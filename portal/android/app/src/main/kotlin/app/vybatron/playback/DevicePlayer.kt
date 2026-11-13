@@ -19,6 +19,7 @@ import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.HttpDataSource
 import androidx.media3.datasource.ResolvingDataSource
 import androidx.media3.datasource.TransferListener
+import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import app.vybatron.BuildConfig
@@ -79,6 +80,7 @@ class DevicePlayer(context: Context, private val base: String, private val cooki
         .setAudioAttributes(AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MUSIC).build(), true)
         .setHandleAudioBecomingNoisy(true)
         .setWakeMode(C.WAKE_MODE_NETWORK)
+        .setLoadControl(audioLoadControl())
         .setMediaSourceFactory(DefaultMediaSourceFactory(ResolvingDataSource.Factory(http()) { spec ->
             if (sameOrigin(spec.uri.toString())) cookies.header()?.let { spec.withAdditionalHeaders(mapOf("Cookie" to it)) } ?: spec else spec
         }))
@@ -469,5 +471,17 @@ class DevicePlayer(context: Context, private val base: String, private val cooki
 
     companion object {
         private val USER_AGENT = "Vybatron-Android/${BuildConfig.VERSION_NAME}"
+
+        // Media3's defaults already start after 1 s of audio and resume after 2 s, and starting
+        // sooner measured no faster: the first requests take that time. Only the back buffer changes.
+        // The last minute played stays in memory (about 1 MB at the bot's bitrates), so a seek back within it
+        // plays at once instead of asking the portal again.
+        internal const val BACK_BUFFER_MS = 60_000
+
+        // Every audio frame decodes on its own, so a seek back needs no earlier keyframe.
+        private const val BACK_BUFFER_FROM_KEYFRAME = false
+
+        internal fun audioLoadControl(): DefaultLoadControl =
+            DefaultLoadControl.Builder().setBackBuffer(BACK_BUFFER_MS, BACK_BUFFER_FROM_KEYFRAME).build()
     }
 }

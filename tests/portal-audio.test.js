@@ -261,3 +261,135 @@ test('a stream that fails partway releases every upload pinned to it', async t =
   assert.equal((await playable.get('uploadBBBBB')).video, 'uploadBBBBB');
   assert.equal((await playable.get('uploadAAAAA')).video, 'uploadBBBBB');
 });
+
+// Our Lavalink plugin with its own two export permits: a slow song holds one until
+// it is finished, or until Lavalink notices the bot hung up, a moment after it did.
+async function slowPlugin(t) {
+  const holds = new Map(); const requests = []; const hungUp = []; let active = 0;
+  const finish = id => holds.get(id)?.();
+  const server = createServer((request, response) => {
+    const id = new URL(request.url, 'http://lavalink.invalid').pathname.split('/').pop();
+    requests.push(id);
+    if (active >= 2) { response.writeHead(429); response.end(); return; }
+    active++;
+    let released = false; const release = () => { if (!released) { released = true; active--; } };
+    response.writeHead(200, { 'Content-Type': 'audio/ogg' }); response.write(song.subarray(0, 500));
+    holds.set(id, () => { response.end(song.subarray(500)); release(); });
+    response.once('close', () => { if (!response.writableFinished) { hungUp.push(id); setTimeout(release, 30); } });
+  });
+  server.listen(0, '127.0.0.1'); await once(server, 'listening');
+  t.after(() => { server.closeAllConnections(); server.close(); });
+  return { port: server.address().port, requests, hungUp, finish };
+}
+async function skipFixture(t, options) {
+  const f = await portalFixture(t, options);
+  const plugin = await slowPlugin(t);
+  f.node.options = { host: '127.0.0.1', port: plugin.port, authorization: 'lavalink-secret', secure: false };
+  // The bridge's own view of each audio request closing, so no test guesses with a delay.
+  const closes = []; const arrived = [];
+  f.bridge.server.on('request', (request, response) => {
+    const id = new URL(request.url, f.origin).pathname.split('/').pop();
+    arrived.push(id); response.once('close', () => closes.push(id));
+  });
+  const until = async condition => { while (!condition()) await new Promise(resolve => setImmediate(resolve)); };
+  const closed = (id, count = 1) => until(() => closes.filter(seen => seen === id).length >= count);
+  const get = (id, { headers = {}, signal } = {}) => fetch(`${f.origin}/v1/guilds/100/audio/${id}?actorId=200`, { headers: { Authorization: `Bearer ${f.token}`, ...headers }, signal });
+  // A media element that starts a song, hears its first bytes, and is skipped.
+  const skip = async id => {
+    const leaving = new AbortController();
+    const answer = await get(id, { signal: leaving.signal });
+    assert.equal(answer.status, 200);
+    await answer.body.getReader().read();
+    leaving.abort();
+    await closed(id);
+  };
+  return { plugin, get, skip, until, closed, arrived };
+}
+
+test('skipping past songs still loading gives their download slots to the song the listener lands on', async t => {
+  const { plugin, get, skip } = await skipFixture(t);
+  await skip('skipsongaaa'); await skip('skipsongbbb');
+  const landed = await get('skipsongccc');
+  assert.equal(landed.status, 200, 'the song the listener landed on gets a slot instead of a busy answer');
+  plugin.finish('skipsongccc');
+  assert.deepEqual(Buffer.from(await landed.arrayBuffer()), song);
+  // Only the oldest abandoned download was hung up on, so Lavalink can free its own permit.
+  assert.deepEqual(plugin.hungUp, ['skipsongaaa']);
+  // A song abandoned partway was never kept: going back downloads it whole again.
+  const back = await get('skipsongaaa');
+  assert.equal(back.status, 200);
+  plugin.finish('skipsongaaa');
+  assert.deepEqual(Buffer.from(await back.arrayBuffer()), song);
+  assert.equal(plugin.requests.filter(id => id === 'skipsongaaa').length, 2);
+  // Lavalink still held its permit when the landed song first asked, and was asked again.
+  assert.ok(plugin.requests.filter(id => id === 'skipsongccc').length >= 2);
+});
+
+test('only a download nobody holds is abandoned, and that never counts against its source', async () => {
+  const client = { lavalink: { nodeManager: { leastUsedNodes: () => [{ connected: true, options: { host: 'lavalink', port: 2333, authorization: 'x' } }] } } };
+  const aborted = [];
+  // Each song answers with its first bytes and then stalls until the bot hangs up.
+  const fetchImpl = async (url, { signal }) => new Response(new ReadableStream({ start(controller) {
+    controller.enqueue(new Uint8Array(10));
+    signal.addEventListener('abort', () => { aborted.push(new URL(url).pathname.split('/').pop()); controller.error(signal.reason); }, { once: true });
+  } }), { headers: { 'Content-Type': 'audio/ogg' } });
+  const cache = createAudioCache(client, { limits: { trackBytes: 50, cacheBytes: 100, downloads: 2, timeoutMs: 1000 }, fetchImpl });
+  const results = [];
+  const playable = playableAudio(cache, { songOf: () => null, playbackSources: () => [], sourceResult: (url, ok) => results.push([url.slice(-11), ok]) });
+  // An analysis (no signal) keeps its download; a listener's request holds one until it closes.
+  void cache.get('aaaaaaaaaaa').catch(() => {});
+  const listener = new AbortController();
+  const skipped = await playable.get('bbbbbbbbbbb', { signal: listener.signal });
+  assert.throws(() => cache.get('ccccccccccc', { signal: new AbortController().signal }), error => error.status === 429);
+  listener.abort();
+  // A background fetch never takes a slot from anyone.
+  assert.throws(() => cache.get('ddddddddddd', { background: true }), error => error.status === 429);
+  void cache.get('eeeeeeeeeee', { signal: new AbortController().signal }).catch(() => {});
+  assert.equal((await skipped.done.catch(error => error)).code, 'abandoned');
+  assert.deepEqual(aborted, ['bbbbbbbbbbb']);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(results, []);
+  // A song asked for again starts over rather than reusing the partial one.
+  assert.throws(() => cache.get('bbbbbbbbbbb'), error => error.status === 429);
+});
+
+test('a warm-up or a song someone still plays keeps its download when a listener skips', async t => {
+  const { plugin, get, skip, until, closed } = await skipFixture(t);
+  // The next song warms up while nobody listens to it yet, and its probe may give up before it finishes.
+  const giving = new AbortController();
+  const warm = get('warmsongaaa', { headers: { Range: 'bytes=0-0' }, signal: giving.signal }).catch(() => null);
+  await until(() => plugin.requests.includes('warmsongaaa'));
+  giving.abort(); await warm; await closed('warmsongaaa');
+  await skip('skipsongbbb');
+  const landed = await get('skipsongccc');
+  assert.equal(landed.status, 200);
+  const reader = landed.body.getReader(); await reader.read();
+  // Both slots now serve the warm-up and a listener: a further song waits its turn.
+  assert.equal((await get('skipsongddd')).status, 429);
+  assert.deepEqual(plugin.hungUp, ['skipsongbbb']);
+  plugin.finish('warmsongaaa'); plugin.finish('skipsongccc');
+  for (let chunk = await reader.read(); !chunk.done; chunk = await reader.read());
+  const warmed = await get('warmsongaaa', { headers: { Range: 'bytes=0-0' } });
+  assert.equal(warmed.status, 206); await warmed.arrayBuffer();
+  assert.equal(plugin.requests.filter(id => id === 'warmsongaaa').length, 1);
+});
+
+test('a listener who skips while still being authorized leaves no download behind', { timeout: 10_000 }, async t => {
+  let gate = null; let asked = 0;
+  const { plugin, get, until, closed, arrived } = await skipFixture(t, { memberFetch: async () => { if (gate) { asked++; await gate.promise; } } });
+  gate = Promise.withResolvers();
+  const leaving = [new AbortController(), new AbortController()];
+  const gone = ['skipsongaaa', 'skipsongbbb'].map((id, index) => get(id, { signal: leaving[index].signal }).catch(() => null));
+  // Both requests reached the bridge and the member lookup they wait on is held.
+  await until(() => asked >= 1 && arrived.includes('skipsongaaa') && arrived.includes('skipsongbbb'));
+  await new Promise(resolve => setImmediate(resolve));
+  for (const controller of leaving) controller.abort();
+  await Promise.all(gone); await closed('skipsongaaa'); await closed('skipsongbbb');
+  gate.resolve(); gate = null;
+  const landed = await get('skipsongccc');
+  assert.equal(landed.status, 200, 'requests that left during authorization hold no slot');
+  plugin.finish('skipsongccc');
+  assert.deepEqual(Buffer.from(await landed.arrayBuffer()), song);
+  await until(() => plugin.requests.includes('skipsongccc'));
+  assert.deepEqual(plugin.requests, ['skipsongccc'], 'nothing was downloaded for the listener who left');
+});

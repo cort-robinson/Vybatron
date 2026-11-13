@@ -16,6 +16,7 @@ import {
   getMessageLink,
   refresh,
   requestControllerRefresh,
+  withControllerLink,
 } from './player-controller.js';
 import {
   goBack,
@@ -354,7 +355,6 @@ export async function handleModalSubmit(interaction) {
   if (result.error) return interaction.editReply(textPayload(result.error));
 
   await directControlPresentation(interaction, player, { presence: true });
-  const link = getMessageLink(interaction.guildId);
-  const suffix = link ? ` Open player: ${link}` : '';
-  return interaction.editReply(textPayload(`Jumped to ${formatDuration(result.position)}.${suffix}`));
+  // Same-channel replies carry no link: the controller is right there, and its id may be mid-replacement.
+  return interaction.editReply(textPayload(withControllerLink(`Jumped to ${formatDuration(result.position)}.`, interaction, player)));
 }

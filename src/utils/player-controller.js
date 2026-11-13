@@ -275,9 +275,16 @@ export function getMessageLink(guildId) {
   return `https://discord.com/channels/${record.guildId}/${record.channelId}/${record.messageId}`;
 }
 
+// Replies whose controller refresh did not settle in time: its message id may be
+// stale (a deleted controller is only replaced during the refresh), so no link.
+const unlinked = new WeakSet();
+export function omitControllerLink(interaction) {
+  if (interaction && typeof interaction === 'object') unlinked.add(interaction);
+}
+
 export function withControllerLink(content, interaction, player) {
   const link = getMessageLink(interaction?.guildId);
-  if (!link || player?.textChannelId === interaction?.channelId) return content;
+  if (!link || player?.textChannelId === interaction?.channelId || unlinked.has(interaction)) return content;
   return `${content} Open player: ${link}`;
 }
 

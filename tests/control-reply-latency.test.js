@@ -5,7 +5,8 @@ import { createOrUpdate, resetControllers } from '../src/utils/player-controller
 import { resetVoiceStatusWarnings } from '../src/utils/voice-status.js';
 import { resetPresentationUpdates, presentationWritePending } from '../src/utils/presentation-updates.js';
 import { guardedMutation, commandMutationPolicy, componentMutationPolicy } from '../src/utils/requests.js';
-import { handleMessageComponent } from '../src/utils/components.js';
+import { handleMessageComponent, handleModalSubmit } from '../src/utils/components.js';
+import { trackIdentity } from '../src/utils/presentation.js';
 import { execute as pause } from '../src/commands/pause.js';
 import { execute as resume } from '../src/commands/resume.js';
 import { execute as loop } from '../src/commands/loop.js';
@@ -175,4 +176,42 @@ test('a reply from another channel links to the replacement of a deleted control
   const text = replies[0].content ?? JSON.stringify(replies[0]);
   assert.match(text, /Open player: \S+\/400\/replacement/);
   assert.doesNotMatch(text, /\/controller\b/);
+});
+
+test('a reply from another channel stops waiting for a controller edit that never settles, and drops the link', { timeout: 8000 }, async t => {
+  const f = await portalFixture(t);
+  const d = heldDiscord(f);
+  await createOrUpdate(f.client, f.player).catch(() => {});
+  d.release(); await settled(); d.hold();
+
+  const first = slash(f, pause, 'pause', { channelId: '401' });
+  await first.done;
+  assert.equal(f.player.paused, true);
+  const text = first.replies[0].content ?? JSON.stringify(first.replies[0]);
+  assert.match(text, /paused/i);
+  assert.doesNotMatch(text, /Open player/, 'an unconfirmed controller link is left out');
+  assert.equal(presentationWritePending('controller:100'), true, 'the edit is still held');
+  // The guild lane is free again: the next control runs while the edit is still held.
+  const second = slash(f, resume, 'resume');
+  await second.done;
+  assert.equal(f.player.paused, false);
+
+  d.release(); await settled();
+  assert.equal(author(d.edits.at(-1)), 'Now Playing');
+});
+
+test('Seek from the controller channel replies without a link to a controller that may be mid-replacement', { timeout: 3000 }, async t => {
+  const f = await portalFixture(t);
+  const d = heldDiscord(f);
+  await createOrUpdate(f.client, f.player).catch(() => {});
+  d.release(); await settled(); d.hold();
+
+  const { interaction, replies } = native(f, { customId: `player:v1:seek-submit:${trackIdentity(f.player.queue.current)}` });
+  interaction.isModalSubmit = () => true;
+  interaction.fields = { getTextInputValue: () => '0:05' };
+  await guardedMutation(interaction, handleModalSubmit, componentMutationPolicy(interaction.customId));
+  const text = replies.at(-1).content ?? JSON.stringify(replies.at(-1));
+  assert.match(text, /Jumped to/);
+  assert.doesNotMatch(text, /Open player/);
+  d.release(); await settled();
 });

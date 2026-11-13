@@ -1,4 +1,4 @@
-import { refresh, requestControllerRefresh } from './player-controller.js';
+import { omitControllerLink, refresh, requestControllerRefresh } from './player-controller.js';
 import { updateVoiceStatus } from './voice-status.js';
 import { updateTrackPresence } from './presence.js';
 import { commandTimingSpan } from '../portal/timing.js';
@@ -104,8 +104,11 @@ export function requestRefresh(client, player, { controller = true, voice = fals
 //
 // The one exception is a native reply sent from another channel: it links to
 // the controller message, and a deleted controller only gets its replacement
-// (and new message id) during the refresh, so that reply waits for it.
-export async function directControlPresentation(interaction, player, { voice = false, presence = false } = {}) {
+// (and new message id) during the refresh, so that reply waits for it. The wait
+// is bounded: an edit that never settles must not hold the guild lane, so after
+// `linkWaitMs` the reply goes out without the link and the writer carries on.
+export const CONTROLLER_LINK_WAIT_MS = 2000;
+export async function directControlPresentation(interaction, player, { voice = false, presence = false, linkWaitMs = CONTROLLER_LINK_WAIT_MS } = {}) {
   const linksController = typeof interaction.portalRecheck !== 'function'
     && Boolean(interaction.channelId) && player?.textChannelId !== interaction.channelId;
   if (!linksController) {
@@ -114,7 +117,12 @@ export async function directControlPresentation(interaction, player, { voice = f
   }
   if (!presentationPlayerActive(interaction.client, player)) return;
   requestRefresh(interaction.client, player, { controller: false, voice, presence });
-  await commandTimingSpan('presentation', () => refresh(interaction.client, player));
+  let timer;
+  const late = new Promise(resolve => { timer = setTimeout(resolve, linkWaitMs, 'late'); });
+  // The scheduler observes a failed render; here it only means the link is unknown.
+  const rendered = commandTimingSpan('presentation', () => refresh(interaction.client, player)).catch(() => 'late');
+  try { if (await Promise.race([rendered, late]) === 'late') omitControllerLink(interaction); }
+  finally { clearTimeout(timer); }
 }
 
 export function getPresentationDiagnostics() {

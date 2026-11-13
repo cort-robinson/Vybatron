@@ -343,7 +343,6 @@ class PortalReleasePolicyTests(unittest.TestCase):
             self.deployer.restore_data(self.deployer.bot_volume(), name)
 
 
-@unittest.skipIf(sys.platform == 'win32', 'the maintenance lock uses fcntl')
 def release_dir(root, sha, mtime):
     path = root / sha
     (path / 'ops').mkdir(parents=True)
@@ -351,6 +350,19 @@ def release_dir(root, sha, mtime):
     (path / '.portal-release.json').write_text(json.dumps({'revision': sha}))
     os.utime(path, (mtime, mtime))
     return path
+
+
+def container(index, mounts=(), working_dir=None, config_files=None):
+    """A complete `docker inspect` entry, as Docker returns it."""
+    labels = {}
+    if working_dir is not None:
+        labels['com.docker.compose.project.working_dir'] = str(working_dir)
+    if config_files is not None:
+        labels['com.docker.compose.project.config_files'] = ','.join(str(f) for f in config_files)
+    return {'Id': format(index, 'x').rjust(64, '0'),
+            'Mounts': [{'Type': 'bind', 'Source': str(source), 'Destination': '/m' + str(n)}
+                       for n, source in enumerate(mounts)],
+            'Config': {'Labels': labels or None}}
 
 
 class ReleasePruneTests(unittest.TestCase):
@@ -366,8 +378,11 @@ class ReleasePruneTests(unittest.TestCase):
         for index, sha in enumerate(self.shas):
             release_dir(self.releases, sha, 1_000_000 + index * 100)
         self.current = self.releases / self.shas[-1]
-        self.previous_revision = self.shas[-2]
-        self.containers = []
+        self.revisions = {OLD: self.shas[-2], WEB: self.shas[-2]}
+        # The just-released bot was composed from the current release.
+        self.containers = [container(1, working_dir=self.current,
+                                     config_files=[self.current / 'docker-compose.yml'])]
+        self.images = None
         self.failing = None
         self.deployer = PortalDeployer(self.current, self.root / 'private', env_file=self.root / 'x.env',
             portal_env=self.root / 'p.env', runner=self.host, sleep=lambda _: None)
@@ -376,19 +391,27 @@ class ReleasePruneTests(unittest.TestCase):
         if self.failing and self.failing(args):
             raise DeploymentError('deployment_command_failed')
         if args[:2] == ['docker', 'ps']:
-            return '\n'.join(str(i) for i in range(len(self.containers)))
+            return '\n'.join(item['Id'] if isinstance(item, dict) and 'Id' in item else format(n + 1, 'x').rjust(64, '0')
+                             for n, item in enumerate(self.containers))
         if args[:2] == ['docker', 'inspect']:
             return json.dumps(self.containers)
         if args[:3] == ['docker', 'image', 'inspect']:
-            revision = self.previous_revision if args[3] == OLD else 'f' * 40
-            return json.dumps([{'Id': args[3], 'Config': {'Labels': {'org.opencontainers.image.revision': revision}}}])
+            if self.images is not None:
+                return json.dumps(self.images(args[3]))
+            labels = {'org.opencontainers.image.revision': self.revisions[args[3]]} if args[3] in self.revisions else {}
+            return json.dumps([{'Id': args[3], 'Config': {'Labels': labels}}])
         raise AssertionError('Unexpected external command: ' + str(args))
 
-    def prune(self, keep=module.KEEP_RELEASES):
-        return self.deployer.prune_releases({'previous_images': {'bot': OLD, 'portal': None}}, keep)
+    def prune(self, keep=module.KEEP_RELEASES, previous=None):
+        journal = {'previous_images': previous if previous is not None else {'bot': OLD, 'portal': WEB}}
+        return self.deployer.prune_releases(journal, keep)
 
     def remaining(self):
         return sorted(p.name for p in self.releases.iterdir())
+
+    def assert_skipped(self, result, reason):
+        self.assertEqual(result, {'status': 'skipped', 'reason': reason})
+        self.assertEqual(len([p for p in self.releases.iterdir() if p.name in self.shas]), 6)
 
     def test_keeps_the_newest_releases_and_removes_older_ones(self):
         result = self.prune()
@@ -400,20 +423,102 @@ class ReleasePruneTests(unittest.TestCase):
     def test_never_removes_the_running_release_or_the_rollback_target(self):
         # Old mtimes: a retried staging keeps its original directory.
         os.utime(self.current, (1, 1))
-        self.previous_revision = self.shas[0]
+        self.revisions = {OLD: self.shas[0], WEB: self.shas[1]}
         result = self.prune(keep=1)
         self.assertEqual(result['status'], 'ok')
-        self.assertEqual(self.remaining(), sorted([self.shas[0], self.shas[-2], self.shas[-1]]))
+        self.assertEqual(self.remaining(), sorted([self.shas[0], self.shas[1], self.shas[-2], self.shas[-1]]))
+
+    def test_a_first_portal_release_has_no_previous_portal_image(self):
+        self.assertEqual(self.prune(previous={'bot': OLD, 'portal': None})['status'], 'ok')
+
+    def test_a_rollback_image_without_a_revision_label_skips_pruning(self):
+        self.revisions = {OLD: self.shas[0]}  # The portal image has no label.
+        self.assert_skipped(self.prune(), 'rollback_revision_unknown')
+
+    def test_a_malformed_rollback_revision_label_skips_pruning(self):
+        for label in ['', 'main', self.shas[0][:-1], 'A' * 40, 'a' * 40 + '\n', 7, None]:
+            self.revisions = {OLD: self.shas[-2], WEB: label}
+            self.assert_skipped(self.prune(), 'rollback_revision_unknown')
+
+    def test_an_unexpected_image_inspection_skips_pruning(self):
+        responses = [[], [{}], [{'Id': OLD}], {'Id': OLD}, [{'Id': 'sha256:' + 'e' * 64, 'Config': {'Labels': {}}}],
+                     [{'Id': OLD, 'Config': {'Labels': {'org.opencontainers.image.revision': self.shas[0]}}}] * 2]
+        for response in responses:
+            self.images = lambda image, response=response: response
+            self.assert_skipped(self.prune(previous={'bot': OLD, 'portal': None}), 'rollback_revision_unknown')
+
+    def test_a_missing_or_malformed_rollback_record_skips_pruning(self):
+        for previous in [{}, {'portal': WEB}, {'bot': None, 'portal': WEB}, {'bot': 'latest', 'portal': WEB},
+                         {'bot': OLD, 'portal': 'latest'}, ['bot']]:
+            self.assert_skipped(self.prune(previous=previous), 'rollback_revision_unknown')
+        self.assert_skipped(self.deployer.prune_releases(None), 'rollback_revision_unknown')
 
     def test_keeps_any_release_a_container_still_mounts_or_was_composed_from(self):
-        self.containers = [
-            {'Mounts': [{'Source': str(self.releases / self.shas[1] / 'lavalink' / 'application.yml')}], 'Config': {'Labels': {}}},
-            {'Mounts': [], 'Config': {'Labels': {
-                'com.docker.compose.project.working_dir': str(self.releases / self.shas[0]),
-                'com.docker.compose.project.config_files': '/root/Vybertron/docker-compose.yml,' + str(self.releases / self.shas[2] / 'docker-compose.portal.yml')}}},
+        self.containers += [
+            container(2, mounts=[self.releases / self.shas[1] / 'lavalink' / 'application.yml']),
+            container(3, working_dir=self.releases / self.shas[0],
+                      config_files=['/root/Vybertron/docker-compose.yml', self.releases / self.shas[2] / 'docker-compose.portal.yml']),
         ]
-        self.prune(keep=1)
+        self.assertEqual(self.prune(keep=1)['status'], 'ok')
         self.assertEqual(self.remaining(), sorted([self.shas[0], self.shas[1], self.shas[2], self.shas[-2], self.shas[-1]]))
+
+    def test_partial_container_inspection_skips_pruning(self):
+        good = container(2, mounts=[self.releases / self.shas[0]])
+        partial = [
+            {}, {'Id': good['Id']}, {'Id': good['Id'], 'Mounts': []}, {'Id': good['Id'], 'Config': {}},
+            {**good, 'Mounts': None}, {**good, 'Mounts': {}}, {**good, 'Config': None}, {**good, 'Config': {}},
+            {**good, 'Config': {'Labels': []}}, {**good, 'Mounts': [{}]}, {**good, 'Mounts': [{'Type': 'bind'}]},
+            {**good, 'Mounts': [{'Type': 'bind', 'Source': 7}]}, {**good, 'Mounts': [{'Type': 'bind', 'Source': ''}]},
+            {**good, 'Mounts': [{'Type': 'bind', 'Source': 'relative/path'}]}, {**good, 'Mounts': ['x']},
+            {**good, 'Config': {'Labels': {'com.docker.compose.project.working_dir': 7}}},
+            {**good, 'Config': {'Labels': {'com.docker.compose.project.working_dir': 'releases/x'}}},
+            {**good, 'Id': 'short'}, 'not a container',
+        ]
+        for entry in partial:
+            self.containers = [self.containers[0], entry]
+            self.assert_skipped(self.prune(keep=1), 'container_state_unknown')
+
+    def test_inspection_must_answer_for_exactly_the_listed_containers(self):
+        listed = [self.containers[0], container(2, mounts=[self.releases / self.shas[0]])]
+        for answer in [listed[:1], [listed[0], listed[0]], [listed[0], container(9)], listed + [container(3)], {}]:
+            self.containers = listed
+            original = self.host
+
+            def host(args, answer=answer, original=original, **kwargs):
+                return json.dumps(answer) if args[:2] == ['docker', 'inspect'] else original(args, **kwargs)
+            self.deployer.runner = host
+            self.assert_skipped(self.prune(keep=1), 'container_state_unknown')
+        # Container IDs that are not full IDs, or are listed twice.
+        for listing in ['not-an-id', listed[0]['Id'] + '\n' + listed[0]['Id']]:
+            self.deployer.runner = lambda args, listing=listing, **kwargs: (
+                listing if args[:2] == ['docker', 'ps'] else self.host(args, **kwargs))
+            self.assert_skipped(self.prune(keep=1), 'container_state_unknown')
+
+    def test_tmpfs_and_volume_mounts_without_paths_are_accepted(self):
+        entry = container(2)
+        entry['Mounts'] = [{'Type': 'tmpfs', 'Source': '', 'Destination': '/tmp'},
+                           {'Type': 'volume', 'Name': 'data', 'Source': '/var/lib/docker/volumes/data/_data', 'Destination': '/d'}]
+        self.containers.append(entry)
+        self.assertEqual(self.prune()['status'], 'ok')
+
+    def test_no_containers_or_an_unreferenced_current_release_skips_pruning(self):
+        self.containers = []
+        self.assert_skipped(self.prune(keep=1), 'current_release_not_in_use')
+        self.containers = [container(1, working_dir='/root/Vybertron')]
+        self.assert_skipped(self.prune(keep=1), 'current_release_not_in_use')
+
+    def test_a_mount_of_the_releases_directory_or_an_ancestor_skips_pruning(self):
+        for source in [self.releases, self.releases.parent, Path('/')]:
+            self.containers = [self.containers[0], container(2, mounts=[source])]
+            self.assert_skipped(self.prune(keep=1), 'container_mounts_releases_directory')
+        self.containers = [self.containers[0], container(2, working_dir=self.releases)]
+        self.assert_skipped(self.prune(keep=1), 'container_mounts_releases_directory')
+
+    def test_a_mount_through_a_symlinked_ancestor_is_still_an_ancestor(self):
+        alias = self.root / 'alias'
+        alias.symlink_to(self.root, target_is_directory=True)
+        self.containers = [self.containers[0], container(2, mounts=[alias])]
+        self.assert_skipped(self.prune(keep=1), 'container_mounts_releases_directory')
 
     def test_never_follows_or_removes_anything_outside_the_releases_directory(self):
         outside = self.root / 'outside'
@@ -462,18 +567,34 @@ class ReleasePruneTests(unittest.TestCase):
     def test_tolerates_half_written_and_missing_directories(self):
         half = self.releases / self.shas[0]
         (half / '.portal-release.json').unlink()
-        (self.releases / '.pruning-old-1').mkdir()  # Left by an interrupted prune.
+        tombstone = self.releases / ('.pruning-' + self.shas[0] + '-1700000000000000000')
+        tombstone.mkdir()  # Left by an interrupted prune.
         self.assertEqual(self.prune()['status'], 'ok')
-        self.assertNotIn('.pruning-old-1', self.remaining())
+        self.assertNotIn(tombstone.name, self.remaining())
         shutil.rmtree(self.releases)
         self.assertEqual(self.prune()['status'], 'failed')
+
+    def test_tombstone_cleanup_honours_container_references_and_exact_names(self):
+        referenced = self.releases / ('.pruning-' + self.shas[0] + '-1700000000000000001')
+        stale = self.releases / ('.pruning-' + self.shas[1] + '-1700000000000000002')
+        lookalikes = [self.releases / name for name in [
+            '.pruning-old-1', '.pruning-' + self.shas[0], '.pruning-' + self.shas[0] + '-',
+            '.pruning-' + self.shas[0] + '-12x', '.pruning-' + 'A' * 40 + '-1', '.pruning-' + 'a' * 39 + '-1',
+            '.pruning-' + self.shas[0] + '-1-extra']]
+        for path in [referenced, stale, *lookalikes]:
+            path.mkdir()
+        self.containers.append(container(2, mounts=[referenced / 'lavalink']))
+        result = self.prune()
+        self.assertEqual(result['status'], 'ok')
+        self.assertTrue(referenced.is_dir())
+        self.assertFalse(stale.exists())
+        self.assertTrue(all(path.is_dir() for path in lookalikes))
 
     def test_an_unreadable_container_or_image_state_removes_nothing(self):
         for failing in ('ps', 'inspect', 'image'):
             self.failing = lambda args, failing=failing: args[1] == failing
-            self.containers = [{'Mounts': []}]
             result = self.prune()
-            self.assertEqual(result, {'status': 'failed', 'error': 'deployment_command_failed'})
+            self.assertEqual(result['status'], 'skipped')
             self.assertEqual(len(self.remaining()), 6)
 
     def test_a_failed_removal_is_reported_without_raising(self):
@@ -500,28 +621,37 @@ class ReleasePruneDeployTests(unittest.TestCase):
         self.releases = releases
         self.harness.label = SHA
         original = self.harness.run
+        self.prune_error = False
 
         def run(args, **kwargs):
             if args[:3] == ['docker', 'ps', '--all'] and '--quiet' in args:
                 if self.prune_error:
                     raise DeploymentError('deployment_command_failed')
-                return ''
+                return container(1)['Id']
+            if args[:2] == ['docker', 'inspect'] and args[-1] == container(1)['Id']:
+                return json.dumps([container(1, working_dir=self.repo)])
+            if args[:3] == ['docker', 'image', 'inspect'] and args[3] == OLD:
+                return json.dumps([{'Id': OLD, 'Config': {'Labels': {'org.opencontainers.image.revision': '2' * 40}}}])
             return original(args, **kwargs)
-        self.prune_error = False
         self.deployer = PortalDeployer(self.repo, self.state, env_file=self.env,
             portal_env=self.portal_env, runner=run, sleep=lambda _: None)
 
     def test_verified_release_prunes_older_sources(self):
         self.assertEqual(self.deploy(), 'deployed')
         self.assertEqual(self.deployer.prune_result['status'], 'ok')
-        self.assertEqual(sorted(p.name for p in self.releases.iterdir()), sorted([SHA, '3' * 40, '4' * 40]))
+        self.assertEqual(sorted(p.name for p in self.releases.iterdir()), sorted([SHA, '2' * 40, '3' * 40, '4' * 40]))
 
     def test_pruning_failure_does_not_fail_the_release(self):
         self.prune_error = True
         self.assertEqual(self.deploy(), 'deployed')
-        self.assertEqual(self.deployer.prune_result, {'status': 'failed', 'error': 'deployment_command_failed'})
+        self.assertEqual(self.deployer.prune_result, {'status': 'skipped', 'reason': 'container_state_unknown'})
         self.assertEqual(len(list(self.releases.iterdir())), 5)
         self.assertEqual(json.loads((self.state / 'portal-deployment.json').read_text())['phase'], 'complete')
+
+    def test_an_unexpected_pruning_error_does_not_fail_the_release(self):
+        with unittest.mock.patch.object(PortalDeployer, '_prune_releases', side_effect=RuntimeError()):
+            self.assertEqual(self.deploy(), 'deployed')
+        self.assertEqual(self.deployer.prune_result, {'status': 'failed', 'error': 'RuntimeError'})
 
     def test_a_failed_release_prunes_nothing(self):
         self.harness.fail = 'portal'
@@ -531,6 +661,20 @@ class ReleasePruneDeployTests(unittest.TestCase):
         self.assertEqual(len(list(self.releases.iterdir())), 5)
 
 
+class WindowsSkipTests(unittest.TestCase):
+    def test_only_the_fcntl_lock_tests_are_skipped_on_windows(self):
+        load = importlib.util.spec_from_file_location('portal_deploy_test_win32', Path(__file__))
+        copy = importlib.util.module_from_spec(load)
+        with unittest.mock.patch.object(sys, 'platform', 'win32'):
+            load.loader.exec_module(copy)
+        self.assertTrue(getattr(copy.MaintenanceLockTests, '__unittest_skip__', False))
+        self.assertFalse(getattr(copy.ReleasePruneTests, '__unittest_skip__', False))
+        self.assertEqual(copy.release_dir.__name__, 'release_dir')
+        self.assertFalse(hasattr(copy.release_dir, '__wrapped__'))
+        self.assertFalse(getattr(copy.release_dir, '__unittest_skip__', False))
+
+
+@unittest.skipIf(sys.platform == 'win32', 'the maintenance lock uses fcntl')
 class MaintenanceLockTests(unittest.TestCase):
     """The 5-minute recovery check briefly holds the same maintenance lock."""
 

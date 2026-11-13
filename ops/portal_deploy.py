@@ -32,6 +32,13 @@ LOCK_TIMEOUT, LOCK_POLL = 900, 5
 KEEP_RELEASES = 3
 REVISION_LABEL = 'org.opencontainers.image.revision'
 COMPOSE_LABELS = ('com.docker.compose.project.working_dir', 'com.docker.compose.project.config_files')
+CONTAINER_ID = re.compile(r'^[a-f0-9]{64}$')
+# Exactly the name _prune_releases gives a release while removing it.
+TOMBSTONE = re.compile(r'^\.pruning-[a-f0-9]{40}-\d{1,20}$')
+
+
+class PruneSkipped(Exception):
+    """What is in use can't be established exactly, so nothing is removed."""
 
 
 class PortalDeployer(Deployer):
@@ -287,32 +294,78 @@ class PortalDeployer(Deployer):
         return status
 
     def referenced_paths(self):
-        """Every host path any container (running or stopped) still uses."""
-        ids = self.command(['docker', 'ps', '--all', '--quiet', '--no-trunc']).split()
-        if not ids:
-            return set()
-        containers = json.loads(self.command(['docker', 'inspect', *ids]))
-        if not isinstance(containers, list) or len(containers) != len(ids):
-            raise DeploymentError('portal_prune_container_inspection_failed')
-        paths = set()
+        """Every host path any container (running or stopped) uses.
+
+        Raises PruneSkipped unless Docker answered for exactly the listed
+        containers with every field the reference check reads.
+        """
+        try:
+            ids = self.command(['docker', 'ps', '--all', '--quiet', '--no-trunc']).split()
+            if not all(CONTAINER_ID.fullmatch(value) for value in ids) or len(set(ids)) != len(ids):
+                raise PruneSkipped('container_state_unknown')
+            containers = json.loads(self.command(['docker', 'inspect', *ids])) if ids else []
+        except (DeploymentError, ValueError):
+            raise PruneSkipped('container_state_unknown') from None
+        if (not isinstance(containers, list) or len(containers) != len(ids)
+                or not all(isinstance(item, dict) for item in containers)
+                or sorted(str(item.get('Id')) for item in containers) != sorted(ids)):
+            raise PruneSkipped('container_state_unknown')
+        paths = []
         for container in containers:
-            for mount in container.get('Mounts') or []:
-                if mount.get('Source'):
-                    paths.add(mount['Source'])
-            labels = (container.get('Config') or {}).get('Labels') or {}
+            mounts, config = container.get('Mounts'), container.get('Config')
+            if not isinstance(mounts, list) or not isinstance(config, dict) or 'Labels' not in config:
+                raise PruneSkipped('container_state_unknown')
+            for mount in mounts:
+                source = mount.get('Source') if isinstance(mount, dict) else None
+                if not isinstance(mount, dict) or not isinstance(mount.get('Type'), str) or not isinstance(source, str):
+                    raise PruneSkipped('container_state_unknown')
+                if not source and mount['Type'] == 'tmpfs':
+                    continue  # A tmpfs has no host path.
+                paths.append(source)
+            labels = config['Labels']
+            if labels is None:
+                continue  # Docker reports no labels as null.
+            if not isinstance(labels, dict):
+                raise PruneSkipped('container_state_unknown')
             for key in COMPOSE_LABELS:
-                paths.update(value for value in str(labels.get(key) or '').split(',') if value)
-        return paths
+                value = labels.get(key)
+                if value is None:
+                    continue
+                if not isinstance(value, str):
+                    raise PruneSkipped('container_state_unknown')
+                paths.extend(value.split(','))
+        # Every reference must be a usable absolute path; anything else is doubt.
+        if not all(value and os.path.isabs(value) and '\0' not in value for value in paths):
+            raise PruneSkipped('container_state_unknown')
+        return set(paths)
 
     def image_revision(self, image):
-        info = json.loads(self.command(['docker', 'image', 'inspect', image]))
-        revision = ((info[0].get('Config') or {}).get('Labels') or {}).get(REVISION_LABEL, '')
-        return revision if SHA.fullmatch(revision) else None
+        """The exact revision an image was built from, or PruneSkipped."""
+        if not isinstance(image, str) or not IMAGE.fullmatch(image):
+            raise PruneSkipped('rollback_revision_unknown')
+        try:
+            info = json.loads(self.command(['docker', 'image', 'inspect', image]))
+        except (DeploymentError, ValueError):
+            raise PruneSkipped('rollback_revision_unknown') from None
+        if (not isinstance(info, list) or len(info) != 1 or not isinstance(info[0], dict)
+                or info[0].get('Id') != image or not isinstance(info[0].get('Config'), dict)
+                or not isinstance(info[0]['Config'].get('Labels'), dict)):
+            raise PruneSkipped('rollback_revision_unknown')
+        revision = info[0]['Config']['Labels'].get(REVISION_LABEL)
+        if not isinstance(revision, str) or not SHA.fullmatch(revision):
+            raise PruneSkipped('rollback_revision_unknown')
+        return revision
 
     def prune_releases(self, journal, keep=KEEP_RELEASES):
-        """Remove old releases/<sha> source directories. Returns a status, never raises."""
+        """Remove old releases/<sha> source directories. Returns a status, never raises.
+
+        Pruning is optional housekeeping: whenever what is in use can't be
+        established exactly, it removes nothing and reports why.
+        """
         try:
             return self._prune_releases(journal, keep)
+        except PruneSkipped as skipped:
+            return {'status': 'skipped', 'reason': str(skipped)}
         except Exception as error:
             code = str(error) if isinstance(error, DeploymentError) else type(error).__name__
             return {'status': 'failed', 'error': code}
@@ -323,24 +376,43 @@ class PortalDeployer(Deployer):
         # checkout such as /root/Vybertron has no sibling releases to manage.
         if root.name != 'releases' or not SHA.fullmatch(self.repo.name) or root.is_symlink():
             return {'status': 'skipped', 'reason': 'not_a_release_directory'}
-        root = root.resolve(strict=True)
+        resolved = root.resolve(strict=True)
         protected = {self.repo.name}
-        # The rollback target: the release whose images ran before this one.
+        # The rollback target: the releases whose images ran before this one.
+        # The bot always ran; a portal image is absent only on the first
+        # portal release. Any other doubt about either revision skips pruning.
+        previous = journal.get('previous_images') if isinstance(journal, dict) else None
+        if not isinstance(previous, dict) or previous.get('bot') is None:
+            raise PruneSkipped('rollback_revision_unknown')
         for name in ('bot', 'portal'):
-            image = (journal.get('previous_images') or {}).get(name)
-            if image:
-                revision = self.image_revision(image)
-                if revision:
-                    protected.add(revision)
+            if name == 'portal' and previous.get('portal') is None:
+                continue
+            protected.add(self.image_revision(previous.get(name)))
+        roots = {Path(os.path.abspath(root)), resolved}
+        referenced = set()
         for value in self.referenced_paths():
-            for path in {Path(value), Path(os.path.realpath(value))}:
-                if path.is_absolute() and path.is_relative_to(root) and path != root:
-                    protected.add(path.relative_to(root).parts[0])
-        releases = []
-        for entry in root.iterdir():
-            # Skip anything Deploy did not create: in-progress *.tmp staging,
-            # symlinks (which could point outside) and plain files.
-            if not SHA.fullmatch(entry.name) or entry.is_symlink() or not entry.is_dir():
+            for path in {Path(os.path.abspath(value)), Path(os.path.realpath(value))}:
+                for base in roots:
+                    if base == path or base.is_relative_to(path):
+                        # A mount of releases/ or above reaches every release.
+                        raise PruneSkipped('container_mounts_releases_directory')
+                    if path.is_relative_to(base):
+                        referenced.add(path.relative_to(base).parts[0])
+        # The just-verified bot and portal were composed from this directory.
+        # If no container says so, the references aren't what this code expects.
+        if self.repo.name not in referenced:
+            raise PruneSkipped('current_release_not_in_use')
+        protected |= referenced
+        releases, tombstones = [], []
+        for entry in resolved.iterdir():
+            # Skip anything Deploy or this pruning did not create: in-progress
+            # *.tmp staging, symlinks (which could point outside), plain files.
+            if entry.is_symlink() or not entry.is_dir():
+                continue
+            if TOMBSTONE.fullmatch(entry.name):
+                tombstones.append(entry)
+                continue
+            if not SHA.fullmatch(entry.name):
                 continue
             try:
                 releases.append((entry.lstat().st_mtime, entry))
@@ -349,21 +421,22 @@ class PortalDeployer(Deployer):
         releases.sort(key=lambda item: (item[0], item[1].name), reverse=True)
         protected.update(entry.name for _, entry in releases[:keep])
         removed, failed = [], []
-        stale = [entry for entry in root.iterdir() if entry.name.startswith('.pruning-')]
         for _, entry in releases:
             if entry.name in protected:
                 continue
             # Rename first, so an interrupted removal never leaves a partial
             # releases/<sha> that a later Deploy of that SHA would trust.
-            target = root / ('.pruning-' + entry.name + '-' + str(time.time_ns()))
+            target = resolved / ('.pruning-' + entry.name + '-' + str(time.time_ns()))
             try:
-                self.remove_inside(root, entry, rename_to=target)
+                self.remove_inside(resolved, entry, rename_to=target)
                 removed.append(entry.name)
             except Exception:
                 failed.append(entry.name)
-        for entry in stale:
+        for entry in tombstones:
+            if entry.name in protected:
+                continue  # A container still uses this leftover; keep it.
             with contextlib.suppress(Exception):
-                self.remove_inside(root, entry)
+                self.remove_inside(resolved, entry)
         result = {'status': 'failed' if failed else 'ok', 'kept': sorted(protected & {e.name for _, e in releases}),
                   'removed': sorted(removed)}
         if failed:

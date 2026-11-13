@@ -423,7 +423,9 @@ target), and any release that a container on the host still mounts or was
 composed from (`com.docker.compose.project.*` labels). It only touches
 directories named by a full SHA directly under `releases/`; it skips symlinks,
 in-progress `*.tmp` staging and other files, never follows a link out of the
-directory, and renames a release to `.pruning-*` before removing it so an
+directory, and works through one open handle on `releases/`, so swapping that
+folder for a symlink mid-run can't redirect a removal. It renames a release to
+`.pruning-*` before removing it so an
 interrupted removal never leaves a partial `releases/SHA` behind, and it clears
 only leftovers with exactly that generated name that no container uses. Pruning is
 optional housekeeping, so it removes nothing and reports `"status": "skipped"` with
@@ -431,9 +433,11 @@ a `reason` when what is in use can't be established exactly:
 `rollback_revision_unknown` (a previous bot or portal image is missing, or its
 revision label is missing or malformed), `container_state_unknown` (container
 listing or inspection failed, was partial, or had missing or malformed mounts or
-labels), `container_mounts_releases_directory` (a container mounts `releases/` or a
+labels; a label that is present must be text), `container_mounts_releases_directory` (a container mounts `releases/` or a
 folder above it, which reaches every release) or `current_release_not_in_use` (no
-container references the release just deployed). A pruning failure is also reported
+container references the release just deployed), `releases_directory_changed`
+(`releases/` was replaced while pruning ran) or `platform_cannot_prune_safely`
+(this Python can't remove a folder through a directory handle). A pruning failure is also reported
 in the status line and never fails the release. A manual release from a checkout outside
 `releases/` (such as `/root/Vybertron`) prunes nothing. Images, data snapshots and
 command backups are not pruned. To redeploy a removed SHA, stage its source again.

@@ -362,7 +362,7 @@ def container(index, mounts=(), working_dir=None, config_files=None):
     return {'Id': format(index, 'x').rjust(64, '0'),
             'Mounts': [{'Type': 'bind', 'Source': str(source), 'Destination': '/m' + str(n)}
                        for n, source in enumerate(mounts)],
-            'Config': {'Labels': labels or None}}
+            'Config': {'Labels': labels}}
 
 
 class ReleasePruneTests(unittest.TestCase):
@@ -447,6 +447,10 @@ class ReleasePruneTests(unittest.TestCase):
             self.images = lambda image, response=response: response
             self.assert_skipped(self.prune(previous={'bot': OLD, 'portal': None}), 'rollback_revision_unknown')
 
+    def test_a_missing_portal_rollback_field_skips_pruning(self):
+        # release() always records 'portal', as None only before the first portal release.
+        self.assert_skipped(self.prune(previous={'bot': OLD}), 'rollback_revision_unknown')
+
     def test_a_missing_or_malformed_rollback_record_skips_pruning(self):
         for previous in [{}, {'portal': WEB}, {'bot': None, 'portal': WEB}, {'bot': 'latest', 'portal': WEB},
                          {'bot': OLD, 'portal': 'latest'}, ['bot']]:
@@ -477,6 +481,32 @@ class ReleasePruneTests(unittest.TestCase):
         for entry in partial:
             self.containers = [self.containers[0], entry]
             self.assert_skipped(self.prune(keep=1), 'container_state_unknown')
+
+    def test_present_but_null_or_non_string_fields_skip_pruning(self):
+        other = self.releases / self.shas[0]
+        for key in ['com.docker.compose.project.working_dir', 'com.docker.compose.project.config_files']:
+            for value in [None, 7, ['x'], {}, '']:
+                entry = container(2, mounts=[other / 'warp'])
+                entry['Config']['Labels'][key] = value
+                self.containers = [self.containers[0], entry]
+                self.assert_skipped(self.prune(keep=1), 'container_state_unknown')
+        for change in [lambda e: e['Config'].update(Labels=None), lambda e: e['Mounts'][0].update(Source=None),
+                       lambda e: e['Mounts'][0].update(Type=None), lambda e: e['Mounts'][0].update(Type='')]:
+            entry = container(2, mounts=[other / 'warp'])
+            change(entry)
+            self.containers = [self.containers[0], entry]
+            self.assert_skipped(self.prune(keep=1), 'container_state_unknown')
+
+    def test_a_numeric_container_id_must_still_be_a_string(self):
+        numeric = '1' * 64
+        entry = container(2, mounts=[self.releases / self.shas[0] / 'warp'])
+        self.containers = [self.containers[0], entry]
+        listing = self.containers[0]['Id'] + '\n' + numeric
+        answer = json.dumps([self.containers[0], {**entry, 'Id': 0}]).replace('"Id": 0', '"Id": ' + numeric)
+        self.deployer.runner = lambda args, **kwargs: (
+            listing if args[:2] == ['docker', 'ps'] else answer if args[:2] == ['docker', 'inspect']
+            else self.host(args, **kwargs))
+        self.assert_skipped(self.prune(keep=1), 'container_state_unknown')
 
     def test_inspection_must_answer_for_exactly_the_listed_containers(self):
         listed = [self.containers[0], container(2, mounts=[self.releases / self.shas[0]])]
@@ -542,12 +572,67 @@ class ReleasePruneTests(unittest.TestCase):
         self.assertTrue((self.releases / 'notes.txt').exists())
         self.assertNotIn(self.shas[0], self.remaining())
 
-    def test_refuses_a_path_that_resolves_outside_the_releases_directory(self):
+    def test_remove_inside_takes_only_a_plain_directory_name_in_the_open_directory(self):
         outside = self.root / 'outside'
         outside.mkdir()
-        with self.assertRaisesRegex(DeploymentError, 'outside_releases'):
-            PortalDeployer.remove_inside(self.releases.resolve(), outside)
+        (self.releases / 'link').symlink_to(outside, target_is_directory=True)
+        (self.releases / 'file').write_text('x')
+        fd = os.open(self.releases, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        self.addCleanup(os.close, fd)
+        for name in ['link', 'file', '..', '.', '', '../outside', str(outside), self.shas[0] + '/ops', 'missing']:
+            with self.assertRaises((DeploymentError, OSError)):
+                PortalDeployer.remove_inside(fd, name)
         self.assertTrue(outside.is_dir())
+        self.assertTrue((self.releases / 'link').is_symlink())
+        PortalDeployer.remove_inside(fd, self.shas[0])
+        self.assertNotIn(self.shas[0], self.remaining())
+
+    def outside_with(self, shas):
+        outside = self.root / 'outside'
+        for sha in shas:
+            (outside / sha).mkdir(parents=True)
+            (outside / sha / 'sentinel').write_text('precious')
+        return outside
+
+    def assert_outside_intact(self, outside, shas):
+        self.assertEqual(sorted(p.name for p in outside.iterdir()), sorted(shas))
+        for sha in shas:
+            self.assertEqual((outside / sha / 'sentinel').read_text(), 'precious')
+
+    def test_releases_replaced_by_a_symlink_mid_removal_cannot_reach_outside(self):
+        outside = self.outside_with(self.shas[:3])  # The same SHAs as the removal candidates.
+        moved = self.root / 'moved'
+        real_rename, swapped = os.rename, []
+
+        def racing_rename(*args, **kwargs):
+            if not swapped:
+                swapped.append(True)
+                real_rename(self.releases, moved)
+                os.symlink(outside, self.releases)
+            return real_rename(*args, **kwargs)
+        with unittest.mock.patch.object(module.os, 'rename', racing_rename):
+            self.prune()
+        self.assert_outside_intact(outside, self.shas[:3])
+        # The directory that was validated is the one pruned, wherever it now is.
+        self.assertEqual(sorted(p.name for p in moved.iterdir()), sorted(self.shas[-3:]))
+
+    def test_releases_replaced_after_opening_skips_pruning(self):
+        outside = self.outside_with(self.shas[:3])
+        original = self.host
+
+        def host(args, **kwargs):
+            if args[:2] == ['docker', 'inspect'] and not self.releases.is_symlink():
+                self.releases.rename(self.root / 'moved')
+                self.releases.symlink_to(outside, target_is_directory=True)
+            return original(args, **kwargs)
+        self.deployer.runner = host
+        self.assertEqual(self.prune(), {'status': 'skipped', 'reason': 'releases_directory_changed'})
+        self.assert_outside_intact(outside, self.shas[:3])
+        self.assertEqual(len(list((self.root / 'moved').iterdir())), 6)
+
+    def test_a_platform_without_safe_fd_removal_skips_pruning(self):
+        with unittest.mock.patch.object(module.shutil.rmtree, 'avoids_symlink_attacks', False):
+            self.assert_skipped(self.prune(), 'platform_cannot_prune_safely')
 
     def test_a_releases_directory_that_is_a_symlink_is_not_pruned(self):
         real = self.root / 'real-releases'
@@ -580,7 +665,8 @@ class ReleasePruneTests(unittest.TestCase):
         lookalikes = [self.releases / name for name in [
             '.pruning-old-1', '.pruning-' + self.shas[0], '.pruning-' + self.shas[0] + '-',
             '.pruning-' + self.shas[0] + '-12x', '.pruning-' + 'A' * 40 + '-1', '.pruning-' + 'a' * 39 + '-1',
-            '.pruning-' + self.shas[0] + '-1-extra']]
+            '.pruning-' + self.shas[0] + '-1-extra', '.pruning-' + self.shas[0] + '-\u0661\u0662\u0663',
+            '.pruning-' + self.shas[0] + '-1\n']]
         for path in [referenced, stale, *lookalikes]:
             path.mkdir()
         self.containers.append(container(2, mounts=[referenced / 'lavalink']))
@@ -597,8 +683,46 @@ class ReleasePruneTests(unittest.TestCase):
             self.assertEqual(result['status'], 'skipped')
             self.assertEqual(len(self.remaining()), 6)
 
+    def test_a_realistic_later_deployment_removes_exactly_the_unused_old_releases(self):
+        shutil.rmtree(self.releases)
+        self.releases.mkdir()
+        old = ['%02x' % i * 20 for i in range(1, 9)]  # Eight older releases, oldest first.
+        for index, sha in enumerate(old):
+            release_dir(self.releases, sha, 1_000_000 + index * 100)
+        current = release_dir(self.releases, 'f0' * 20, 2_000_000)
+        rollback, audio = old[2], old[0]  # Both older than the newest three.
+        self.revisions = {OLD: rollback, WEB: rollback}
+        self.deployer.repo = current
+        files = lambda release: [release / 'docker-compose.yml', release / 'docker-compose.portal.yml']
+        bot = container(1, working_dir=current, config_files=files(current))
+        bot['Mounts'] = [{'Type': 'volume', 'Name': 'vybertron_bot-data', 'Destination': '/app/data',
+                          'Source': '/var/lib/docker/volumes/vybertron_bot-data/_data'}]
+        portal = container(2, working_dir=current, config_files=files(current))
+        portal['Mounts'] = [{'Type': 'volume', 'Name': 'vybertron_portal-data', 'Destination': '/app/data',
+                             'Source': '/var/lib/docker/volumes/vybertron_portal-data/_data'},
+                            {'Type': 'tmpfs', 'Source': '', 'Destination': '/tmp'}]
+        # Audio from an older operator release keeps its bind mounts there.
+        lavalink = container(3, mounts=[self.releases / audio / 'lavalink/application.yml', self.releases / audio / 'lavalink/plugins'],
+                             working_dir=self.releases / audio, config_files=[self.releases / audio / 'docker-compose.yml'])
+        warp = container(4, mounts=[self.releases / audio / 'warp/supervise.sh'], working_dir=self.releases / audio)
+        warp['Mounts'].append({'Type': 'volume', 'Name': 'vybertron_warp-data', 'Destination': '/var/lib/cloudflare-warp',
+                               'Source': '/var/lib/docker/volumes/vybertron_warp-data/_data'})
+        cipher = container(5, working_dir=self.releases / audio)
+        funnel = container(6, working_dir='/root/Vybertron/ops/portal-funnel',
+                           config_files=['/root/Vybertron/ops/portal-funnel/compose.yml'])
+        self.containers = [bot, portal, lavalink, warp, cipher, funnel]
+        journal = {'previous_images': {'bot': OLD, 'portal': WEB, 'warp': 'sha256:' + '1' * 64,
+                                       'yt-cipher': 'sha256:' + '2' * 64, 'lavalink': 'sha256:' + '3' * 64}}
+        result = self.deployer.prune_releases(journal)
+        kept = sorted([current.name, old[-1], old[-2], rollback, audio])
+        self.assertEqual(result, {'status': 'ok', 'kept': kept, 'removed': sorted(set(old) - set(kept))})
+        self.assertEqual(self.remaining(), kept)
+
     def test_a_failed_removal_is_reported_without_raising(self):
-        with unittest.mock.patch.object(module.shutil, 'rmtree', side_effect=PermissionError()):
+        def rmtree(path, ignore_errors=False, onerror=None, *, onexc=None, dir_fd=None):
+            raise PermissionError()
+        rmtree.avoids_symlink_attacks = True
+        with unittest.mock.patch.object(module.shutil, 'rmtree', rmtree):
             result = self.prune()
         self.assertEqual(result['status'], 'failed')
         self.assertEqual(result['failed'], sorted(self.shas[:3]))
@@ -653,6 +777,22 @@ class ReleasePruneDeployTests(unittest.TestCase):
             self.assertEqual(self.deploy(), 'deployed')
         self.assertEqual(self.deployer.prune_result, {'status': 'failed', 'error': 'RuntimeError'})
 
+    def test_an_exception_that_cannot_be_formatted_does_not_fail_the_release(self):
+        class Unprintable(DeploymentError):
+            def __str__(self):
+                raise RuntimeError('cannot format')
+        with unittest.mock.patch.object(PortalDeployer, '_prune_releases', side_effect=Unprintable()):
+            self.assertEqual(self.deploy(), 'deployed')
+        self.assertEqual(self.deployer.prune_result, {'status': 'failed', 'error': 'prune_error'})
+        with unittest.mock.patch.object(PortalDeployer, '_prune_releases', side_effect=module.PruneSkipped(Unprintable())):
+            self.assertEqual(self.deploy(), 'deployed')
+        self.assertEqual(self.deployer.prune_result, {'status': 'skipped', 'reason': 'prune_error'})
+
+    def test_nothing_inside_the_optional_prune_call_changes_the_outcome(self):
+        with unittest.mock.patch.object(PortalDeployer, 'prune_releases', side_effect=RuntimeError()):
+            self.assertEqual(self.deploy(), 'deployed')
+        self.assertEqual(self.deployer.prune_result, {'status': 'failed', 'error': 'prune_error'})
+
     def test_a_failed_release_prunes_nothing(self):
         self.harness.fail = 'portal'
         with self.assertRaises(DeploymentError):
@@ -665,8 +805,10 @@ class WindowsSkipTests(unittest.TestCase):
     def test_only_the_fcntl_lock_tests_are_skipped_on_windows(self):
         load = importlib.util.spec_from_file_location('portal_deploy_test_win32', Path(__file__))
         copy = importlib.util.module_from_spec(load)
-        with unittest.mock.patch.object(sys, 'platform', 'win32'):
+        path = list(sys.path)
+        with unittest.mock.patch.object(sys, 'platform', 'win32'), unittest.mock.patch.object(sys, 'path', list(path)):
             load.loader.exec_module(copy)
+        self.assertEqual(sys.path, path)
         self.assertTrue(getattr(copy.MaintenanceLockTests, '__unittest_skip__', False))
         self.assertFalse(getattr(copy.ReleasePruneTests, '__unittest_skip__', False))
         self.assertEqual(copy.release_dir.__name__, 'release_dir')

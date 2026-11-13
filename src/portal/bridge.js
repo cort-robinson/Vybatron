@@ -198,14 +198,18 @@ export function startPortalBridge(client, {
         if (audioMatch && request.method === 'GET') {
           // Membership only, like search. A phone makes many range requests per
           // song, so the Gateway cache vouches when it can instead of REST rounds.
+          // The download is held while this request is open, so one everybody skipped past
+          // frees its slot. A warm-up's one-byte probe (web and Android) keeps it to the end.
+          // Watch for the hang-up before the first await: a listener can skip during authorization.
+          const listening = new AbortController(); response.once('close', () => listening.abort());
+          if (response.destroyed || response.closed) listening.abort();
+          const warmUp = request.headers.range === 'bytes=0-0';
           const actorId = url.searchParams.get('actorId');
           const context = policy.gatewayGuild?.(actorId, audioMatch[1]) || await policy.guild(actorId, audioMatch[1], undefined, { channelScope: 'none' });
           if (!context.member) fail(403, 'membership_required', 'Join this server to listen to its music.');
+          // A listener who already left gets no download at all.
+          if (!warmUp && listening.signal.aborted) return null;
           songJobs?.devicePlayed(audioMatch[2]);
-          // The download is held while this request is open, so one everybody skipped past
-          // frees its slot. A warm-up's one-byte probe (web and Android) keeps it to the end.
-          const listening = new AbortController(); response.once('close', () => listening.abort());
-          const warmUp = request.headers.range === 'bytes=0-0';
           return sendAudio(request, response, await playable.get(audioMatch[2], { signal: warmUp ? undefined : listening.signal }));
         }
         const videoLyricsMatch = url.pathname.match(/^\/v1\/guilds\/(\d{1,22})\/lyrics\/([\w-]{11})$/);

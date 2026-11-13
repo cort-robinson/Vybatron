@@ -281,10 +281,18 @@ async function slowPlugin(t) {
   t.after(() => { server.closeAllConnections(); server.close(); });
   return { port: server.address().port, requests, hungUp, finish };
 }
-async function skipFixture(t) {
-  const f = await portalFixture(t);
+async function skipFixture(t, options) {
+  const f = await portalFixture(t, options);
   const plugin = await slowPlugin(t);
   f.node.options = { host: '127.0.0.1', port: plugin.port, authorization: 'lavalink-secret', secure: false };
+  // The bridge's own view of each audio request closing, so no test guesses with a delay.
+  const closes = []; const arrived = [];
+  f.bridge.server.on('request', (request, response) => {
+    const id = new URL(request.url, f.origin).pathname.split('/').pop();
+    arrived.push(id); response.once('close', () => closes.push(id));
+  });
+  const until = async condition => { while (!condition()) await new Promise(resolve => setImmediate(resolve)); };
+  const closed = (id, count = 1) => until(() => closes.filter(seen => seen === id).length >= count);
   const get = (id, { headers = {}, signal } = {}) => fetch(`${f.origin}/v1/guilds/100/audio/${id}?actorId=200`, { headers: { Authorization: `Bearer ${f.token}`, ...headers }, signal });
   // A media element that starts a song, hears its first bytes, and is skipped.
   const skip = async id => {
@@ -293,9 +301,9 @@ async function skipFixture(t) {
     assert.equal(answer.status, 200);
     await answer.body.getReader().read();
     leaving.abort();
-    await new Promise(resolve => setTimeout(resolve, 50));
+    await closed(id);
   };
-  return { plugin, get, skip };
+  return { plugin, get, skip, until, closed, arrived };
 }
 
 test('skipping past songs still loading gives their download slots to the song the listener lands on', async t => {
@@ -346,12 +354,12 @@ test('only a download nobody holds is abandoned, and that never counts against i
 });
 
 test('a warm-up or a song someone still plays keeps its download when a listener skips', async t => {
-  const { plugin, get, skip } = await skipFixture(t);
+  const { plugin, get, skip, until, closed } = await skipFixture(t);
   // The next song warms up while nobody listens to it yet, and its probe may give up before it finishes.
   const giving = new AbortController();
   const warm = get('warmsongaaa', { headers: { Range: 'bytes=0-0' }, signal: giving.signal }).catch(() => null);
-  await new Promise(resolve => setTimeout(resolve, 50));
-  giving.abort(); await warm;
+  await until(() => plugin.requests.includes('warmsongaaa'));
+  giving.abort(); await warm; await closed('warmsongaaa');
   await skip('skipsongbbb');
   const landed = await get('skipsongccc');
   assert.equal(landed.status, 200);
@@ -364,4 +372,24 @@ test('a warm-up or a song someone still plays keeps its download when a listener
   const warmed = await get('warmsongaaa', { headers: { Range: 'bytes=0-0' } });
   assert.equal(warmed.status, 206); await warmed.arrayBuffer();
   assert.equal(plugin.requests.filter(id => id === 'warmsongaaa').length, 1);
+});
+
+test('a listener who skips while still being authorized leaves no download behind', { timeout: 10_000 }, async t => {
+  let gate = null; let asked = 0;
+  const { plugin, get, until, closed, arrived } = await skipFixture(t, { memberFetch: async () => { if (gate) { asked++; await gate.promise; } } });
+  gate = Promise.withResolvers();
+  const leaving = [new AbortController(), new AbortController()];
+  const gone = ['skipsongaaa', 'skipsongbbb'].map((id, index) => get(id, { signal: leaving[index].signal }).catch(() => null));
+  // Both requests reached the bridge and the member lookup they wait on is held.
+  await until(() => asked >= 1 && arrived.includes('skipsongaaa') && arrived.includes('skipsongbbb'));
+  await new Promise(resolve => setImmediate(resolve));
+  for (const controller of leaving) controller.abort();
+  await Promise.all(gone); await closed('skipsongaaa'); await closed('skipsongbbb');
+  gate.resolve(); gate = null;
+  const landed = await get('skipsongccc');
+  assert.equal(landed.status, 200, 'requests that left during authorization hold no slot');
+  plugin.finish('skipsongccc');
+  assert.deepEqual(Buffer.from(await landed.arrayBuffer()), song);
+  await until(() => plugin.requests.includes('skipsongccc'));
+  assert.deepEqual(plugin.requests, ['skipsongccc'], 'nothing was downloaded for the listener who left');
 });

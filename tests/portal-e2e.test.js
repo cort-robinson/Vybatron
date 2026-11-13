@@ -136,15 +136,19 @@ test('real authenticated API and bot writer reject retargeted favorites, hidden 
   assert.deepEqual(f.bot.library.favorites('200').map(track => track.uri), refs.slice(1).map(track => track.uri));
   assert.equal(f.bot.calls.filter(call => call === 'add').length, 0);
 
+  // History is listed newest first. Fixed times keep the soon-hidden entry first;
+  // two Date.now() calls can straddle a millisecond and swap the pair.
+  const playedAt = Date.now();
   await f.bot.library.updateGuild('100', guild => {
     guild.history = [
-      { id: 'history-selected-a', playedAt: Date.now(), voiceChannelId: '301', track: refs[0] },
-      { id: 'history-selected-b', playedAt: Date.now(), voiceChannelId: '300', track: refs[1] },
+      { id: 'history-selected-a', playedAt, voiceChannelId: '301', track: refs[0] },
+      { id: 'history-selected-b', playedAt: playedAt - 1000, voiceChannelId: '300', track: refs[1] },
     ];
     guild.mixes.night = { ownerId: '200', tracks: refs, savedAt: Date.now() };
   });
   const library = (await f.request('/api/guilds/100/library', first)).body;
   const state = (await f.snapshot(first)).body;
+  assert.equal(library.history[0].id, 'history-selected-a');
   f.bot.channels.get('301').hidden.add('200');
   const replay = await f.command(first, { command: 'replay', options: { index: 1 }, expectedRevision: state.revision, expectedHistoryId: library.history[0].id });
   assert.equal(replay.status, 409, JSON.stringify(replay.body));

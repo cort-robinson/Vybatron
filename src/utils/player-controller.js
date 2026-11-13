@@ -3,7 +3,7 @@ import { trackIdentity } from './presentation.js';
 import { sessionStatus, statusLabel } from './session-status.js';
 import {
   PRESENTATION_LIMITS, presentationPlayerActive, recordPresentationDrop,
-  recordPresentationFailure, retirePresentationPlayer, submitPresentationWrite,
+  recordPresentationFailure, retirePresentationPlayer, presentationWritePending, submitPresentationWrite,
 } from './presentation-updates.js';
 
 const controllers = new Map();
@@ -275,9 +275,20 @@ export function getMessageLink(guildId) {
   return `https://discord.com/channels/${record.guildId}/${record.channelId}/${record.messageId}`;
 }
 
+// Replies whose controller refresh did not settle in time: its message id may be
+// stale (a deleted controller is only replaced during the refresh), so no link.
+const unlinked = new WeakSet();
+export function omitControllerLink(interaction) {
+  if (interaction && typeof interaction === 'object') unlinked.add(interaction);
+}
+
+// A controller write still in flight may be replacing a deleted controller, so
+// the stored id is not linked until it settles. Controls no longer hold the guild
+// lane for that write, so any reply (not only the one that started it) can land here.
 export function withControllerLink(content, interaction, player) {
   const link = getMessageLink(interaction?.guildId);
-  if (!link || player?.textChannelId === interaction?.channelId) return content;
+  if (!link || player?.textChannelId === interaction?.channelId || unlinked.has(interaction)) return content;
+  if (presentationWritePending(`controller:${interaction.guildId}`)) return content;
   return `${content} Open player: ${link}`;
 }
 

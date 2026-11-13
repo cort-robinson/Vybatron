@@ -207,7 +207,7 @@ source binding, overflow access and reserved Stop admission. Automated/source
 checks are separate from the root-owned live pilot/audio, secure provisioning
 and deployment release gates.
 
-Web Pause/Resume/Seek/Filter/Volume, and Loop/Shuffle/Remove/Move/Clear/Radio-on, await the actual playback API and schedule owned, bounded cosmetic writers. Their timing records report zero awaited presentation spans; native slash commands and player buttons schedule the same writers and reply without waiting for them. Background writer settlement is excluded from command timing and never represents audible delivery. Terminal Stop and idle paths retire presentation ownership immediately and do not await cosmetic REST settlement before destroying playback.
+Web Pause/Resume/Seek/Filter/Volume, and Loop/Shuffle/Remove/Move/Clear/Radio-on, await the actual playback API and schedule owned, bounded cosmetic writers. Their timing records report zero awaited presentation spans; native slash commands and player buttons schedule the same writers and reply without waiting for them. A native reply sent from a channel other than the controller's still waits for the controller refresh, because it links to the controller message. Background writer settlement is excluded from command timing and never represents audible delivery. Terminal Stop and idle paths retire presentation ownership immediately and do not await cosmetic REST settlement before destroying playback.
 
 Every handler whose first await is the native `requireControl` guard (those controls plus Skip, Skip-to, Voteskip and Stop) takes its only pre-write authority at that in-lane guard, followed by the final disclosure (Gateway state when it can vouch, else fresh REST).
 

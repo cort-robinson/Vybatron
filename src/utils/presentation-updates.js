@@ -1,6 +1,7 @@
-import { requestControllerRefresh } from './player-controller.js';
+import { refresh, requestControllerRefresh } from './player-controller.js';
 import { updateVoiceStatus } from './voice-status.js';
 import { updateTrackPresence } from './presence.js';
+import { commandTimingSpan } from '../portal/timing.js';
 
 export const PRESENTATION_LIMITS = Object.freeze({ ordinary: 4, terminal: 2, records: 256 });
 const writes = new Map();
@@ -100,8 +101,20 @@ export function requestRefresh(client, player, { controller = true, voice = fals
 // player's state when they run, so a burst of controls still ends on the final
 // state, and their failures are counted by the writer. Awaiting them here only
 // delayed the reply and held the guild lane for a cosmetic Discord edit.
+//
+// The one exception is a native reply sent from another channel: it links to
+// the controller message, and a deleted controller only gets its replacement
+// (and new message id) during the refresh, so that reply waits for it.
 export async function directControlPresentation(interaction, player, { voice = false, presence = false } = {}) {
-  requestRefresh(interaction.client, player, { voice, presence });
+  const linksController = typeof interaction.portalRecheck !== 'function'
+    && Boolean(interaction.channelId) && player?.textChannelId !== interaction.channelId;
+  if (!linksController) {
+    requestRefresh(interaction.client, player, { voice, presence });
+    return;
+  }
+  if (!presentationPlayerActive(interaction.client, player)) return;
+  requestRefresh(interaction.client, player, { controller: false, voice, presence });
+  await commandTimingSpan('presentation', () => refresh(interaction.client, player));
 }
 
 export function getPresentationDiagnostics() {

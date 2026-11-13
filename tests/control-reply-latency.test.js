@@ -35,10 +35,10 @@ function heldDiscord(f) {
 }
 
 // A native slash command or button as the dispatcher sees it.
-function native(f, { commandName, customId, options = {}, ack } = {}) {
+function native(f, { commandName, customId, options = {}, ack, channelId = '400' } = {}) {
   const replies = [];
   const interaction = {
-    client: f.client, guildId: '100', guild: f.guild, channelId: '400',
+    client: f.client, guildId: '100', guild: f.guild, channelId,
     member: f.members.get('200'), user: f.users.get('200'), commandName, customId,
     deferred: false, replied: false,
     options: { getSubcommand: () => null, getString: name => options[name] ?? null, getInteger: name => options[name] ?? null },
@@ -152,4 +152,27 @@ test('the acknowledgement is sent before the control runs', { timeout: 3000 }, a
   assert.deepEqual(order, ['ack']);
   ackGate.resolve(); await done;
   assert.deepEqual(order, ['ack', 'acked', 'pause']);
+});
+
+test('a reply from another channel links to the replacement of a deleted controller', { timeout: 3000 }, async t => {
+  const f = await portalFixture(t);
+  const d = heldDiscord(f);
+  await createOrUpdate(f.client, f.player).catch(() => {});
+  d.release(); await settled();
+
+  // The controller message was deleted in Discord; the refresh must send a new one.
+  const sendGate = deferred();
+  const replacement = { id: 'replacement', async edit() { return replacement; } };
+  const channel = f.channels.get('400');
+  channel.messages = { fetch: async id => (id === 'replacement' ? replacement : null) };
+  channel.send = async () => { await sendGate.promise; return replacement; };
+
+  const { replies, done } = slash(f, pause, 'pause', { channelId: '401' });
+  for (let i = 0; i < 20; i++) await tick();
+  assert.equal(replies.length, 0, 'the reply waits for the replacement controller');
+  sendGate.resolve(); await done;
+  assert.equal(f.player.paused, true);
+  const text = replies[0].content ?? JSON.stringify(replies[0]);
+  assert.match(text, /Open player: \S+\/400\/replacement/);
+  assert.doesNotMatch(text, /\/controller\b/);
 });

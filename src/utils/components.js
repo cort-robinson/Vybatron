@@ -33,7 +33,7 @@ import { inviteUrlFor } from './invite.js';
 import { buildHistoryPayload, historySessionKey, replayHistoryTrack } from './history.js';
 import { buildLyricsPayload, findSessionTrack, trackLyrics } from './lyrics.js';
 import { cancelGuildMutations } from './requests.js';
-import { requestRefresh, retirePresentationPlayer } from './presentation-updates.js';
+import { directControlPresentation, requestRefresh, retirePresentationPlayer } from './presentation-updates.js';
 import { cancelImport, commitImport } from './playlist-import.js';
 
 async function disableStaleComponents(interaction) {
@@ -353,7 +353,7 @@ export async function handleModalSubmit(interaction) {
   const result = await seekToTimestamp(player, interaction.fields.getTextInputValue('timestamp'));
   if (result.error) return interaction.editReply(textPayload(result.error));
 
-  requestRefresh(interaction.client, player, { presence: true });
+  await directControlPresentation(interaction, player, { presence: true });
   const link = getMessageLink(interaction.guildId);
   const suffix = link ? ` Open player: ${link}` : '';
   return interaction.editReply(textPayload(`Jumped to ${formatDuration(result.position)}.${suffix}`));

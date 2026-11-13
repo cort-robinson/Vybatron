@@ -612,6 +612,27 @@ class DecodeScheduleTests(unittest.TestCase):
         self.coordinator.state['handled_failures'] = ['event-2']
         self.assertEqual(self.cycle(), 0)
 
+    def test_oversized_numbers_and_malformed_failure_state_decode_instead_of_erroring(self):
+        huge = 10 ** 400
+        self.assertFalse(r.finite(huge))
+        self.assertFalse(r.finite(True))
+        for key in ('at', 'monotonic'):
+            saved = self.coordinator.state['decode_basis'][key]
+            self.coordinator.state['decode_basis'][key] = huge
+            self.assertEqual(self.cycle(), 1, key)
+            self.assertEqual(self.coordinator.state['status'], 'healthy', key)
+            self.coordinator.state['decode_basis'][key] = saved
+        self.coordinator.state['upstream_checked_at'] = huge
+        self.assertEqual(self.cycle(), 1)
+        self.assertEqual(self.coordinator.state['status'], 'healthy')
+        old = {'id': 'event-1', 'at': (self.clock - 3600) * 1000, 'identifier': 'RYnFIRc0k6E'}
+        for handled, failures in [(None, [old]), ('event-1', [old]), ([], [{**old, 'identifier': 12345678901, 'at': self.clock * 1000}]),
+                                  ([], [{**old, 'at': huge}])]:
+            self.coordinator.state['handled_failures'] = handled
+            self.backend.failures = failures
+            self.assertEqual(self.cycle(), 1, (handled, failures))
+            self.assertEqual(self.coordinator.state['status'], 'healthy', (handled, failures))
+
     def test_a_future_dated_failure_decodes(self):
         self.backend.failures = [{'id': 'event-1', 'at': (self.clock + 3600) * 1000, 'identifier': 'RYnFIRc0k6E'}]
         self.assertEqual(self.cycle(), 1)

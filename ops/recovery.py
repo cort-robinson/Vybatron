@@ -180,7 +180,11 @@ def services_fingerprint(containers):
 
 
 def finite(value):
-    return type(value) in (int, float) and math.isfinite(value)
+    """A real number that float arithmetic can handle (not bool, NaN, infinity or an oversized int)."""
+    try:
+        return type(value) in (int, float) and math.isfinite(float(value))
+    except OverflowError:
+        return False
 
 
 def read_boot_id(path='/proc/sys/kernel/random/boot_id'):
@@ -798,13 +802,19 @@ class Coordinator:
         current = self.backend.current()
         if observation.get('version') != current:
             return self.finish('configuration_drift', now, 'the loaded plugin differs from the configured version')
-        handled = self.state.get('handled_failures', [])
-        live_failures = [item for item in (observation.get('failures') or [])
+        # Persisted and reported data is validated before use: a malformed entry is
+        # never a live failure, and it also keeps the canary decode from being skipped.
+        handled = self.state.get('handled_failures')
+        if not isinstance(handled, list):
+            handled = []
+        reported = observation.get('failures')
+        live_failures = [item for item in (reported if isinstance(reported, list) else [])
                          if isinstance(item, dict) and isinstance(item.get('id'), str)
                          and re.fullmatch(r'[A-Za-z0-9_-]{1,64}', item['id'])
-                         and item['id'] not in handled and isinstance(item.get('at'), (int, float))
+                         and item['id'] not in handled and finite(item.get('at'))
                          and 0 <= now - item['at'] / 1000 < 900
-                         and re.fullmatch(r'[A-Za-z0-9_-]{11}', str(item.get('identifier', '')))]
+                         and isinstance(item.get('identifier'), str)
+                         and re.fullmatch(r'[A-Za-z0-9_-]{11}', item['identifier'])]
         # A missing, malformed or future upstream check time counts as due.
         checked = self.state.get('upstream_checked_at', 0)
         upstream_check_due = not finite(checked) or not 0 <= now - checked < UPDATE_INTERVAL

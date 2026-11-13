@@ -414,6 +414,22 @@ re-run a failed release within that window or re-run CI first. The job then chec
 both containers carry the target revision and report healthy, and deletes the image
 artifacts.
 
+Each release leaves its source in `/var/lib/vybertron-portal/releases/SHA`. After
+a release passes the driver's checks (images, volume, audio identities and bridge
+readiness), the driver removes older release directories and reports what it did
+under `prune` in its status line. It keeps the three newest releases, the release
+just deployed, the release whose bot or portal image ran before it (the rollback
+target), and any release that a container on the host still mounts or was
+composed from (`com.docker.compose.project.*` labels). It only touches
+directories named by a full SHA directly under `releases/`; it skips symlinks,
+in-progress `*.tmp` staging and other files, never follows a link out of the
+directory, and renames a release to `.pruning-*` before removing it so an
+interrupted removal never leaves a partial `releases/SHA` behind. If it can't read
+the containers or images, it removes nothing. A pruning failure is logged in the
+status line and never fails the release. A manual release from a checkout outside
+`releases/` (such as `/root/Vybertron`) prunes nothing. Images, data snapshots and
+command backups are not pruned. To redeploy a removed SHA, stage its source again.
+
 SSH trusts only the host key in the `VPS_HOST_KEY` secret (the server's public key
 lines without host names, for example `ssh-ed25519 AAAA…`). After rebuilding the
 host or rotating its host keys, update that secret from a verified connection.

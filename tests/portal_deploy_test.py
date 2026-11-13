@@ -1,9 +1,12 @@
 import importlib.util
 import json
+import os
 from pathlib import Path
 import sys
+import shutil
 import tempfile
 import unittest
+import unittest.mock
 
 OPS = Path(__file__).resolve().parents[1] / 'ops'
 sys.path.insert(0, str(OPS))
@@ -341,6 +344,193 @@ class PortalReleasePolicyTests(unittest.TestCase):
 
 
 @unittest.skipIf(sys.platform == 'win32', 'the maintenance lock uses fcntl')
+def release_dir(root, sha, mtime):
+    path = root / sha
+    (path / 'ops').mkdir(parents=True)
+    (path / 'ops' / 'deploy.py').write_text('# source')
+    (path / '.portal-release.json').write_text(json.dumps({'revision': sha}))
+    os.utime(path, (mtime, mtime))
+    return path
+
+
+class ReleasePruneTests(unittest.TestCase):
+    """Old releases/<sha> source directories are pruned after a verified release."""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.releases = self.root / 'releases'
+        self.releases.mkdir()
+        self.shas = [format(i, 'x') * 40 for i in range(1, 7)]  # Oldest first.
+        for index, sha in enumerate(self.shas):
+            release_dir(self.releases, sha, 1_000_000 + index * 100)
+        self.current = self.releases / self.shas[-1]
+        self.previous_revision = self.shas[-2]
+        self.containers = []
+        self.failing = None
+        self.deployer = PortalDeployer(self.current, self.root / 'private', env_file=self.root / 'x.env',
+            portal_env=self.root / 'p.env', runner=self.host, sleep=lambda _: None)
+
+    def host(self, args, **kwargs):
+        if self.failing and self.failing(args):
+            raise DeploymentError('deployment_command_failed')
+        if args[:2] == ['docker', 'ps']:
+            return '\n'.join(str(i) for i in range(len(self.containers)))
+        if args[:2] == ['docker', 'inspect']:
+            return json.dumps(self.containers)
+        if args[:3] == ['docker', 'image', 'inspect']:
+            revision = self.previous_revision if args[3] == OLD else 'f' * 40
+            return json.dumps([{'Id': args[3], 'Config': {'Labels': {'org.opencontainers.image.revision': revision}}}])
+        raise AssertionError('Unexpected external command: ' + str(args))
+
+    def prune(self, keep=module.KEEP_RELEASES):
+        return self.deployer.prune_releases({'previous_images': {'bot': OLD, 'portal': None}}, keep)
+
+    def remaining(self):
+        return sorted(p.name for p in self.releases.iterdir())
+
+    def test_keeps_the_newest_releases_and_removes_older_ones(self):
+        result = self.prune()
+        self.assertEqual(result['status'], 'ok')
+        self.assertEqual(self.remaining(), sorted(self.shas[-3:]))
+        self.assertEqual(result['removed'], sorted(self.shas[:3]))
+        self.assertEqual(self.prune()['removed'], [])  # Idempotent.
+
+    def test_never_removes_the_running_release_or_the_rollback_target(self):
+        # Old mtimes: a retried staging keeps its original directory.
+        os.utime(self.current, (1, 1))
+        self.previous_revision = self.shas[0]
+        result = self.prune(keep=1)
+        self.assertEqual(result['status'], 'ok')
+        self.assertEqual(self.remaining(), sorted([self.shas[0], self.shas[-2], self.shas[-1]]))
+
+    def test_keeps_any_release_a_container_still_mounts_or_was_composed_from(self):
+        self.containers = [
+            {'Mounts': [{'Source': str(self.releases / self.shas[1] / 'lavalink' / 'application.yml')}], 'Config': {'Labels': {}}},
+            {'Mounts': [], 'Config': {'Labels': {
+                'com.docker.compose.project.working_dir': str(self.releases / self.shas[0]),
+                'com.docker.compose.project.config_files': '/root/Vybertron/docker-compose.yml,' + str(self.releases / self.shas[2] / 'docker-compose.portal.yml')}}},
+        ]
+        self.prune(keep=1)
+        self.assertEqual(self.remaining(), sorted([self.shas[0], self.shas[1], self.shas[2], self.shas[-2], self.shas[-1]]))
+
+    def test_never_follows_or_removes_anything_outside_the_releases_directory(self):
+        outside = self.root / 'outside'
+        (outside / 'keep').mkdir(parents=True)
+        (outside / 'keep' / 'data').write_text('precious')
+        os.utime(outside, (1, 1))
+        link = self.releases / ('9' * 40)
+        link.symlink_to(outside, target_is_directory=True)
+        # A symlink inside an old release must be unlinked, not followed.
+        (self.releases / self.shas[0] / 'escape').symlink_to(outside, target_is_directory=True)
+        os.utime(self.releases / self.shas[0], (1, 1))
+        (self.releases / 'notes.txt').write_text('operator file')
+        (self.releases / (self.shas[0][:-1] + 'z')).mkdir()
+        staging = self.releases / (self.shas[0] + '.tmp')
+        staging.mkdir()
+        result = self.prune()
+        self.assertEqual(result['status'], 'ok')
+        self.assertEqual((outside / 'keep' / 'data').read_text(), 'precious')
+        self.assertTrue(link.is_symlink())
+        self.assertTrue(staging.is_dir())
+        self.assertTrue((self.releases / 'notes.txt').exists())
+        self.assertNotIn(self.shas[0], self.remaining())
+
+    def test_refuses_a_path_that_resolves_outside_the_releases_directory(self):
+        outside = self.root / 'outside'
+        outside.mkdir()
+        with self.assertRaisesRegex(DeploymentError, 'outside_releases'):
+            PortalDeployer.remove_inside(self.releases.resolve(), outside)
+        self.assertTrue(outside.is_dir())
+
+    def test_a_releases_directory_that_is_a_symlink_is_not_pruned(self):
+        real = self.root / 'real-releases'
+        self.releases.rename(real)
+        self.releases.symlink_to(real, target_is_directory=True)
+        self.assertEqual(self.prune()['status'], 'skipped')
+        self.assertEqual(len(list(real.iterdir())), 6)
+
+    def test_only_the_deploy_layout_is_pruned(self):
+        checkout = self.root / 'Vybertron'
+        checkout.mkdir()
+        deployer = PortalDeployer(checkout, self.root / 'private', env_file=self.root / 'x.env',
+            portal_env=self.root / 'p.env', runner=self.host)
+        self.assertEqual(deployer.prune_releases({})['status'], 'skipped')
+        self.assertEqual(len(self.remaining()), 6)
+
+    def test_tolerates_half_written_and_missing_directories(self):
+        half = self.releases / self.shas[0]
+        (half / '.portal-release.json').unlink()
+        (self.releases / '.pruning-old-1').mkdir()  # Left by an interrupted prune.
+        self.assertEqual(self.prune()['status'], 'ok')
+        self.assertNotIn('.pruning-old-1', self.remaining())
+        shutil.rmtree(self.releases)
+        self.assertEqual(self.prune()['status'], 'failed')
+
+    def test_an_unreadable_container_or_image_state_removes_nothing(self):
+        for failing in ('ps', 'inspect', 'image'):
+            self.failing = lambda args, failing=failing: args[1] == failing
+            self.containers = [{'Mounts': []}]
+            result = self.prune()
+            self.assertEqual(result, {'status': 'failed', 'error': 'deployment_command_failed'})
+            self.assertEqual(len(self.remaining()), 6)
+
+    def test_a_failed_removal_is_reported_without_raising(self):
+        with unittest.mock.patch.object(module.shutil, 'rmtree', side_effect=PermissionError()):
+            result = self.prune()
+        self.assertEqual(result['status'], 'failed')
+        self.assertEqual(result['failed'], sorted(self.shas[:3]))
+
+
+class ReleasePruneDeployTests(unittest.TestCase):
+    """A verified release prunes old sources; a pruning failure never fails it."""
+
+    deploy = PortalReleasePolicyTests.deploy
+
+    def setUp(self):
+        PortalReleasePolicyTests.setUp(self)
+        releases = self.root / 'releases'
+        releases.mkdir()
+        for index, sha in enumerate(['1' * 40, '2' * 40, '3' * 40, '4' * 40]):
+            release_dir(releases, sha, 1_000_000 + index)
+        self.repo = releases / SHA
+        self.repo.mkdir()
+        (self.repo / '.portal-release.json').write_text(json.dumps({'revision': SHA}))
+        self.releases = releases
+        self.harness.label = SHA
+        original = self.harness.run
+
+        def run(args, **kwargs):
+            if args[:3] == ['docker', 'ps', '--all'] and '--quiet' in args:
+                if self.prune_error:
+                    raise DeploymentError('deployment_command_failed')
+                return ''
+            return original(args, **kwargs)
+        self.prune_error = False
+        self.deployer = PortalDeployer(self.repo, self.state, env_file=self.env,
+            portal_env=self.portal_env, runner=run, sleep=lambda _: None)
+
+    def test_verified_release_prunes_older_sources(self):
+        self.assertEqual(self.deploy(), 'deployed')
+        self.assertEqual(self.deployer.prune_result['status'], 'ok')
+        self.assertEqual(sorted(p.name for p in self.releases.iterdir()), sorted([SHA, '3' * 40, '4' * 40]))
+
+    def test_pruning_failure_does_not_fail_the_release(self):
+        self.prune_error = True
+        self.assertEqual(self.deploy(), 'deployed')
+        self.assertEqual(self.deployer.prune_result, {'status': 'failed', 'error': 'deployment_command_failed'})
+        self.assertEqual(len(list(self.releases.iterdir())), 5)
+        self.assertEqual(json.loads((self.state / 'portal-deployment.json').read_text())['phase'], 'complete')
+
+    def test_a_failed_release_prunes_nothing(self):
+        self.harness.fail = 'portal'
+        with self.assertRaises(DeploymentError):
+            self.deploy()
+        self.assertIsNone(self.deployer.prune_result)
+        self.assertEqual(len(list(self.releases.iterdir())), 5)
+
+
 class MaintenanceLockTests(unittest.TestCase):
     """The 5-minute recovery check briefly holds the same maintenance lock."""
 

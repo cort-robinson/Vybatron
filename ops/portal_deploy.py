@@ -26,6 +26,12 @@ AUDIO = ('warp', 'yt-cipher', 'lavalink')
 # The 5-minute recovery check (vybertron-recovery.service, TimeoutStartSec=15min)
 # and the nightly backup hold the same maintenance lock for a short while.
 LOCK_TIMEOUT, LOCK_POLL = 900, 5
+# Deploy unpacks each release's source into releases/<sha>. After a verified
+# release, keep this many of the newest (the running one plus the previous ones
+# a manual rollback or re-release might use) and anything a container still uses.
+KEEP_RELEASES = 3
+REVISION_LABEL = 'org.opencontainers.image.revision'
+COMPOSE_LABELS = ('com.docker.compose.project.working_dir', 'com.docker.compose.project.config_files')
 
 
 class PortalDeployer(Deployer):
@@ -273,6 +279,109 @@ class PortalDeployer(Deployer):
                      data=script, timeout=10)
 
     def deploy(self, target, guild_id):
+        self.prune_result = None
+        status = self.release(target, guild_id)
+        if status == 'deployed':
+            # Only after verify_running passed. Pruning never fails a release.
+            self.prune_result = self.prune_releases(self.released_journal)
+        return status
+
+    def referenced_paths(self):
+        """Every host path any container (running or stopped) still uses."""
+        ids = self.command(['docker', 'ps', '--all', '--quiet', '--no-trunc']).split()
+        if not ids:
+            return set()
+        containers = json.loads(self.command(['docker', 'inspect', *ids]))
+        if not isinstance(containers, list) or len(containers) != len(ids):
+            raise DeploymentError('portal_prune_container_inspection_failed')
+        paths = set()
+        for container in containers:
+            for mount in container.get('Mounts') or []:
+                if mount.get('Source'):
+                    paths.add(mount['Source'])
+            labels = (container.get('Config') or {}).get('Labels') or {}
+            for key in COMPOSE_LABELS:
+                paths.update(value for value in str(labels.get(key) or '').split(',') if value)
+        return paths
+
+    def image_revision(self, image):
+        info = json.loads(self.command(['docker', 'image', 'inspect', image]))
+        revision = ((info[0].get('Config') or {}).get('Labels') or {}).get(REVISION_LABEL, '')
+        return revision if SHA.fullmatch(revision) else None
+
+    def prune_releases(self, journal, keep=KEEP_RELEASES):
+        """Remove old releases/<sha> source directories. Returns a status, never raises."""
+        try:
+            return self._prune_releases(journal, keep)
+        except Exception as error:
+            code = str(error) if isinstance(error, DeploymentError) else type(error).__name__
+            return {'status': 'failed', 'error': code}
+
+    def _prune_releases(self, journal, keep):
+        root = self.repo.parent
+        # Only the Deploy layout (…/releases/<sha>). A manual release from a
+        # checkout such as /root/Vybertron has no sibling releases to manage.
+        if root.name != 'releases' or not SHA.fullmatch(self.repo.name) or root.is_symlink():
+            return {'status': 'skipped', 'reason': 'not_a_release_directory'}
+        root = root.resolve(strict=True)
+        protected = {self.repo.name}
+        # The rollback target: the release whose images ran before this one.
+        for name in ('bot', 'portal'):
+            image = (journal.get('previous_images') or {}).get(name)
+            if image:
+                revision = self.image_revision(image)
+                if revision:
+                    protected.add(revision)
+        for value in self.referenced_paths():
+            for path in {Path(value), Path(os.path.realpath(value))}:
+                if path.is_absolute() and path.is_relative_to(root) and path != root:
+                    protected.add(path.relative_to(root).parts[0])
+        releases = []
+        for entry in root.iterdir():
+            # Skip anything Deploy did not create: in-progress *.tmp staging,
+            # symlinks (which could point outside) and plain files.
+            if not SHA.fullmatch(entry.name) or entry.is_symlink() or not entry.is_dir():
+                continue
+            try:
+                releases.append((entry.lstat().st_mtime, entry))
+            except FileNotFoundError:
+                continue
+        releases.sort(key=lambda item: (item[0], item[1].name), reverse=True)
+        protected.update(entry.name for _, entry in releases[:keep])
+        removed, failed = [], []
+        stale = [entry for entry in root.iterdir() if entry.name.startswith('.pruning-')]
+        for _, entry in releases:
+            if entry.name in protected:
+                continue
+            # Rename first, so an interrupted removal never leaves a partial
+            # releases/<sha> that a later Deploy of that SHA would trust.
+            target = root / ('.pruning-' + entry.name + '-' + str(time.time_ns()))
+            try:
+                self.remove_inside(root, entry, rename_to=target)
+                removed.append(entry.name)
+            except Exception:
+                failed.append(entry.name)
+        for entry in stale:
+            with contextlib.suppress(Exception):
+                self.remove_inside(root, entry)
+        result = {'status': 'failed' if failed else 'ok', 'kept': sorted(protected & {e.name for _, e in releases}),
+                  'removed': sorted(removed)}
+        if failed:
+            result['error'] = 'portal_prune_remove_failed'
+            result['failed'] = sorted(failed)
+        return result
+
+    @staticmethod
+    def remove_inside(root, entry, rename_to=None):
+        if entry.is_symlink() or not entry.is_dir() or entry.resolve(strict=True).parent != root:
+            raise DeploymentError('portal_prune_path_outside_releases')
+        if rename_to is not None:
+            os.rename(entry, rename_to)
+            entry = rename_to
+        # rmtree removes symlinks inside the tree without following them.
+        shutil.rmtree(entry)
+
+    def release(self, target, guild_id):
         candidate = self.verify_inputs(target, guild_id)
         images = self.images()
         portal = self.optional_container('portal')
@@ -322,6 +431,7 @@ class PortalDeployer(Deployer):
             self.verify_running(selected, journal)
             journal.update(phase='complete', released_at=time.time(), released_images=candidate)
             self.save(journal)
+            self.released_journal = journal
             return 'deployed'
         except Exception:
             if journal:
@@ -428,7 +538,11 @@ def main():
         deployer = PortalDeployer(args.repo, args.state_dir, env_file=args.env_file, portal_env=args.portal_env)
         try:
             status = deployer.deploy(args.sha, args.guild_id) if args.action == 'deploy' else deployer.rollback()
-            print(json.dumps({'status': status, 'sha': args.sha}))
+            output = {'status': status, 'sha': args.sha}
+            prune = getattr(deployer, 'prune_result', None)
+            if prune:
+                output['prune'] = prune
+            print(json.dumps(output))
         except DeploymentError as error:
             print(json.dumps({'status': 'failed', 'error': str(error)})); raise SystemExit(1) from None
         except Exception:

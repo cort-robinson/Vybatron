@@ -964,6 +964,11 @@ class Coordinator:
         categories = {track.get('category') for track in probe['tracks'] if not track.get('ok')}
         if 'probe_environment' in categories:
             return self.finish('monitor_error', now, 'the isolated audio probe runtime needs attention')
+        if all(track.get('ok') for track in probe['tracks']) and not live_audio_ok(observation):
+            # Before the update path: a plugin update would recreate Lavalink, an
+            # automatic restart this signal must not cause, and hide the alert.
+            self.state['failed_checks'] = failed_checks(probe, observation)
+            return self.finish('live_audio', now, 'the production audio server could not play a test video that the isolated probe played; songs may fail for listeners')
         failures = self.state.get('failures', 0) + (not healthy)
         due = upstream_check_due or self.state.get('candidate') or (not healthy and failures >= 2)
         if (due and not observe_only and self.backend.settings.get('auto_update', False)
@@ -1012,8 +1017,6 @@ class Coordinator:
             return self.finish('credentials', now, 'the YouTube credentials need attention; a plugin update cannot refresh the account authorization')
         if 'unavailable' in categories:
             return self.finish('canary_degraded', now, 'test content is unavailable or region-restricted; this requires checking the test videos')
-        if all(track.get('ok') for track in probe['tracks']) and not live_audio_ok(observation):
-            return self.finish('live_audio', now, 'the production audio server could not play a test video that the isolated probe played; songs may fail for listeners')
         if all(track.get('ok') for track in probe['tracks']):
             # Both videos decoded; only a search failed. Never call that a failed video.
             return self.finish('search', now, search_detail(self.state['failed_checks']))

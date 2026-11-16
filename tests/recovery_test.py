@@ -896,6 +896,17 @@ class LiveAudioTests(unittest.TestCase):
         self.cycle()
         self.assertEqual(len(self.attention()), 1)  # A real outage alerts after two runs.
 
+    def test_a_live_decode_failure_never_restarts_through_a_plugin_update(self):
+        self.backend.settings['auto_update'] = True
+        self.backend.available = [NEW]
+        self.coordinator.state['upstream_checked_at'] = self.clock  # No scheduled check due.
+        self.backend.live_audio = 'http'
+        self.cycle()
+        state = self.cycle()
+        self.assertEqual(state['status'], 'live_audio')
+        self.assertFalse([call for call in self.backend.calls if call[0] in ('deploy', 'candidates')])
+        self.assertEqual(len(self.attention()), 1)
+
     def test_a_busy_export_is_inconclusive_not_a_failure(self):
         self.backend.live_audio = 'busy'
         self.assertEqual(self.cycle()['status'], 'healthy')

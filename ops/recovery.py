@@ -61,6 +61,10 @@ BOOT_ID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
 SEARCH_OUTCOMES = {'empty': 'returned no results', 'error': 'returned an error',
                    'timeout': 'timed out after 6 seconds', 'http': 'got an HTTP error from the audio server',
                    'unreachable': 'could not reach the audio server', 'invalid': 'got an unexpected response'}
+# Decoding a canary through the production Lavalink's export route, the one portal
+# listeners use. 'busy' (both export slots taken by listeners) proves nothing either way.
+LIVE_AUDIO_OUTCOMES = {'http': 'got an HTTP error', 'timeout': 'timed out', 'unreachable': 'could not reach it',
+                       'incomplete': 'got no complete audio'}
 SERVICES = ['vybertron-warp', 'vybertron-lavalink', 'vybertron-yt-cipher', 'vybertron-bot']
 
 # Runs inside the bot container: one cheap observation of the live services.
@@ -83,21 +87,44 @@ async function searchOutcome(url) {
   return error?.name==='TimeoutError'?'timeout':error?.name==='SyntaxError'?'invalid':'unreachable';
  }
 }
+// One canary decoded start to finish by the production Lavalink, through the
+// export route portal listeners use. The second canary is tried only when the
+// first fails. A whole song ends with an Ogg page flagged end-of-stream.
+async function exportOutcome(url) {
+ try {
+  const r=await fetch('http://lavalink:2333/vybatron/audio/'+url.split('=').pop(),{headers,signal:AbortSignal.timeout(20000)});
+  if(r.status===429) return 'busy';
+  if(!r.ok) return 'http';
+  const bytes=new Uint8Array(await r.arrayBuffer());
+  const last=Buffer.from(bytes).lastIndexOf('OggS');
+  return bytes.length>=6&&bytes[0]===79&&bytes[1]===103&&bytes[2]===103&&bytes[3]===83&&last>=0&&(bytes[last+5]&4)?'ok':'incomplete';
+ } catch(error) {
+  return error?.name==='TimeoutError'?'timeout':'unreachable';
+ }
+}
+async function liveAudioOutcome() {
+ let outcome='unreachable';
+ for (const url of TRACKS) {
+  outcome=await exportOutcome(url);
+  if(outcome==='ok'||outcome==='busy') break;
+ }
+ return outcome;
+}
 // yt-cipher is distroless (no shell for a Docker healthcheck); it shares
 // WARP's namespace, so the bot reaches it through the lavalink alias.
 const cipher=fetch('http://lavalink:8001/',{signal:AbortSignal.timeout(6000)}).then(r=>r.ok).catch(()=>false);
 // Each canary's metadata through the live Lavalink (no audio is streamed).
 const lookups=Promise.all(TRACKS.map(url=>read('http://lavalink:2333/v4/loadtracks?identifier='+encodeURIComponent(url))
  .then(r=>r?.loadType==='track')));
-const [stats,info,health,search,playback,cipherOk,canaries]=await Promise.all([
+const [stats,info,health,search,playback,cipherOk,canaries,liveAudio]=await Promise.all([
  read('http://lavalink:2333/v4/stats'), read('http://lavalink:2333/v4/info'),
  read(healthBase+'/health',false),
  searchOutcome('http://lavalink:2333/v4/loadtracks?identifier=ytsearch%3Aloser%20tame%20impala'),
- read(healthBase+'/playback',false), cipher, lookups]);
+ read(healthBase+'/playback',false), cipher, lookups, liveAudioOutcome()]);
 // Unreadable telemetry is null, never an empty list: unknown is not "no failures".
 console.log(JSON.stringify({api:!!stats,bot:health?.ready===true,cipher:cipherOk,playing:stats?.playingPlayers??null,
  version:info?.plugins?.find(p=>p.name==='youtube-plugin')?.version,
- search:search==='ok',searchResult:search,canaries,
+ search:search==='ok',searchResult:search,canaries,liveAudio,
  failures:Array.isArray(playback?.failures)?playback.failures:null}));
 """
 
@@ -305,7 +332,8 @@ def reusable_decode(state, observation, current, now, clock, observe_only=False,
     playing = observation.get('playing')
     services = observation.get('services')
     if (state.get('status') != 'healthy' or observation.get('kind') != 'ready'
-            or observation.get('search') is not True or observation.get('version') != current
+            or observation.get('search') is not True or observation.get('liveAudio') != 'ok'
+            or observation.get('version') != current
             or not isinstance(canaries, list) or len(canaries) != len(TRACKS) or not all(item is True for item in canaries)
             or type(playing) is not int or playing != 0
             or not telemetry_clear(observation.get('failures'), state.get('handled_failures', []), now)
@@ -328,12 +356,20 @@ def decode_basis(probe, observation, current, now, clock):
             'services': services, 'canaries': list(TRACKS), 'probe': evidence}
 
 
+def live_audio_ok(observation):
+    """The production Lavalink decoded a canary, or was too busy to tell."""
+    return observation.get('liveAudio') in ('ok', 'busy')
+
+
 def failed_checks(probe, observation):
     """Name every check this run failed, using only fixed words and categories."""
     checks = []
     if observation.get('search') is not True:
         outcome = observation.get('searchResult')
         checks.append('live_search:' + (outcome if isinstance(outcome, str) and outcome in SEARCH_OUTCOMES else 'unknown'))
+    if not live_audio_ok(observation):
+        outcome = observation.get('liveAudio')
+        checks.append('live_audio:' + (outcome if isinstance(outcome, str) and outcome in LIVE_AUDIO_OUTCOMES else 'unknown'))
     if probe.get('searchOk') is not True:
         checks.append('probe_search')
     checks.extend(f"canary_{index}:{track.get('category')}"
@@ -439,7 +475,11 @@ class Backend:
             return {'kind': 'namespace', 'playing': None}
         if containers['vybertron-warp']['State'].get('Health', {}).get('Status') != 'healthy':
             return {'kind': 'network', 'playing': None}
-        result = json.loads(command(['docker', 'exec', '-i', 'vybertron-bot', 'node', '--input-type=module'], data=OBSERVE_SCRIPT, timeout=20))
+        # Docker's healthcheck failing for a minute means a wedged Lavalink, even
+        # while its API still answers (2026-11-15: out of processes for 38 hours).
+        if containers['vybertron-lavalink']['State'].get('Health', {}).get('Status') == 'unhealthy':
+            return {'kind': 'audio_service', 'playing': None}
+        result = json.loads(command(['docker', 'exec', '-i', 'vybertron-bot', 'node', '--input-type=module'], data=OBSERVE_SCRIPT, timeout=60))
         result['services'] = services_fingerprint(containers)
         result['kind'] = ('audio_service' if not result['api'] else 'bot' if not result['bot']
                           else 'cipher' if not result.get('cipher') else 'ready')
@@ -839,7 +879,7 @@ class Coordinator:
             if kind != 'ready':
                 details = {'stopped': 'a container is stopped; intentionally stopped containers are not restarted',
                            'namespace': 'the audio containers have lost their shared network',
-                           'network': 'the WARP connection is unhealthy', 'audio_service': 'the audio API is unavailable',
+                           'network': 'the WARP connection is unhealthy', 'audio_service': 'the audio server is unavailable or Docker reports it unhealthy',
                            'bot': 'the bot is disconnected from Discord or the audio server',
                            'cipher': 'the YouTube signature helper (yt-cipher) is not responding'}
                 return self.finish(kind, now, details.get(kind, kind))
@@ -920,7 +960,7 @@ class Coordinator:
             basis = decode_basis(probe, observation, current, now, clock)
             if basis:
                 self.state['decode_basis'] = basis
-        healthy = probe['ok'] is True and observation.get('search') is True
+        healthy = probe['ok'] is True and observation.get('search') is True and live_audio_ok(observation)
         categories = {track.get('category') for track in probe['tracks'] if not track.get('ok')}
         if 'probe_environment' in categories:
             return self.finish('monitor_error', now, 'the isolated audio probe runtime needs attention')
@@ -972,6 +1012,8 @@ class Coordinator:
             return self.finish('credentials', now, 'the YouTube credentials need attention; a plugin update cannot refresh the account authorization')
         if 'unavailable' in categories:
             return self.finish('canary_degraded', now, 'test content is unavailable or region-restricted; this requires checking the test videos')
+        if all(track.get('ok') for track in probe['tracks']) and not live_audio_ok(observation):
+            return self.finish('live_audio', now, 'the production audio server could not play a test video that the isolated probe played; songs may fail for listeners')
         if all(track.get('ok') for track in probe['tracks']):
             # Both videos decoded; only a search failed. Never call that a failed video.
             return self.finish('search', now, search_detail(self.state['failed_checks']))

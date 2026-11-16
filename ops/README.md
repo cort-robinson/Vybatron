@@ -2,9 +2,11 @@
 
 The systemd timer checks the running stack about five minutes after each completed
 run. Every run checks the containers, WARP health and shared network namespaces,
-Discord/Lavalink connectivity, the yt-cipher helper, a live YouTube search, a
-metadata lookup of each canary video through the live Lavalink, and the bot's
-report of recent real playback failures. It also decodes five seconds of audio from
+Lavalink's Docker health, Discord/Lavalink connectivity, the yt-cipher helper, a
+live YouTube search, a metadata lookup of each canary video through the live
+Lavalink, a complete decode of a canary by the production Lavalink (through the
+export route portal listeners use; about one second), and the bot's report of
+recent real playback failures. It also decodes five seconds of audio from
 each of two known videos in an isolated Java container. It never joins a Discord
 voice channel or saves audio.
 The samples include a broadly available short video and a full music track;
@@ -14,7 +16,8 @@ The decode is the expensive part (a JVM start plus two YouTube streams), so an
 automatic run reuses the last decode instead only when all of this is established:
 
 - the previous run was healthy, and this run's cheap checks all passed: services
-  ready, the live search, every canary's lookup, and the loaded plugin version;
+  ready, the live search, every canary's lookup, the production Lavalink's
+  canary decode, and the loaded plugin version;
 - Lavalink reports exactly zero playing players;
 - the bot's playback-failure report was read, is well formed, and holds no
   unhandled failure from the last 15 minutes;
@@ -39,6 +42,15 @@ that fails only one canary alerts on the third (about ten minutes later). Search
 cipher, network and service faults are seen on the next run either way. `status`
 and the run line show `last_check`: `decode`, `cheap` (cheap checks only) or
 `none` (the run stopped before checking, for example during a deployment).
+
+When Docker reports Lavalink `unhealthy` (its healthcheck failed for about a minute),
+the run reports `audio_service` even if its API still answers, so a wedged server
+gets the same bounded, idle-only recreate as an unreachable one. When the production
+Lavalink cannot decode either canary (it tries the second only after the first
+fails) but the isolated probe plays them, the status is `live_audio` and it alerts
+after two runs; it does not restart anything on its own. A `429` from the export
+route means listeners hold both export slots: that run's live decode counts as
+neither a pass nor a failure.
 
 Persistent infrastructure failures allow at most two service recovery attempts in
 six hours, at least thirty minutes apart. A missing WARP daemon already has a

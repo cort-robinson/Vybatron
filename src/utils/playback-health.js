@@ -19,7 +19,11 @@ export function recordPlaybackFailure(client, track) {
 
 export function recordPlaybackProgress(client, player) {
   if (!player.connected || !player.playing || player.paused || !(player.lastPosition >= 5000)) return;
-  const identifier = player.queue?.current?.info?.identifier;
   if (player.queue?.current?.info?.sourceName !== 'youtube') return;
+  clearPlaybackFailure(client, player.queue.current.info.identifier);
+}
+
+// The video played after all (here or on a device): its failures are resolved.
+export function clearPlaybackFailure(client, identifier) {
   failures.set(client, playbackHealth(client).failures.filter((item) => item.identifier !== identifier));
 }

@@ -52,6 +52,7 @@ class FakeBackend:
         self.services = None  # Fingerprint of the service containers; None never skips a decode.
         self.search, self.canaries = True, [True] * len(r.TRACKS)
         self.search_result = None  # The live search's outcome, as observe() reports it.
+        self.live_audio = 'ok'  # Decoding a canary through the production Lavalink.
         self.monotonic, self.boot = 5000.0, '0f2c3d4e-1a2b-4c3d-8e9f-0a1b2c3d4e5f'
 
     def current(self):
@@ -60,7 +61,7 @@ class FakeBackend:
     def observe(self):
         return {'kind': self.kind, 'playing': self.playing, 'version': self.current(), 'search': self.search,
                 'canaries': self.canaries, 'failures': self.failures, 'services': self.services,
-                'searchResult': self.search_result}
+                'searchResult': self.search_result, 'liveAudio': self.live_audio}
 
     def clock(self):
         return {'monotonic': self.monotonic, 'boot': self.boot}
@@ -862,11 +863,126 @@ class FailedCheckTests(unittest.TestCase):
         self.assertNotIn('failed_checks', self.cycle())
 
 
+class LiveAudioTests(unittest.TestCase):
+    """The production Lavalink must decode a canary, not only the isolated probe."""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.backend = FakeBackend(Path(self.temp.name))
+        self.backend.settings['auto_update'] = False
+        self.backend.services = 'services-1'
+        self.coordinator = r.Coordinator(self.backend)
+        self.clock = 100000
+        git = patch.object(r, 'command', return_value=CONFIG)
+        git.start()
+        self.addCleanup(git.stop)
+
+    def cycle(self, delta=300):
+        self.clock += delta
+        self.backend.monotonic += delta
+        return self.coordinator.cycle(self.clock)
+
+    def attention(self):
+        return [event['message'] for event in self.coordinator.state.get('outbox', []) if 'needs attention' in event['message']]
+
+    def test_a_live_decode_failure_the_probe_cannot_reproduce_is_reported(self):
+        self.backend.live_audio = 'http'
+        state = self.cycle()
+        self.assertEqual(state['status'], 'live_audio')
+        self.assertEqual(state['failed_checks'], ['live_audio:http'])
+        self.assertIn('production audio server', state['detail'])
+        self.assertEqual(self.attention(), [])
+        self.cycle()
+        self.assertEqual(len(self.attention()), 1)  # A real outage alerts after two runs.
+
+    def test_a_live_decode_failure_never_restarts_through_a_plugin_update(self):
+        self.backend.settings['auto_update'] = True
+        self.backend.available = [NEW]
+        self.coordinator.state['upstream_checked_at'] = self.clock  # No scheduled check due.
+        self.backend.live_audio = 'http'
+        self.cycle()
+        state = self.cycle()
+        self.assertEqual(state['status'], 'live_audio')
+        self.assertFalse([call for call in self.backend.calls if call[0] in ('deploy', 'candidates')])
+        self.assertEqual(len(self.attention()), 1)
+
+    def test_a_busy_export_is_inconclusive_not_a_failure(self):
+        self.backend.live_audio = 'busy'
+        self.assertEqual(self.cycle()['status'], 'healthy')
+
+    def test_an_unrecognized_live_audio_outcome_fails_as_unknown(self):
+        for outcome in [None, 'yes', 7, 'x' * 80]:
+            self.backend.live_audio = outcome
+            state = self.cycle()
+            self.assertEqual(state['status'], 'live_audio', outcome)
+            self.assertEqual(state['failed_checks'], ['live_audio:unknown'], outcome)
+
+    def test_a_live_decode_failure_never_reuses_cached_evidence(self):
+        self.cycle()
+        self.assertEqual(self.coordinator.state['status'], 'healthy')
+        probes = len(self.backend.calls)
+        self.backend.live_audio = 'timeout'
+        self.cycle()
+        self.assertGreater(len([c for c in self.backend.calls[probes:] if c[0] == 'probe']), 0)
+
+    def test_a_live_failure_with_a_failing_probe_keeps_the_probe_status(self):
+        self.backend.live_audio = 'incomplete'
+        self.backend.results[OLD] = result(False)
+        state = self.cycle()
+        self.assertEqual(state['status'], 'source')
+        self.assertEqual(state['failed_checks'], ['live_audio:incomplete', 'canary_1:source', 'canary_2:source'])
+
+    def test_live_audio_failure_outranks_a_search_failure(self):
+        self.backend.live_audio, self.backend.search, self.backend.search_result = 'timeout', False, 'empty'
+        state = self.cycle()
+        self.assertEqual(state['status'], 'live_audio')
+        self.assertEqual(state['failed_checks'], ['live_search:empty', 'live_audio:timeout'])
+
+
+class ObserveHealthTests(unittest.TestCase):
+    """Docker's health status for Lavalink counts, so a wedged JVM is not 'ready'."""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.backend = r.Backend(Path(self.temp.name), Path(self.temp.name) / 'state', {})
+
+    def containers(self, lavalink_health):
+        items = {}
+        for name in r.SERVICES:
+            state = {'Status': 'running', 'Pid': 1, 'StartedAt': 't'}
+            if name == 'vybertron-warp':
+                state['Health'] = {'Status': 'healthy'}
+            if name == 'vybertron-lavalink' and lavalink_health:
+                state['Health'] = {'Status': lavalink_health}
+            items[name] = {'Id': name, 'State': state}
+        return items
+
+    def observe(self, lavalink_health):
+        ready = '{"api":true,"bot":true,"cipher":true,"playing":0,"search":true,"canaries":[true,true]}'
+        with patch.object(self.backend, 'inspect', return_value=self.containers(lavalink_health)), \
+                patch.object(r.os, 'readlink', return_value='net:[1]'), \
+                patch.object(r, 'command', return_value=ready):
+            return self.backend.observe()
+
+    def test_an_unhealthy_lavalink_is_an_audio_service_failure(self):
+        self.assertEqual(self.observe('unhealthy')['kind'], 'audio_service')
+
+    def test_a_healthy_or_starting_lavalink_is_ready(self):
+        for health in ['healthy', 'starting', None]:
+            self.assertEqual(self.observe(health)['kind'], 'ready', health)
+
+
+# A whole Ogg stream: an 'OggS' page whose header type has the end-of-stream bit.
+OGG_OK = "async()=>({ok:true,status:200,arrayBuffer:async()=>Uint8Array.from([79,103,103,83,0,4,0,0]).buffer})"
+
+
 @unittest.skipUnless(shutil.which('node'), 'node is required to run the observation script')
 class ObserveScriptTests(unittest.TestCase):
     """The script observe() runs in the bot container reports why search failed."""
 
-    def run_script(self, search):
+    def run_script(self, search, audio=None):
         # Stub fetch: every request succeeds except the live search, whose
         # behaviour is the JavaScript expression in `search`.
         stub = """
@@ -875,13 +991,14 @@ const ok=(body)=>({ok:true,status:200,json:async()=>body});
 globalThis.fetch=async(url)=>{
  url=String(url);
  if(url.includes('ytsearch')) return (SEARCH)();
+ if(url.includes('/vybatron/audio/')) return (AUDIO)(url);
  if(url.endsWith('/v4/stats')) return ok({playingPlayers:0});
  if(url.endsWith('/v4/info')) return ok({plugins:[{name:'youtube-plugin',version:'v'}]});
  if(url.includes('loadtracks')) return ok({loadType:'track'});
  if(url.endsWith('/playback')) return ok({failures:[]});
  return ok({ready:true});
 };
-""".replace('SEARCH', search)
+""".replace('SEARCH', search).replace('AUDIO', audio or OGG_OK)
         output = subprocess.run(['node', '--input-type=module'], input=stub + r.OBSERVE_SCRIPT,
                                 capture_output=True, text=True, timeout=30, check=True)
         return __import__('json').loads(output.stdout.strip().splitlines()[-1])
@@ -903,6 +1020,26 @@ globalThis.fetch=async(url)=>{
             self.assertIs(result['search'], passed, search)
             self.assertEqual(result['searchResult'], outcome, search)
             self.assertNotIn('secret', __import__('json').dumps(result))
+
+    def test_live_audio_outcomes(self):
+        body = "async()=>({ok:true,status:200,arrayBuffer:async()=>Uint8Array.from(BYTES).buffer})"
+        cases = [
+            (OGG_OK, 'ok'),
+            (body.replace('BYTES', '[79,103,103,83,0,0,0,0]'), 'incomplete'),  # No end-of-stream page.
+            (body.replace('BYTES', '[1,2,3,4]'), 'incomplete'),
+            (body.replace('BYTES', '[]'), 'incomplete'),
+            ("async()=>({ok:false,status:429,arrayBuffer:async()=>new ArrayBuffer(0)})", 'busy'),
+            ("async()=>({ok:false,status:502,arrayBuffer:async()=>new ArrayBuffer(0)})", 'http'),
+            ("async()=>{throw Object.assign(new Error('t'),{name:'TimeoutError'})}", 'timeout'),
+            ("async()=>{throw new TypeError('fetch failed')}", 'unreachable'),
+        ]
+        for audio, outcome in cases:
+            self.assertEqual(self.run_script("async()=>ok({loadType:'search',data:[{}]})", audio)['liveAudio'], outcome, audio)
+
+    def test_live_audio_tries_the_second_canary_only_after_a_failure(self):
+        first_fails = ("async(url)=>url.includes('" + r.TRACKS[0].rsplit('=', 1)[1] + "')"
+                       "?{ok:false,status:502,arrayBuffer:async()=>new ArrayBuffer(0)}:(" + OGG_OK + ")()")
+        self.assertEqual(self.run_script("async()=>ok({loadType:'search',data:[{}]})", first_fails)['liveAudio'], 'ok')
 
 
 class PluginMirrorTests(unittest.TestCase):

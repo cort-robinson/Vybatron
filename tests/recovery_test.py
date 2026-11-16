@@ -1082,6 +1082,14 @@ class BotAlertRelayTests(unittest.TestCase):
                                          'Audio alert: 2 songs failed to play in the last 15 minutes.',
                                          'Resolved: songs are playing normally again.'])
 
+    def test_a_repeated_alert_text_still_posts_while_delivery_is_pending(self):
+        failing, resolved = self.alert(1, 'Audio alert: x'), self.alert(2, 'Resolved: x')
+        again = self.alert(3, 'Audio alert: x')
+        for alerts in [[failing], [failing, resolved], [failing, resolved, again]]:
+            self.backend.alerts = alerts
+            self.cycle()
+        self.assertEqual(self.outbox(), ['Audio alert: x', 'Resolved: x', 'Audio alert: x'])
+
     def test_a_bot_alert_is_posted_even_when_the_run_is_unhealthy(self):
         self.backend.alerts = [self.alert(1)]
         self.backend.search, self.backend.search_result = False, 'empty'

@@ -754,11 +754,12 @@ class Coordinator:
     def save(self):
         save_json(self.path, self.state)
 
-    def event(self, message):
+    def event(self, message, unique=True):
+        """Queue a message; unique drops one whose text is already waiting."""
         outbox = self.state.get('outbox', [])
         if not isinstance(outbox, list):
             raise RecoveryError('invalid_alert_outbox')
-        if not any(isinstance(event, dict) and event.get('message') == message for event in outbox):
+        if not unique or not any(isinstance(event, dict) and event.get('message') == message for event in outbox):
             outbox.append({'id': uuid.uuid4().hex[:24], 'message': message})
         self.state['outbox'] = outbox[-MAX_OUTBOX:]
         self.save()
@@ -776,7 +777,9 @@ class Coordinator:
                 continue
             relayed = [*relayed, item['id']][-MAX_RELAYED:]
             self.state['relayed_alerts'] = relayed
-            self.event(item['text'])  # Saves the remembered ID with the queued message.
+            # Saves the remembered ID with the queued message. The bot's ID already
+            # rules out repeats; its fail, resolve, fail must all post, in order.
+            self.event(item['text'], unique=False)
 
     def finish(self, kind, now, detail=''):
         healthy = kind == 'healthy'

@@ -119,6 +119,8 @@ export function createAudioCache(client, { limits = AUDIO_LIMITS, fetchImpl = fe
     // A device song that can't stream is a real playback failure, reported where the
     // recovery monitor and operator alerts read Discord's. Busy, too long, abandoned
     // and offline answers aren't: those say nothing about whether the song plays.
+    // Background downloads (fingerprints, alternate-source checks) count too: a song
+    // the server can't stream is a failure whoever asked for it.
     void entry.done.then(() => clearPlaybackFailure(client, id), error => {
       if (!error?.status || [404, 502].includes(error.status)) recordPlaybackFailure(client, { info: { sourceName: 'youtube', identifier: id } });
     });

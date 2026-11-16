@@ -42,9 +42,9 @@ RECOVERY_COOLDOWN = 30 * 60
 RECOVERY_WINDOW = 6 * 3600
 MAX_OUTBOX = 32
 MAX_ALERTS_PER_RUN = 5
-# One canary failing while the other plays is usually a transient WARP/YouTube
-# flap (~15 min of consecutive degraded runs before alerting). Outages still
-# alert after two runs.
+# One canary failing while the other plays, or a failed search while both
+# play, is usually a transient WARP/YouTube flap (~15 min of consecutive
+# degraded runs before alerting). Outages still alert after two runs.
 DEGRADED_ALERT_RUNS = 3
 # The isolated decode probe starts a JVM and streams two YouTube videos. While
 # nothing is playing and nothing has changed since a passing decode, the cheap
@@ -57,7 +57,49 @@ IDLE_DECODE_INTERVAL = 30 * 60
 # most this much; any larger gap means the clock jumped, so decode.
 CLOCK_TOLERANCE = 30
 BOOT_ID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
+# The live search's outcome as observe() reports it, and how alerts describe it.
+SEARCH_OUTCOMES = {'empty': 'returned no results', 'error': 'returned an error',
+                   'timeout': 'timed out after 6 seconds', 'http': 'got an HTTP error from the audio server',
+                   'unreachable': 'could not reach the audio server', 'invalid': 'got an unexpected response'}
 SERVICES = ['vybertron-warp', 'vybertron-lavalink', 'vybertron-yt-cipher', 'vybertron-bot']
+
+# Runs inside the bot container: one cheap observation of the live services.
+OBSERVE_SCRIPT = 'const TRACKS=' + json.dumps(TRACKS) + ';' + """
+const headers={Authorization:process.env.LAVALINK_PASSWORD};
+const healthBase='http://127.0.0.1:'+(Number(process.env.VYBERTRON_HEALTH_PORT)||3000);
+async function read(url, auth=true) {
+ try { const r=await fetch(url,{headers:auth?headers:{},signal:AbortSignal.timeout(6000)}); return r.ok?await r.json():null; }
+ catch { return null; }
+}
+// Why the live search failed, as a fixed word: never Lavalink's error text.
+async function searchOutcome(url) {
+ try {
+  const r=await fetch(url,{headers,signal:AbortSignal.timeout(6000)});
+  if(!r.ok) return 'http';
+  const body=await r.json();
+  if(body?.loadType==='search') return Array.isArray(body.data)&&body.data.length>0?'ok':'empty';
+  return body?.loadType==='empty'?'empty':body?.loadType==='error'?'error':'invalid';
+ } catch(error) {
+  return error?.name==='TimeoutError'?'timeout':error?.name==='SyntaxError'?'invalid':'unreachable';
+ }
+}
+// yt-cipher is distroless (no shell for a Docker healthcheck); it shares
+// WARP's namespace, so the bot reaches it through the lavalink alias.
+const cipher=fetch('http://lavalink:8001/',{signal:AbortSignal.timeout(6000)}).then(r=>r.ok).catch(()=>false);
+// Each canary's metadata through the live Lavalink (no audio is streamed).
+const lookups=Promise.all(TRACKS.map(url=>read('http://lavalink:2333/v4/loadtracks?identifier='+encodeURIComponent(url))
+ .then(r=>r?.loadType==='track')));
+const [stats,info,health,search,playback,cipherOk,canaries]=await Promise.all([
+ read('http://lavalink:2333/v4/stats'), read('http://lavalink:2333/v4/info'),
+ read(healthBase+'/health',false),
+ searchOutcome('http://lavalink:2333/v4/loadtracks?identifier=ytsearch%3Aloser%20tame%20impala'),
+ read(healthBase+'/playback',false), cipher, lookups]);
+// Unreadable telemetry is null, never an empty list: unknown is not "no failures".
+console.log(JSON.stringify({api:!!stats,bot:health?.ready===true,cipher:cipherOk,playing:stats?.playingPlayers??null,
+ version:info?.plugins?.find(p=>p.name==='youtube-plugin')?.version,
+ search:search==='ok',searchResult:search,canaries,
+ failures:Array.isArray(playback?.failures)?playback.failures:null}));
+"""
 
 
 class RecoveryError(Exception):
@@ -286,6 +328,31 @@ def decode_basis(probe, observation, current, now, clock):
             'services': services, 'canaries': list(TRACKS), 'probe': evidence}
 
 
+def failed_checks(probe, observation):
+    """Name every check this run failed, using only fixed words and categories."""
+    checks = []
+    if observation.get('search') is not True:
+        outcome = observation.get('searchResult')
+        checks.append('live_search:' + (outcome if isinstance(outcome, str) and outcome in SEARCH_OUTCOMES else 'unknown'))
+    if probe.get('searchOk') is not True:
+        checks.append('probe_search')
+    checks.extend(f"canary_{index}:{track.get('category')}"
+                  for index, track in enumerate(probe['tracks'], 1) if not track.get('ok'))
+    return checks
+
+
+def search_detail(checks):
+    """An alert sentence for a run whose only failures were searches."""
+    parts = []
+    for check in checks:
+        if check.startswith('live_search:'):
+            outcome = check.split(':', 1)[1]
+            parts.append('the live search ' + SEARCH_OUTCOMES.get(outcome, 'failed for an unknown reason'))
+        elif check == 'probe_search':
+            parts.append("the isolated probe's search failed")
+    return 'YouTube search failed (' + '; '.join(parts) + '); both test videos played, so known songs still stream'
+
+
 def version_of(config):
     matches = DEPENDENCY.findall(config)
     if len(matches) != 1 or not VERSION.fullmatch(matches[0]):
@@ -372,31 +439,7 @@ class Backend:
             return {'kind': 'namespace', 'playing': None}
         if containers['vybertron-warp']['State'].get('Health', {}).get('Status') != 'healthy':
             return {'kind': 'network', 'playing': None}
-        script = 'const TRACKS=' + json.dumps(TRACKS) + ';' + """
-const headers={Authorization:process.env.LAVALINK_PASSWORD};
-const healthBase='http://127.0.0.1:'+(Number(process.env.VYBERTRON_HEALTH_PORT)||3000);
-async function read(url, auth=true) {
- try { const r=await fetch(url,{headers:auth?headers:{},signal:AbortSignal.timeout(6000)}); return r.ok?await r.json():null; }
- catch { return null; }
-}
-// yt-cipher is distroless (no shell for a Docker healthcheck); it shares
-// WARP's namespace, so the bot reaches it through the lavalink alias.
-const cipher=fetch('http://lavalink:8001/',{signal:AbortSignal.timeout(6000)}).then(r=>r.ok).catch(()=>false);
-// Each canary's metadata through the live Lavalink (no audio is streamed).
-const lookups=Promise.all(TRACKS.map(url=>read('http://lavalink:2333/v4/loadtracks?identifier='+encodeURIComponent(url))
- .then(r=>r?.loadType==='track')));
-const [stats,info,health,search,playback,cipherOk,canaries]=await Promise.all([
- read('http://lavalink:2333/v4/stats'), read('http://lavalink:2333/v4/info'),
- read(healthBase+'/health',false),
- read('http://lavalink:2333/v4/loadtracks?identifier=ytsearch%3Aloser%20tame%20impala'),
- read(healthBase+'/playback',false), cipher, lookups]);
-// Unreadable telemetry is null, never an empty list: unknown is not "no failures".
-console.log(JSON.stringify({api:!!stats,bot:health?.ready===true,cipher:cipherOk,playing:stats?.playingPlayers??null,
- version:info?.plugins?.find(p=>p.name==='youtube-plugin')?.version,
- search:search?.loadType==='search'&&search.data?.length>0,canaries,
- failures:Array.isArray(playback?.failures)?playback.failures:null}));
-"""
-        result = json.loads(command(['docker', 'exec', '-i', 'vybertron-bot', 'node', '--input-type=module'], data=script, timeout=20))
+        result = json.loads(command(['docker', 'exec', '-i', 'vybertron-bot', 'node', '--input-type=module'], data=OBSERVE_SCRIPT, timeout=20))
         result['services'] = services_fingerprint(containers)
         result['kind'] = ('audio_service' if not result['api'] else 'bot' if not result['bot']
                           else 'cipher' if not result.get('cipher') else 'ready')
@@ -685,7 +728,7 @@ class Coordinator:
         elif healthy and not self.state.get('started'):
             self.state['started'] = True
             self.event('Vybatron monitoring is enabled. Connectivity and search are checked about every five minutes, and decoded audio every five minutes while music plays (about every 30 minutes when idle and unchanged). Official YouTube plugin updates are checked every six hours and after persistent playback failures; updates must pass full playback tests and wait for an empty player/queue. Failed updates are rolled back. Routine successful checks stay quiet.')
-        elif (not healthy and failures >= (DEGRADED_ALERT_RUNS if kind == 'canary_degraded' else 2)
+        elif (not healthy and failures >= (DEGRADED_ALERT_RUNS if kind in ['canary_degraded', 'search'] else 2)
               and self.state.get('incident_notified') != kind):
             self.state['incident_notified'] = kind
             self.event(f'Vybatron needs attention: {detail or kind}. Automatic recovery is limited to avoid repeated interruptions. Current YouTube plugin: {self.backend.current()}.')
@@ -756,8 +799,9 @@ class Coordinator:
                 self.backend.end_update()
 
     def cycle(self, now, observe_only=False):
-        # Reset first, so an early return never reports an earlier run's decode.
+        # Reset first, so an early return never reports an earlier run's decode or failures.
         self.state['last_check'] = 'none'
+        self.state.pop('failed_checks', None)
         clock = self.backend.clock()
         deployment = read_json(self.backend.directory / 'deployment.json')
         if deployment and deployment.get('phase') not in ['complete', 'rolled_back']:
@@ -923,10 +967,14 @@ class Coordinator:
                 self.state['mirror_error'] = str(error)
         if healthy:
             return self.finish('healthy', now)
+        self.state['failed_checks'] = failed_checks(probe, observation)
         if 'credentials' in categories:
             return self.finish('credentials', now, 'the YouTube credentials need attention; a plugin update cannot refresh the account authorization')
         if 'unavailable' in categories:
             return self.finish('canary_degraded', now, 'test content is unavailable or region-restricted; this requires checking the test videos')
+        if all(track.get('ok') for track in probe['tracks']):
+            # Both videos decoded; only a search failed. Never call that a failed video.
+            return self.finish('search', now, search_detail(self.state['failed_checks']))
         if any(track.get('ok') for track in probe['tracks']):
             return self.finish('canary_degraded', now, 'one test video failed while another played; playback is not completely down')
         return self.finish('source', now, 'YouTube search or playback checks failed; no tested plugin update has restored playback yet')
@@ -1023,6 +1071,7 @@ def main():
         if summary['status'] != 'healthy':
             # Credential-free categories identify which canary flaps over time.
             tracks = (coordinator.state.get('last_probe') or {}).get('tracks', [])
+            summary['failed_checks'] = coordinator.state.get('failed_checks', [])
             summary['failed_canaries'] = [{'track': index, 'category': track.get('category'), 'ended': track.get('ended')}
                                           for index, track in enumerate(tracks) if not track.get('ok')]
         print(json.dumps(summary))

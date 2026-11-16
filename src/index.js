@@ -44,7 +44,7 @@ async function init() {
   await initializeStats(client, { dataDir: config.dataDir });
   await initializeSongs(client, { dataDir: config.dataDir });
   // Alerts are diagnostics: a failure here never stops the bot from starting.
-  await startOperatorAlerts(client, { dataDir: config.dataDir })
+  await startOperatorAlerts(client)
     .catch((error) => logEvent(console, 'error', 'operator_alerts_unavailable', error));
   await loadCommands(client);
   // A bind failure is isolated inside the optional bridge; it never becomes a

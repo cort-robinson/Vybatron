@@ -53,6 +53,7 @@ class FakeBackend:
         self.search, self.canaries = True, [True] * len(r.TRACKS)
         self.search_result = None  # The live search's outcome, as observe() reports it.
         self.live_audio = 'ok'  # Decoding a canary through the production Lavalink.
+        self.alerts = []  # The bot's queued alerts, from its /alerts route.
         self.monotonic, self.boot = 5000.0, '0f2c3d4e-1a2b-4c3d-8e9f-0a1b2c3d4e5f'
 
     def current(self):
@@ -61,7 +62,7 @@ class FakeBackend:
     def observe(self):
         return {'kind': self.kind, 'playing': self.playing, 'version': self.current(), 'search': self.search,
                 'canaries': self.canaries, 'failures': self.failures, 'services': self.services,
-                'searchResult': self.search_result, 'liveAudio': self.live_audio}
+                'searchResult': self.search_result, 'liveAudio': self.live_audio, 'alerts': self.alerts}
 
     def clock(self):
         return {'monotonic': self.monotonic, 'boot': self.boot}
@@ -996,6 +997,7 @@ globalThis.fetch=async(url)=>{
  if(url.endsWith('/v4/info')) return ok({plugins:[{name:'youtube-plugin',version:'v'}]});
  if(url.includes('loadtracks')) return ok({loadType:'track'});
  if(url.endsWith('/playback')) return ok({failures:[]});
+ if(url.endsWith('/alerts')) return ok({alerts:[{id:'a1',at:1,text:'Audio alert: test'}]});
  return ok({ready:true});
 };
 """.replace('SEARCH', search).replace('AUDIO', audio or OGG_OK)
@@ -1036,10 +1038,73 @@ globalThis.fetch=async(url)=>{
         for audio, outcome in cases:
             self.assertEqual(self.run_script("async()=>ok({loadType:'search',data:[{}]})", audio)['liveAudio'], outcome, audio)
 
+    def test_the_bot_alert_queue_is_read(self):
+        result = self.run_script("async()=>ok({loadType:'search',data:[{}]})")
+        self.assertEqual(result['alerts'], [{'id': 'a1', 'at': 1, 'text': 'Audio alert: test'}])
+
     def test_live_audio_tries_the_second_canary_only_after_a_failure(self):
         first_fails = ("async(url)=>url.includes('" + r.TRACKS[0].rsplit('=', 1)[1] + "')"
                        "?{ok:false,status:502,arrayBuffer:async()=>new ArrayBuffer(0)}:(" + OGG_OK + ")()")
         self.assertEqual(self.run_script("async()=>ok({loadType:'search',data:[{}]})", first_fails)['liveAudio'], 'ok')
+
+
+class BotAlertRelayTests(unittest.TestCase):
+    """The bot's alerts reach the same channel, once each, through this outbox."""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.backend = FakeBackend(Path(self.temp.name))
+        self.backend.settings['auto_update'] = False
+        self.coordinator = r.Coordinator(self.backend)
+        self.coordinator.state['started'] = True  # Skip the one-time monitoring notice.
+        self.clock = 100000
+        git = patch.object(r, 'command', return_value=CONFIG)
+        git.start()
+        self.addCleanup(git.stop)
+
+    def cycle(self):
+        self.clock += 300
+        return self.coordinator.cycle(self.clock)
+
+    def outbox(self):
+        return [event['message'] for event in self.coordinator.state.get('outbox', [])]
+
+    def alert(self, n, text=None):
+        return {'id': f'alert-{n}', 'at': 1, 'text': text or f'Audio alert: {n} songs failed to play in the last 15 minutes.'}
+
+    def test_each_bot_alert_is_posted_once_in_order(self):
+        self.backend.alerts = [self.alert(1), self.alert(2)]
+        self.cycle()
+        self.backend.alerts = [self.alert(1), self.alert(2), self.alert(3, 'Resolved: songs are playing normally again.')]
+        self.cycle()
+        self.assertEqual(self.outbox(), ['Audio alert: 1 songs failed to play in the last 15 minutes.',
+                                         'Audio alert: 2 songs failed to play in the last 15 minutes.',
+                                         'Resolved: songs are playing normally again.'])
+
+    def test_a_bot_alert_is_posted_even_when_the_run_is_unhealthy(self):
+        self.backend.alerts = [self.alert(1)]
+        self.backend.search, self.backend.search_result = False, 'empty'
+        self.cycle()
+        self.assertIn(self.alert(1)['text'], self.outbox())
+
+    def test_missing_or_malformed_alerts_are_ignored(self):
+        for alerts in [None, 'x', {}, [None], [{'id': 7, 'text': 'Audio alert: x'}], [{'id': 'a b', 'text': 'Audio alert: x'}],
+                       [{'id': 'a', 'text': 7}], [{'id': 'a', 'text': ''}], [{'id': 'a', 'text': 'x' * 301}],
+                       [self.alert(n) for n in range(33)]]:
+            self.backend.alerts = alerts
+            self.cycle()
+            self.assertEqual(self.outbox(), [], alerts)
+
+    def test_relayed_ids_stay_bounded(self):
+        for n in range(80):
+            self.backend.alerts = [self.alert(n)]
+            self.cycle()
+            self.coordinator.state['outbox'] = []
+        self.assertEqual(len(self.coordinator.state['relayed_alerts']), 64)
+        self.backend.alerts = [self.alert(79)]
+        self.cycle()
+        self.assertEqual(self.outbox(), [])  # Still remembered: never posted twice.
 
 
 class PluginMirrorTests(unittest.TestCase):

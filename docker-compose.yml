@@ -56,6 +56,9 @@ services:
     image: ghcr.io/lavalink-devs/lavalink@sha256:87ae53e60dc147c9dddb28e126ce503a26bc8d1477ed8d99543614677882afff
     container_name: vybertron-lavalink
     restart: unless-stopped
+    # The JVM never reaps orphans, so a timed-out healthcheck's wget stayed a
+    # zombie until they filled pids_limit and Lavalink couldn't start threads.
+    init: true
     logging: *bounded-logging
     mem_limit: 768m
     memswap_limit: 896m

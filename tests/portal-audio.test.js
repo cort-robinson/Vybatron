@@ -5,6 +5,7 @@ import { once } from 'node:events';
 import { portalFixture } from './portal-fixtures.js';
 import { createAudioCache, playableAudio, sendAudio, wholeOgg } from '../src/portal/audio.js';
 import { SongStore } from '../src/utils/song-store.js';
+import { playbackHealth, recordPlaybackFailure } from '../src/utils/playback-health.js';
 
 // A whole song as the plugin sends it: Ogg pages ending with end-of-stream.
 function ogg(size, flags = 0x04) {
@@ -102,10 +103,12 @@ test('portal audio falls back to the YouTube stream route and explains unavailab
 });
 
 test('a song YouTube refuses or cuts off is explained and never cached', async t => {
-  const { lavalink, get } = await audioFixture(t);
+  const { f, lavalink, get } = await audioFixture(t);
   const refused = await get('refusedsong');
   assert.equal(refused.status, 404);
   assert.match((await refused.json()).error.message, /can’t be streamed right now/);
+  // The recovery monitor reads this through the bot's /playback health route.
+  assert.deepEqual(playbackHealth(f.client).failures.map(item => item.identifier), ['refusedsong']);
   assert.deepEqual(lavalink.requests.map(item => item.itag ?? 'plugin'), ['plugin', '140', '251']);
 
   // Lavalink's server ends a failed song's response normally, just without end-of-stream.
@@ -392,4 +395,57 @@ test('a listener who skips while still being authorized leaves no download behin
   assert.deepEqual(Buffer.from(await landed.arrayBuffer()), song);
   await until(() => plugin.requests.includes('skipsongccc'));
   assert.deepEqual(plugin.requests, ['skipsongccc'], 'nothing was downloaded for the listener who left');
+});
+
+// Device playback reports real failures where the recovery monitor and the
+// operator alerts look for them, the same way Discord playback does.
+function telemetryCache(fetchImpl, client = { lavalink: { nodeManager: { leastUsedNodes: () => [{ connected: true, options: { host: 'lavalink', port: 2333, authorization: 'x' } }] } } }) {
+  return { client, cache: createAudioCache(client, { limits: { trackBytes: 50, cacheBytes: 100, downloads: 2, timeoutMs: 200 }, fetchImpl }) };
+}
+const failed = client => playbackHealth(client).failures.map(item => item.identifier);
+const settle = entryOrError => Promise.resolve(entryOrError).then(entry => entry.done).catch(() => {});
+
+test('a device song that can\'t stream is reported as a real playback failure', async () => {
+  const cases = {
+    refusedsong: async () => new Response(null, { status: 502 }),  // Every source refuses: 404 to the device.
+    cutoffsong1: async () => new Response(ogg(40, 0)),  // Cut off partway: no end-of-stream.
+    emptysong12: async () => new Response(new Uint8Array(0)),
+    hungsong123: async (url, { signal }) => new Promise((resolve, reject) => signal.addEventListener('abort', () => reject(signal.reason), { once: true })),
+    offlinesong: async () => { throw new TypeError('fetch failed'); },
+  };
+  const { client, cache } = telemetryCache(async (url, init) => cases[new URL(url).pathname.split('/').pop()](url, init));
+  for (const id of Object.keys(cases)) await settle(cache.get(id));
+  assert.deepEqual(failed(client).sort(), Object.keys(cases).sort());
+});
+
+test('busy, too long, abandoned and offline answers are not playback failures', async () => {
+  const { client, cache } = telemetryCache(async url => new URL(url).pathname.endsWith('toolongsong') ? new Response(ogg(60)) : new Response(null, { status: 413 }));
+  await settle(cache.get('toolongsong'));
+  await settle(cache.get('limitsong12'));
+  const offline = telemetryCache(async () => new Response(ogg(40)), { lavalink: { nodeManager: { leastUsedNodes: () => [] } } });
+  await settle(offline.cache.get('offlinesong'));
+  assert.deepEqual(failed(client), []);
+  assert.deepEqual(failed(offline.client), []);
+
+  // Abandoned when a listener skips and nobody holds it; busy when no slot is free.
+  const stalled = telemetryCache(async (url, { signal }) => new Response(new ReadableStream({ start(controller) {
+    controller.enqueue(new Uint8Array(10));
+    signal.addEventListener('abort', () => controller.error(signal.reason), { once: true });
+  } }), { headers: { 'Content-Type': 'audio/ogg' } }));
+  const listener = new AbortController();
+  const skipped = await stalled.cache.get('bbbbbbbbbbb', { signal: listener.signal });
+  void stalled.cache.get('aaaaaaaaaaa').catch(() => {});
+  listener.abort();
+  assert.throws(() => stalled.cache.get('ddddddddddd', { background: true }), error => error.status === 429);
+  void stalled.cache.get('eeeeeeeeeee', { signal: new AbortController().signal }).catch(() => {});
+  assert.equal((await skipped.done.catch(error => error)).code, 'abandoned');
+  assert.deepEqual(failed(stalled.client), []);
+});
+
+test('a device song that streams whole clears its earlier failure', async () => {
+  const { client, cache } = telemetryCache(async () => new Response(ogg(40)));
+  recordPlaybackFailure(client, { info: { sourceName: 'youtube', identifier: 'aaaaaaaaaaa' } });
+  recordPlaybackFailure(client, { info: { sourceName: 'youtube', identifier: 'bbbbbbbbbbb' } });
+  await settle(cache.get('aaaaaaaaaaa'));
+  assert.deepEqual(failed(client), ['bbbbbbbbbbb']);
 });

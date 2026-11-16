@@ -1,5 +1,6 @@
 import { setTimeout as delay } from 'node:timers/promises';
 import { PortalError, fail } from './errors.js';
+import { clearPlaybackFailure, recordPlaybackFailure } from '../utils/playback-health.js';
 
 // Audio for portal listeners playing on their own device. Lavalink decodes the
 // song through the same pipeline as Discord playback (our vybatron-audio plugin)
@@ -115,7 +116,12 @@ export function createAudioCache(client, { limits = AUDIO_LIMITS, fetchImpl = fe
     const entry = { used: ++tick, type: null, bytes: 0, chunks: [], data: null, complete: false, error: null, listeners: new Set(),
       slot: true, holders: 0, kept: false, reclaiming, abandon: new AbortController() };
     entry.done = new Promise((resolve, reject) => { entry.settle = resolve; entry.fail = error => { if (entry.error) return; entry.error = error; if (entries.get(id) === entry) entries.delete(id); reject(error); }; });
-    void entry.done.catch(() => {});
+    // A device song that can't stream is a real playback failure, reported where the
+    // recovery monitor and operator alerts read Discord's. Busy, too long, abandoned
+    // and offline answers aren't: those say nothing about whether the song plays.
+    void entry.done.then(() => clearPlaybackFailure(client, id), error => {
+      if (!error?.status || [404, 502].includes(error.status)) recordPlaybackFailure(client, { info: { sourceName: 'youtube', identifier: id } });
+    });
     hold(entry, signal);
     entry.started = download(id, entry).catch(error => { release(entry); entry.fail(error); throw error; });
     entries.set(id, entry);

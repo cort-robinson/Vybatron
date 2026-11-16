@@ -52,9 +52,14 @@ it over the shared namespace from the bot container. An unresponsive cipher is
 restarted alone (keeping WARP's namespace) under the same idle and attempt limits.
 A failed canary probe is retried once within the run. When one canary fails while
 the other plays, the alert waits for three consecutive degraded runs (about fifteen
-minutes); other failures still alert after two. Non-healthy run lines in the
-journal include `failed_canaries` (track index, category, ending) so recurring
-flaps can be traced to a specific test video.
+minutes); other failures still alert after two. A run where both canaries play
+but a YouTube search fails (the live search through Lavalink, or the probe's own)
+has the status `search`. It waits three runs like a degraded canary, and its alert
+says why the search failed: no results, an error, a timeout, an HTTP error, no
+connection or an unexpected response. Non-healthy run lines in the journal include
+`failed_checks` (for example `live_search:timeout`, `probe_search` or
+`canary_2:source`) and `failed_canaries` (track index, category, ending), so
+recurring flaps can be traced to a specific check.
 
 Paused and queued tracks also prevent recovery, even when the audio server cannot
 report a player count. Infrastructure repair must pass the bot's idle check and

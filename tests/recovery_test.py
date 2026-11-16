@@ -51,6 +51,7 @@ class FakeBackend:
         self.mirror_error = None
         self.services = None  # Fingerprint of the service containers; None never skips a decode.
         self.search, self.canaries = True, [True] * len(r.TRACKS)
+        self.search_result = None  # The live search's outcome, as observe() reports it.
         self.monotonic, self.boot = 5000.0, '0f2c3d4e-1a2b-4c3d-8e9f-0a1b2c3d4e5f'
 
     def current(self):
@@ -58,7 +59,8 @@ class FakeBackend:
 
     def observe(self):
         return {'kind': self.kind, 'playing': self.playing, 'version': self.current(), 'search': self.search,
-                'canaries': self.canaries, 'failures': self.failures, 'services': self.services}
+                'canaries': self.canaries, 'failures': self.failures, 'services': self.services,
+                'searchResult': self.search_result}
 
     def clock(self):
         return {'monotonic': self.monotonic, 'boot': self.boot}
@@ -769,6 +771,138 @@ class DecodeScheduleTests(unittest.TestCase):
         self.assertEqual(r.read_boot_id(path), '0f2c3d4e-1a2b-4c3d-8e9f-0a1b2c3d4e5f')
         path.write_text('not-a-boot-id\n')
         self.assertIsNone(r.read_boot_id(path))
+
+
+class FailedCheckTests(unittest.TestCase):
+    """Each unhealthy run names the check that failed, and alerts say so."""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.backend = FakeBackend(Path(self.temp.name))
+        self.backend.settings['auto_update'] = False
+        self.coordinator = r.Coordinator(self.backend)
+        self.clock = 100000
+        git = patch.object(r, 'command', return_value=CONFIG)
+        git.start()
+        self.addCleanup(git.stop)
+
+    def cycle(self):
+        self.clock += 300
+        return self.coordinator.cycle(self.clock)
+
+    def attention(self):
+        return [event['message'] for event in self.coordinator.state.get('outbox', []) if 'needs attention' in event['message']]
+
+    def test_a_failed_live_search_is_not_reported_as_a_failed_test_video(self):
+        self.backend.search, self.backend.search_result = False, 'empty'
+        state = self.cycle()
+        self.assertEqual(state['status'], 'search')
+        self.assertEqual(state['failed_checks'], ['live_search:empty'])
+        self.assertIn('returned no results', state['detail'])
+        self.assertNotIn('test video failed', state['detail'])
+
+    def test_each_live_search_outcome_is_named(self):
+        for outcome, text in [('timeout', 'timed out'), ('error', 'returned an error'), ('http', 'HTTP error'),
+                              ('unreachable', 'could not reach'), ('invalid', 'unexpected response')]:
+            self.backend.search, self.backend.search_result = False, outcome
+            state = self.cycle()
+            self.assertEqual(state['failed_checks'], [f'live_search:{outcome}'], outcome)
+            self.assertIn(text, state['detail'], outcome)
+
+    def test_an_unrecognized_search_outcome_is_unknown(self):
+        for outcome in [None, 'ok', 'x' * 80, 7, ['empty']]:
+            self.backend.search, self.backend.search_result = False, outcome
+            self.assertEqual(self.cycle()['failed_checks'], ['live_search:unknown'], outcome)
+
+    def test_a_failed_probe_search_with_playing_videos_is_a_search_failure(self):
+        self.backend.results[OLD] = {'ok': False, 'searchOk': False,
+                                     'tracks': [{'ok': True, 'category': 'audio', 'frames': 250}] * 2}
+        state = self.cycle()
+        self.assertEqual(state['status'], 'search')
+        self.assertEqual(state['failed_checks'], ['probe_search'])
+        self.assertIn('both test videos played', state['detail'])
+
+    def test_a_search_failure_alerts_after_three_runs_with_its_cause(self):
+        self.backend.search, self.backend.search_result = False, 'timeout'
+        self.cycle()
+        self.cycle()
+        self.assertEqual(self.attention(), [])
+        self.cycle()
+        [message] = self.attention()
+        self.assertIn('timed out', message)
+        self.assertNotIn('test video failed', message)
+
+    def test_a_failed_test_video_is_still_named_with_its_category(self):
+        self.backend.results[OLD] = partial('network')
+        state = self.cycle()
+        self.assertEqual(state['status'], 'canary_degraded')
+        self.assertEqual(state['failed_checks'], ['canary_2:network'])
+        self.assertIn('one test video failed', state['detail'])
+
+    def test_search_and_video_failures_are_both_recorded(self):
+        self.backend.search, self.backend.search_result = False, 'empty'
+        self.backend.results[OLD] = partial()
+        state = self.cycle()
+        self.assertEqual(state['status'], 'canary_degraded')
+        self.assertEqual(state['failed_checks'], ['live_search:empty', 'canary_2:source'])
+
+    def test_a_healthy_run_clears_the_failed_checks(self):
+        self.backend.search, self.backend.search_result = False, 'empty'
+        self.cycle()
+        self.backend.search, self.backend.search_result = True, 'ok'
+        state = self.cycle()
+        self.assertEqual(state['status'], 'healthy')
+        self.assertNotIn('failed_checks', state)
+
+    def test_a_cheap_check_failure_records_no_stale_checks(self):
+        self.backend.search, self.backend.search_result = False, 'empty'
+        self.cycle()
+        self.backend.kind = 'network'
+        self.assertNotIn('failed_checks', self.cycle())
+
+
+@unittest.skipUnless(shutil.which('node'), 'node is required to run the observation script')
+class ObserveScriptTests(unittest.TestCase):
+    """The script observe() runs in the bot container reports why search failed."""
+
+    def run_script(self, search):
+        # Stub fetch: every request succeeds except the live search, whose
+        # behaviour is the JavaScript expression in `search`.
+        stub = """
+process.env.LAVALINK_PASSWORD='x';
+const ok=(body)=>({ok:true,status:200,json:async()=>body});
+globalThis.fetch=async(url)=>{
+ url=String(url);
+ if(url.includes('ytsearch')) return (SEARCH)();
+ if(url.endsWith('/v4/stats')) return ok({playingPlayers:0});
+ if(url.endsWith('/v4/info')) return ok({plugins:[{name:'youtube-plugin',version:'v'}]});
+ if(url.includes('loadtracks')) return ok({loadType:'track'});
+ if(url.endsWith('/playback')) return ok({failures:[]});
+ return ok({ready:true});
+};
+""".replace('SEARCH', search)
+        output = subprocess.run(['node', '--input-type=module'], input=stub + r.OBSERVE_SCRIPT,
+                                capture_output=True, text=True, timeout=30, check=True)
+        return __import__('json').loads(output.stdout.strip().splitlines()[-1])
+
+    def test_search_outcomes(self):
+        cases = [
+            ("async()=>ok({loadType:'search',data:[{}]})", True, 'ok'),
+            ("async()=>ok({loadType:'search',data:[]})", False, 'empty'),
+            ("async()=>ok({loadType:'empty',data:{}})", False, 'empty'),
+            ("async()=>ok({loadType:'error',data:{message:'secret'}})", False, 'error'),
+            ("async()=>({ok:false,status:500,json:async()=>({})})", False, 'http'),
+            ("async()=>{throw Object.assign(new Error('t'),{name:'TimeoutError'})}", False, 'timeout'),
+            ("async()=>{throw new TypeError('fetch failed')}", False, 'unreachable'),
+            ("async()=>({ok:true,status:200,json:async()=>{throw new SyntaxError('bad')}})", False, 'invalid'),
+            ("async()=>ok({loadType:'track',data:{}})", False, 'invalid'),
+        ]
+        for search, passed, outcome in cases:
+            result = self.run_script(search)
+            self.assertIs(result['search'], passed, search)
+            self.assertEqual(result['searchResult'], outcome, search)
+            self.assertNotIn('secret', __import__('json').dumps(result))
 
 
 class PluginMirrorTests(unittest.TestCase):

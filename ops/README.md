@@ -52,6 +52,12 @@ after two runs; it does not restart anything on its own. A `429` from the export
 route means listeners hold both export slots: that run's live decode counts as
 neither a pass nor a failure.
 
+Every run also reads the bot's queued alerts (repeated song failures, a paused
+audio source, play statistics failing to save, a nearly full library) from its
+loopback `/alerts` route and posts each new one to the alerts channel once, so all
+alerts arrive in one place. A missing or malformed queue (an older bot, or a bot
+that is down) is skipped.
+
 Persistent infrastructure failures allow at most two service recovery attempts in
 six hours, at least thirty minutes apart. A missing WARP daemon already has a
 five-second supervisor; an unhealthy WARP connection can also be repaired without

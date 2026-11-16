@@ -39,7 +39,7 @@ function json(response, status, payload, method) {
 // Loopback only: health checks expose no guild, user, token, or player data.
 export function startHealthServer(client, { port = 3000 } = {}) {
   const server = createServer((request, response) => {
-    const reads = ['/health', '/ready', '/live', '/status', '/playback', '/maintenance'];
+    const reads = ['/health', '/ready', '/live', '/status', '/playback', '/alerts', '/maintenance'];
     const writes = ['/maintenance/begin', '/maintenance/end'];
     const reading = reads.includes(request.url);
     const writing = writes.includes(request.url);
@@ -58,6 +58,8 @@ export function startHealthServer(client, { port = 3000 } = {}) {
         status = payload.alive ? 200 : 503;
       } else if (request.url === '/status') payload = getStatus(client);
       else if (request.url === '/playback') payload = playbackHealth(client);
+      // Fixed alert copy for the host monitor to post; see operator-alerts.js.
+      else if (request.url === '/alerts') payload = { alerts: client.operatorAlerts?.pending?.() || [] };
       else if (reading) payload = maintenanceStatus(client);
       else if (request.url === '/maintenance/end' && client.runtimeState?.draining) {
         // A monitor completing an old transaction cannot undo shutdown's gate.

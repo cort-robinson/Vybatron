@@ -42,6 +42,10 @@ RECOVERY_COOLDOWN = 30 * 60
 RECOVERY_WINDOW = 6 * 3600
 MAX_OUTBOX = 32
 MAX_ALERTS_PER_RUN = 5
+# The bot queues its own alerts (fixed copy, at most 32) on loopback /alerts; each
+# run posts new ones to the same channel. Posted IDs are remembered this long.
+BOT_ALERT_ID = re.compile(r'[A-Za-z0-9_-]{1,64}')
+MAX_RELAYED = 64
 # One canary failing while the other plays, or a failed search while both
 # play, is usually a transient WARP/YouTube flap (~15 min of consecutive
 # degraded runs before alerting). Outages still alert after two runs.
@@ -116,16 +120,17 @@ const cipher=fetch('http://lavalink:8001/',{signal:AbortSignal.timeout(6000)}).t
 // Each canary's metadata through the live Lavalink (no audio is streamed).
 const lookups=Promise.all(TRACKS.map(url=>read('http://lavalink:2333/v4/loadtracks?identifier='+encodeURIComponent(url))
  .then(r=>r?.loadType==='track')));
-const [stats,info,health,search,playback,cipherOk,canaries,liveAudio]=await Promise.all([
+const [stats,info,health,search,playback,cipherOk,canaries,liveAudio,botAlerts]=await Promise.all([
  read('http://lavalink:2333/v4/stats'), read('http://lavalink:2333/v4/info'),
  read(healthBase+'/health',false),
  searchOutcome('http://lavalink:2333/v4/loadtracks?identifier=ytsearch%3Aloser%20tame%20impala'),
- read(healthBase+'/playback',false), cipher, lookups, liveAudioOutcome()]);
+ read(healthBase+'/playback',false), cipher, lookups, liveAudioOutcome(), read(healthBase+'/alerts',false)]);
 // Unreadable telemetry is null, never an empty list: unknown is not "no failures".
 console.log(JSON.stringify({api:!!stats,bot:health?.ready===true,cipher:cipherOk,playing:stats?.playingPlayers??null,
  version:info?.plugins?.find(p=>p.name==='youtube-plugin')?.version,
  search:search==='ok',searchResult:search,canaries,liveAudio,
- failures:Array.isArray(playback?.failures)?playback.failures:null}));
+ failures:Array.isArray(playback?.failures)?playback.failures:null,
+ alerts:Array.isArray(botAlerts?.alerts)?botAlerts.alerts:null}));
 """
 
 
@@ -749,14 +754,32 @@ class Coordinator:
     def save(self):
         save_json(self.path, self.state)
 
-    def event(self, message):
+    def event(self, message, unique=True):
+        """Queue a message; unique drops one whose text is already waiting."""
         outbox = self.state.get('outbox', [])
         if not isinstance(outbox, list):
             raise RecoveryError('invalid_alert_outbox')
-        if not any(isinstance(event, dict) and event.get('message') == message for event in outbox):
+        if not unique or not any(isinstance(event, dict) and event.get('message') == message for event in outbox):
             outbox.append({'id': uuid.uuid4().hex[:24], 'message': message})
         self.state['outbox'] = outbox[-MAX_OUTBOX:]
         self.save()
+
+    def relay(self, alerts):
+        """Queue each of the bot's alerts for the channel once; ignore a malformed list."""
+        if (not isinstance(alerts, list) or len(alerts) > MAX_OUTBOX
+                or not all(isinstance(item, dict) and isinstance(item.get('id'), str) and BOT_ALERT_ID.fullmatch(item['id'])
+                           and isinstance(item.get('text'), str) and 0 < len(item['text']) <= 300 for item in alerts)):
+            return
+        relayed = self.state.get('relayed_alerts')
+        relayed = relayed if isinstance(relayed, list) else []
+        for item in alerts:
+            if item['id'] in relayed:
+                continue
+            relayed = [*relayed, item['id']][-MAX_RELAYED:]
+            self.state['relayed_alerts'] = relayed
+            # Saves the remembered ID with the queued message. The bot's ID already
+            # rules out repeats; its fail, resolve, fail must all post, in order.
+            self.event(item['text'], unique=False)
 
     def finish(self, kind, now, detail=''):
         healthy = kind == 'healthy'
@@ -852,6 +875,7 @@ class Coordinator:
             self.recover_pending()
         self.state.pop('rollback_healthy', None)
         observation = self.backend.observe()
+        self.relay(observation.get('alerts'))
         self.state['last_check'] = 'cheap'
         kind = observation['kind']
         if kind != 'ready':

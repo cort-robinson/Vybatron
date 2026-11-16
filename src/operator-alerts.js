@@ -1,7 +1,5 @@
-import fs from 'node:fs/promises';
-import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } from 'discord.js';
+import { MessageFlags } from 'discord.js';
 import { getHealth } from './health.js';
 import { logEvent } from './runtime.js';
 import { LIBRARY_WARNING_RATIO } from './utils/library.js';
@@ -17,15 +15,9 @@ const COUNTER_WINDOW_MS = 10 * MINUTE;
 // Each condition reads aggregate counts only. Alert text is fixed copy plus
 // numbers, so it can never carry guild/user IDs, titles, URLs, or provider errors.
 // raiseAfter/resolveAfter count consecutive checks, which debounces flapping.
+// An offline audio service is not here: the host recovery monitor reports it
+// (and repairs it), so the alerts channel never gets the same outage twice.
 export const ALERT_CONDITIONS = [
-  {
-    key: 'audio-offline',
-    raiseAfter: 4,
-    resolveAfter: 2,
-    active: (signals) => signals.discordReady && !signals.audioReady,
-    message: () => 'The audio service is offline. Songs can’t start or continue until it reconnects.',
-    resolved: 'Resolved: the audio service is back online.',
-  },
   {
     key: 'playback-failures',
     raiseAfter: 2,
@@ -155,116 +147,42 @@ export function createAlertMonitor({
   return { check, active: () => [...states].filter(([, state]) => state.raised).map(([key]) => key) };
 }
 
-// Per-recipient mute list. A missing or unreadable file means nobody is muted.
-export function createAlertPreferences(filePath, { io = fs, logger = console } = {}) {
-  let muted = new Set();
-  let pending = Promise.resolve();
-  return {
-    async load() {
-      try {
-        const document = JSON.parse(await io.readFile(filePath, 'utf8'));
-        muted = new Set((Array.isArray(document?.muted) ? document.muted : []).filter((id) => /^\d{1,22}$/.test(id)));
-      } catch (error) {
-        if (error?.code !== 'ENOENT') logEvent(logger, 'error', 'operator_alert_preferences_unreadable', error);
-      }
-      return this;
-    },
-    muted: (userId) => muted.has(String(userId)),
-    setMuted(userId, value) {
-      pending = pending.catch(() => {}).then(async () => {
-        // Build from the latest committed list so concurrent changes can't undo each other.
-        const next = new Set(muted);
-        if (value) next.add(String(userId)); else next.delete(String(userId));
-        await io.mkdir(path.dirname(filePath), { recursive: true, mode: 0o700 });
-        const temporary = `${filePath}.${randomUUID()}.tmp`;
-        try {
-          await io.writeFile(temporary, JSON.stringify({ version: 1, muted: [...next] }), { mode: 0o600 });
-          await io.rename(temporary, filePath);
-        } finally { await io.unlink(temporary).catch(() => {}); }
-        muted = next;
-      });
-      return pending;
-    },
-  };
-}
-
-// The application owner (or verified team owner) plus PORTAL_OPERATOR_IDS,
-// matching who may see the install link.
-export async function alertRecipients(client) {
-  const ids = new Set(client?.operatorIds || []);
-  const application = client?.application;
-  let owner = application?.owner;
-  if (!owner && typeof application?.fetch === 'function') owner = (await application.fetch().catch(() => null))?.owner;
-  const ownerId = owner?.ownerId || owner?.id;
-  if (ownerId) ids.add(String(ownerId));
-  return [...ids].filter((id) => /^\d{1,22}$/.test(id));
-}
-
-function muteRow(muted) {
-  return new ActionRowBuilder().addComponents(new ButtonBuilder()
-    .setCustomId(muted ? ALERT_UNMUTE_ID : ALERT_MUTE_ID)
-    .setStyle(ButtonStyle.Secondary)
-    .setLabel(muted ? 'Turn audio alerts back on' : 'Mute audio alerts'));
-}
-
 export function isAlertInteraction(interaction) {
   return interaction.isButton?.() && [ALERT_MUTE_ID, ALERT_UNMUTE_ID].includes(interaction.customId);
 }
 
-export async function handleAlertInteraction(interaction, { recipients = alertRecipients } = {}) {
-  const alerts = interaction.client.operatorAlerts;
-  const userId = String(interaction.user?.id || '');
-  if (!alerts || !(await recipients(interaction.client)).includes(userId)) {
-    return interaction.reply({ content: 'Audio alerts are only for the bot owner and operators.', flags: MessageFlags.Ephemeral, allowedMentions: NO_MENTIONS });
-  }
-  const mute = interaction.customId === ALERT_MUTE_ID;
-  await alerts.preferences.setMuted(userId, mute);
+// Alerts used to arrive as DMs with a mute button; an old button now says where they went.
+export async function handleAlertInteraction(interaction) {
   return interaction.reply({
-    content: mute
-      ? 'Audio alerts are muted. You won’t get messages when playback degrades.'
-      : 'Audio alerts are on. You’ll get a message when playback degrades and when it recovers.',
-    components: [muteRow(mute)],
+    content: 'Audio alerts now post in the alerts channel with the other monitoring alerts, so there is nothing to mute here.',
+    flags: MessageFlags.Ephemeral,
     allowedMentions: NO_MENTIONS,
   });
 }
 
+const MAX_QUEUED = 32;
+
 /**
  * Polls aggregate health on its own timer, so alerting can never block or
- * fail playback. Delivery is a DM through the existing bot client.
+ * fail playback. Alerts wait in a small queue on the loopback /alerts route;
+ * the host recovery monitor posts new ones to the alerts channel with its own,
+ * so every alert reaches one place, even when the bot itself is down.
  */
 export async function startOperatorAlerts(client, {
-  dataDir,
   intervalMs = 30_000,
   logger = console,
   monitor = createAlertMonitor(),
-  preferences = createAlertPreferences(path.join(dataDir, 'operator-alerts.json'), { logger }),
-  recipients = alertRecipients,
   timers = { setInterval, clearInterval },
 } = {}) {
-  await preferences.load();
-  let delivering = Promise.resolve();
-
-  async function deliver(messages) {
-    let ids = [];
-    try { ids = await recipients(client); } catch {}
-    for (const message of messages) {
-      for (const id of ids) {
-        if (preferences.muted(id)) continue;
-        try {
-          const user = await client.users.fetch(id);
-          await user.send({ content: message.text, components: [muteRow(false)], allowedMentions: NO_MENTIONS });
-        } catch (error) {
-          logEvent(logger, 'warn', 'operator_alert_failed', error);
-        }
-      }
-      logger.log(JSON.stringify({ event: 'operator_alert', condition: message.key, kind: message.kind }));
-    }
-  }
+  const queue = [];
 
   function tick() {
     try {
-      const messages = monitor.check(readSignals(client));
-      if (messages.length) delivering = delivering.then(() => deliver(messages)).catch(() => {});
+      for (const message of monitor.check(readSignals(client))) {
+        queue.push({ id: randomUUID(), at: Date.now(), text: message.text });
+        logger.log(JSON.stringify({ event: 'operator_alert', condition: message.key, kind: message.kind }));
+      }
+      queue.splice(0, Math.max(0, queue.length - MAX_QUEUED));
     } catch (error) {
       logEvent(logger, 'error', 'operator_alert_check_failed', error);
     }
@@ -272,7 +190,7 @@ export async function startOperatorAlerts(client, {
 
   const interval = timers.setInterval(tick, intervalMs);
   interval?.unref?.();
-  const alerts = { preferences, monitor, tick, stop: () => timers.clearInterval(interval), idle: () => delivering };
+  const alerts = { monitor, tick, stop: () => timers.clearInterval(interval), pending: () => queue.map((item) => ({ ...item })) };
   client.operatorAlerts = alerts;
   return alerts;
 }

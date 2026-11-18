@@ -75,8 +75,13 @@ export function Player({ portal, expanded, setExpanded, onAdd, palette, animate,
   useEffect(() => swipe(handleRef.current, queueOpen ? 'down' : 'up', (_, settle) => { settle(); setQueueOpen(!queueOpen); }, queueOpen ? sheetRef.current : handleRef.current), [expanded, queueOpen]);
   useEffect(() => queueOpen ? swipe(sheetRef.current, 'down', (_, settle) => { settle(); setQueueOpen(false); }) : undefined, [queueOpen]);
   // The full-screen visualizer, when open, is the top layer: Back closes it first.
-  const layers = expanded ? 1 + +queueOpen + +visualsFull : 0;
-  useBackLayers(layers, layer => { if (layer < layers) setVisualsFull(false); if (layer < 1 + +queueOpen) setQueueOpen(false); if (layer < 1) expand.current(false); });
+  const queueDepth = queueOpen || wallQueue ? 2 : 1;
+  const layers = expanded ? queueDepth + Number(visualsFull) : 0;
+  useBackLayers(layers, layer => {
+    if (layer < layers) setVisualsFull(false);
+    if (layer < queueDepth) { setQueueOpen(false); setWallQueue(false); }
+    if (layer < 1) expand.current(false);
+  });
   // Acknowledge state that changes under the controls, whoever changed it: a new song settles
   // into the deck, the play mark swaps, repeat cycles, and a saved heart lifts once.
   const index = useMemo(() => library?.favorites.findIndex(t => t.id === track?.id) ?? -1, [library?.favorites, track?.id]);
@@ -227,7 +232,7 @@ export function Player({ portal, expanded, setExpanded, onAdd, palette, animate,
       <div ref={sheetRef} id={queueId} className="sleeve-queue" data-glass>{queueOpen && <div className="queue-sheet-now"><span className="sheet-grabber" aria-hidden="true" /><Artwork track={track} /><span className="sheet-now-text"><strong>{track?.title || 'Nothing playing'}</strong><span>{track?.author}</span></span></div>}{queue}</div>
     </div>}
     <div className="player-footer" data-glass>{!expanded && skin === 'broadcast' && <span className="desk-status">{statusLabel(snapshot)}</span>}{!expanded && <CompactProgress clock={clock} track={track} duration={duration} />}{!expanded && <div className="compact-identity"><button ref={identityTriggerRef} type="button" className="player-expand-trigger" aria-label={track ? `Open player for ${track.title}` : 'Open player details'} aria-expanded={false} onClick={() => { openedFromIdentity.current = true; setExpanded(true); }}><Artwork track={track} /><span className="compact-title"><span className="compact-track-title" title={track?.title}>{track?.title || 'Nothing playing'}</span><span className="compact-track-meta" title={track ? `${track.author} · ${where ? `playing on ${local ? where : `Discord · ${where}`}` : track.source}` : undefined}>{compactMetadata}</span></span></button><span className="compact-favorite">{favorite}</span></div>}
-      
+      {!expanded && skin === 'broadcast' && track?.requestedBy && <span className="desk-requester" title={track.requestedBy.displayName}>Added by {track.requestedBy.displayName}</span>}
       <div className="playback-cluster">{controls}{timeline}</div>
       {!(expanded && phone) && extras}
       {expanded && <button ref={handleRef} type="button" className="up-next-handle" aria-expanded={queueOpen} aria-controls={queueId} onClick={() => setQueueOpen(!queueOpen)}><span className="sheet-grabber" aria-hidden="true" />{queueOpen ? <CaretDownIcon size={16} aria-hidden="true" /> : <CaretUpIcon size={16} aria-hidden="true" />}<span>{queueOpen ? 'Hide queue' : 'Up next'}</span>{!queueOpen && upcoming > 0 && <span className="count">{upcoming} {upcoming === 1 ? 'song' : 'songs'}</span>}</button>}

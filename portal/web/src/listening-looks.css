@@ -88,7 +88,7 @@
   & .sleeve-artwork { --spectrum: 0px; }
   & .player-title-row h2 { font-weight: 500; line-height: .99; letter-spacing: -.055em; }
 }
-.desk-status { display: none; }
+.desk-status, .desk-requester { display: none; }
 .record-caption {
   display: block; margin-bottom: .65em; font-size: .8rem; line-height: 1.2;
   font-weight: 750; letter-spacing: .13em; text-transform: uppercase;
@@ -166,6 +166,7 @@
     &.has-connection-notice .persistent-player.collapsed { top: calc(var(--masthead) + var(--topbar) + var(--connection-notice)); }
     & .player-footer { display: flex; flex-direction: column; justify-content: center; align-items: stretch; gap: 12px; padding: 18px; }
     & .desk-status { display: flex; align-items: center; gap: 8px; color: var(--text-soft); font-weight: 750; font-size: .85rem; letter-spacing: .12em; text-transform: uppercase; }
+    & .desk-requester { display: block; margin-top: -6px; color: var(--muted); font-size: .875rem; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
     & .desk-status::before { content: ''; width: 9px; height: 9px; border-radius: 50%; background: currentColor; }
     & .playing .desk-status { color: var(--accent); }
     & .compact-identity { display: flex; position: relative; align-items: flex-start; }

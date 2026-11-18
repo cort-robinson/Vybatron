@@ -15,6 +15,7 @@ test('a device can switch between paper, dark ink and the studio desk, and resto
   await page.reload();
   await page.getByRole('button', { name: 'Queue', exact: true }).click();
   await expect(page.locator('html')).toHaveAttribute('data-skin', 'broadcast');
+  await expect(page.getByTestId('player').getByText('Added by Jordan')).toBeVisible();
   const deck = await page.getByTestId('player').boundingBox();
   const rows = await page.locator('.queue .track-list').boundingBox();
   expect(deck!.x + deck!.width).toBeLessThanOrEqual(rows!.x);
@@ -38,8 +39,13 @@ test('Listening Wall previews the next three tracks and opens the complete queue
   await expect(page.locator('.queue-filmstrip li')).toHaveCount(3);
   await page.getByRole('button', { name: 'Open full queue' }).click();
   await expect(page.getByRole('dialog').getByText('Afterglow', { exact: true })).toBeVisible();
-  await page.keyboard.press('Escape');
+  await page.goBack();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Open full queue' })).toBeFocused();
+  await page.goBack();
+  const openPlayer = page.getByRole('button', { name: 'Open player', exact: true });
+  await expect(openPlayer).toBeVisible();
+  await openPlayer.click();
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByRole('button', { name: /^Up next/ }).click();
   await expect(page.locator('.sleeve-queue').getByText('Afterglow', { exact: true })).toBeVisible();

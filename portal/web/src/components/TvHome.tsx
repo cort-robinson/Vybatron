@@ -119,7 +119,7 @@ export function TvHome({ portal, palette, skin, place, onBrowse, onAdd }: { port
               {close => <PlayOnChoices portal={portal} close={close} onMoveHere={() => setConfirmHere(true)} />}</ActionPopover>
             <button type="button" className="button secondary tv-action" onClick={() => setQueueOpen(true)}><ListNumbersIcon size={22} />Queue</button>
             {!failed && <ActionPopover label="Visualizer" className="tv-menu tv-looks" triggerClassName="button secondary tv-action" trigger={<><SparkleIcon size={22} />Visualizer</>}>
-              {() => <>{skin === 'wall' && <button aria-pressed={wallArt} onClick={() => setShowVisuals(!showVisuals)}>{wallArt ? 'Show visualizer' : 'Show cover art'}</button>}
+              {() => <>{skin === 'wall' && <button onClick={() => setShowVisuals(!showVisuals)}>{wallArt ? 'Show visualizer' : 'Show cover art'}</button>}
                 {!wallArt && <LookChoices preset={preset} named={named} onNext={() => engine.current?.next()} />}</>}</ActionPopover>}
             <button type="button" className="button secondary tv-action" onClick={onBrowse}><SquaresFourIcon size={22} />Browse</button>
           </div>

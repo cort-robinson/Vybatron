@@ -255,6 +255,12 @@ test('the room votes once per listener and the winner takes the next automatic h
   setRadio(player, true);
   await refreshSuggestions(player, client, { random: () => 0 });
   const ballot = roomBallot(player, client);
+  for (const repeat of ['track', 'queue']) {
+    player.repeatMode = repeat;
+    assert.equal(roomBallot(player, client), null);
+    assert.equal(voteForSuggestion(player, client, '200', ballot.id, ballot.choices[0].id), false);
+  }
+  player.repeatMode = 'off';
   const [first, second, third] = ballot.choices;
   const vote = (user, choice) => voteForSuggestion(player, client, user, ballot.id, choice.id);
   assert.equal(vote('888', first), false);

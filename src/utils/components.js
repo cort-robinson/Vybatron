@@ -80,18 +80,6 @@ async function handlePlayerComponent(interaction, action, expectedIdentity = nul
   const player = interaction.client.lavalink?.getPlayer(interaction.guildId);
   if (!player) return rejectEndedSession(interaction);
 
-  if (action === 'visualizer' || action === 'vote') {
-    if (!await requireControl(interaction, { checkDJ: false }) || !await requireSessionVisibility(interaction, player)) return;
-    if (action === 'visualizer') return interaction.launchActivity();
-    const ballot = roomBallot(player, interaction.client);
-    if (!ballot) return interaction.reply(ephemeralText('Voting opens when autoplay has choices and the queue is empty.'));
-    const options = ballot.choices.map(({ track, id, votes }) => ({
-      label: plainText(track.info.title, { maxLength: 100 }), value: id,
-      description: plainText(`${votes} ${votes === 1 ? 'vote' : 'votes'} · ${track.info.author || 'Unknown artist'}`, { maxLength: 100 }),
-    }));
-    return interaction.reply({ ...ephemeralText('Pick the next autoplay song. You can change your vote until the song ends. Queued requests play first.'),
-      components: [new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(`ballot:${ballot.id}`).setPlaceholder('Vote for a song').addOptions(options))] });
-  }
   if (action === 'stop-cancel') {
     return interaction.update({ content: 'Stop cancelled.', components: [] });
   }
@@ -105,6 +93,19 @@ async function handlePlayerComponent(interaction, action, expectedIdentity = nul
       ...buildQueuePayload(player, 0, interaction.user?.id),
       flags: MessageFlags.Ephemeral,
     });
+  }
+
+  if (action === 'visualizer' || action === 'vote') {
+    if (!await requireControl(interaction, { checkDJ: false }) || !await requireSessionVisibility(interaction, player)) return;
+    if (action === 'visualizer') return interaction.launchActivity();
+    const ballot = roomBallot(player, interaction.client);
+    if (!ballot) return interaction.reply(ephemeralText('Voting opens when autoplay has choices and the queue is empty.'));
+    const options = ballot.choices.map(({ track, id, votes }) => ({
+      label: plainText(track.info.title, { maxLength: 100 }), value: id,
+      description: plainText(`${votes} ${votes === 1 ? 'vote' : 'votes'} · ${track.info.author || 'Unknown artist'}`, { maxLength: 100 }),
+    }));
+    return interaction.reply({ ...ephemeralText('Pick the next autoplay song. You can change your vote until the song ends. Queued requests play first.'),
+      components: [new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(`ballot:${ballot.id}`).setPlaceholder('Vote for a song').addOptions(options))] });
   }
 
   if (action === 'refresh') {
@@ -289,6 +290,16 @@ async function handleLyricsPage(interaction, ownerId, identity, page) {
 
 export async function handleMessageComponent(interaction) {
   const customId = interaction.customId || '';
+  const playerMatch = /^player:v1:(toggle|skip|back|shuffle|loop|seek|queue|refresh|stop|stop-confirm|stop-cancel|stop-save)$/.exec(customId);
+  if (playerMatch) return handlePlayerComponent(interaction, playerMatch[1]);
+
+  const favoriteMatch = /^player:v2:favorite:([a-f0-9]{12})$/.exec(customId);
+  if (favoriteMatch && interaction.isButton()) return handlePlayerComponent(interaction, 'favorite', favoriteMatch[1]);
+
+  const importMatch = /^import:v1:(confirm|cancel):([a-f0-9]{32})$/.exec(customId);
+  if (importMatch && interaction.isButton()) return importMatch[1] === 'confirm' ? commitImport(interaction, importMatch[2]) : cancelImport(interaction, importMatch[2]);
+
+  if (customId === 'player:v1:vote' || customId === 'player:v1:visualizer') return handlePlayerComponent(interaction, customId.slice(10));
   const mix = /^mixtape:(share|queue):([a-f0-9]{32}):([a-z0-9][a-z0-9 _-]{0,39})$/.exec(customId);
   if (mix && interaction.isButton()) {
     const { handleMixtape } = await import('./mixtape-card.js');
@@ -301,14 +312,6 @@ export async function handleMessageComponent(interaction) {
     const accepted = voteForSuggestion(player, interaction.client, interaction.user.id, ballot[1], interaction.values[0]);
     return interaction.update({ content: accepted ? 'Vote counted. Open the ballot again to change your pick.' : 'That ballot has closed. Open the current player for the next vote.', components: [] });
   }
-  const playerMatch = /^player:v1:(vote|visualizer|toggle|skip|back|shuffle|loop|seek|queue|refresh|stop|stop-confirm|stop-cancel|stop-save)$/.exec(customId);
-  if (playerMatch) return handlePlayerComponent(interaction, playerMatch[1]);
-
-  const favoriteMatch = /^player:v2:favorite:([a-f0-9]{12})$/.exec(customId);
-  if (favoriteMatch && interaction.isButton()) return handlePlayerComponent(interaction, 'favorite', favoriteMatch[1]);
-
-  const importMatch = /^import:v1:(confirm|cancel):([a-f0-9]{32})$/.exec(customId);
-  if (importMatch && interaction.isButton()) return importMatch[1] === 'confirm' ? commitImport(interaction, importMatch[2]) : cancelImport(interaction, importMatch[2]);
 
   const helpMatch = /^help:v2:topic:([^:]+)$/.exec(customId);
   if (helpMatch && interaction.isStringSelectMenu()) {

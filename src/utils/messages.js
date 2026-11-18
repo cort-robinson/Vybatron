@@ -86,7 +86,7 @@ function playerStatus(state) {
   }
 }
 
-function playerComponents(player, state, track, ballot, visualizer) {
+function playerComponents(player, state, track) {
   const active = state === 'playing' || state === 'paused';
   const recovering = state === 'recovering';
   const disabled = !active || !track;
@@ -153,8 +153,6 @@ function playerComponents(player, state, track, ballot, visualizer) {
 
   // Both control rows are full, so outbound links share their own row.
   const linkRow = new ActionRowBuilder();
-  if (ballot) linkRow.addComponents(new ButtonBuilder().setCustomId('player:v1:vote').setStyle(ButtonStyle.Secondary).setLabel('Vote on the next song'));
-  if (visualizer) linkRow.addComponents(new ButtonBuilder().setCustomId('player:v1:visualizer').setStyle(ButtonStyle.Secondary).setLabel('Open visualizer'));
   if (config.portalOrigin) {
     linkRow.addComponents(
       new ButtonBuilder().setLabel('Open web player').setStyle(ButtonStyle.Link).setURL(config.portalOrigin)
@@ -308,7 +306,7 @@ export function buildPlayerPayload(player, {
       safeText(info.author, { fallback: 'Unknown artist', maxLength: 160 }),
       playbackLine(player, info, state),
       '',
-      playerQueuePreview(player, state),
+      ballot ? '**Up next**\nVote below for the next autoplay song, or add a request with `/play`.' : playerQueuePreview(player, state),
     ];
     const progress = !info.isStream && ['playing', 'paused'].includes(state)
       ? progressBar(displayPosition(player, state), info.duration)
@@ -339,7 +337,12 @@ export function buildPlayerPayload(player, {
     files.push({ attachment: waveform(energy, displayPosition(player, state) / track.info.duration), name: 'song-energy.png', description: 'Measured song energy with the current playback position' });
     embed.setImage('attachment://song-energy.png');
   }
-  return { embeds: [embed], components: playerComponents(player, state, track, ballot, visualizer), attachments: [], files, allowedMentions: NO_MENTIONS };
+  const components = playerComponents(player, state, track);
+  const extras = new ActionRowBuilder();
+  if (ballot) extras.addComponents(new ButtonBuilder().setCustomId('player:v1:vote').setStyle(ButtonStyle.Secondary).setLabel('Vote on the next song'));
+  if (visualizer) extras.addComponents(new ButtonBuilder().setCustomId('player:v1:visualizer').setStyle(ButtonStyle.Secondary).setLabel('Open visualizer'));
+  if (extras.components.length) components.push(extras);
+  return { embeds: [embed], components, attachments: [], files, allowedMentions: NO_MENTIONS };
 }
 
 export function clampQueuePage(player, page) {

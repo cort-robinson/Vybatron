@@ -9,6 +9,14 @@ test('only the visible player’s voice audience can read Activity metadata and 
   const room = await f.request('/visualizer');
   assert.equal(room.status, 200);
   assert.equal(room.body.track.video, 'abcdefghijk');
+  f.player.lastPosition = 1000;
+  f.player.lastPositionChange = Date.now() - 10_000;
+  f.player.filterManager = { data: { timescale: { speed: 1.25, rate: 1 } } };
+  const clock = (await f.request('/visualizer')).body;
+  assert.equal(clock.rate, 1.25);
+  assert.ok(clock.positionMs >= 13500 && clock.positionMs < 15000);
+  f.player.paused = true;
+  assert.equal((await f.request('/visualizer')).body.positionMs, 1000);
   assert.deepEqual(Object.keys(room.body.track).sort(), ['artist','durationMs','id','title','video']);
   assert.equal((await f.request('/visualizer/lmnopqrstuv')).status, 404);
   f.members.get('200').voice.channel = f.channels.get('301');

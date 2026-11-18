@@ -314,7 +314,7 @@ export function beginRadioTurn(player) {
 }
 
 export function roomBallot(player, client) {
-  if (!player.queue.current || player.queue.tracks.length || !autoplayActive(client, player)) return null;
+  if (!player.queue.current || player.queue.tracks.length || (player.repeatMode ?? 'off') !== 'off' || !autoplayActive(client, player)) return null;
   const state = stateFor(player);
   pruneSuggestions(player, client);
   if (state.suggestions.length < 2) return null;
@@ -342,7 +342,7 @@ export function voteForSuggestion(player, client, user, ballotId, choiceId) {
 function closeBallot(player, client, state, track) {
   const ballot = state.ballot;
   state.ballot = null;
-  if (!ballot || ballot.track !== track) return;
+  if (!ballot || ballot.track !== track || (player.repeatMode ?? 'off') !== 'off') return;
   const counts = new Map();
   for (const member of presentMembers(client, player)) {
     const choice = ballot.votes.get(member.id);

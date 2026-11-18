@@ -10,7 +10,7 @@ import { playbackRate } from '../utils/presentation.js';
 import { validId } from '../utils/library.js';
 import { clientInviteUrl } from '../utils/invite.js';
 import { actorVoiceId, createPortalPolicy, visibleSession } from './policy.js';
-import { FILTERS, actorProjection, guildProjection, trackProjection, snapshotProjection, libraryProjection, activityProjection, configurationProjection, createRevisions, statsProjection, STATS_WINDOW_IDS, recapProjection, RECAP_WINDOW_IDS } from './projection.js';
+import { FILTERS, visualizerClock, actorProjection, guildProjection, trackProjection, snapshotProjection, libraryProjection, activityProjection, configurationProjection, createRevisions, statsProjection, STATS_WINDOW_IDS, recapProjection, RECAP_WINDOW_IDS } from './projection.js';
 import { publicCommands, executePortalCommand } from './commands.js';
 import { fail, safeError } from './errors.js';
 import { pruneSuggestions, refreshSuggestions } from '../utils/radio.js';
@@ -261,7 +261,7 @@ export function startPortalBridge(client, {
           }
           const song = track && trackProjection(track);
           return json(response, 200, { track: song ? { id: song.id, title: song.title, artist: song.author, video: videoOf(track), durationMs: song.durationMs } : null,
-            playing: Boolean(track && !player.paused && player.playing), positionMs: Math.max(0, Math.floor(player.position || 0)), rate: playbackRate(player) || 1 }, maxResponseBytes);
+            ...visualizerClock(player), rate: playbackRate(player) || 1 }, maxResponseBytes);
         }
         const analysisMatch = url.pathname.match(/^\/v1\/guilds\/(\d{1,22})\/analysis\/([\w-]{11})$/);
         if (analysisMatch && request.method === 'GET') {

@@ -27,6 +27,9 @@ test('a fresh song’s position holds still in Discord until Lavalink reports it
   assert.equal(session.starting, true);
   assert.equal(session.positionMs, 0, 'the clock does not run while the song loads');
   assert.ok(lavalink.calls >= 2);
+  const visualizer = (await f.request('/visualizer', { actor: '202' })).body;
+  assert.equal(visualizer.playing, false);
+  assert.equal(visualizer.positionMs, 0);
 
   lavalink.moving = true;
   await delay(700);

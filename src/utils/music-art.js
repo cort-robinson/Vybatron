@@ -61,7 +61,8 @@ export function energyBins(map, count = 80) {
 export async function energyArt(track, map) {
   const tile = await cover(track);
   const dominant = tile && (await sharp(tile).stats()).dominant;
-  const color = dominant ? [dominant.r, dominant.g, dominant.b].map(v => Math.round(75 + .7 * v)) : [155,146,250];
+  // Lift dark album colours so both halves stay visible on the charcoal strip.
+  const color = dominant ? [dominant.r, dominant.g, dominant.b].map(v => Math.round(150 + .4 * v)) : [175,166,250];
   return { bins: energyBins(map), color };
 }
 
@@ -81,7 +82,7 @@ export function waveform({ bins, color }, fraction) {
     for (let x = 0; x < width; x++) {
       const bar = x % 5 < 3 && Math.abs(y - height / 2) <= 1 + bins[Math.floor(x / 5)] * (height / 2 - 2);
       const at = y * stride + 1 + 3 * x;
-      for (let c = 0; c < 3; c++) pixels[at+c] = x === playhead ? 250 : bar ? color[c] * (x < playhead ? 1 : .53) : 32;
+      for (let c = 0; c < 3; c++) pixels[at+c] = x === playhead ? 250 : bar ? color[c] * (x < playhead ? 1 : .72) : 32;
     }
   }
   const header = Buffer.alloc(13);

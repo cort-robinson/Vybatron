@@ -43,7 +43,7 @@ test('changing the look crossfades instead of repainting in one frame', async ({
   await openSettings(page);
   await page.waitForFunction(() => !document.documentElement.dataset.motion);
   const before = (await transitions(page)).length;
-  await page.getByLabel('Portal look').selectOption('classic');
+  await page.getByLabel('Portal look').getByRole('button', { name: 'Classic', exact: true }).click();
   await expect.poll(async () => (await transitions(page)).length).toBe(before + 1);
   await expect(page.locator('html')).toHaveAttribute('data-skin', 'classic');
 });

@@ -1,0 +1,20 @@
+.look-picker { container-type: inline-size; padding-block: 20px 16px; border-bottom: 1px solid var(--line); }
+.look-picker h3 { margin: 0 0 14px; font-size: 16px; }
+.look-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+@container (min-width: 580px) { .look-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; } }
+.look-option {
+  position: relative; display: flex; flex-direction: column; min-width: 0; padding: 0;
+  border: 1px solid var(--line-strong); border-radius: 9px; background: var(--surface);
+  color: var(--text-soft); text-align: start;
+}
+.look-option img { display: block; width: 100%; height: auto; border-radius: 8px 8px 0 0; }
+.look-name { padding: 9px 10px; font-size: 14px; font-weight: 650; line-height: 1.35; }
+.look-option:hover { border-color: var(--muted); color: var(--text); }
+.look-option[aria-pressed='true'] { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); color: var(--text); }
+.look-option:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+.look-check {
+  display: grid; place-items: center; position: absolute; top: 7px; right: 7px;
+  width: 23px; height: 23px; border-radius: 50%; background: var(--accent); color: var(--primary-ink);
+  box-shadow: 0 1px 5px #0008;
+}
+.look-description { margin-top: 12px; line-height: 1.45; font-size: 14px; color: var(--muted); }

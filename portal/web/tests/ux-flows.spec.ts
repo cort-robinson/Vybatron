@@ -69,7 +69,7 @@ export const tasks: Record<string, (ctx: Ctx) => Promise<void>> = {
     if (await role(ctx.page, 'Open settings').count()) await act(ctx, role(ctx.page, 'Open settings'));
     else if (await ctx.page.getByLabel('Portal look').count() === 0 && await role(ctx.page, 'Server').count()) await nav(ctx, 'Server');
     else await account(ctx, 'Settings');
-    await act(ctx, ctx.page.getByLabel('Portal look'));
+    await act(ctx, ctx.page.getByLabel('Portal look').getByRole('button', { name: 'Classic', exact: true }));
   },
   'Switch server': async ctx => { await act(ctx, ctx.page.getByRole('combobox', { name: 'Server' }).filter({ visible: true })); },
   'Sign out': async ctx => {

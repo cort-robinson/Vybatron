@@ -14,3 +14,8 @@ Sharp 0.35.5 converts the background to WebP and makes responsive 320, 640 and
 of public PNGs. The static PWA cache contains derivatives only. Components import
 the covers, so the build ships them under content-hashed names; the unused aurora
 derivative isn't shipped.
+
+The eight WebP thumbnails in `look-previews/` are crops of the portal rendered at
+1440 × 900 with its approved fallback cover and synthetic track metadata. Broadcast
+Desk shows the wide queue. The other seven show the expanded player. Each thumbnail
+is 400 × 240 and includes the look's persistent skin key in its filename.

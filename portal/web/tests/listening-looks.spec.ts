@@ -7,8 +7,8 @@ test('a device can switch between paper, dark ink and the studio desk, and resto
   await page.goto('/');
   await openSettings(page);
   const look = page.getByLabel('Portal look');
-  for (const [choice, scheme] of [['sleeve-light', 'light'], ['sleeve-dark', 'dark'], ['broadcast', 'dark']]) {
-    await look.selectOption(choice);
+  for (const [choice, name, scheme] of [['sleeve-light', 'Sleeve Notes · Light', 'light'], ['sleeve-dark', 'Sleeve Notes · Dark', 'dark'], ['broadcast', 'Broadcast Desk', 'dark']]) {
+    await look.getByRole('button', { name, exact: true }).click();
     await expect(page.locator('html')).toHaveAttribute('data-skin', choice);
     await expect(page.locator('html')).toHaveCSS('color-scheme', scheme);
   }
@@ -23,7 +23,7 @@ test('a device can switch between paper, dark ink and the studio desk, and resto
   await expect(page.getByRole('button', { name: 'Sleep timer' })).toBeVisible();
   await page.keyboard.press('Escape');
   await openSettings(page);
-  await look.selectOption('classic');
+  await look.getByRole('button', { name: 'Classic', exact: true }).click();
   await expect(page.locator('html')).toHaveAttribute('data-skin', 'classic');
   await expect(page.locator('.ambient-scene')).toBeVisible();
 });
@@ -33,7 +33,7 @@ test('Listening Wall previews the next three tracks and opens the complete queue
   await mockPortal(page);
   await page.goto('/');
   await openSettings(page);
-  await page.getByLabel('Portal look').selectOption('wall');
+  await page.getByLabel('Portal look').getByRole('button', { name: 'Listening Wall', exact: true }).click();
   await expect(page.locator('html')).toHaveAttribute('data-skin', 'wall');
   await page.getByRole('button', { name: 'Open player', exact: true }).click();
   await expect(page.locator('.queue-filmstrip li')).toHaveCount(3);

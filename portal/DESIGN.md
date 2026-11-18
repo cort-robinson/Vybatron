@@ -378,7 +378,9 @@ Overflowing shelves fade at whichever edge still has more to show.
 
 ### Listening layouts
 
-Four opt-in choices in **Settings → Portal look** use the existing controls and original cover art.
+The **Portal look** picker shows a rendered preview for every look. Selecting a tile applies it on this device, and the active tile carries a checkmark.
+
+Four opt-in choices use the existing controls and original cover art.
 Sleeve Notes pairs a ruled track listing with an editorial title in cream and burgundy or midnight
 plum and ivory. Broadcast Desk docks the transport beside the queue on wide, tall screens.
 Listening Wall gives the open player a cover backdrop and a three-song preview on desktop and TV.

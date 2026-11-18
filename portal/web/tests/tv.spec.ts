@@ -613,14 +613,14 @@ test('the Visualizer menu on now playing chooses the look, keeps it, and moves M
   // It opens on the look showing (Overdrive's own, until one is chosen), marked as chosen.
   await expect.poll(() => focused(page)).toBe('Gridrunner');
   await expect(menu.getByRole('button', { name: 'Gridrunner' })).toHaveAttribute('aria-pressed', 'true');
-  await expect(menu.getByRole('button')).toHaveText(['MilkDrop', 'Gridrunner', 'Cosmic Broadcast', 'Receiver', 'Pumpkin Patch', 'Witching Hour']);
-  await press(page, 'ArrowDown', 'ArrowDown');
-  expect(await focused(page)).toBe('Receiver');
+  await expect(menu.getByRole('button')).toHaveText(['MilkDrop', 'Gridrunner', 'Cosmic Broadcast', 'Receiver', 'Pumpkin Patch', 'Witching Hour', 'Prism Drift', 'Slipstream', 'Fault Lines']);
+  await press(page, ...Array(7).fill('ArrowDown'));
+  expect(await focused(page)).toBe('Fault Lines');
   await press(page, 'Enter');
   // Chosen at once, as the full-screen visualizer keeps it; the menu stays to try another.
-  await expect(menu.getByRole('button', { name: 'Receiver' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(menu.getByRole('button', { name: 'Fault Lines' })).toHaveAttribute('aria-pressed', 'true');
   await expect(menu.getByRole('button', { name: 'Gridrunner' })).toHaveAttribute('aria-pressed', 'false');
-  expect(await page.evaluate(() => localStorage.getItem('vybertron.visualizer'))).toBe('receiver');
+  expect(await page.evaluate(() => localStorage.getItem('vybertron.visualizer'))).toBe('faultlines');
   expect(await back(page)).toBe(true);
   await expect(menu).toHaveCount(0);
   await expect.poll(() => focused(page)).toBe('Visualizer');
@@ -630,11 +630,12 @@ test('the Visualizer menu on now playing chooses the look, keeps it, and moves M
   await ready(page);
   await wake(page, 'Visualizer');
   await press(page, 'Enter');
-  await expect.poll(() => focused(page)).toBe('Receiver');
-  await expect(menu.getByRole('button', { name: 'Receiver' })).toHaveAttribute('aria-pressed', 'true');
+  await expect.poll(() => focused(page)).toBe('Fault Lines');
+  await expect(menu.getByRole('button', { name: 'Fault Lines' })).toBeInViewport({ ratio: .95 });
+  await expect(menu.getByRole('button', { name: 'Fault Lines' })).toHaveAttribute('aria-pressed', 'true');
 
   // MilkDrop adds Next preset, named for the preset showing, and Next moves on to another.
-  await press(page, 'ArrowUp', 'ArrowUp', 'ArrowUp');
+  await press(page, ...Array(8).fill('ArrowUp'));
   expect(await focused(page)).toBe('MilkDrop');
   await press(page, 'Enter');
   const next = menu.getByRole('button', { name: 'Next preset' });

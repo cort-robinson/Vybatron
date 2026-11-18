@@ -106,6 +106,8 @@ export function FullscreenVisualizer({ onClose, fallback, ...scene }: Scene & { 
           {named && <p className="visualizer-preset-name" title={named}><span className="sr-only">Showing </span>{named}</p>}</div>}
         <fieldset className="visualizer-presets"><legend className="sr-only">Visualizer</legend>
           {PRESETS.map(item => <label key={item.id}><input type="radio" name={name} value={item.id} checked={preset === item.id} onChange={() => choosePreset(item.id)} /><span>{item.name}</span></label>)}</fieldset>
+        <select className="visualizer-select" aria-label="Visualizer" value={preset} onChange={event => choosePreset(PRESETS[event.currentTarget.selectedIndex].id)}>
+          {PRESETS.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
         {/* Live: the song's measured energy. Ambient: a pattern made for the song, not its audio. Say which plainly. */}
         <span className="visualizer-source">{source === 'live' ? 'Live' : 'Ambient'}<span className="sr-only">{source === 'live' ? ': moving with this song’s measured energy' : ': motion made for this song, not taken from its audio'}</span></span>
       </footer>

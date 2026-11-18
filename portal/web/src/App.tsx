@@ -27,7 +27,7 @@ import { closeTopLayer, focusView, startTvMode, stopEditing, tvChoice, tvFlag } 
 import { TvHome } from './components/TvHome';
 import { transition } from './motion';
 import { longPress } from './longPress';
-import { applyPerformance, applySkin, initialPerformance, initialSkin, loadLook, skinLook, type Skin } from './skin';
+import { applyPerformance, applySkin, initialPerformance, initialSkin, loadLook, listeningLayout, skinLook, type Skin } from './skin';
 import { useEvent } from './stable';
 
 function initialAmbient(): AmbientMode {
@@ -183,12 +183,12 @@ export function App() {
   // controls retain their native color transitions without repeatedly restyling the whole page.
   useEffect(() => {
     palette.glow.forEach((color, index) => document.documentElement.style.setProperty(`--glow-${index + 1}`, color));
-    document.documentElement.style.setProperty('--accent', palette.accent);
-    document.documentElement.style.setProperty('--ground', palette.ground);
-    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', palette.ground);
-  }, [palette]);
+    document.documentElement.style.setProperty('--cover-accent', palette.accent);
+    document.documentElement.style.setProperty('--cover-ground', palette.ground);
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', getComputedStyle(document.documentElement).getPropertyValue('--ground').trim());
+  }, [palette, skin]);
   const sceneFailed = useCallback(() => setGlScene(false), []);
-  const scene = (moving: boolean) => <AmbientScene gl={glScene} immersive={expanded} moving={moving} ambient={ambient} palette={palette} hidden={hidden} reduced={reduced} artwork={artwork} skin={skin} onFail={sceneFailed} />;
+  const scene = (moving: boolean) => !listeningLayout(skin) && <AmbientScene gl={glScene} immersive={expanded} moving={moving} ambient={ambient} palette={palette} hidden={hidden} reduced={reduced} artwork={artwork} skin={skin} onFail={sceneFailed} />;
   const background = <>{scene(motion)}{fps && <FpsMeter />}</>;
   // Sign-in has no session to wait for; the horizon idles there whenever ambient motion is allowed.
   const welcome = <>{scene(!still)}{fps && <FpsMeter />}</>;
@@ -210,7 +210,7 @@ export function App() {
   const room = snapshot?.session.voiceChannel; const listening = snapshot?.session.listeners.length || 0;
   // Voice room and listeners live once, in the server header; tabs name each page's sections.
   const place = portal.target === 'local' ? portal.playingOn ? `On ${portal.playingOn}` : 'On this device' : room ? room.name : snapshot?.savedSession.voiceChannel ? `Saved in ${snapshot.savedSession.voiceChannel.name}` : 'Join a voice channel';
-  return <div className={`app-shell ${expanded ? 'player-open' : ''} ${motion ? 'motion-live' : ''} ${connection !== 'live' ? 'has-connection-notice' : ''} ${tvHomeShown ? 'tv-home-open' : ''}`}>{background}{!tvHomeShown && <a href="#main-content" className="skip-link" onClick={event => { event.preventDefault(); document.getElementById('main-content')?.focus(); }}>Skip to content</a>}
+  return <div data-surface={surface} className={`app-shell ${expanded ? 'player-open' : ''} ${motion ? 'motion-live' : ''} ${connection !== 'live' ? 'has-connection-notice' : ''} ${tvHomeShown ? 'tv-home-open' : ''}`}>{background}{!tvHomeShown && <a href="#main-content" className="skip-link" onClick={event => { event.preventDefault(); document.getElementById('main-content')?.focus(); }}>Skip to content</a>}
     <Sidebar inert={tvHomeShown} bootstrap={bootstrap!} guildId={portal.guildId} iconUrl={snapshot?.guild.iconUrl || bootstrap!.guilds.find(g => g.id === portal.guildId)?.iconUrl} status={snapshot?.session.status || 'idle'}
       statusText={`${statusLabel(snapshot)} · ${place}`} listening={listening} listeners={snapshot?.session.voiceChannel ? snapshot.session.listeners : null} surface={surface}
       accountNote={bootstrap!.viewer.maintainer ? 'Maintainer' : portal.target === 'local' ? 'Listening here' : snapshot?.session.canAdd ? 'In voice' : 'Signed in'}

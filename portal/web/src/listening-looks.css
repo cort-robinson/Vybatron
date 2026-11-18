@@ -1,0 +1,251 @@
+/* Printed sleeve, studio console and gallery layouts share the same transport and library. */
+:root[data-skin='sleeve-light'] {
+  color-scheme: light;
+  --ground: #f5ebd9;
+  --text: #420f20;
+  --text-soft: #583535;
+  --muted: #73534d;
+  --accent: #801e34;
+  --primary-ink: #fff6e7;
+  --primary-hover: #651729;
+  --favorite: #a6204d;
+  --amber: #805000;
+  --red: #a92c2d;
+  --error-text: #942433;
+  --success-text: #23593e;
+  --offline-surface: #f2dfbc;
+  --range-thumb: var(--accent);
+}
+:root[data-skin='sleeve-dark'] {
+  --ground: #20161c;
+  --text: #f9ead4;
+  --text-soft: #e8d0bd;
+  --muted: #c8aaa7;
+  --accent: #f0a59e;
+  --primary-ink: #301520;
+}
+:root[data-skin^='sleeve-'] {
+  --line: color-mix(in srgb, var(--text) 22%, transparent);
+  --line-soft: var(--line);
+  --line-strong: color-mix(in srgb, var(--text) 44%, transparent);
+  --field-line: var(--line-strong);
+  --field: color-mix(in srgb, var(--text) 4%, var(--ground));
+  --secondary: var(--field);
+  --surface: var(--field);
+  --raised: color-mix(in srgb, var(--ground) 94%, var(--text));
+  --secondary-hover: color-mix(in srgb, var(--text) 12%, var(--ground));
+  --hover-surface: var(--secondary-hover);
+  --selected-surface: var(--secondary-hover);
+  --range-track: var(--line-strong);
+  --scrollbar: var(--line-strong);
+  --chrome: var(--ground);
+  --shadow-sleeve: 3px 4px 0 var(--line);
+  --shadow-control: none;
+  --shadow-player: none;
+
+  & :is(h1, h2, .playlist-body h3, .shelf-card-body strong, .compact-track-title) {
+    font-family: Georgia, 'Times New Roman', serif;
+    letter-spacing: -.045em;
+    text-shadow: none;
+  }
+  & :is(.button, .header-search, .header-search-add, .settings-list, .sleeve-queue, .artwork, .queue-now, .continue-session, .track-row) { border-radius: 2px; }
+  & .track-row { border-bottom: 1px solid var(--line); }
+  & .sleeve-artwork { --spectrum: 0px; }
+  & .sleeve-artwork > .artwork { border-radius: 1px; outline: 1px solid var(--line); }
+  & .sleeve-queue { background: var(--ground); }
+  & .record-caption { color: var(--accent); }
+  & .player-title-row h2 { font-size: clamp(2.25rem, 5vw, 5.6rem); line-height: .99; }
+  & .page-title h1 { font-size: clamp(2rem, 3.5vw, 3.6rem); }
+  & :is(.player-chip, .player-destination-trigger) { border: 1px solid var(--line); }
+}
+:root[data-skin='broadcast'] {
+  --ground: #151d23;
+  --chrome: #1c272f;
+  --accent: #ff974b;
+  --text: #f7ead8;
+  --text-soft: #dcd9d0;
+  --muted: #b2bdc3;
+  --line: #38454d;
+  --line-strong: #596670;
+  --raised: #25313a;
+  --shadow-player: none;
+
+  & :is(.artwork, .guild-card, .settings-list, .sleeve-queue, .header-search, .header-search-add, .button, .play-button) { border-radius: 5px; }
+  & :is(.page-title h1, .section-heading h2, .player-title-row h2) { font-stretch: 80%; letter-spacing: -.025em; }
+  & .page-title h1 { font-size: clamp(2rem, 3.6vw, 3.9rem); }
+  & .track-list > li:first-child { box-shadow: inset 3px 0 var(--accent); }
+  & .track-index, & .track-duration { font-family: ui-monospace, monospace; }
+  & .sleeve-artwork { --spectrum: 0px; }
+  & .play-button { box-shadow: inset 0 1px 0 #ffc78e, 0 3px 0 #8d4717; }
+  & .record-caption { color: var(--accent); }
+}
+:root[data-skin='wall'] {
+  --ground: #111827;
+  --chrome: #182132;
+  --accent: #9ce8eb;
+  --text: #fff8ea;
+  --muted: #bfcadc;
+  & .sleeve-artwork { --spectrum: 0px; }
+  & .player-title-row h2 { font-weight: 500; line-height: .99; letter-spacing: -.055em; }
+}
+.desk-status { display: none; }
+.record-caption {
+  display: block; margin-bottom: .65em; font-size: .8rem; line-height: 1.2;
+  font-weight: 750; letter-spacing: .13em; text-transform: uppercase;
+}
+:root:is([data-skin^='sleeve-'], [data-skin='broadcast'], [data-skin='wall']) {
+  --chrome-blur: none;
+  --scenery-clearance: 24px;
+}
+/* Wide screens trade the navigation sidebar for a masthead. The existing server picker,
+   account menu and all navigation actions stay available. */
+@media (min-width: 1200px) {
+  :root:is([data-skin^='sleeve-'], [data-skin='broadcast'], [data-skin='wall']):not([data-tv]) {
+    --masthead: 68px;
+    --sidebar: 0px;
+    --topbar: 72px;
+    & .sidebar {
+      width: 100%; height: var(--masthead); inset: 0 0 auto; flex-direction: row;
+      align-items: center; gap: 18px; padding: 0 28px; z-index: 35; overflow: visible;
+      border: 0; border-bottom: 1px solid var(--line-strong); background: var(--ground);
+    }
+    & .sidebar > .brand, & .sidebar > .navigation, & .sidebar > .account { margin: 0; }
+    & .navigation { order: 1; flex-direction: row; }
+    & .navigation button { padding: 8px 11px; min-height: 44px; gap: 6px; }
+    & .navigation button svg { width: 20px; }
+    & .guild-card { margin-left: auto; order: 2; padding: 0 12px; width: 255px; align-items: center; border: 0; }
+    & .guild-info { gap: 0; }
+    & .guild-info select { min-height: 32px; }
+    & .guild-status { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    & .guild-status .status-dot { display: none; }
+    & .sidebar .guild-listeners, & .sidebar .guild-sep { display: inline; }
+    & .guild-caret { top: 9px; }
+    & .sidebar-session { display: none; }
+    & .account { order: 3; padding: 0; border: 0; }
+    & .account-identity > span:not(.avatar) { display: none; }
+    & .account-menu { top: calc(100% + 10px); bottom: auto; left: auto; right: 0; }
+    & .portal-main { padding-top: var(--masthead); }
+    & .topbar:not(.sleeve-topbar) { top: var(--masthead); }
+    & .topbar { padding: 8px 28px; }
+    & .persistent-player.expanded { top: calc(var(--masthead) + var(--topbar)); }
+    & .has-connection-notice .persistent-player.expanded { top: calc(var(--masthead) + var(--topbar) + var(--connection-notice)); }
+  }
+}
+@media (min-width: 1024px) {
+  :root[data-skin^='sleeve-'] {
+    & .sleeve-content { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1.65fr) minmax(0, 1fr); gap: 20px; padding-block: 12px 18px; }
+    & .sleeve-main { grid-template: 1fr auto / minmax(0, 43fr) minmax(0, 57fr); align-items: center; column-gap: 5%; }
+    & .sleeve-artwork { grid-row: 1 / 3; }
+    & .player-identity { width: 100%; text-align: left; align-self: center; }
+    & .player-title-row h2 { font-size: clamp(3rem, min(7.5vw, 11vh), 7.6rem); }
+    & .player-title-row, & .player-chips { justify-content: flex-start; }
+    & .title-balance { display: none; }
+    & .player-context { align-self: start; }
+    & .sleeve-queue { width: 100%; height: 100%; border: 0; border-top: 2px solid var(--text); padding: 14px 0 0; }
+    & .sleeve-queue .queue { display: grid; grid-template-columns: minmax(130px, 20%) minmax(0, 1fr); align-items: start; }
+    & .sleeve-queue .queue > * { grid-column: 2; }
+    & .sleeve-queue .section-heading { grid-column: 1; grid-row: 1 / span 2; }
+    & .sleeve-queue .heading-line { display: grid; gap: 4px; }
+    & .sleeve-queue h2 { font-size: clamp(2rem, 3.6vw, 3.8rem); }
+    & .sleeve-queue .track-row { min-height: 62px; padding-block: 5px; }
+    & .sleeve-queue .artwork { width: 46px; height: 46px; }
+  }
+}
+/* The queue surface docks the actual transport on the left. At smaller widths or heights
+   the regular bottom deck leaves more room for touch controls and long names. */
+@media (min-width: 1200px) and (min-height: 700px) {
+  :root[data-skin='broadcast']:not([data-tv]) .app-shell[data-surface='session']:not(.player-open):has(.collapsed) {
+    --channel: clamp(268px, 23vw, 350px);
+    padding-bottom: 0;
+    & .main-surface { margin-left: var(--channel); }
+    & .queue-now { display: none; }
+    & .persistent-player.collapsed {
+      inset: calc(var(--masthead) + var(--topbar)) auto 0 0; width: var(--channel); height: auto;
+      border: 1px solid var(--line); touch-action: pan-y; background: linear-gradient(145deg,#29353d,#172128);
+    }
+    &.has-connection-notice .persistent-player.collapsed { top: calc(var(--masthead) + var(--topbar) + var(--connection-notice)); }
+    & .player-footer { display: flex; flex-direction: column; justify-content: center; align-items: stretch; gap: 12px; padding: 18px; }
+    & .desk-status { display: flex; align-items: center; gap: 8px; color: var(--text-soft); font-weight: 750; font-size: .85rem; letter-spacing: .12em; text-transform: uppercase; }
+    & .desk-status::before { content: ''; width: 9px; height: 9px; border-radius: 50%; background: currentColor; }
+    & .playing .desk-status { color: var(--accent); }
+    & .compact-identity { display: flex; position: relative; align-items: flex-start; }
+    & .player-expand-trigger { display: grid; width: 100%; flex: 1; gap: 16px; }
+    & .player-expand-trigger > .artwork { width: min(100%, 29vh); height: auto; aspect-ratio: 1; object-fit: cover; }
+    & .compact-track-title { font-size: 1.65rem; color: var(--text); }
+    & .compact-favorite { position: absolute; right: 0; bottom: 0; }
+    & .compact-title { padding-right: 44px; }
+    & .playback-cluster { width: 100%; }
+    & .player-extras { margin: 0; justify-content: center; }
+    & .expand-button { align-self: center; width: auto; padding: 0 14px; gap: 8px; }
+    & .expand-button span { display: inline; }
+    & .player-more > .menu-panel { left: auto; right: -20px; max-height: 53vh; }
+  }
+}
+.queue-filmstrip { display: flex; align-items: stretch; min-height: 0; color: #fff; background: #11182b; }
+.filmstrip-open { display: flex; align-items: center; justify-content: center; gap: .4em; padding: 14px; font-weight: 700; background: #202b40; }
+.queue-filmstrip ol { display: flex; flex: 1; margin: 0; padding: 0; list-style: none; min-width: 0; }
+.queue-filmstrip li { flex: 1; position: relative; isolation: isolate; min-width: 0; display: flex; align-items: end; background: #222c43; border-left: 1px solid #ffffff32; }
+.queue-filmstrip li > .artwork { position: absolute; z-index: -2; inset: 0; width: 100%; height: 100%; object-fit: cover; border-radius: 0; }
+.queue-filmstrip li::before { position: absolute; z-index: -1; inset: 0; content: ''; background: linear-gradient(transparent, #070c1cea 90%); }
+.queue-filmstrip li div { display: grid; min-width: 0; padding: 10px 16px; }
+.queue-filmstrip :is(strong, span) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.queue-filmstrip strong { font-size: 1.15em; }
+.queue-filmstrip p { align-self: center; padding-inline: 16px; }
+:root[data-skin='wall'] {
+  & .sleeve-content > .queue-filmstrip { display: none; }
+  & .tv-stage > .artwork { width: 100%; height: 100%; object-fit: cover; }
+  & .tv-stage > :is(.artwork[data-small-cover], picture.artwork) { width: 46vmin; height: 46vmin; object-fit: contain; margin: 5vmin 7vmin; }
+  & .tv-stage { background: linear-gradient(125deg, var(--glow-2), var(--ground)); }
+  & .tv-controls .queue-filmstrip { height: 12vmin; }
+  & .tv-song h1 { font-weight: 500; }
+}
+/* Use the same artwork element for the stage, its fallback, and cover transitions. Lyrics
+   and visualizers keep their own interactive viewport. */
+@media (min-width: 1024px) {
+  :root[data-skin='wall'] {
+    & .sleeve-content { display: grid; grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr) clamp(80px, 14vh, 160px); padding: 0; gap: 0; }
+    & .sleeve-content > .queue-filmstrip { display: flex; }
+    & .sleeve-content > .sleeve-queue { display: none; }
+    & .sleeve-main { position: relative; isolation: isolate; display: flex; flex-direction: column; align-items: start; justify-content: end; padding: clamp(16px, 3vw, 52px); gap: 4px; background: linear-gradient(120deg,var(--glow-1),var(--ground)); }
+    & .sleeve-artwork { position: absolute; inset: 0; z-index: -1; }
+    & .sleeve-artwork > :is(.artwork,.artwork-ghost) { width: 100%; height: 100%; border-radius: 0; object-fit: cover; top: 0; box-shadow: none; }
+    & .sleeve-artwork > :is(.artwork[data-small-cover], picture.artwork) { width: min(40cqw,78cqh); height: min(40cqw,78cqh); margin-left: auto; margin-right: 6%; object-fit: contain; }
+    & .sleeve-artwork::after { content: ''; position: absolute; inset: 0; pointer-events: none; background: linear-gradient(0deg,#071022ef,transparent 90%), linear-gradient(90deg,#0b122d77,transparent); }
+    & .sleeve-visuals { inset: 14px 16px auto auto; translate: none; }
+    & .player-identity { width: min(85%, 1000px); text-align: left; }
+    & .player-title-row, & .player-chips { justify-content: start; }
+    & .title-balance { display: none; }
+    & .player-title-row h2 { font-size: clamp(2.5rem, 5.3vw, 6rem); }
+    & .player-chips button { background: #121c30; }
+    & .sleeve-main:has(.showing-lyrics, .sleeve-visualizer) { display: grid; grid-template: minmax(0,1fr) auto / minmax(0,1fr) minmax(0,1fr); align-items: center; }
+    & .sleeve-main:has(.showing-lyrics, .sleeve-visualizer) .sleeve-artwork { position: relative; z-index: auto; grid-row: 1 / 3; }
+    & .sleeve-main:has(.showing-lyrics, .sleeve-visualizer) .sleeve-artwork::after { display: none; }
+  }
+}
+/* Text over a photograph or a visualizer always needs light ink, including in the paper edition. */
+:root[data-skin='sleeve-light'] {
+  & .shelf-rank { color: #fff4e0; }
+  & :is(.tv-home, .visualizer-full) {
+    --text: #fff4e0; --text-soft: #f5dfd0; --muted: #d9c5b9;
+    --accent: #f0a59e; --primary-ink: #301520; --surface: #34272e;
+    --ground: #20161c; --raised: #382a32; --secondary: #44313b;
+  }
+}
+@media (max-width: 1023px) and (orientation: portrait) {
+  :root[data-skin='wall'] .expanded:not(.queue-open) {
+    & .sleeve-content { position: relative; isolation: isolate; }
+    & .sleeve-main:not(:has(.showing-lyrics, .sleeve-visualizer)) {
+      display: flex; flex-direction: column; justify-content: end; align-items: start;
+      & .sleeve-artwork { position: absolute; inset: 0; z-index: -1; max-height: none; padding: 0; }
+      & .sleeve-artwork > :is(.artwork,.artwork-ghost) { width: 100%; height: 100%; border-radius: 0; top: 0; object-fit: cover; }
+      & .sleeve-artwork > :is(.artwork[data-small-cover], picture.artwork) { width: min(72cqw,45cqh); height: min(72cqw,45cqh); margin-bottom: 15%; object-fit: contain; }
+      & .sleeve-artwork::after { content: ''; position: absolute; inset: 0; background: linear-gradient(#071022c9,transparent 28%, #071022f5 97%); pointer-events: none; }
+      & .sleeve-visuals { top: 56px; right: 12px; translate: none; }
+      & .player-identity, & .player-title-row h2, & .player-identity p { text-align: left; }
+      & .player-title-row h2 { font-size: clamp(2rem, 10vw, 4rem); }
+      & .title-balance { display: none; }
+      & .player-title-row, & .player-chips { justify-content: start; }
+      & .player-chips button { background: #121c30; }
+    }
+  }
+}

@@ -12,6 +12,7 @@ import { focusEntry, topLayer } from '../tv';
 import { useEvent } from '../stable';
 import { ActionPopover, Artwork, Dialog, IconButton, Loading } from './ui';
 import { BackButton, MoveHereDialog, PlayOnChoices, Timeline, Volume } from './Player';
+import { QueueFilmstrip } from './QueueFilmstrip';
 import { Queue } from './Queue';
 import { Spectrum } from './Spectrum';
 import { timestamp } from '../format';
@@ -31,7 +32,9 @@ export function TvHome({ portal, palette, skin, place, onBrowse, onAdd }: { port
   const live = local || connection === 'live';
   const clock = { session, receivedAt, live };
   const [failed, setFailed] = useState(false);
-  const visuals = useVisualizer(!failed, () => setFailed(true));
+  const [showVisuals, setShowVisuals] = useState(false);
+  const wallArt = skin === 'wall' && (!showVisuals || failed);
+  const visuals = useVisualizer(!wallArt && !failed, () => setFailed(true));
   // The look, chosen here as in the full-screen visualizer (one choice for both), and MilkDrop's
   // preset showing, for its name and Next preset.
   const preset = usePreset(skin); const engine = useRef<Visualizer | null>(null); const [named, setNamed] = useState('');
@@ -94,7 +97,7 @@ export function TvHome({ portal, palette, skin, place, onBrowse, onAdd }: { port
   const blockedTitle = !controllable ? portal.blockedReason : undefined;
   const fallback = <div className="tv-fallback"><Artwork track={track} large /><Spectrum className="tv-spectrum" seed={track?.id || 'idle'} color={palette.accent} mode={track && active && live ? 'playing' : 'standby'} animate bands={48} /></div>;
   return <section ref={root} className={`tv-home ${shown ? '' : 'resting'}`} aria-label="Now playing" tabIndex={-1} data-tv-layer data-testid="tv-home">
-    <div className="tv-stage" onPointerDown={touch}>{visuals && !failed
+    <div className="tv-stage" onPointerDown={touch}>{wallArt ? <Artwork track={track} large /> : visuals && !failed
       ? <visuals.BackdropVisualizer clock={clock} palette={palette} skin={skin} guildId={snapshot?.guild.id ?? null} local={local} engine={engine} onName={setNamed} onFail={() => setFailed(true)} />
       : failed ? fallback : null}</div>
     <div className="tv-overlay">
@@ -116,10 +119,12 @@ export function TvHome({ portal, palette, skin, place, onBrowse, onAdd }: { port
               {close => <PlayOnChoices portal={portal} close={close} onMoveHere={() => setConfirmHere(true)} />}</ActionPopover>
             <button type="button" className="button secondary tv-action" onClick={() => setQueueOpen(true)}><ListNumbersIcon size={22} />Queue</button>
             {!failed && <ActionPopover label="Visualizer" className="tv-menu tv-looks" triggerClassName="button secondary tv-action" trigger={<><SparkleIcon size={22} />Visualizer</>}>
-              {() => <LookChoices preset={preset} named={named} onNext={() => engine.current?.next()} />}</ActionPopover>}
+              {() => <>{skin === 'wall' && <button aria-pressed={wallArt} onClick={() => setShowVisuals(!showVisuals)}>{wallArt ? 'Show visualizer' : 'Show cover art'}</button>}
+                {!wallArt && <LookChoices preset={preset} named={named} onNext={() => engine.current?.next()} />}</>}</ActionPopover>}
             <button type="button" className="button secondary tv-action" onClick={onBrowse}><SquaresFourIcon size={22} />Browse</button>
           </div>
         </div>
+        {skin === 'wall' && <QueueFilmstrip tracks={session?.queue ?? []} onOpen={() => setQueueOpen(true)} />}
       </div>
     </div>
     {queueOpen && <Dialog title="Up next" className="tv-queue" onClose={() => setQueueOpen(false)}><Queue portal={portal} compact onAdd={() => { setQueueOpen(false); onAdd(); }} /></Dialog>}

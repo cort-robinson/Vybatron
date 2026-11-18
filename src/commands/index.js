@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { handleMessageComponent, handleModalSubmit } from '../utils/components.js';
-import { errorPayload, SESSION_MIX_MODAL_ID } from '../utils/messages.js';
+import { errorPayload, playerActionId, SESSION_MIX_MODAL_ID } from '../utils/messages.js';
 import { MessageFlags } from 'discord.js';
 import { guardedMutation, commandMutationPolicy, componentMutationPolicy } from '../utils/requests.js';
 import { publicError } from '../runtime.js';
@@ -112,8 +112,8 @@ export async function loadCommands(client) {
 
     if (interaction.isMessageComponent()) {
       try {
-        const id = interaction.customId || '';
-        const mutates = /^player:v1:(toggle|skip|shuffle|loop|stop-confirm)$/.test(id)
+        const id = playerActionId(interaction) || '';
+        const mutates = /^player:v1:(toggle|skip|back|shuffle|loop|stop-confirm)$/.test(id)
           || /^queue:v[12]:jump:/.test(id) || /^history:.*:replay:/.test(id)
           || /^player:v2:favorite:/.test(id) || /^import:v1:confirm:/.test(id);
         if (mutates) await guardedMutation(interaction, handleMessageComponent, componentMutationPolicy(id));
@@ -126,6 +126,10 @@ export async function loadCommands(client) {
 
     if (interaction.isModalSubmit()) {
       try {
+        if (interaction.customId.startsWith('music:v1:submit:')) {
+          await handleModalSubmit(interaction);
+          return;
+        }
         // A session mix is a library write; seek changes playback.
         await guardedMutation(interaction, handleModalSubmit, { playback: interaction.customId !== SESSION_MIX_MODAL_ID });
       } catch (error) {
@@ -143,7 +147,8 @@ export async function loadCommands(client) {
       const name = interaction.commandName;
       const action = interaction.options.getSubcommand?.(false);
       const policy = commandMutationPolicy(name, action);
-      if (policy.readOnly) await command.execute(interaction);
+      // /mix start may open a modal. Its handler takes the mutation lane once a seed is available.
+      if (policy.readOnly || (name === 'mix' && action === 'start')) await command.execute(interaction);
       else await guardedMutation(interaction, command.execute, policy);
     } catch (error) {
       await reportInteractionError(interaction, error, `/${interaction.commandName}`);

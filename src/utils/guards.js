@@ -1,4 +1,4 @@
-import { ephemeralText } from './messages.js';
+import { ephemeralText, playerActionId } from './messages.js';
 import { PermissionFlagsBits } from 'discord.js';
 import { controllerSessionStatus } from './player-controller.js';
 import { SESSION_STATUS } from './session-status.js';
@@ -10,7 +10,7 @@ const RECOVERY_COMMANDS = new Set(['skip', 'skipto', 'back', 'stop', 'clear', 'v
 const RECOVERY_COMPONENTS = [/^player:v1:(skip|stop|stop-confirm)$/, /^queue:v[12]:jump:/, /^history:v2:replay:/];
 
 export function allowedWhileRecovering(interaction) {
-  const id = interaction.customId || '';
+  const id = playerActionId(interaction) || '';
   return RECOVERY_COMMANDS.has(interaction.commandName) || RECOVERY_COMPONENTS.some(pattern => pattern.test(id));
 }
 
@@ -50,7 +50,10 @@ export async function requireUserVoice(interaction, { checkBotAccess = false } =
     return reject(interaction, 'Join the bot’s voice channel to add music or control this session.');
   }
   if (checkBotAccess && channel.joinable === false) {
-    return reject(
+    // Discord also marks a channel unjoinable when the connected bot occupies its last slot.
+    const occupiesSlot = active?.connected && active.voiceChannelId === channel.id && channel.full && channel.viewable
+      && channel.permissionsFor?.(interaction.client.user)?.has(PermissionFlagsBits.Connect);
+    if (!occupiesSlot) return reject(
       interaction,
       'Vybatron can’t join that voice channel. Check its View Channel and Connect permissions, and make sure the channel isn’t full.'
     );

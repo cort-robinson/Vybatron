@@ -1,9 +1,10 @@
 import { MessageFlags, SlashCommandBuilder } from 'discord.js';
-import { requireUserVoice, recheckEnqueueRequest } from '../utils/guards.js';
+import { requireUserVoice, recheckEnqueueRequest, hasDJAccess } from '../utils/guards.js';
 import { autocompleteTracks } from '../utils/autocomplete.js';
 import { textPayload } from '../utils/messages.js';
 import { withControllerLink } from '../utils/player-controller.js';
 import { directControlPresentation } from '../utils/presentation-updates.js';
+import { refreshSuggestions, setRadio } from '../utils/radio.js';
 import { safeText } from '../utils/presentation.js';
 import { resolveTrackQuery, searchFailureMessage, validatePlaybackQuery } from '../utils/search.js';
 import { enqueueTracks, getOrCreatePlayer } from '../utils/enqueue.js';
@@ -23,9 +24,18 @@ export const data = new SlashCommandBuilder()
 export const autocomplete = autocompleteTracks;
 
 export async function execute(interaction) {
+  return playQuery(interaction);
+}
+
+export function sessionHasMusic(player) {
+  return Boolean(player && (player.playing || player.paused || player.queue.current || player.queue.tracks.length));
+}
+
+export async function playQuery(interaction, query, { roomMix = false, automaticSeed = false, seedAvailable } = {}) {
   const channel = await requireUserVoice(interaction, { checkBotAccess: true });
   if (!channel) return;
-  const query = interaction.options.getString('query');
+  if (roomMix && !hasDJAccess(interaction)) return interaction.reply(textPayload('Starting autoplay needs the DJ role. Use /play to request a song.'));
+  query ??= interaction.options.getString('query');
   const invalid = validatePlaybackQuery(query);
   if (invalid) return interaction.reply({ ...textPayload(invalid), flags: MessageFlags.Ephemeral });
 
@@ -34,7 +44,8 @@ export async function execute(interaction) {
   const { player, created } = getOrCreatePlayer(interaction, channel);
   let added = false;
   try {
-    const lookup = () => resolveTrackQuery(player, query, interaction.user);
+    if (roomMix && sessionHasMusic(player)) return interaction.editReply(textPayload('A session is already going. Choose Add a song to join the queue.'));
+    const lookup = () => resolveTrackQuery(player, query, automaticSeed ? interaction.client.user : interaction.user);
     // For an existing session the slow lookup runs outside the playback lane,
     // so Pause, Skip or Volume don't wait on it. The rechecks and the queue
     // write below run back inside the lane. A new session keeps the lane: its
@@ -49,7 +60,10 @@ export async function execute(interaction) {
       return interaction.editReply(textPayload(searchFailureMessage(result, query)));
     }
 
-    if (!await recheckEnqueueRequest(interaction, player, channel)) return;
+    if (!await recheckEnqueueRequest(interaction, player, channel, { checkDJ: roomMix })) return;
+    if (roomMix && sessionHasMusic(player)) return interaction.editReply(textPayload('A session is already going. Choose Add a song to join the queue.'));
+    if (seedAvailable && !seedAvailable()) return interaction.editReply(textPayload('The room changed. Use /mix start again.'));
+    if (roomMix && result.loadType === 'playlist') return interaction.editReply(textPayload('Choose one starting song for the mix. Use /play for a playlist.'));
     const starting = !player.playing && !player.paused && !player.queue.current;
     const previousQueueSize = player.queue.tracks.length;
     const firstPosition = previousQueueSize + 1;
@@ -68,10 +82,12 @@ export async function execute(interaction) {
       const track = result.tracks[0];
       await enqueueTracks(interaction.client, player, track); added = true;
       const title = safeText(track.info.title, { maxLength: 140 });
-      const position = player.queue.tracks.indexOf(track) + 1;
+      const position = player.queue.tracks.lastIndexOf(track) + 1;
+      const previous = position > 1 ? player.queue.tracks[position - 2] : player.queue.current;
+      const after = previous?.info?.title ? ` Plays after **${safeText(previous.info.title, { maxLength: 140 })}**.` : '';
       acknowledgement = starting && previousQueueSize === 0
         ? `Starting **${title}**.`
-        : `Added **${title}** at queue position ${position}.${starting ? ' Starting your queue.' : ''}`;
+        : `Added **${title}** at queue position ${position}.${starting ? ' Starting your queue.' : after}`;
     }
 
     if (!await recheckEnqueueRequest(interaction, player, channel)) return;
@@ -79,6 +95,11 @@ export async function execute(interaction) {
     if (!await recheckEnqueueRequest(interaction, player, channel)) return;
     if (!player.playing && !player.paused) await player.play();
     if (!await recheckEnqueueRequest(interaction, player, channel)) return;
+    if (roomMix && hasDJAccess(interaction)) {
+      setRadio(player, true, result.tracks[0]);
+      void refreshSuggestions(player, interaction.client).catch(() => {});
+      acknowledgement += ' Autoplay will keep the mix going after your requests.';
+    }
     await directControlPresentation(interaction, player);
     if (result.spotifyImport?.notice) acknowledgement += `\n${result.spotifyImport.notice}`;
     return interaction.editReply(textPayload(

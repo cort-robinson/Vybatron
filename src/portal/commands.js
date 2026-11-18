@@ -47,8 +47,8 @@ function publicOption(option) {
   if (option.portalCommand) result.name = publicName(option.portalCommand, result.name);
   return result;
 }
-// Personal preferences have their own portal endpoints, not a server's command lane.
-const PORTAL_HIDDEN = new Set(['radio:mytaste']);
+// Personal preferences have their own portal endpoints. Starting a room mix can open a Discord modal.
+const PORTAL_HIDDEN = new Set(['radio:mytaste', 'mix:start']);
 const portalOption = (name, option) => !(option.type === 1 && PORTAL_HIDDEN.has(`${name}:${option.name}`));
 export function publicCommands(commandMap) {
   return [...commandMap.entries()].filter(([name]) => ALLOWED.has(name)).map(([name, command]) => {

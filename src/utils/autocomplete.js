@@ -71,9 +71,9 @@ export function resolveAutocompleteTrack(value, ownerId) {
   return { isAutocomplete: true, track: entry.track };
 }
 
-export async function getTrackChoices(interaction, { timeoutMs = 2_500 } = {}) {
-  const query = plainText(interaction.options.getFocused(), { fallback: '', maxLength: 200 });
-  if (Array.from(query).length < 2 || isUrl(query) || validatePlaybackQuery(query)) return [];
+export async function getTrackChoices(interaction, { timeoutMs = 2_500, search } = {}) {
+  const query = plainText(search ?? interaction.options.getFocused(), { fallback: '', maxLength: 200 });
+  if (Array.from(query).length < (search === undefined ? 2 : 1) || isUrl(query) || validatePlaybackQuery(query)) return [];
 
   const ownerId = String(interaction.user?.id || 'unknown');
   const cacheKey = `${ownerId}:${query.toLocaleLowerCase()}`;

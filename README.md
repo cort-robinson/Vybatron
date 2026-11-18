@@ -33,7 +33,11 @@ Spotify is a catalog import, not a Spotify audio stream. If native catalog looku
 
 ## Commands
 
-Start with `/help`. Join a voice channel and use `/play` with a song and artist, a fresh autocomplete result, or a supported public HTTPS link.
+Join voice and use `/play` to start with a song. On the shared player, choose **Add a song** to paste a link or privately pick a recording. **Stop** asks for confirmation before clearing the queue and disconnecting. Seek and Shuffle are under **More controls**.
+
+Use `/mix start` to start an idle room with a server favorite from channels everyone present can see. If there’s no eligible favorite, choose a starting song. Room autoplay follows once requests run out. The configured DJ role applies to starting a mix.
+
+Start with `/help` or use `/play` with a song and artist, a fresh autocomplete result, or a supported public HTTPS link.
 
 | Command | Purpose |
 | --- | --- |

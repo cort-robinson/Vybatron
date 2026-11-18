@@ -1,3 +1,4 @@
+import { playerActionId } from './messages.js';
 import { MessageFlags } from 'discord.js';
 import { acquirePlaybackRequest } from './maintenance.js';
 import { trackReference } from './library.js';
@@ -108,7 +109,8 @@ function activityState(interaction) {
   const action = interaction.options?.getSubcommand?.(false);
   const queueEdit = ['play', 'playnext', 'transfer', 'clear', 'remove', 'move', 'shuffle', 'skip', 'skipto', 'back', 'stop', 'replay', 'voteskip'].includes(name)
     || (['mix', 'top', 'mymix'].includes(name) && ['load', 'play'].includes(action)) || (name === 'radio' && action === 'promote') || (name === 'session' && ['resume', 'discard'].includes(action))
-    || /^(?:queue:.*:jump:|history:.*:replay:|player:v1:(?:skip|back|shuffle|stop-confirm)$)/.test(interaction.customId || '');
+    || (name === 'mix' && action === 'start') || /^music:v1:(?:pick:|submit:)/.test(interaction.customId || '')
+    || /^(?:queue:.*:jump:|history:.*:replay:|player:v1:(?:skip|back|shuffle|stop-confirm)$)/.test(playerActionId(interaction) || '');
   if (name !== 'settings' && !queueEdit) return null;
   const player = interaction.client.lavalink?.getPlayer(interaction.guildId);
   return JSON.stringify(name === 'settings' ? interaction.client.library.settings(interaction.guildId)

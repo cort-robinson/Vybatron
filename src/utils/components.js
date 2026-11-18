@@ -1,6 +1,7 @@
 import { MessageFlags } from 'discord.js';
 import { requireControl, requireSessionVisibility } from './guards.js';
 import {
+  playerActionId,
   buildEmptyQueuePayload,
   buildQueuePayload,
   buildSeekModal,
@@ -33,6 +34,7 @@ import { buildHelpPayload } from './help.js';
 import { inviteUrlFor } from './invite.js';
 import { buildHistoryPayload, historySessionKey, replayHistoryTrack } from './history.js';
 import { buildLyricsPayload, findSessionTrack, trackLyrics } from './lyrics.js';
+import { openAddSong, pickSong, submitSong } from './song-picker.js';
 import { cancelGuildMutations } from './requests.js';
 import { directControlPresentation, requestRefresh, retirePresentationPlayer } from './presentation-updates.js';
 import { cancelImport, commitImport } from './playlist-import.js';
@@ -78,6 +80,8 @@ async function handlePlayerComponent(interaction, action, expectedIdentity = nul
 
   const player = interaction.client.lavalink?.getPlayer(interaction.guildId);
   if (!player) return rejectEndedSession(interaction);
+
+  if (action === 'add') return openAddSong(interaction);
 
   if (action === 'stop-cancel') {
     return interaction.update({ content: 'Stop cancelled.', components: [] });
@@ -275,8 +279,9 @@ async function handleLyricsPage(interaction, ownerId, identity, page) {
 }
 
 export async function handleMessageComponent(interaction) {
-  const customId = interaction.customId || '';
-  const playerMatch = /^player:v1:(toggle|skip|back|shuffle|loop|seek|queue|refresh|stop|stop-confirm|stop-cancel|stop-save)$/.exec(customId);
+  const customId = playerActionId(interaction) || '';
+  if (customId.startsWith('music:v1:pick:') && interaction.isStringSelectMenu()) return pickSong(interaction);
+  const playerMatch = /^player:v1:(add|toggle|skip|back|shuffle|loop|seek|queue|refresh|stop|stop-confirm|stop-cancel|stop-save)$/.exec(customId);
   if (playerMatch) return handlePlayerComponent(interaction, playerMatch[1]);
 
   const favoriteMatch = /^player:v2:favorite:([a-f0-9]{12})$/.exec(customId);
@@ -333,6 +338,7 @@ export async function handleMessageComponent(interaction) {
 }
 
 export async function handleModalSubmit(interaction) {
+  if (interaction.customId.startsWith('music:v1:submit:')) return submitSong(interaction);
   if (interaction.customId === SESSION_MIX_MODAL_ID) {
     const [{ saveMix }, { mixKey }] = await Promise.all([import('../commands/mix.js'), import('./library-actions.js')]);
     return saveMix(interaction, mixKey(interaction.fields.getTextInputValue('name')), { session: true });

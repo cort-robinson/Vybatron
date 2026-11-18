@@ -27,9 +27,9 @@
   },
   "homepage": "https://github.com/cort-robinson/Vybatron#readme",
   "dependencies": {
-    "discord.js": "14.27.0",
-    "dotenv": "18.0.8",
-    "lavalink-client": "2.11.0",
+    "discord.js": "14.28.1",
+    "dotenv": "18.0.10",
+    "lavalink-client": "2.11.2",
     "opus-decoder": "0.7.12",
     "sharp": "0.35.5"
   },
@@ -38,7 +38,7 @@
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
-    "eslint": "10.13.0",
-    "globals": "17.13.0"
+    "eslint": "10.15.0",
+    "globals": "17.14.0"
   }
 }

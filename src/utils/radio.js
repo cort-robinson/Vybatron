@@ -1,4 +1,5 @@
-import { plainText } from './presentation.js';
+import { randomBytes } from 'node:crypto';
+import { plainText, trackIdentity } from './presentation.js';
 import { songKey } from './song-identity.js';
 import { withTimeout, enqueueTracks } from './enqueue.js';
 import { acquirePlaybackRequest } from './maintenance.js';
@@ -170,6 +171,13 @@ function pick(candidates, state, random) {
 
 const EMPTY_ROOM = Object.freeze({ listeners: [], songs: new Map(), artists: new Map(), skipped: new Set(), scope: '' });
 function roomTaste(client, player, now) {
+  const guild = client.guilds?.cache?.get(player.guildId);
+  const states = guild?.voiceStates?.cache;
+  if (states) {
+    for (const voice of states.values()) {
+      if (voice.channelId === player.voiceChannelId && !guild.members?.cache?.get(voice.id)) return EMPTY_ROOM;
+    }
+  }
   try { return readRoomTaste(client, client.guilds?.cache?.get(player.guildId), presentMembers(client, player), now); } catch { return EMPTY_ROOM; }
 }
 
@@ -300,11 +308,56 @@ async function insert(player, client, entry, state) {
   setNotice(player.guildId, 'Autoplay is keeping the music going. Songs people queue always play first.');
 }
 
+// Each playback turn owns a ballot, even when the same recording repeats.
+export function beginRadioTurn(player) {
+  stateFor(player).ballot = null;
+}
+
+export function roomBallot(player, client) {
+  if (!player.queue.current || player.queue.tracks.length || !autoplayActive(client, player)) return null;
+  const state = stateFor(player);
+  pruneSuggestions(player, client);
+  if (state.suggestions.length < 2) return null;
+  if (state.ballot?.track !== player.queue.current) {
+    state.ballot = { track: player.queue.current, id: randomBytes(8).toString('hex'), votes: new Map() };
+  }
+  const eligible = new Set(presentMembers(client, player).map(member => member.id));
+  const choices = state.suggestions.map(({ track }) => ({ id: trackIdentity(track), track, votes: 0 }));
+  for (const [user, choice] of state.ballot.votes) {
+    const selected = choices.find(item => item.id === choice);
+    if (eligible.has(user) && selected) selected.votes++;
+    else state.ballot.votes.delete(user);
+  }
+  return { id: state.ballot.id, choices };
+}
+
+export function voteForSuggestion(player, client, user, ballotId, choiceId) {
+  const ballot = roomBallot(player, client);
+  if (!ballot || ballot.id !== ballotId || !ballot.choices.some(choice => choice.id === choiceId)
+    || !presentMembers(client, player).some(member => member.id === user)) return false;
+  stateFor(player).ballot.votes.set(user, choiceId);
+  return true;
+}
+
+function closeBallot(player, client, state, track) {
+  const ballot = state.ballot;
+  state.ballot = null;
+  if (!ballot || ballot.track !== track) return;
+  const counts = new Map();
+  for (const member of presentMembers(client, player)) {
+    const choice = ballot.votes.get(member.id);
+    if (choice) counts.set(choice, (counts.get(choice) || 0) + 1);
+  }
+  // Stable sort retains the recommendation order for ties.
+  state.suggestions.sort((a, b) => (counts.get(trackIdentity(b.track)) || 0) - (counts.get(trackIdentity(a.track)) || 0));
+}
+
 // Called by the SDK only after the human queue has run out.
 export async function fillRadioQueue(player, lastTrack, client, { timeoutMs = 8000, random = Math.random, now = Date.now } = {}) {
   if (!autoplayActive(client, player) || player.queue.current || player.queue.tracks.length) return false;
   const state = stateFor(player);
   if (state.filling || !audiencePresent(client, player, state)) return false;
+  closeBallot(player, client, state, lastTrack);
   state.filling = true;
   try { return await fill(player, client, state, { timeoutMs, random, now }); } finally { state.filling = false; }
 }
@@ -350,6 +403,7 @@ export async function queueNextSuggestion(player, client) {
   const state = states.get(player);
   if (!client || !state || !autoplayActive(client, player) || player.queue.tracks.length) return false;
   pruneForRoom(state, roomTaste(client, player, Date.now()));
+  closeBallot(player, client, state, player.queue.current);
   const entry = state.suggestions.shift();
   if (!entry) return false;
   await insert(player, client, entry, state);
@@ -360,7 +414,7 @@ export function setRadio(player, enabled, seed = null) {
   const state = stateFor(player);
   state.generation++;
   state.override = enabled === null ? null : Boolean(enabled);
-  state.failures = 0; state.suspended = false; state.suggestions = [];
+  state.failures = 0; state.suspended = false; state.suggestions = []; state.ballot = null;
   if (enabled && seed) { state.anchor = seed; state.anchorUses = 0; state.excluded.delete(sourceKey(seed)); state.penalties.delete(sourceKey(seed)); }
   if (!enabled) { state.anchor = null; state.anchorUses = 0; }
   return state;
@@ -370,7 +424,7 @@ export function setRadio(player, enabled, seed = null) {
 export function resetAutoplay(player) {
   const state = states.get(player);
   if (!state) return;
-  state.generation++; state.failures = 0; state.suspended = false; state.suggestions = [];
+  state.generation++; state.failures = 0; state.suspended = false; state.suggestions = []; state.ballot = null;
 }
 
 function exclude(state, track) {

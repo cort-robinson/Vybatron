@@ -286,9 +286,9 @@ export class Transport {
     throw new HttpError(safeErrors[result.status] ? result.status : 503, safeCode, message);
   }
 
-  async discordIdentity(code, signal) {
+  async discordIdentity(code, signal, { activity = false } = {}) {
     const body = new URLSearchParams({ client_id: this.config.clientId, client_secret: this.config.clientSecret,
-      grant_type: 'authorization_code', redirect_uri: this.config.callbackUrl, code }).toString();
+      grant_type: 'authorization_code', ...(!activity && { redirect_uri: this.config.callbackUrl }), code }).toString();
     const token = await this.request(this.config.discordTokenUrl, {
       method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body, signal,
     });
@@ -299,7 +299,8 @@ export class Transport {
     const user = await this.request(this.config.discordUserUrl, { headers: { Authorization: `Bearer ${token.data.access_token}` }, signal });
     if (user.status === 401 || user.status === 403) throw unauthorized();
     if (user.status !== 200 || typeof user.data.id !== 'string' || !/^\d{1,20}$/.test(user.data.id) || user.data.bot) throw unavailable();
-    // OAuth access/refresh tokens are never persisted or returned to the browser.
+    // Discord's embedded SDK requires the identify token for AUTHENTICATE. Portal sign-in only receives an actor ID.
+    if (activity) return { actorId: user.data.id, accessToken: token.data.access_token };
     return user.data.id;
   }
 

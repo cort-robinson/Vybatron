@@ -1,4 +1,4 @@
-import { MessageFlags } from 'discord.js';
+import { ActionRowBuilder, StringSelectMenuBuilder, MessageFlags } from 'discord.js';
 import { requireControl, requireSessionVisibility } from './guards.js';
 import {
   buildEmptyQueuePayload,
@@ -27,7 +27,8 @@ import {
   skipCurrent,
   togglePlayback,
 } from './operations.js';
-import { formatDuration, safeText, trackIdentity } from './presentation.js';
+import { roomBallot, voteForSuggestion } from './radio.js';
+import { formatDuration, plainText, safeText, trackIdentity } from './presentation.js';
 import { clearVoiceStatusBeforeLeaving } from './voice-status.js';
 import { buildHelpPayload } from './help.js';
 import { inviteUrlFor } from './invite.js';
@@ -79,6 +80,18 @@ async function handlePlayerComponent(interaction, action, expectedIdentity = nul
   const player = interaction.client.lavalink?.getPlayer(interaction.guildId);
   if (!player) return rejectEndedSession(interaction);
 
+  if (action === 'visualizer' || action === 'vote') {
+    if (!await requireControl(interaction, { checkDJ: false }) || !await requireSessionVisibility(interaction, player)) return;
+    if (action === 'visualizer') return interaction.launchActivity();
+    const ballot = roomBallot(player, interaction.client);
+    if (!ballot) return interaction.reply(ephemeralText('Voting opens when autoplay has choices and the queue is empty.'));
+    const options = ballot.choices.map(({ track, id, votes }) => ({
+      label: plainText(track.info.title, { maxLength: 100 }), value: id,
+      description: plainText(`${votes} ${votes === 1 ? 'vote' : 'votes'} · ${track.info.author || 'Unknown artist'}`, { maxLength: 100 }),
+    }));
+    return interaction.reply({ ...ephemeralText('Pick the next autoplay song. You can change your vote until the song ends. Queued requests play first.'),
+      components: [new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(`ballot:${ballot.id}`).setPlaceholder('Vote for a song').addOptions(options))] });
+  }
   if (action === 'stop-cancel') {
     return interaction.update({ content: 'Stop cancelled.', components: [] });
   }
@@ -276,7 +289,19 @@ async function handleLyricsPage(interaction, ownerId, identity, page) {
 
 export async function handleMessageComponent(interaction) {
   const customId = interaction.customId || '';
-  const playerMatch = /^player:v1:(toggle|skip|back|shuffle|loop|seek|queue|refresh|stop|stop-confirm|stop-cancel|stop-save)$/.exec(customId);
+  const mix = /^mixtape:(share|queue):([a-f0-9]{32}):([a-z0-9][a-z0-9 _-]{0,39})$/.exec(customId);
+  if (mix && interaction.isButton()) {
+    const { handleMixtape } = await import('./mixtape-card.js');
+    return handleMixtape(interaction, mix[1], mix[3], mix[2]);
+  }
+  const ballot = /^ballot:([a-f0-9]{16})$/.exec(customId);
+  if (ballot && interaction.isStringSelectMenu()) {
+    const player = await requireControl(interaction, { checkDJ: false });
+    if (!player || !await requireSessionVisibility(interaction, player)) return;
+    const accepted = voteForSuggestion(player, interaction.client, interaction.user.id, ballot[1], interaction.values[0]);
+    return interaction.update({ content: accepted ? 'Vote counted. Open the ballot again to change your pick.' : 'That ballot has closed. Open the current player for the next vote.', components: [] });
+  }
+  const playerMatch = /^player:v1:(vote|visualizer|toggle|skip|back|shuffle|loop|seek|queue|refresh|stop|stop-confirm|stop-cancel|stop-save)$/.exec(customId);
   if (playerMatch) return handlePlayerComponent(interaction, playerMatch[1]);
 
   const favoriteMatch = /^player:v2:favorite:([a-f0-9]{12})$/.exec(customId);
@@ -335,7 +360,7 @@ export async function handleMessageComponent(interaction) {
 export async function handleModalSubmit(interaction) {
   if (interaction.customId === SESSION_MIX_MODAL_ID) {
     const [{ saveMix }, { mixKey }] = await Promise.all([import('../commands/mix.js'), import('./library-actions.js')]);
-    return saveMix(interaction, mixKey(interaction.fields.getTextInputValue('name')), { session: true });
+    return saveMix(interaction, mixKey(interaction.fields.getTextInputValue('name')), { session: true, preview: true });
   }
   const match = /^player:v1:seek-submit:([a-f0-9]{12})$/.exec(interaction.customId || '');
   if (!match) return null;

@@ -138,6 +138,7 @@ export async function createPortalServer(config, testOptions = {}) {
   const transport = new Transport(effectiveConfig, limits);
   const limiter = new RateLimiter(limits.rateKeys, now);
   const anonymousLimiter = new RateLimiter(limits.rateKeys, now);
+  const activitySessions = new Map();
   const pendingOAuth = new Map(); const streams = new Set(); const commandReaders = new Set();
   // Sign-ins with a code (ADR-0019) by device token hash, and their user codes.
   // In memory only, like Discord's OAuth state: a restart loses them. Each one is
@@ -561,7 +562,8 @@ export async function createPortalServer(config, testOptions = {}) {
       const commandRequest = req.method === 'POST' && /^\/api\/guilds\/\d{1,20}\/commands$/.test(pathname);
       const playerRequest = req.method === 'POST' && pathname === '/api/me/player';
       const deviceRequest = req.method === 'POST' && /^\/auth\/device\/(?:start|poll|approve|deny)$/.test(pathname);
-      if (!commandRequest && !playerRequest && !deviceRequest && (req.headers['transfer-encoding'] || Number(req.headers['content-length'] || 0) !== 0)) throw invalid();
+      const activityLogin = req.method === 'POST' && pathname === '/activity-host/token';
+      if (!activityLogin && !commandRequest && !playerRequest && !deviceRequest && (req.headers['transfer-encoding'] || Number(req.headers['content-length'] || 0) !== 0)) throw invalid();
       if (commandRequest) {
         // The contract uses one commands URL, so priority is known only after a
         // bounded body read. Authenticate first; these readers cannot consume
@@ -611,6 +613,42 @@ export async function createPortalServer(config, testOptions = {}) {
         await sendJson(req, res, 200, `{"ok":true,"message":${JSON.stringify(result.message)},"snapshot":${snapshotJson}${preview ? `,"preview":${JSON.stringify(preview)}` : ''}}`, live); return;
       }
       admitOrdinary();
+      if (pathname === '/activity-host' || pathname.startsWith('/activity-host/')) {
+        if (activityLogin) {
+          queryOnly(url, []);
+          anonymousBudget(); anonymousLimiter.check(`activity-auth:${req.socket.remoteAddress}`, limits.oauthStarts);
+          const { code } = await readBody(req, 1024, limits.requestMs, controller.signal) || {};
+          if (typeof code !== 'string' || !/^[\w.-]{1,512}$/.test(code)) throw invalid();
+          const identity = await transport.discordIdentity(code, controller.signal, { activity: true });
+          for (const [key, entry] of activitySessions) if (entry.until <= now()) activitySessions.delete(key);
+          if (activitySessions.size >= limits.sessions) throw busy();
+          const token = randomToken();
+          activitySessions.set(tokenHash(token), { actor: identity.actorId, until: now() + 60 * 60_000 });
+          json(res, 200, { access_token: identity.accessToken, token }); return;
+        }
+        if (req.method !== 'GET' && req.method !== 'HEAD') throw notFound();
+        if (pathname === '/activity-host/' || pathname === '/activity-host') {
+          res.removeHeader('X-Frame-Options');
+          const csp = res.getHeader('Content-Security-Policy');
+          res.setHeader('Content-Security-Policy', csp.replace("frame-ancestors 'none'", "frame-ancestors https://discord.com https://*.discord.com https://discordapp.com https://*.discordapp.com https://*.discordsays.com"));
+          await serveStatic(req, res, '/activity-host/activity.html'); return;
+        }
+        if (/^\/activity-host\/assets\/[\w.-]+$/.test(pathname)) {
+          await serveStatic(req, res, pathname); return;
+        }
+        const room = /^\/activity-host\/room\/(\d{1,20})(?:\/([\w-]{11}))?$/.exec(pathname);
+        if (!room || req.method !== 'GET') throw notFound();
+        queryOnly(url, []);
+        const bearer = /^Bearer ([\w-]{43})$/.exec(req.headers.authorization || '');
+        const key = bearer && tokenHash(bearer[1]);
+        const session = activitySessions.get(key);
+        if (!session || session.until <= now()) throw unauthorized();
+        trusted = true;
+        limiter.check(`activity:${key}`, 60);
+        const data = await transport.bridge(`/v1/guilds/${room[1]}/visualizer${room[2] ? '/' + room[2] : ''}`, session.actor, { signal: controller.signal });
+        if (session.until <= now()) throw unauthorized();
+        await sendJson(req, res, 200, JSON.stringify(room[2] ? analysisData(data) : data)); return;
+      }
       if (pathname === '/health' && req.method === 'GET') {
         anonymousBudget();
         queryOnly(url, []);

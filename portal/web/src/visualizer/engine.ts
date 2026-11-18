@@ -40,7 +40,7 @@ export type Painter = { resize: (width: number, height: number) => void; update:
 // A frame may land this early and still count: display refreshes jitter by a millisecond or two.
 const EARLY = 2;
 
-export function startVisualizer(canvas: HTMLCanvasElement, milkdrop: boolean, { fail, sourced, named }: Events): Visualizer | null {
+export function startVisualizer(canvas: HTMLCanvasElement, milkdrop: boolean, { fail, sourced, named }: Events, loadAnalysis = analysisFor): Visualizer | null {
   let painter: Painter | null = null; let stopped = false;
   const lose = () => { lost = true; halt(); fail(); };
   const redraw = () => { dirty = true; wake(); };
@@ -133,7 +133,7 @@ export function startVisualizer(canvas: HTMLCanvasElement, milkdrop: boolean, { 
         loading?.abort(); loading = null; mapKey = key;
         if (key) {
           const request = loading = new AbortController(); const trackSeed = next.seed;
-          analysisFor(next.guildId!, next.video!, request.signal).then(map => {
+          loadAnalysis(next.guildId!, next.video!, request.signal).then(map => {
             if (loading !== request || !map) return;
             signal = signalFor(trackSeed, map, shown); sourced(signal.source);
             dirty = true; wake();

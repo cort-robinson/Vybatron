@@ -25,3 +25,11 @@ test('broken definitions and missing guild targets fail closed before updating D
   await assert.rejects(registerCommands({ mode: 'guild', cfg: { ...cfg, guildId: null }, rest }), /GUILD_ID/);
   assert.equal(requests, 0);
 });
+
+test('global registration carries the existing Discord Activity entry point through a bulk overwrite', async () => {
+  const entry = { id: '123', type: 4, name: 'launch', description: 'Launch the visualizer', handler: 2, name_localizations: { de: 'start' }, version: '99' };
+  const rest = { get: async () => [entry], put: async (_route, { body }) => body };
+  const result = await registerCommands({ cfg: { token: 'test', clientId: '123' }, rest, definitions: async () => [{ name: 'play' }] });
+  const { version, ...expected } = entry;
+  assert.deepEqual(result[1], expected);
+});

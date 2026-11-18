@@ -22,6 +22,7 @@ import {
   safeUrl,
   trackIdentity,
 } from './presentation.js';
+import { waveform } from './music-art.js';
 import { getAudioPreset } from './filters.js';
 import { sleepTimer } from './sleep-timer.js';
 import { config } from '../config.js';
@@ -85,7 +86,7 @@ function playerStatus(state) {
   }
 }
 
-function playerComponents(player, state, track) {
+function playerComponents(player, state, track, ballot, visualizer) {
   const active = state === 'playing' || state === 'paused';
   const recovering = state === 'recovering';
   const disabled = !active || !track;
@@ -152,6 +153,8 @@ function playerComponents(player, state, track) {
 
   // Both control rows are full, so outbound links share their own row.
   const linkRow = new ActionRowBuilder();
+  if (ballot) linkRow.addComponents(new ButtonBuilder().setCustomId('player:v1:vote').setStyle(ButtonStyle.Secondary).setLabel('Vote on the next song'));
+  if (visualizer) linkRow.addComponents(new ButtonBuilder().setCustomId('player:v1:visualizer').setStyle(ButtonStyle.Secondary).setLabel('Open visualizer'));
   if (config.portalOrigin) {
     linkRow.addComponents(
       new ButtonBuilder().setLabel('Open web player').setStyle(ButtonStyle.Link).setURL(config.portalOrigin)
@@ -287,7 +290,7 @@ export function buildPlayerPayload(player, {
   track = player?.queue?.current || null,
   startedAt = Date.now(),
   notice = null,
-  reason = null,
+  reason = null, energy = null, ballot = null, visualizer = false,
 } = {}) {
   const status = playerStatus(state);
   const embed = new EmbedBuilder().setColor(status.color).setAuthor({ name: status.label });
@@ -310,7 +313,7 @@ export function buildPlayerPayload(player, {
     const progress = !info.isStream && ['playing', 'paused'].includes(state)
       ? progressBar(displayPosition(player, state), info.duration)
       : null;
-    if (progress) lines.splice(2, 0, `\`${progress}\``);
+    if (progress && !energy) lines.splice(2, 0, `\`${progress}\``);
     const sleep = state === 'ended' ? null : sleepTimer(player);
     if (sleep) lines.push('', sleep.mode === 'track' ? 'Sleep timer: stops after this track' : `Sleep timer: stops <t:${Math.ceil(sleep.endsAt / 1000)}:R>`);
     if (notice) lines.push('', `> ${safeText(notice, { maxLength: 500 })}`);
@@ -331,7 +334,12 @@ export function buildPlayerPayload(player, {
     embed.setTitle(status.label).setDescription(safeText(fallback, { maxLength: 1000 }));
   }
 
-  return { embeds: [embed], components: playerComponents(player, state, track), allowedMentions: NO_MENTIONS };
+  const files = [];
+  if (energy) {
+    files.push({ attachment: waveform(energy, displayPosition(player, state) / track.info.duration), name: 'song-energy.png', description: 'Measured song energy with the current playback position' });
+    embed.setImage('attachment://song-energy.png');
+  }
+  return { embeds: [embed], components: playerComponents(player, state, track, ballot, visualizer), attachments: [], files, allowedMentions: NO_MENTIONS };
 }
 
 export function clampQueuePage(player, page) {

@@ -1,4 +1,4 @@
-import { REST, Routes } from 'discord.js';
+import { ApplicationCommandType, REST, Routes } from 'discord.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -28,6 +28,17 @@ export async function registerCommands({ mode = 'global', cfg = config, rest = n
   const body = await definitions();
   const api = rest || new REST({ version: '10', timeout: 15_000 }).setToken(cfg.token);
   const route = mode === 'guild' ? Routes.applicationGuildCommands(cfg.clientId, cfg.guildId) : Routes.applicationCommands(cfg.clientId);
+  // Enabling Activities creates a global entry point owned by Discord. Preserve
+  // its handler, translations and install contexts across slash catalog updates.
+  if (mode === 'global') {
+    const existing = await api.get(route, { query: new URLSearchParams({ with_localizations: 'true' }) });
+    const entry = existing.find(command => command.type === ApplicationCommandType.PrimaryEntryPoint);
+    if (entry) {
+      const fields = ['id', 'type', 'handler', 'name', 'description', 'name_localizations', 'description_localizations',
+        'contexts', 'integration_types', 'default_member_permissions', 'nsfw'];
+      body.push(Object.fromEntries(fields.filter(key => entry[key] !== undefined).map(key => [key, entry[key]])));
+    }
+  }
   const result = await api.put(route, { body });
   console.log(`Registered ${result.length} ${mode} commands.`);
   return result;

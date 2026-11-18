@@ -186,6 +186,20 @@ test('the Discord Stop confirmation offers Save as mix, which saves the session 
   assert.equal(f.library.readGuild('100').mixes['last night'].tracks[0].identifier, 'played00001');
   assert.ok(f.manager.getPlayer('100'), 'saving never stops playback');
   assert.equal(f.calls.includes('destroy'), false);
+  assert.equal(reply.flags, 64);
+  const share = reply.components[0].components[0].data;
+  assert.equal(share.label, 'Share to channel');
+  let posted;
+  const interaction = { ...base, customId: share.custom_id, isButton: () => true, isMessageComponent: () => true,
+    channel: { permissionsFor: () => ({ has: () => true }), send: async payload => { posted = payload; } },
+    message: { id: '789', flags: { has: () => true } }, deferUpdate: async () => {}, editReply: async () => {} };
+  await handleMessageComponent(interaction);
+  assert.equal(posted.enforceNonce, true);
+  const queue = posted.components[0].components[0].data;
+  assert.equal(queue.label, 'Queue this mix');
+  await f.library.updateGuild('100', guild => { delete guild.mixes['last night']; });
+  await handleMessageComponent({ ...interaction, customId: queue.custom_id });
+  assert.match(calls.at(-1)[1].content, /deleted/);
 });
 
 test('/mix save session:true is available as a slash option', async t => {

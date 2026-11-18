@@ -337,6 +337,10 @@ export function createAnalysisCache(audio, { limits = ANALYSIS_LIMITS, analyse =
     return task;
   };
   return {
+    async measured(id) {
+      await this.get(id);
+      return (results.get(id) || await running.get(id))?.body;
+    },
     async get(id) {
       if (!validVideoId(id)) fail(400, 'invalid_audio', 'Choose a supported song.');
       const known = results.get(id);

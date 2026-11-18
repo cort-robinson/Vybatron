@@ -26,12 +26,12 @@ function decode(body: unknown): EnergyMap | null {
   return { frameCount, levels, beats };
 }
 
-async function load(guildId: string, videoId: string, signal: AbortSignal): Promise<EnergyMap | null> {
+export async function loadEnergy(url: string, signal: AbortSignal, headers?: HeadersInit): Promise<EnergyMap | null> {
   for (let attempt = 1; attempt <= ATTEMPTS; attempt++) {
     let response: Response;
     try {
-      response = await fetch(`/api/guilds/${encodeURIComponent(guildId)}/analysis/${encodeURIComponent(videoId)}`,
-        { credentials: 'same-origin', signal: AbortSignal.any([signal, AbortSignal.timeout(20_000)]) });
+      response = await fetch(url,
+        { headers, credentials: 'same-origin', signal: AbortSignal.any([signal, AbortSignal.timeout(20_000)]) });
     } catch (error) { if (signal.aborted) throw error; return null; }
     if (response.status === 429) { await response.body?.cancel(); await wait(3000 * attempt, signal); continue; }
     if (!response.ok) { await response.body?.cancel(); return null; }
@@ -52,7 +52,7 @@ export function analysisFor(guildId: string, videoId: string, signal: AbortSigna
   if (!entry) {
     const controller = new AbortController();
     const created: Entry = { controller, users: 0, settled: false, map: null, at: Date.now(), promise: Promise.resolve(null) };
-    created.promise = load(guildId, videoId, controller.signal).then(map => { created.settled = true; created.map = map; created.at = Date.now(); return map; },
+    created.promise = loadEnergy(`/api/guilds/${encodeURIComponent(guildId)}/analysis/${encodeURIComponent(videoId)}`, controller.signal).then(map => { created.settled = true; created.map = map; created.at = Date.now(); return map; },
       error => { if (entries.get(key) === created) entries.delete(key); throw error; });
     void created.promise.catch(() => {});
     entries.set(key, created); entry = created;

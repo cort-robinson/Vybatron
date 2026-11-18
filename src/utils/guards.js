@@ -50,7 +50,10 @@ export async function requireUserVoice(interaction, { checkBotAccess = false } =
     return reject(interaction, 'Join the bot’s voice channel to add music or control this session.');
   }
   if (checkBotAccess && channel.joinable === false) {
-    return reject(
+    // Discord also marks a channel unjoinable when the connected bot occupies its last slot.
+    const occupiesSlot = active?.connected && active.voiceChannelId === channel.id && channel.full && channel.viewable
+      && channel.permissionsFor?.(interaction.client.user)?.has(PermissionFlagsBits.Connect);
+    if (!occupiesSlot) return reject(
       interaction,
       'Vybatron can’t join that voice channel. Check its View Channel and Connect permissions, and make sure the channel isn’t full.'
     );

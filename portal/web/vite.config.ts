@@ -24,6 +24,10 @@ function preloadFonts(): Plugin {
 }
 
 export default defineConfig(({ mode }) => {
+  if (mode === 'activity') return {
+    base: '/.proxy/', publicDir: false,
+    build: { outDir: 'dist/activity-host', assetsInlineLimit: 0, target: 'es2022', rolldownOptions: { input: 'activity.html' } },
+  };
   const env = loadEnv(mode, process.cwd(), 'VITE_');
   const target = env.VITE_API_PROXY || 'http://127.0.0.1:3001';
   return {

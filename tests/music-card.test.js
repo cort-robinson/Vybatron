@@ -7,8 +7,11 @@ import { trackReference } from '../src/utils/library.js';
 import { portalFixture } from './portal-fixtures.js';
 import { track } from './fixtures.js';
 
+let interactionNumber = 0;
+
 async function discord(t, options = {}) {
   const f = await portalFixture(t, { idle: true, ...options });
+  f.guild.voiceStates = { cache: new Map([...f.members].map(([id, member]) => [id, { channelId: member.voice.channel.id, member }])) };
   f.client.user = { id: '999', bot: true };
   await loadCommands(f.client);
   const dispatch = f.client.listeners('interactionCreate')[0];
@@ -17,7 +20,7 @@ async function discord(t, options = {}) {
   async function use(id, { kind = 'button', actor = '200', query, value } = {}) {
     let result;
     const interaction = {
-      client: f.client, guild: f.guild, guildId: f.guild.id, channelId: '400', channel,
+      id: String(++interactionNumber), client: f.client, guild: f.guild, guildId: f.guild.id, channelId: '400', channel,
       member: f.members.get(actor), user: f.users.get(actor),
       customId: id, values: [value], fields: { getTextInputValue: () => query },
       commandName: kind === 'slash' ? 'settings' : undefined, options: { getSubcommand: () => 'startcard' },
@@ -52,7 +55,8 @@ test('a manager posts a reusable card and a listener can privately choose and qu
   const pick = { kind: 'select', value: menu.options[1].value };
   assert.match((await f.use(menu.custom_id, { ...pick, actor: '201' })).result.content, /your own recording/);
   const size = f.player.queue.tracks.length;
-  const { result: added } = await f.use(menu.custom_id, pick);
+  const [{ result: added }, duplicate] = await Promise.all([f.use(menu.custom_id, pick), f.use(menu.custom_id, pick)]);
+  assert.match(duplicate.result.content, /already used|expired/);
   assert.equal(f.player.queue.tracks.length, size + 1);
   assert.equal(f.player.queue.tracks.at(-1).info.identifier, 'nextversion');
   assert.match(added.content, /Plays after.*01234567890/);
@@ -104,4 +108,25 @@ test('the More menu routes shared controls through the same DJ check and Stop co
   assert.match((await f.use('player:v1:more', item)).result.content, /DJ role/);
   assert.match((await f.use('player:v1:more', { ...item, actor: '201' })).result.content, /Stop playback, clear/);
   assert.equal(f.player.playing, true);
+});
+
+test('an unresolved room member keeps private history out of the opening song', async t => {
+  const f = await discord(t);
+  f.guild.voiceStates.cache.set('404', { channelId: '300', member: null });
+  f.client.stats = { available: true, voiceChannelIds: () => ['301'], serverFavorites() { assert.fail('unknown audience'); } };
+  assert.equal((await f.use('music:v1:mix')).result.title, 'Choose a starting song');
+});
+
+test('a full voice channel accepts requests when the bot already occupies a slot and can still speak', async t => {
+  const f = await discord(t, { idle: false });
+  const voice = f.channels.get('300');
+  Object.assign(voice, { full: true, joinable: false, viewable: true });
+  const { result: modal } = await f.use('music:v1:add');
+  assert.equal(modal.title, 'Add a song');
+  const request = { kind: 'modal', query: 'https://www.youtube.com/watch?v=openingsong' };
+  assert.match((await f.use(modal.custom_id, request)).result.content, /Added.*openingsong/);
+  voice.speakable = false;
+  assert.match((await f.use('music:v1:add')).result.content, /Speak permission/);
+  f.player.connected = false;
+  assert.match((await f.use('music:v1:add')).result.content, /can’t join/);
 });

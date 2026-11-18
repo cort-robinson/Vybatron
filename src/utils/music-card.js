@@ -9,6 +9,11 @@ import { guardedMutation } from './requests.js';
 import { sharedChannelIds } from './room-taste.js';
 import { validatePlaybackQuery } from './search.js';
 
+// Each private picker admits one choice. Eviction and expiry both close the picker.
+const openPickers = new Map();
+const PICKER_LIMIT = 500;
+const PICKER_LIFETIME_MS = 5 * 60_000;
+
 export function startCard() {
   const buttons = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('music:v1:add').setLabel('Add a song').setStyle(ButtonStyle.Primary),
@@ -32,7 +37,13 @@ function songModal(mode, binding) {
 function roomFavorites(interaction, channel) {
   const stats = interaction.client.stats;
   if (!stats?.available) return [];
-  const members = [...channel.members.values()].filter(member => !member.user.bot);
+  // channel.members silently omits voice states whose member is missing from cache.
+  const members = [];
+  for (const state of interaction.guild.voiceStates.cache.values()) {
+    if (state.channelId !== channel.id) continue;
+    if (!state.member) return [];
+    if (!state.member.user.bot) members.push(state.member);
+  }
   const visibleChannelIds = sharedChannelIds(stats, interaction.guild, members);
   return stats.serverFavorites(interaction.guildId, { visibleChannelIds }).onRepeat;
 }
@@ -82,7 +93,9 @@ export async function submitSong(interaction) {
   if (!await checkScope(interaction, binding, mode)) return;
   const choices = await getTrackChoices(interaction, { search: query, timeoutMs: 8000 });
   if (!choices.length) return interaction.editReply(textPayload('No recordings found. Try a song and artist, or paste a music link.'));
-  const select = new StringSelectMenuBuilder().setCustomId(`music:v1:pick:${mode}:${binding}:${interaction.user.id}`)
+  if (openPickers.size >= PICKER_LIMIT) openPickers.delete(openPickers.keys().next().value);
+  openPickers.set(interaction.id, Date.now() + PICKER_LIFETIME_MS);
+  const select = new StringSelectMenuBuilder().setCustomId(`music:v1:pick:${mode}:${binding}:${interaction.user.id}:${interaction.id}`)
     .setPlaceholder('Choose a recording').addOptions(choices.map(({ name, value }) => {
       const duration = resolveAutocompleteTrack(value, interaction.user.id).track?.info.duration;
       return { label: name, value, ...(duration > 0 && { description: formatDuration(duration) }) };
@@ -91,16 +104,21 @@ export async function submitSong(interaction) {
 }
 
 export async function pickSong(interaction) {
-  const [, , , mode, voice, session, owner] = interaction.customId.split(':');
+  const [, , , mode, voice, session, owner, pickerId] = interaction.customId.split(':');
   if (owner !== interaction.user.id) return interaction.reply(ephemeralText('Open Add a song to choose your own recording.'));
-  return queueSong(interaction, `${voice}:${session}`, mode, interaction.values[0]);
+  return queueSong(interaction, `${voice}:${session}`, mode, interaction.values[0], pickerId);
 }
 
-function queueSong(interaction, binding, mode, query) {
+function queueSong(interaction, binding, mode, query, pickerId) {
   return guardedMutation(interaction, async request => {
     if (!await checkScope(request, binding, mode)) return;
     // A pick is already private. Clear the menu as soon as it is accepted.
-    if (interaction.isStringSelectMenu?.()) await request.editReply({ ...textPayload('Adding your recording…'), components: [] });
+    if (interaction.isStringSelectMenu?.()) {
+      const expiresAt = openPickers.get(pickerId);
+      openPickers.delete(pickerId);
+      if (!expiresAt || expiresAt <= Date.now()) return request.followUp(ephemeralText('This picker was already used or expired. Open Add a song to choose again.'));
+      await request.editReply({ ...textPayload('Adding your recording…'), components: [] });
+    }
     return playQuery(request, query, { roomMix: mode === 'mix' });
   }, { playback: true, ordered: true, lookupOutsideLane: true });
 }

@@ -63,7 +63,7 @@ export async function playQuery(interaction, query, { roomMix = false, automatic
     if (!await recheckEnqueueRequest(interaction, player, channel, { checkDJ: roomMix })) return;
     if (roomMix && sessionHasMusic(player)) return interaction.editReply(textPayload('A session is already going. Choose Add a song to join the queue.'));
     if (seedAvailable && !seedAvailable()) return interaction.editReply(textPayload('The room changed. Use /mix start again.'));
-    if (roomMix && result.loadType === 'playlist') return interaction.editReply(textPayload('Choose one starting song for the mix. Use Add a song for a playlist.'));
+    if (roomMix && result.loadType === 'playlist') return interaction.editReply(textPayload('Choose one starting song for the mix. Use /play for a playlist.'));
     const starting = !player.playing && !player.paused && !player.queue.current;
     const previousQueueSize = player.queue.tracks.length;
     const firstPosition = previousQueueSize + 1;

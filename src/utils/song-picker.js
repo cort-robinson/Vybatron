@@ -110,7 +110,10 @@ function queueSong(interaction, binding, mode, query, pickerId) {
     if (interaction.isStringSelectMenu?.()) {
       const expiresAt = openPickers.get(pickerId);
       openPickers.delete(pickerId);
-      if (!expiresAt || expiresAt <= Date.now()) return request.followUp(ephemeralText('This picker was already used or expired. Open Add a song to choose again.'));
+      if (!expiresAt || expiresAt <= Date.now()) {
+        const retry = mode === 'mix' ? 'Use /mix start to choose again.' : 'Open Add a song to choose again.';
+        return request.followUp(ephemeralText(`This picker was already used or expired. ${retry}`));
+      }
       await request.editReply({ ...textPayload('Adding your recording…'), components: [] });
     }
     return playQuery(request, query, { roomMix: mode === 'mix' });

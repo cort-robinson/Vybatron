@@ -1,4 +1,7 @@
 import type { PresetId } from './presets';
+import prism from './prism.frag?raw';
+import slipstream from './slipstream.frag?raw';
+import faultlines from './faultlines.frag?raw';
 
 // The fragment shaders of the visualizers drawn here (MilkDrop draws itself, milkdrop.ts), each one
 // full-screen triangle (the vertex shader is scene/shared.ts compile's). Every one reads the same uniforms: the drawing buffer size, a visual
@@ -532,4 +535,7 @@ void main() {
 }`;
 
 export type ShaderId = Exclude<PresetId, 'milkdrop'>;
-export const shaders: Record<ShaderId, string> = { gridrunner, cosmic, receiver, pumpkins, witching };
+export const shaders: Record<ShaderId, string> = {
+  gridrunner, cosmic, receiver, pumpkins, witching,
+  prism: head + prism, slipstream: head + slipstream, faultlines: head + faultlines,
+};

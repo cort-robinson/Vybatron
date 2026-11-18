@@ -3,6 +3,7 @@ import { canManageMusic, hasDJAccess } from '../utils/guards.js';
 import { DEFAULT_SETTINGS } from '../utils/library.js';
 import { fairOrder, withTimeout } from '../utils/enqueue.js';
 import { ephemeralText } from '../utils/messages.js';
+import { startCard } from '../utils/music-card.js';
 import { trackedChannelRead } from '../utils/channel-reads.js';
 import { refreshSuggestions, resetAutoplay } from '../utils/radio.js';
 
@@ -20,11 +21,16 @@ export const data = new SlashCommandBuilder().setName('settings').setDescription
     .addChoices({ name: 'Off', value: 'off' }, { name: 'On', value: 'on' }, { name: 'Only while someone is listening', value: 'listening' })))
   .addSubcommand(s => s.setName('djrole').setDescription('Restrict playback controls to a DJ role; omit the role to clear it').addRoleOption(o => o.setName('role').setDescription('DJ role for playback controls')))
   .addSubcommand(s => s.setName('musicchannel').setDescription('Choose the controller text channel for web-started sessions').addChannelOption(o => o.setName('channel').setDescription('Bot-readable and writable music text channel; omit to clear').addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)))
+  .addSubcommand(s => s.setName('startcard').setDescription('Post a reusable music start card in this channel'))
   .addSubcommand(s => s.setName('reset').setDescription('Restore open controls, volume 100, normal queue order and autoplay off'));
 
 export async function execute(interaction) {
   if (!canManageMusic(interaction)) return interaction.reply(ephemeralText('Manage Server permission is required to change listening defaults.'));
   const action = interaction.options.getSubcommand();
+  if (action === 'startcard') {
+    await interaction.channel.send(startCard());
+    return interaction.reply(ephemeralText('Start card posted. Pin it so listeners can find it between sessions.'));
+  }
   const library = interaction.client.library;
   let channel = interaction.options.getChannel?.('channel');
   if (action === 'musicchannel' && channel) {

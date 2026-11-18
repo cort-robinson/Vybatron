@@ -40,17 +40,14 @@ export const COLORS = Object.freeze({
 
 export const QUEUE_PAGE_SIZE = 10;
 
-const PLAYER_IDS = Object.freeze({
-  toggle: 'player:v1:toggle',
-  skip: 'player:v1:skip',
-  back: 'player:v1:back',
-  shuffle: 'player:v1:shuffle',
-  loop: 'player:v1:loop',
-  seek: 'player:v1:seek',
-  queue: 'player:v1:queue',
-  refresh: 'player:v1:refresh',
-  stop: 'player:v1:stop',
-});
+// More uses the same authorization, mutation lane and activity records as the original buttons.
+export function playerActionId(interaction) {
+  if (interaction.customId === 'player:v1:more' && interaction.isStringSelectMenu?.()
+    && ['back', 'shuffle', 'loop', 'seek', 'refresh', 'stop'].includes(interaction.values?.[0])) {
+    return `player:v1:${interaction.values[0]}`;
+  }
+  return interaction.customId;
+}
 
 export function textPayload(content) {
   return {
@@ -89,68 +86,26 @@ function playerComponents(player, state, track) {
   const active = state === 'playing' || state === 'paused';
   const recovering = state === 'recovering';
   const disabled = !active || !track;
+  const button = (id, label, unavailable, style = ButtonStyle.Secondary) => new ButtonBuilder()
+    .setCustomId(id).setLabel(label).setStyle(style).setDisabled(unavailable);
   const playbackRow = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId(PLAYER_IDS.toggle)
-      .setLabel(state === 'paused' ? 'Resume' : 'Pause')
-      .setStyle(ButtonStyle.Primary)
-      .setDisabled(disabled),
-    new ButtonBuilder()
-      .setCustomId(PLAYER_IDS.skip)
-      .setLabel('Skip')
-      .setStyle(ButtonStyle.Secondary)
-      .setDisabled(disabled && !recovering),
-    new ButtonBuilder()
-      .setCustomId(PLAYER_IDS.queue)
-      .setLabel('View queue')
-      .setStyle(ButtonStyle.Secondary)
-      .setDisabled(!active && !recovering),
-    new ButtonBuilder()
-      .setCustomId(PLAYER_IDS.stop)
-      .setLabel('Stop')
-      .setStyle(ButtonStyle.Danger)
-      .setDisabled(!active && !recovering),
-    new ButtonBuilder()
-      .setCustomId(`player:v2:favorite:${trackIdentity(track)}`)
-      .setLabel('Favorite')
-      .setStyle(ButtonStyle.Secondary)
-      .setDisabled(disabled)
+    button('player:v1:add', 'Add a song', !active && !recovering && state !== 'queue-finished', ButtonStyle.Primary),
+    button('player:v1:toggle', state === 'paused' ? 'Resume' : 'Pause', disabled),
+    button('player:v1:skip', 'Skip', disabled && !recovering),
+    button('player:v1:queue', 'View queue', !active && !recovering),
+    button(`player:v2:favorite:${trackIdentity(track)}`, 'Favorite', disabled),
   );
-  const utilityRow = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId(PLAYER_IDS.back)
-      .setLabel('Back')
-      .setStyle(ButtonStyle.Secondary)
-      .setDisabled(disabled),
-    new ButtonBuilder()
-      .setCustomId(PLAYER_IDS.shuffle)
-      .setLabel('Shuffle')
-      .setStyle(ButtonStyle.Secondary)
-      .setDisabled(disabled),
-    new ButtonBuilder()
-      .setCustomId(PLAYER_IDS.loop)
-      .setLabel(`Loop: ${player?.repeatMode || 'off'}`)
-      .setStyle(ButtonStyle.Secondary)
-      .setDisabled(disabled),
-    new ButtonBuilder()
-      .setCustomId(PLAYER_IDS.seek)
-      .setLabel('Seek')
-      .setStyle(ButtonStyle.Secondary)
-      .setDisabled(
-        disabled
-        || track?.info?.isStream
-        || track?.info?.isSeekable === false
-        || !Number.isFinite(track?.info?.duration)
-        || track.info.duration <= 0
-      ),
-    new ButtonBuilder()
-      .setCustomId(PLAYER_IDS.refresh)
-      .setLabel('Refresh')
-      .setStyle(ButtonStyle.Secondary)
-      .setDisabled(!active && !recovering)
-  );
-
-  // Both control rows are full, so outbound links share their own row.
+  const options = [];
+  if (active && track) {
+    options.push({ label: 'Back', value: 'back' }, { label: 'Shuffle', value: 'shuffle' },
+      { label: `Loop: ${player?.repeatMode || 'off'}`, value: 'loop' });
+    if (!track.info?.isStream && track.info?.isSeekable !== false && Number.isFinite(track.info?.duration) && track.info.duration > 0) {
+      options.push({ label: 'Seek', value: 'seek' });
+    }
+  }
+  options.push({ label: 'Refresh', value: 'refresh' }, { label: 'Stop', value: 'stop' });
+  const utilityRow = new ActionRowBuilder().addComponents(new StringSelectMenuBuilder()
+    .setCustomId('player:v1:more').setPlaceholder('More controls').setDisabled(!active && !recovering).addOptions(options));
   const linkRow = new ActionRowBuilder();
   if (config.portalOrigin) {
     linkRow.addComponents(
@@ -234,7 +189,7 @@ function playbackLine(player, info, state) {
 function playerQueuePreview(player, state) {
   const tracks = player?.queue?.tracks || [];
   if (tracks.length === 0) {
-    return '**Up next**\nNothing queued — add something with `/play`.';
+    return '**Up next**\nNothing queued — choose **Add a song**.';
   }
 
   const preview = tracks.slice(0, 2).map((queuedTrack, index) => {

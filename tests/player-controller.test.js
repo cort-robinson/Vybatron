@@ -204,7 +204,9 @@ test('refresh preserves recovery and only a started track restores active contro
   const buttons = payload.components.flatMap((row) => row.components);
   assert.equal(buttons.find((button) => button.data.label === 'Pause').data.disabled, true);
   assert.equal(buttons.find((button) => button.data.label === 'Skip').data.disabled, false);
-  assert.equal(buttons.find((button) => button.data.label === 'Stop').data.disabled, false);
+  const more = buttons.find(component => component.data.placeholder === 'More controls');
+  assert.equal(more.data.disabled, false);
+  assert.deepEqual(more.options.map(option => option.data.value), ['refresh', 'stop']);
   assert.doesNotMatch(payload.embeds[0].data.description, /Ends <t:/);
   await createOrUpdate(f.client, p, { state: 'playing' });
   await refresh(f.client, p);
@@ -227,7 +229,8 @@ test('first-track recovery creates one visible controller and refresh never resu
   const payload = f.payloads.at(-1);
   assert.equal(payload.embeds[0].data.title, 'Queue Finished');
   assert.doesNotMatch(payload.embeds[0].data.description, /Now Playing/);
-  assert.ok(payload.components.flatMap((row) => row.components).filter((button) => button.data.custom_id).every((button) => button.data.disabled));
+  const available = payload.components.flatMap(row => row.components).filter(item => item.data.custom_id && !item.data.disabled);
+  assert.deepEqual(available.map(item => item.data.label), ['Add a song']);
   assert.equal(f.sends, 1);
 });
 

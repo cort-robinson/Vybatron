@@ -1,3 +1,4 @@
+import { playerActionId } from './messages.js';
 import { MessageFlags } from 'discord.js';
 import { acquirePlaybackRequest } from './maintenance.js';
 import { trackReference } from './library.js';
@@ -54,9 +55,9 @@ export async function withGuildMutation(guildId, operation, { ordered = false } 
   }
 }
 
-export async function acknowledgeMutation(interaction) {
+export async function acknowledgeMutation(interaction, privateReply = false) {
   if (interaction.deferred || interaction.replied) return;
-  if (interaction.isModalSubmit?.()) await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+  if (privateReply || interaction.isModalSubmit?.()) await interaction.deferReply({ flags: MessageFlags.Ephemeral });
   else if (interaction.isMessageComponent?.()) await interaction.deferUpdate();
   else await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 }
@@ -69,7 +70,7 @@ export function deferredInteraction(interaction) {
       if (property === 'reply') return async payload => {
         if (!target.deferred && !target.replied) return target.reply(payload);
         const { flags, ...edit } = typeof payload === 'string' ? { content: payload } : payload;
-        if (target.deferred && !target.isMessageComponent?.()) return target.editReply(edit);
+        if (target.deferred && (target.ephemeral || !target.isMessageComponent?.())) return target.editReply(edit);
         return target.followUp(payload);
       };
       if (property === 'deferReply') return async payload => { if (!target.deferred && !target.replied) await target.deferReply(payload); };
@@ -108,21 +109,22 @@ function activityState(interaction) {
   const action = interaction.options?.getSubcommand?.(false);
   const queueEdit = ['play', 'playnext', 'transfer', 'clear', 'remove', 'move', 'shuffle', 'skip', 'skipto', 'back', 'stop', 'replay', 'voteskip'].includes(name)
     || (['mix', 'top', 'mymix'].includes(name) && ['load', 'play'].includes(action)) || (name === 'radio' && action === 'promote') || (name === 'session' && ['resume', 'discard'].includes(action))
-    || /^(?:queue:.*:jump:|history:.*:replay:|player:v1:(?:skip|back|shuffle|stop-confirm)$)/.test(interaction.customId || '');
+    || /^music:v1:(?:mix$|pick:|submit:)/.test(interaction.customId || '')
+    || /^(?:queue:.*:jump:|history:.*:replay:|player:v1:(?:skip|back|shuffle|stop-confirm)$)/.test(playerActionId(interaction) || '');
   if (name !== 'settings' && !queueEdit) return null;
   const player = interaction.client.lavalink?.getPlayer(interaction.guildId);
   return JSON.stringify(name === 'settings' ? interaction.client.library.settings(interaction.guildId)
     : [Boolean(player), [player?.queue?.current, ...(player?.queue?.tracks || [])].map(trackReference), interaction.client.library.readGuild(interaction.guildId).session?.tracks]);
 }
 
-export async function guardedMutation(interaction, operation, { playback = false, urgent = false, ordered = false, lookupOutsideLane = false, beforeMutation } = {}) {
+export async function guardedMutation(interaction, operation, { playback = false, urgent = false, ordered = false, lookupOutsideLane = false, privateReply = false, beforeMutation } = {}) {
   const release = playback ? acquirePlaybackRequest(interaction.client) : null;
   if (playback && !release) {
     if (interaction.portalUnavailable) return interaction.portalUnavailable();
     return interaction.reply({ content: 'Vybatron is briefly updating its playback service. Try again in a minute.', flags: MessageFlags.Ephemeral });
   }
   try {
-    await acknowledgeMutation(interaction);
+    await acknowledgeMutation(interaction, privateReply);
     const run = async lane => {
       await beforeMutation?.(interaction);
       let before = activityState(interaction);

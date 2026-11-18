@@ -1,4 +1,4 @@
-import { ephemeralText } from './messages.js';
+import { ephemeralText, playerActionId } from './messages.js';
 import { PermissionFlagsBits } from 'discord.js';
 import { controllerSessionStatus } from './player-controller.js';
 import { SESSION_STATUS } from './session-status.js';
@@ -10,7 +10,7 @@ const RECOVERY_COMMANDS = new Set(['skip', 'skipto', 'back', 'stop', 'clear', 'v
 const RECOVERY_COMPONENTS = [/^player:v1:(skip|stop|stop-confirm)$/, /^queue:v[12]:jump:/, /^history:v2:replay:/];
 
 export function allowedWhileRecovering(interaction) {
-  const id = interaction.customId || '';
+  const id = playerActionId(interaction) || '';
   return RECOVERY_COMMANDS.has(interaction.commandName) || RECOVERY_COMPONENTS.some(pattern => pattern.test(id));
 }
 
@@ -31,7 +31,7 @@ async function reject(interaction, message) {
   if (interaction.portalReject) return interaction.portalReject(message);
   const payload = ephemeralText(message);
   try {
-    if (interaction.deferred && !interaction.isMessageComponent?.()) {
+    if (interaction.deferred && (interaction.ephemeral || !interaction.isMessageComponent?.())) {
       const { flags, ...edit } = payload;
       await interaction.editReply(edit);
     } else if (interaction.deferred || interaction.replied) await interaction.followUp(payload);

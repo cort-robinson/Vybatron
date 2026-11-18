@@ -1,3 +1,5 @@
+import { PermissionFlagsBits } from 'discord.js';
+import { roomBallot } from './radio.js';
 import { buildPlayerPayload } from './messages.js';
 import { trackIdentity } from './presentation.js';
 import { sessionStatus, statusLabel } from './session-status.js';
@@ -140,7 +142,7 @@ function prepareController(client, player, {
   return record;
 }
 
-function currentPayload(player, record) {
+function currentPayload(client, player, record) {
   const state = sessionStatus(player, record);
   const track = state === 'queue-finished' ? null
     : player?.queue?.current || (['recovering', 'unavailable'].includes(state) ? record.lastTrack : null);
@@ -150,7 +152,13 @@ function currentPayload(player, record) {
     record.lastTrack = track;
     record.lastTrackKey = key;
   }
+  const channel = client.channels?.cache?.get(record.channelId);
+  const attach = channel?.guild?.members?.me && channel.permissionsFor?.(channel.guild.members.me)?.has(PermissionFlagsBits.AttachFiles);
+  const active = track && ['playing', 'paused'].includes(state);
   return buildPlayerPayload(player, {
+    energy: active && attach && client.portalBridge?.energyFor?.(track),
+    ballot: active && roomBallot(player, client),
+    visualizer: active && Boolean(client.portalBridge?.enabled && client.application?.flags?.has('Embedded')),
     state, track, startedAt: record.startedAt, notice: record.notice, reason: record.reason,
   });
 }
@@ -160,7 +168,7 @@ async function renderCurrent(client, player, record) {
   await retirePreviousController(client, record);
   if (!canRender(client, player, record)) return null;
   let renderedNotice;
-  const payload = () => { renderedNotice = record.notice; return currentPayload(player, record); };
+  const payload = () => { renderedNotice = record.notice; return currentPayload(client, player, record); };
   const message = record.messageId
     ? await renderExisting(client, player, record, payload)
     : await sendController(client, player, record, payload);

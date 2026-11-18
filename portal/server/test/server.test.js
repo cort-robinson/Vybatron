@@ -2507,3 +2507,28 @@ test('Code sign-in is rate-limited per address, per approving session and in tot
   assert.equal(f.app.resourceCounts().pendingDeviceSignIns, 0);
   assert.deepEqual((await devicePoll(f, next.cookie)).json(), { status: 'expired' });
 });
+
+test('Activity sessions frame only the dedicated document and bridge reads as the verified listener', async t => {
+  const f = await fixture(t);
+  await fs.mkdir(path.join(f.config.webDist, 'activity-host'));
+  await fs.writeFile(path.join(f.config.webDist, 'activity-host/activity.html'), '<html>Visualizer</html>');
+  const frame = await f.request('/activity-host/?frame_id=example');
+  assert.equal(frame.status, 200);
+  assert.equal(frame.headers['x-frame-options'], undefined);
+  assert.match(frame.headers['content-security-policy'], /frame-ancestors https:\/\/discord\.com /);
+  assert.equal((await f.request('/')).headers['x-frame-options'], 'DENY');
+  const login = await f.request('/activity-host/token', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code: 'activity-code', actorId: '888' }) });
+  assert.equal(login.status, 200);
+  assert.equal(login.headers['set-cookie'], undefined);
+  assert.equal(login.json().access_token, 'private-oauth-token');
+  assert.equal(login.json().refresh_token, undefined);
+  assert.equal(f.state.tokenCalls.at(-1).has('redirect_uri'), false);
+  const headers = { Authorization: `Bearer ${login.json().token}` };
+  const room = `/activity-host/room/${guildId}`;
+  assert.equal((await f.request(room)).status, 401);
+  f.state.bridgeResponse = (res) => reply(res, 200, { track: null, positionMs: 0, playing: false, rate: 1 });
+  assert.equal((await f.request(room, { headers })).status, 200);
+  assert.equal(f.state.calls.at(-1).params.get('actorId'), actorId);
+  assert.equal((await f.request('/api/bootstrap', { headers })).status, 401);
+  assert.equal((await f.request(room + '/commands', { headers, method: 'POST' })).status, 404);
+});

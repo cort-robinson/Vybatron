@@ -56,7 +56,7 @@ export async function withGuildMutation(guildId, operation, { ordered = false } 
 
 export async function acknowledgeMutation(interaction) {
   if (interaction.deferred || interaction.replied) return;
-  if (interaction.isModalSubmit?.()) await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+  if (interaction.isModalSubmit?.() || interaction.customId?.startsWith('mixtape:queue:')) await interaction.deferReply({ flags: MessageFlags.Ephemeral });
   else if (interaction.isMessageComponent?.()) await interaction.deferUpdate();
   else await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 }
@@ -69,7 +69,7 @@ export function deferredInteraction(interaction) {
       if (property === 'reply') return async payload => {
         if (!target.deferred && !target.replied) return target.reply(payload);
         const { flags, ...edit } = typeof payload === 'string' ? { content: payload } : payload;
-        if (target.deferred && !target.isMessageComponent?.()) return target.editReply(edit);
+        if (target.deferred && (target.ephemeral || !target.isMessageComponent?.())) return target.editReply(edit);
         return target.followUp(payload);
       };
       if (property === 'deferReply') return async payload => { if (!target.deferred && !target.replied) await target.deferReply(payload); };
@@ -106,7 +106,7 @@ function activityState(interaction) {
   if (!interaction.client.library?.recordActivity || interaction.commandName === 'favorite' || interaction.customId?.includes('favorite')) return null;
   const name = interaction.commandName;
   const action = interaction.options?.getSubcommand?.(false);
-  const queueEdit = ['play', 'playnext', 'transfer', 'clear', 'remove', 'move', 'shuffle', 'skip', 'skipto', 'back', 'stop', 'replay', 'voteskip'].includes(name)
+  const queueEdit = interaction.customId?.startsWith('mixtape:queue:') || ['play', 'playnext', 'transfer', 'clear', 'remove', 'move', 'shuffle', 'skip', 'skipto', 'back', 'stop', 'replay', 'voteskip'].includes(name)
     || (['mix', 'top', 'mymix'].includes(name) && ['load', 'play'].includes(action)) || (name === 'radio' && action === 'promote') || (name === 'session' && ['resume', 'discard'].includes(action))
     || /^(?:queue:.*:jump:|history:.*:replay:|player:v1:(?:skip|back|shuffle|stop-confirm)$)/.test(interaction.customId || '');
   if (name !== 'settings' && !queueEdit) return null;

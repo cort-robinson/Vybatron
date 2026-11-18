@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {
   autoplayActive, chooseSeeds, dismissSuggestion, fillRadioQueue, isAutoplayTrack, lessLikeThis, mixUrl, nearKeys,
-  radioState, refreshSuggestions, setRadio, suggestions,
+  radioState, refreshSuggestions, setRadio, suggestions, roomBallot, voteForSuggestion, beginRadioTurn,
 } from '../src/utils/radio.js';
 import { skipCurrent } from '../src/utils/operations.js';
 import { maintenanceStatus, setMaintenance } from '../src/utils/maintenance.js';
@@ -245,4 +245,38 @@ test('the autoplay setting validates and older saved documents migrate to off', 
   const v1 = path.join(directory, 'v1.json');
   await fs.writeFile(v1, JSON.stringify({ version: 1, guilds: { 100: { settings: { volume: 50, fairQueue: false, djRoleId: null }, favorites: {}, mixes: {}, session: null } } }));
   assert.equal((await openLibrary(v1)).settings('100').autoplay, 'off');
+});
+
+test('the room votes once per listener and the winner takes the next automatic handoff', async () => {
+  const members = ['200', '201'].map(id => [id, { id, user: { bot: false } }]);
+  const { player, client, current, channel } = fixture({ mode: 'always', members,
+    mixes: { seed0000000: mixOf(['pick0000001','pick0000002','pick0000003']) } });
+  player.queue.current = current;
+  setRadio(player, true);
+  await refreshSuggestions(player, client, { random: () => 0 });
+  const ballot = roomBallot(player, client);
+  for (const repeat of ['track', 'queue']) {
+    player.repeatMode = repeat;
+    assert.equal(roomBallot(player, client), null);
+    assert.equal(voteForSuggestion(player, client, '200', ballot.id, ballot.choices[0].id), false);
+  }
+  player.repeatMode = 'off';
+  const [first, second, third] = ballot.choices;
+  const vote = (user, choice) => voteForSuggestion(player, client, user, ballot.id, choice.id);
+  assert.equal(vote('888', first), false);
+  assert.equal(vote('200', first), true);
+  assert.equal(vote('200', third), true);
+  assert.equal(vote('201', second), true);
+  assert.deepEqual(roomBallot(player, client).choices.map(c => c.votes), [0, 1, 1]);
+  channel.members.delete('201');
+  player.queue.tracks.push(song('human000001'));
+  assert.equal(roomBallot(player, client), null);
+  assert.equal(await fillRadioQueue(player, current, client), false);
+  player.queue.tracks.length = 0;
+  player.queue.current = null;
+  assert.equal(await fillRadioQueue(player, current, client), true);
+  assert.equal(player.queue.tracks[0].info.identifier, third.track.info.identifier);
+  player.queue.current = player.queue.tracks.shift();
+  beginRadioTurn(player);
+  assert.equal(vote('200', first), false);
 });

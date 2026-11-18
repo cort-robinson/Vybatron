@@ -1,0 +1,9 @@
+@import '@fontsource-variable/archivo';
+:root{color-scheme:dark;font-family:'Archivo Variable',sans-serif;color:#fff;background:#161523}
+*{box-sizing:border-box}body{margin:0}main{min-height:100dvh;display:grid;align-items:end;background:radial-gradient(ellipse at 70% 15%,#343056,transparent 65%)}
+canvas{position:fixed;inset:0;width:100%;height:100%}
+section{position:relative;padding:clamp(20px,5vw,54px);padding-bottom:max(24px,env(safe-area-inset-bottom));background:linear-gradient(transparent,rgba(10,9,17,.9) 58%);padding-top:70px;text-shadow:0 1px 6px #080811}
+h1{font-weight:650;letter-spacing:-.035em;font-size:clamp(1.7rem,5vw,3.2rem);line-height:1.04;margin:.3em 0 .12em;overflow-wrap:anywhere}
+p{margin:.4em 0}#source,#preset{font-size:.84rem;color:#e0dcee}#artist{font-size:1.1rem}#controls{margin-top:1.4rem}.buttons{display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.65rem}
+button{font:inherit;color:inherit;background:#302d3e;border:1px solid #817e90;border-radius:.55rem;padding:.65rem 1rem;cursor:pointer}button:hover{background:#444050}button:focus-visible{outline:3px solid #cabdff;outline-offset:2px}
+[hidden]{display:none!important}

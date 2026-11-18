@@ -12,6 +12,7 @@ const staticExtensions = new Set(['.html', '.js', '.css', '.json', '.webmanifest
 async function collect(directory) {
   for (const entry of await readdir(directory, { withFileTypes: true })) {
     const path = join(directory, entry.name);
+    if (entry.name === 'activity-host' && entry.isDirectory()) continue;
     if (entry.isDirectory()) await collect(path);
     else if (entry.name !== 'sw.js' && staticExtensions.has(extname(path).toLowerCase())) files.push(path);
   }

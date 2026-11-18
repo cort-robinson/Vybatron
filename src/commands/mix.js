@@ -2,6 +2,7 @@ import { EmbedBuilder, MessageFlags, SlashCommandBuilder } from 'discord.js';
 import { requireLibrarySource, requireUserVoice } from '../utils/guards.js';
 import { LIBRARY_LIMITS, trackReference } from '../utils/library.js';
 import { loadCollection, mayEditMix, mixKey, sessionMixTracks } from '../utils/library-actions.js';
+import { mixtapeCard } from '../utils/mixtape-card.js';
 import { COLORS, ephemeralText } from '../utils/messages.js';
 import { commitImport, importLink, previewImport } from '../utils/playlist-import.js';
 import { NO_MENTIONS, safeText } from '../utils/presentation.js';
@@ -51,7 +52,7 @@ export async function execute(interaction) {
  * played this session lead the mix, oldest first, as far as the 100-track limit
  * allows; the current song and queue are always kept whole.
  */
-export async function saveMix(interaction, key, { replace = false, session = false } = {}) {
+export async function saveMix(interaction, key, { replace = false, session = false, preview = false } = {}) {
   const library = interaction.client.library;
   const mixes = library.readGuild(interaction.guildId).mixes;
   const existing = Object.hasOwn(mixes, key) ? mixes[key] : null;
@@ -69,10 +70,15 @@ export async function saveMix(interaction, key, { replace = false, session = fal
     if (fresh !== player || now.length !== sources.length || now.some((track, index) => track !== sources[index])) throw new Error('Your mix changed. Refresh before saving it.');
     if (!Object.hasOwn(guild.mixes, key) && Object.keys(guild.mixes).length >= LIBRARY_LIMITS.mixes) throw new Error(`This server can save ${LIBRARY_LIMITS.mixes} mixes. Remove an unused mix first.`);
     guild.mixes[key] = { ownerId: (Object.hasOwn(guild.mixes, key) && guild.mixes[key].ownerId) || interaction.user.id, tracks, savedAt: Date.now() };
-    return true;
+    return guild.mixes[key];
   });
   if (!stored) return;
   const earlier = played ? ` ${played} of them already played this session.` : '';
   const leftOut = live.some(track => !trackReference(track)) ? ' Tracks without public catalog links were left out.' : '';
+  if (preview) {
+    const artwork = tracks.slice(0, 4).map(ref => sources.find(source => source.info?.uri === ref.uri) || ref);
+    const card = await mixtapeCard(key, stored, true, interaction.appPermissions?.has('AttachFiles') ? artwork : null);
+    return interaction.reply({ ...card, flags: MessageFlags.Ephemeral, content: `Saved **${safeText(key)}** with ${tracks.length} tracks.${earlier}${leftOut}` });
+  }
   return interaction.reply(ephemeralText(`Saved **${safeText(key)}** with ${tracks.length} tracks.${earlier}${leftOut}`));
 }

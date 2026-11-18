@@ -23,7 +23,36 @@ function preloadFonts(): Plugin {
   };
 }
 
+// SDK 2.5.0 ships a private copy of Zod 3 in its ESM output (GHSA-mrhx-c7xc-m3w5).
+// Use the patched implementation in the artifact as well as the dependency tree.
+function discordSchemas(): Plugin {
+  return {
+    name: 'discord-sdk-patched-zod',
+    enforce: 'pre',
+    transform(code, id) {
+      const sdk = id.split('/@discord/embedded-app-sdk/output/')[1];
+      if (!sdk || !code.includes('../lib/zod/lib/index.mjs')) return;
+      let source = code.replaceAll("'../lib/zod/lib/index.mjs'", "'zod'");
+      // The two Zod 3 internals used by this pinned SDK have public equivalents.
+      if (sdk === 'utils/zodUtils.mjs') source = source.replace('schema._def.defaultValue()', 'schema.parse(undefined)');
+      if (sdk === 'schema/common.mjs') source = source.replace('overlayType._def.innerType.options[0].Values', 'overlayType.unwrap().options[0].enum');
+      return source;
+    },
+    generateBundle(_options, bundle) {
+      for (const file of Object.values(bundle)) {
+        if (file.type === 'chunk' && Object.keys(file.modules).some(id => id.includes('/embedded-app-sdk/output/lib/zod/'))) {
+          this.error('The Activity includes an outdated bundled Discord schema validator.');
+        }
+      }
+    },
+  };
+}
+
 export default defineConfig(({ mode }) => {
+  if (mode === 'activity') return {
+    base: '/.proxy/', publicDir: false, plugins: [discordSchemas()],
+    build: { outDir: 'dist/activity-host', assetsInlineLimit: 0, target: 'es2022', rolldownOptions: { input: 'activity.html' } },
+  };
   const env = loadEnv(mode, process.cwd(), 'VITE_');
   const target = env.VITE_API_PROXY || 'http://127.0.0.1:3001';
   return {

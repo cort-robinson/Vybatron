@@ -69,6 +69,17 @@ function playingPosition(player) {
   const timescale = player.filterManager?.data?.timescale; const speed = (Number(timescale?.speed) || 1) * (Number(timescale?.rate) || 1);
   return player.lastPositionChange && Number.isFinite(player.lastPosition) ? player.lastPosition + (Date.now() - player.lastPositionChange) * speed : player.position;
 }
+function trackPosition(player, current, advancing) {
+  return current ? boundedNumber(advancing ? playingPosition(player) : player.lastPosition ?? player.position,
+    0, boundedNumber(current.info?.duration) || Number.MAX_SAFE_INTEGER) : 0;
+}
+
+export function visualizerClock(player) {
+  const track = player.queue.current;
+  const playing = Boolean(track && player.playing && controllerSessionStatus(player) === SESSION_STATUS.PLAYING && !opening.has(track));
+  return { playing, positionMs: trackPosition(player, track, playing) };
+}
+
 export const FILTERS = Object.entries(AUDIO_PRESETS).map(([id, preset]) => ({ id, label: preset.label, description: preset.description }));
 
 // A session revision changes exactly when shared session state does. It runs
@@ -185,7 +196,7 @@ export function snapshotProjection(client, context, revision, ordering) {
       suggestions: allowed && player ? suggestionProjection(player) : [],
       // Back returns to an earlier track of this session when one exists.
       hasPrevious: Boolean(allowed && player?.queue?.previous?.length),
-      positionMs: current ? boundedNumber(status === 'playing' && !starting ? playingPosition(player) : player.lastPosition ?? player.position, 0, boundedNumber(current.info?.duration) || Number.MAX_SAFE_INTEGER) : 0,
+      positionMs: trackPosition(player, current, status === 'playing' && !starting),
       // A song still loading: its position holds until the audio moves.
       starting, durationMs: current ? boundedNumber(current.info?.duration) : 0, volume: allowed ? boundedNumber(player?.volume, settings.volume, 100) : 100,
       filter: allowed ? FILTERS.find(filter => filter.label === preset.label)?.id || 'custom' : 'off', repeat: allowed && ['off', 'track', 'queue'].includes(player?.repeatMode) ? player.repeatMode : 'off',

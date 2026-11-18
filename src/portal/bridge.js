@@ -6,16 +6,18 @@ import { searchMusic } from '../utils/search.js';
 import { rememberSearchResults } from '../utils/autocomplete.js';
 import { validatePlaybackQuery } from '../utils/query.js';
 import { withTimeout } from '../utils/enqueue.js';
+import { playbackRate } from '../utils/presentation.js';
 import { validId } from '../utils/library.js';
 import { clientInviteUrl } from '../utils/invite.js';
 import { actorVoiceId, createPortalPolicy, visibleSession } from './policy.js';
-import { FILTERS, actorProjection, guildProjection, trackProjection, snapshotProjection, libraryProjection, activityProjection, configurationProjection, createRevisions, statsProjection, STATS_WINDOW_IDS, recapProjection, RECAP_WINDOW_IDS } from './projection.js';
+import { FILTERS, visualizerClock, actorProjection, guildProjection, trackProjection, snapshotProjection, libraryProjection, activityProjection, configurationProjection, createRevisions, statsProjection, STATS_WINDOW_IDS, recapProjection, RECAP_WINDOW_IDS } from './projection.js';
 import { publicCommands, executePortalCommand } from './commands.js';
 import { fail, safeError } from './errors.js';
 import { pruneSuggestions, refreshSuggestions } from '../utils/radio.js';
 import { createCommandTimings, commandTimingSpan } from './timing.js';
 import { createChangeFeed } from './changes.js';
 import { createAudioCache, playableAudio, sendAudio } from './audio.js';
+import { energyArt, videoOf } from '../utils/music-art.js';
 import { createAnalysisCache } from './analysis.js';
 import { measureWith, startSongJobs } from '../utils/song-jobs.js';
 import { trackLyrics, videoLyrics } from '../utils/lyrics.js';
@@ -97,6 +99,20 @@ export function startPortalBridge(client, {
   const changes = createChangeFeed(client, revisions);
   const audio = createAudioCache(client);
   const analyses = createAnalysisCache(audio);
+  const energy = new Map();
+  const preparing = new Set();
+  async function prepareEnergy(track) {
+    const id = videoOf(track);
+    if (!id || energy.has(id) || preparing.has(id) || preparing.size >= 2) return false;
+    preparing.add(id);
+    try {
+      const measured = await analyses.measured(id);
+      if (!measured || closing) return false;
+      energy.set(id, await energyArt(track, measured));
+      if (energy.size > 24) energy.delete(energy.keys().next().value);
+      return true;
+    } finally { preparing.delete(id); }
+  }
   // A device's song plays from its best verified source (ADR-0017). Analyses are
   // of exact uploads: fingerprints measure the one asked for, visualizers the one playing.
   const playable = playableAudio(audio, client.songs);
@@ -221,6 +237,31 @@ export function startPortalBridge(client, {
           const node = client.lavalink?.nodeManager?.leastUsedNodes?.()[0];
           const found = await videoLyrics(node, videoLyricsMatch[2]);
           return json(response, 200, { trackId: found.track ? publicTrackId(found.track) : null, status: found.status, lyrics: found.lyrics || null }, maxResponseBytes);
+        }
+        const roomMatch = url.pathname.match(/^\/v1\/guilds\/(\d{1,20})\/visualizer(?:\/([\w-]{11}))?$/);
+        if (roomMatch && request.method === 'GET') {
+          const [, guild, video] = roomMatch;
+          const actor = url.searchParams.get('actorId');
+          const readPlayer = async () => {
+            const context = await policy.guild(actor, guild, undefined, { channelScope: 'session' });
+            const player = client.lavalink?.getPlayer(guild);
+            if (!player || !context.member || !player.voiceChannelId || actorVoiceId(context.member) !== player.voiceChannelId || !visibleSession(context, player)) {
+              fail(403, 'voice_required', 'Join the active listening room to open its visualizer.');
+            }
+            return player;
+          };
+          const player = await readPlayer();
+          const track = player.queue.current;
+          if (video) {
+            if (videoOf(track) !== video) fail(404, 'song_changed', 'The playing song changed.');
+            const result = await analyses.get(video);
+            const fresh = await readPlayer();
+            if (fresh !== player || fresh.queue.current !== track) fail(404, 'song_changed', 'The playing song changed.');
+            return json(response, 200, result, maxResponseBytes);
+          }
+          const song = track && trackProjection(track);
+          return json(response, 200, { track: song ? { id: song.id, title: song.title, artist: song.author, video: videoOf(track), durationMs: song.durationMs } : null,
+            ...visualizerClock(player), rate: playbackRate(player) || 1 }, maxResponseBytes);
         }
         const analysisMatch = url.pathname.match(/^\/v1\/guilds\/(\d{1,22})\/analysis\/([\w-]{11})$/);
         if (analysisMatch && request.method === 'GET') {
@@ -366,5 +407,5 @@ export function startPortalBridge(client, {
     timings.close();
     server.removeAllListeners('connection'); server.removeAllListeners('clientError');
   })();
-  return { enabled: true, server, ready, close, dispose: close };
+  return { enabled: true, server, ready, close, dispose: close, prepareEnergy, energyFor: track => energy.get(videoOf(track)) };
 }

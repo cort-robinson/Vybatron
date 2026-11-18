@@ -15,15 +15,13 @@ async function discord(t, options = {}) {
   f.client.user = { id: '999', bot: true };
   await loadCommands(f.client);
   const dispatch = f.client.listeners('interactionCreate')[0];
-  const posts = [];
-  const channel = { send: async payload => posts.push(payload) };
   async function use(id, { kind = 'button', actor = '200', query, value } = {}) {
     let result;
     const interaction = {
-      id: String(++interactionNumber), client: f.client, guild: f.guild, guildId: f.guild.id, channelId: '400', channel,
+      id: String(++interactionNumber), client: f.client, guild: f.guild, guildId: f.guild.id, channelId: '400',
       member: f.members.get(actor), user: f.users.get(actor),
       customId: id, values: [value], fields: { getTextInputValue: () => query },
-      commandName: kind === 'slash' ? 'settings' : undefined, options: { getSubcommand: () => 'startcard' },
+      commandName: kind === 'slash' ? 'mix' : undefined, options: { getSubcommand: () => 'start' },
       isAutocomplete: () => false, isModalSubmit: () => kind === 'modal', isMessageComponent: () => ['button', 'select'].includes(kind),
       isChatInputCommand: () => kind === 'slash', isButton: () => kind === 'button', isStringSelectMenu: () => kind === 'select',
       deferUpdate() { this.deferred = true; },
@@ -36,18 +34,13 @@ async function discord(t, options = {}) {
     await dispatch(interaction);
     return { result, interaction };
   }
-  return { ...f, posts, use };
+  return { ...f, use, startMix: () => use(undefined, { kind: 'slash' }) };
 }
 
-test('a manager posts a reusable card and a listener can privately choose and queue a specific recording', async t => {
+test('a listener can privately choose and queue a specific recording from the player', async t => {
   const f = await discord(t, { idle: false, search: () => ({ loadType: 'search', tracks: [track('firstresult'), track('nextversion')] }) });
-  await f.use(null, { kind: 'slash' });
-  assert.equal(f.posts.length, 0);
-  await f.use(null, { kind: 'slash', actor: '201' });
-  const [add, mix] = f.posts[0].components[0].toJSON().components;
-  assert.equal(mix.label, 'Play our mix');
   await f.library.updateGuild('100', guild => { guild.settings.djRoleId = '500'; });
-  const { result: modal } = await f.use(add.custom_id);
+  const { result: modal } = await f.use('player:v1:add');
   const { result: choices, interaction } = await f.use(modal.custom_id, { kind: 'modal', query: 'find both versions' });
   assert.equal(interaction.ephemeral, true);
   const menu = choices.components[0].toJSON().components[0];
@@ -61,12 +54,12 @@ test('a manager posts a reusable card and a listener can privately choose and qu
   assert.equal(f.player.queue.tracks.at(-1).info.identifier, 'nextversion');
   assert.match(added.content, /Plays after.*01234567890/);
   assert.equal(radioState(f.player).enabled, false);
-  assert.match((await f.use('music:v1:mix')).result.content, /DJ role/);
+  assert.match((await f.startMix()).result.content, /DJ role/);
 });
 
 test('an empty-history mix asks for a starting song, rechecks voice and preserves an active session', async t => {
   const f = await discord(t);
-  const { result: modal } = await f.use('music:v1:mix');
+  const { result: modal } = await f.startMix();
   assert.equal(modal.title, 'Choose a starting song');
   const seed = { kind: 'modal', query: 'https://www.youtube.com/watch?v=openingsong' };
   f.members.get('200').voice.channel = f.channels.get('301');
@@ -78,11 +71,11 @@ test('an empty-history mix asks for a starting song, rechecks voice and preserve
   const player = f.manager.getPlayer('100');
   assert.equal(player.queue.current.info.identifier, 'openingsong');
   assert.equal(radioState(player).enabled, true);
-  assert.match((await f.use('music:v1:mix')).result.content, /already going/);
+  assert.match((await f.startMix()).result.content, /already going/);
   assert.equal(player.queue.tracks.length, 0);
 });
 
-test('one tap starts a mix from history visible to the whole room and privately acknowledges the public card', async t => {
+test('/mix start privately acknowledges a favorite visible to the whole room', async t => {
   const f = await discord(t);
   const channelsRead = [];
   f.channels.get('301').hidden.add('201');
@@ -93,7 +86,7 @@ test('one tap starts a mix from history visible to the whole room and privately 
       return { onRepeat: [{ track: trackReference(track('onrepeat123')) }] };
     },
   };
-  const { result, interaction } = await f.use('music:v1:mix');
+  const { result, interaction } = await f.startMix();
   assert.equal(interaction.ephemeral, true);
   assert.match(result.content, /Starting.*onrepeat123.*Autoplay/);
   assert.ok(channelsRead.length >= 2);
@@ -101,12 +94,11 @@ test('one tap starts a mix from history visible to the whole room and privately 
   assert.equal(radioState(f.manager.getPlayer('100')).enabled, true);
 });
 
-test('the More menu routes shared controls through the same DJ check and Stop confirmation', async t => {
+test('the Stop button checks DJ access and asks for confirmation', async t => {
   const f = await discord(t, { idle: false });
   await f.library.updateGuild('100', guild => { guild.settings.djRoleId = '500'; });
-  const item = { kind: 'select', value: 'stop' };
-  assert.match((await f.use('player:v1:more', item)).result.content, /DJ role/);
-  assert.match((await f.use('player:v1:more', { ...item, actor: '201' })).result.content, /Stop playback, clear/);
+  assert.match((await f.use('player:v1:stop')).result.content, /DJ role/);
+  assert.match((await f.use('player:v1:stop', { actor: '201' })).result.content, /Stop playback, clear/);
   assert.equal(f.player.playing, true);
 });
 
@@ -114,19 +106,19 @@ test('an unresolved room member keeps private history out of the opening song', 
   const f = await discord(t);
   f.guild.voiceStates.cache.set('404', { channelId: '300', member: null });
   f.client.stats = { available: true, voiceChannelIds: () => ['301'], serverFavorites() { assert.fail('unknown audience'); } };
-  assert.equal((await f.use('music:v1:mix')).result.title, 'Choose a starting song');
+  assert.equal((await f.startMix()).result.title, 'Choose a starting song');
 });
 
 test('a full voice channel accepts requests when the bot already occupies a slot and can still speak', async t => {
   const f = await discord(t, { idle: false });
   const voice = f.channels.get('300');
   Object.assign(voice, { full: true, joinable: false, viewable: true });
-  const { result: modal } = await f.use('music:v1:add');
+  const { result: modal } = await f.use('player:v1:add');
   assert.equal(modal.title, 'Add a song');
   const request = { kind: 'modal', query: 'https://www.youtube.com/watch?v=openingsong' };
   assert.match((await f.use(modal.custom_id, request)).result.content, /Added.*openingsong/);
   voice.speakable = false;
-  assert.match((await f.use('music:v1:add')).result.content, /Speak permission/);
+  assert.match((await f.use('player:v1:add')).result.content, /Speak permission/);
   f.player.connected = false;
-  assert.match((await f.use('music:v1:add')).result.content, /can’t join/);
+  assert.match((await f.use('player:v1:add')).result.content, /can’t join/);
 });

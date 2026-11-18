@@ -34,7 +34,7 @@ export function sessionHasMusic(player) {
 export async function playQuery(interaction, query, { roomMix = false, automaticSeed = false, seedAvailable } = {}) {
   const channel = await requireUserVoice(interaction, { checkBotAccess: true });
   if (!channel) return;
-  if (roomMix && !hasDJAccess(interaction)) return interaction.reply(textPayload('Starting autoplay needs the DJ role. Choose Add a song to queue a request.'));
+  if (roomMix && !hasDJAccess(interaction)) return interaction.reply(textPayload('Starting autoplay needs the DJ role. Use /play to request a song.'));
   query ??= interaction.options.getString('query');
   const invalid = validatePlaybackQuery(query);
   if (invalid) return interaction.reply({ ...textPayload(invalid), flags: MessageFlags.Ephemeral });
@@ -62,7 +62,7 @@ export async function playQuery(interaction, query, { roomMix = false, automatic
 
     if (!await recheckEnqueueRequest(interaction, player, channel, { checkDJ: roomMix })) return;
     if (roomMix && sessionHasMusic(player)) return interaction.editReply(textPayload('A session is already going. Choose Add a song to join the queue.'));
-    if (seedAvailable && !seedAvailable()) return interaction.editReply(textPayload('The room changed. Choose Play our mix again.'));
+    if (seedAvailable && !seedAvailable()) return interaction.editReply(textPayload('The room changed. Use /mix start again.'));
     if (roomMix && result.loadType === 'playlist') return interaction.editReply(textPayload('Choose one starting song for the mix. Use Add a song for a playlist.'));
     const starting = !player.playing && !player.paused && !player.queue.current;
     const previousQueueSize = player.queue.tracks.length;

@@ -43,7 +43,7 @@ export const QUEUE_PAGE_SIZE = 10;
 // More uses the same authorization, mutation lane and activity records as the original buttons.
 export function playerActionId(interaction) {
   if (interaction.customId === 'player:v1:more' && interaction.isStringSelectMenu?.()
-    && ['back', 'shuffle', 'loop', 'seek', 'refresh', 'stop'].includes(interaction.values?.[0])) {
+    && ['back', 'shuffle', 'loop', 'seek', 'refresh'].includes(interaction.values?.[0])) {
     return `player:v1:${interaction.values[0]}`;
   }
   return interaction.customId;
@@ -93,7 +93,7 @@ function playerComponents(player, state, track) {
     button('player:v1:toggle', state === 'paused' ? 'Resume' : 'Pause', disabled),
     button('player:v1:skip', 'Skip', disabled && !recovering),
     button('player:v1:queue', 'View queue', !active && !recovering),
-    button(`player:v2:favorite:${trackIdentity(track)}`, 'Favorite', disabled),
+    button('player:v1:stop', 'Stop', !active && !recovering, ButtonStyle.Danger),
   );
   const options = [];
   if (active && track) {
@@ -103,10 +103,10 @@ function playerComponents(player, state, track) {
       options.push({ label: 'Seek', value: 'seek' });
     }
   }
-  options.push({ label: 'Refresh', value: 'refresh' }, { label: 'Stop', value: 'stop' });
+  options.push({ label: 'Refresh', value: 'refresh' });
   const utilityRow = new ActionRowBuilder().addComponents(new StringSelectMenuBuilder()
     .setCustomId('player:v1:more').setPlaceholder('More controls').setDisabled(!active && !recovering).addOptions(options));
-  const linkRow = new ActionRowBuilder();
+  const linkRow = new ActionRowBuilder().addComponents(button(`player:v2:favorite:${trackIdentity(track)}`, 'Favorite', disabled));
   if (config.portalOrigin) {
     linkRow.addComponents(
       new ButtonBuilder().setLabel('Open web player').setStyle(ButtonStyle.Link).setURL(config.portalOrigin)
@@ -118,7 +118,7 @@ function playerComponents(player, state, track) {
       new ButtonBuilder().setLabel('Open track').setStyle(ButtonStyle.Link).setURL(trackUrl)
     );
   }
-  return linkRow.components.length ? [playbackRow, utilityRow, linkRow] : [playbackRow, utilityRow];
+  return [playbackRow, utilityRow, linkRow];
 }
 
 export function buildSeekModal(player) {

@@ -34,7 +34,7 @@ import { buildHelpPayload } from './help.js';
 import { inviteUrlFor } from './invite.js';
 import { buildHistoryPayload, historySessionKey, replayHistoryTrack } from './history.js';
 import { buildLyricsPayload, findSessionTrack, trackLyrics } from './lyrics.js';
-import { openMusicCard, pickSong, submitSong } from './music-card.js';
+import { openAddSong, pickSong, submitSong } from './song-picker.js';
 import { cancelGuildMutations } from './requests.js';
 import { directControlPresentation, requestRefresh, retirePresentationPlayer } from './presentation-updates.js';
 import { cancelImport, commitImport } from './playlist-import.js';
@@ -81,7 +81,7 @@ async function handlePlayerComponent(interaction, action, expectedIdentity = nul
   const player = interaction.client.lavalink?.getPlayer(interaction.guildId);
   if (!player) return rejectEndedSession(interaction);
 
-  if (action === 'add') return openMusicCard(interaction, 'add');
+  if (action === 'add') return openAddSong(interaction);
 
   if (action === 'stop-cancel') {
     return interaction.update({ content: 'Stop cancelled.', components: [] });
@@ -280,7 +280,6 @@ async function handleLyricsPage(interaction, ownerId, identity, page) {
 
 export async function handleMessageComponent(interaction) {
   const customId = playerActionId(interaction) || '';
-  if (customId === 'music:v1:add' || customId === 'music:v1:mix') return openMusicCard(interaction, customId.split(':')[2]);
   if (customId.startsWith('music:v1:pick:') && interaction.isStringSelectMenu()) return pickSong(interaction);
   const playerMatch = /^player:v1:(add|toggle|skip|back|shuffle|loop|seek|queue|refresh|stop|stop-confirm|stop-cancel|stop-save)$/.exec(customId);
   if (playerMatch) return handlePlayerComponent(interaction, playerMatch[1]);

@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { ButtonStyle } from 'discord.js';
 import { LavalinkManager } from 'lavalink-client';
 import {
   buildPlayerPayload,
@@ -54,16 +55,19 @@ test('player payload uses semantic status, timestamp, and native controls', () =
   assert.equal(playing.components.length, 3);
   assert.deepEqual(
     playing.components[0].components.map((component) => component.data.label),
-    ['Add a song', 'Pause', 'Skip', 'View queue', 'Favorite']
+    ['Add a song', 'Pause', 'Skip', 'View queue', 'Stop']
   );
   assert.deepEqual(
     playing.components[1].components[0].options.map(option => option.data.label),
-    ['Back', 'Shuffle', 'Loop: off', 'Seek', 'Refresh', 'Stop']
+    ['Back', 'Shuffle', 'Loop: off', 'Seek', 'Refresh']
   );
   assert.deepEqual(
     playing.components[2].components.map((component) => component.data.label),
-    ['Open track']
+    ['Favorite', 'Open track']
   );
+  const stop = playing.components[0].components[4].data;
+  assert.equal(stop.custom_id, 'player:v1:stop');
+  assert.equal(stop.style, ButtonStyle.Danger);
   assert.equal(playing.components[1].components[0].data.placeholder, 'More controls');
   const playerIds = playing.components
     .flatMap((row) => row.components)
@@ -258,7 +262,7 @@ test('player links to the web portal when its origin is configured', (t) => {
   config.portalOrigin = 'https://vybertron.example.ts.net';
   for (const state of ['playing', 'ended']) {
     const payload = buildPlayerPayload(state === 'ended' ? null : makePlayer(1), { state });
-    const portal = payload.components.at(-1).components[0].data;
+    const portal = payload.components.at(-1).components.find(component => component.data.label === 'Open web player').data;
     assert.equal(portal.label, 'Open web player');
     assert.equal(portal.url, 'https://vybertron.example.ts.net');
     assert.ok(payload.components.every((row) => row.components.length <= 5));

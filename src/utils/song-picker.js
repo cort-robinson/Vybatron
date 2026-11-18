@@ -1,4 +1,4 @@
-import { ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags, ModalBuilder, StringSelectMenuBuilder, TextInputBuilder, TextInputStyle } from 'discord.js';
+import { ActionRowBuilder, MessageFlags, ModalBuilder, StringSelectMenuBuilder, TextInputBuilder, TextInputStyle } from 'discord.js';
 import { playQuery, sessionHasMusic } from '../commands/play.js';
 import { getTrackChoices, resolveAutocompleteTrack } from './autocomplete.js';
 import { hasDJAccess, requireUserVoice } from './guards.js';
@@ -13,14 +13,6 @@ import { validatePlaybackQuery } from './search.js';
 const openPickers = new Map();
 const PICKER_LIMIT = 500;
 const PICKER_LIFETIME_MS = 5 * 60_000;
-
-export function startCard() {
-  const buttons = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('music:v1:add').setLabel('Add a song').setStyle(ButtonStyle.Primary),
-    new ButtonBuilder().setCustomId('music:v1:mix').setLabel('Play our mix').setStyle(ButtonStyle.Secondary),
-  );
-  return { ...textPayload('Join voice, then add a song or start a mix for the room. Your requests play before autoplay picks.'), components: [buttons] };
-}
 
 function scope(interaction, channel) {
   const player = interaction.client.lavalink.getPlayer(interaction.guildId);
@@ -48,33 +40,35 @@ function roomFavorites(interaction, channel) {
   return stats.serverFavorites(interaction.guildId, { visibleChannelIds }).onRepeat;
 }
 
-export async function openMusicCard(interaction, mode) {
+export async function openAddSong(interaction) {
+  const channel = await requireUserVoice(interaction, { checkBotAccess: true });
+  if (channel) return interaction.showModal(songModal('add', scope(interaction, channel)));
+}
+
+export async function startRoomMix(interaction) {
   const channel = await requireUserVoice(interaction, { checkBotAccess: true });
   if (!channel) return;
   const binding = scope(interaction, channel);
-  if (mode === 'add') return interaction.showModal(songModal(mode, binding));
-  if (!hasDJAccess(interaction)) return interaction.reply(ephemeralText('Starting autoplay needs the DJ role. Choose Add a song to queue a request.'));
+  if (!hasDJAccess(interaction)) return interaction.reply(ephemeralText('Starting autoplay needs the DJ role. Use /play to request a song.'));
   const player = interaction.client.lavalink.getPlayer(interaction.guildId);
   if (sessionHasMusic(player)) {
     return interaction.reply(ephemeralText('A session is already going. Choose Add a song to join the queue.'));
   }
   const favorites = roomFavorites(interaction, channel);
-  if (!favorites.length) return interaction.showModal(songModal(mode, binding));
+  if (!favorites.length) return interaction.showModal(songModal('mix', binding));
   const seed = favorites[Math.floor(Math.random() * Math.min(5, favorites.length))].track;
   return guardedMutation(interaction, async request => {
-    if (!await checkScope(request, binding, mode)) return;
+    if (!await checkScope(request, binding)) return;
     return playQuery(request, seed.uri, {
       roomMix: true, automaticSeed: true,
       seedAvailable: () => roomFavorites(request, channel).some(entry => entry.track.uri === seed.uri),
     });
-  }, { playback: true, ordered: true, privateReply: true });
+  }, { playback: true, ordered: true });
 }
 
-async function checkScope(interaction, binding, mode) {
+async function checkScope(interaction, binding) {
   const channel = await requireUserVoice(interaction, { checkBotAccess: true });
   if (!channel) return false;
-  // Two people can open the idle card before either one finishes a request.
-  if (mode === 'add' && binding === `${channel.id}:idle`) return true;
   if (scope(interaction, channel) === binding) return true;
   const message = 'The voice session changed. Open the music controls again.';
   if (interaction.deferred) await interaction.editReply({ ...textPayload(message), components: [] });
@@ -90,7 +84,7 @@ export async function submitSong(interaction) {
   if (invalid) return interaction.reply(ephemeralText(invalid));
   if (isUrl(query)) return queueSong(interaction, binding, mode, query);
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-  if (!await checkScope(interaction, binding, mode)) return;
+  if (!await checkScope(interaction, binding)) return;
   const choices = await getTrackChoices(interaction, { search: query, timeoutMs: 8000 });
   if (!choices.length) return interaction.editReply(textPayload('No recordings found. Try a song and artist, or paste a music link.'));
   if (openPickers.size >= PICKER_LIMIT) openPickers.delete(openPickers.keys().next().value);
@@ -111,7 +105,7 @@ export async function pickSong(interaction) {
 
 function queueSong(interaction, binding, mode, query, pickerId) {
   return guardedMutation(interaction, async request => {
-    if (!await checkScope(request, binding, mode)) return;
+    if (!await checkScope(request, binding)) return;
     // A pick is already private. Clear the menu as soon as it is accepted.
     if (interaction.isStringSelectMenu?.()) {
       const expiresAt = openPickers.get(pickerId);

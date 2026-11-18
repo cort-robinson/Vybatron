@@ -22,11 +22,11 @@ export function buildHelpPayload(client, requestedTopic = 'start', ownerId = 'an
   const topic = HELP_TOPICS.find((entry) => entry.value === requestedTopic) || HELP_TOPICS[0];
   const embed = new EmbedBuilder().setColor(0x00c8ff).setTitle(`Vybatron v2 • ${topic.label}`);
   if (topic.value === 'start') {
-    embed.setDescription('Your voice channel, your soundtrack. Join voice and choose **Add a song** on the player or start card. Search by title and artist, or paste a music link. You can also use `/play`.')
+    embed.setDescription('Your voice channel, your soundtrack. Join voice and choose **Add a song** on the shared player. Search by title and artist, or paste a music link. You can also use `/play`.')
       .addFields(
         { name: 'Make it yours', value: '`/play` adds music. `/playnext` puts it next. `/nowplaying` shows the track and links to the shared player. `/lyrics` shows its lyrics, only to you.' },
-        { name: 'One player, less noise', value: 'Pause, skip, view the queue or save a favorite on the player. Open **More controls** to seek, shuffle, refresh or stop.' },
-        { name: 'A good next move', value: 'Choose **Play our mix** on the start card for a familiar opener and room autoplay. Server managers can post the card with `/settings startcard`.' },
+        { name: 'One player, less noise', value: 'Pause, skip, view the queue or save a favorite on the player. Stop asks for confirmation. Open **More controls** to seek, shuffle or refresh.' },
+        { name: 'A good next move', value: 'Use `/mix start` for a familiar opening song and room autoplay. If the room has no history yet, choose a starting song.' },
         { name: 'Shared listening', value: 'Join the bot’s voice channel to change playback. A configured DJ role can limit shared controls; listeners can still use `/voteskip`.' },
       );
     if (inviteUrl) embed.addFields({ name: 'Bring it to another server', value: '`/invite` or the button below adds Vybatron to a server where you have Manage Server permission. Only you can see this.' });

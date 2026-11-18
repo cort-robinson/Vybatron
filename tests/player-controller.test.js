@@ -206,7 +206,8 @@ test('refresh preserves recovery and only a started track restores active contro
   assert.equal(buttons.find((button) => button.data.label === 'Skip').data.disabled, false);
   const more = buttons.find(component => component.data.placeholder === 'More controls');
   assert.equal(more.data.disabled, false);
-  assert.deepEqual(more.options.map(option => option.data.value), ['refresh', 'stop']);
+  assert.deepEqual(more.options.map(option => option.data.value), ['refresh']);
+  assert.equal(buttons.find(button => button.data.label === 'Stop').data.disabled, false);
   assert.doesNotMatch(payload.embeds[0].data.description, /Ends <t:/);
   await createOrUpdate(f.client, p, { state: 'playing' });
   await refresh(f.client, p);

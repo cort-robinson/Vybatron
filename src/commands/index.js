@@ -70,7 +70,7 @@ async function reportInteractionError(interaction, error, context) {
 
   const payload = errorPayload(friendlyInteractionError(error, context), referenceId);
   try {
-    if (!interaction.ephemeral && interaction.isMessageComponent() && (interaction.deferred || interaction.replied)) {
+    if (interaction.isMessageComponent() && (interaction.deferred || interaction.replied)) {
       await interaction.followUp(payload);
     } else if (interaction.deferred) {
       const { flags, ...editPayload } = payload;
@@ -147,7 +147,8 @@ export async function loadCommands(client) {
       const name = interaction.commandName;
       const action = interaction.options.getSubcommand?.(false);
       const policy = commandMutationPolicy(name, action);
-      if (policy.readOnly) await command.execute(interaction);
+      // /mix start may open a modal. Its handler takes the mutation lane once a seed is available.
+      if (policy.readOnly || (name === 'mix' && action === 'start')) await command.execute(interaction);
       else await guardedMutation(interaction, command.execute, policy);
     } catch (error) {
       await reportInteractionError(interaction, error, `/${interaction.commandName}`);

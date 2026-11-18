@@ -5,9 +5,11 @@ import { loadCollection, mayEditMix, mixKey, sessionMixTracks } from '../utils/l
 import { COLORS, ephemeralText } from '../utils/messages.js';
 import { commitImport, importLink, previewImport } from '../utils/playlist-import.js';
 import { NO_MENTIONS, safeText } from '../utils/presentation.js';
+import { startRoomMix } from '../utils/song-picker.js';
 
 const nameOption = o => o.setName('name').setDescription('A memorable name, such as late night drive').setMaxLength(40).setRequired(true);
 export const data = new SlashCommandBuilder().setName('mix').setDescription('Save and replay named mixes with your server')
+  .addSubcommand(s => s.setName('start').setDescription('Start a room mix with a familiar song and autoplay'))
   .addSubcommand(s => s.setName('save').setDescription('Save the current song and queue as a reusable mix').addStringOption(nameOption).addBooleanOption(o => o.setName('replace').setDescription('Replace a mix you previously saved'))
     .addBooleanOption(o => o.setName('session').setDescription('Also include songs already played this session')))
   .addSubcommand(s => s.setName('list').setDescription('Browse this server’s saved mixes'))
@@ -18,6 +20,7 @@ export const data = new SlashCommandBuilder().setName('mix').setDescription('Sav
 
 export async function execute(interaction) {
   const action = interaction.options.getSubcommand();
+  if (action === 'start') return startRoomMix(interaction);
   const library = interaction.client.library;
   const mixes = library.readGuild(interaction.guildId).mixes;
   if (action === 'list') {

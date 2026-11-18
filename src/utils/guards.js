@@ -31,7 +31,7 @@ async function reject(interaction, message) {
   if (interaction.portalReject) return interaction.portalReject(message);
   const payload = ephemeralText(message);
   try {
-    if (interaction.deferred && (interaction.ephemeral || !interaction.isMessageComponent?.())) {
+    if (interaction.deferred && !interaction.isMessageComponent?.()) {
       const { flags, ...edit } = payload;
       await interaction.editReply(edit);
     } else if (interaction.deferred || interaction.replied) await interaction.followUp(payload);

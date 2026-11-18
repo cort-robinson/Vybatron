@@ -8,7 +8,25 @@ import { look as overdrive } from './components/Overdrive';
 import fantasticStyles from './fantastic.css?url';
 import hauntedStyles from './haunted.css?url';
 
-export type Skin = 'overdrive' | 'fantastic' | 'haunted' | 'classic';
+import listeningStyles from './listening-looks.css?url';
+
+export const skinNames = {
+  overdrive: 'Overdrive', fantastic: 'Fantastic Four', haunted: 'Haunted', classic: 'Classic',
+  'sleeve-light': 'Sleeve Notes · Light', 'sleeve-dark': 'Sleeve Notes · Dark',
+  broadcast: 'Broadcast Desk', wall: 'Listening Wall',
+} as const;
+export type Skin = keyof typeof skinNames;
+
+// These layouts use printed surfaces or the artwork itself instead of an animated room.
+export const listeningLayout = (skin: Skin) => skin === 'sleeve-light' || skin === 'sleeve-dark' || skin === 'broadcast' || skin === 'wall';
+let listeningSheet: Promise<undefined> | undefined;
+function loadListeningSheet() {
+  listeningSheet ??= stylesheet(listeningStyles).then(() => undefined).catch(error => {
+    listeningSheet = undefined;
+    throw error;
+  });
+  return listeningSheet;
+}
 
 // The default look ships in the main bundle. Opt-in looks keep their stylesheet and scenery in
 // their own chunk, so no device downloads, parses or style-matches a look it doesn't show.
@@ -24,6 +42,7 @@ const loaders: Record<Skin, () => Promise<Look | undefined>> = {
   fantastic: async () => (await Promise.all([import('./components/Fantastic'), stylesheet(fantasticStyles)]))[0].look,
   haunted: async () => (await Promise.all([import('./components/Haunted'), stylesheet(hauntedStyles)]))[0].look,
   classic: async () => undefined,
+  'sleeve-light': loadListeningSheet, 'sleeve-dark': loadListeningSheet, broadcast: loadListeningSheet, wall: loadListeningSheet,
 };
 // The look's stylesheet is linked here rather than through the chunk's CSS import: Vite's
 // preloader remembers a stylesheet that failed and never requests it again, which would apply
@@ -54,7 +73,7 @@ export function loadLook(skin: Skin) {
 export const skinLook = (skin: Skin) => looks.get(skin);
 
 const key = 'vybertron.skin';
-const skins: readonly Skin[] = ['overdrive', 'fantastic', 'haunted', 'classic'];
+const skins = Object.keys(skinNames);
 
 export function initialSkin(): Skin {
   try { const stored = localStorage.getItem(key); return skins.includes(stored as Skin) ? stored as Skin : 'overdrive'; } catch { return 'overdrive'; }

@@ -73,7 +73,10 @@ export function Artwork({ track, className = '', large = false }: { track: Track
   if (!track) return <span ref={adoptFlight} className={`artwork artwork-empty ${className}`}><MusicNotesIcon size={large ? 56 : 24} aria-hidden="true" /></span>;
   if (!source || source === failedSource) return <FallbackCover className={`artwork ${className}`} alt={alt} large={large} />;
   return <><img ref={adoptFlight} className={`artwork ${className}`} src={source} alt={alt}
-    loading={large ? 'eager' : 'lazy'} decoding="async" onError={() => setFailedSource(source)} />
+    loading={large ? 'eager' : 'lazy'} decoding="async" onLoad={large ? event => {
+      const image = event.currentTarget;
+      image.toggleAttribute('data-small-cover', Math.min(image.naturalWidth, image.naturalHeight) < 360);
+    } : undefined} onError={() => setFailedSource(source)} />
     {ghost && <img key={ghost} className="artwork-ghost" src={ghost} alt="" aria-hidden="true" onAnimationEnd={() => setGhost(undefined)} />}</>;
 }
 export function Avatar({ url, name, className = '' }: { url?: string | null; name: string; className?: string }) {

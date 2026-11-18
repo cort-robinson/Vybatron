@@ -78,7 +78,9 @@ export function Queue({ portal, compact = false, onAdd, onOpenPlayer }: { portal
     const current: Lift = { index, revision: snapshot.revision, guildId: snapshot.guild.id, pointer: event.pointerId, startY: event.clientY, y: event.clientY, startScroll: scroller.scrollTop, row, scroller, target: index, frame: 0 };
     lift.current = current; row.classList.add('lifted');
     const step = () => {
-      const view = scroller === document.scrollingElement ? { top: 0, bottom: document.querySelector('.persistent-player')?.getBoundingClientRect().top ?? innerHeight } : scroller.getBoundingClientRect();
+      const deck = document.querySelector('.persistent-player')?.getBoundingClientRect();
+      const underDeck = deck && event.clientX >= deck.left && event.clientX < deck.right;
+      const view = scroller === document.scrollingElement ? { top: 0, bottom: underDeck ? deck.top : innerHeight } : scroller.getBoundingClientRect();
       const speed = current.y < view.top + 56 ? -Math.min(14, (view.top + 56 - current.y) / 4) : current.y > view.bottom - 56 ? Math.min(14, (current.y - view.bottom + 56) / 4) : 0;
       if (speed) { scroller.scrollTop += speed; place(current); }
       current.frame = requestAnimationFrame(step);

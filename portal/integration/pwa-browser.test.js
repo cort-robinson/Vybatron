@@ -98,7 +98,7 @@ test('production PWA installs under real CSP, serves an offline shell, and never
   const installed = JSON.parse(source.match(/^const PRECACHED = (\[.*\]);$/m)?.[1] || 'null');
   assert.ok(Array.isArray(installed) && installed.includes('/index.html') && installed.every(resource => files.includes(resource)));
   const onDemand = files.filter(resource => !installed.includes(resource));
-  assert.ok(onDemand.some(resource => /\/milkdrop-/.test(resource)) && onDemand.every(resource => /\/milkdrop-|\/fallback-cover-(?:640|1024)|\.woff$|\.woff2$/.test(resource)), JSON.stringify(onDemand));
+  assert.ok(onDemand.some(resource => /\/milkdrop-/.test(resource)) && onDemand.every(resource => /\/look-preview-[\w-]+\.webp$|\/milkdrop-|\/fallback-cover-(?:640|1024)|\.woff$|\.woff2$/.test(resource)), JSON.stringify(onDemand));
   for (const resource of files) {
     const response = await fetch(origin + resource, { signal: AbortSignal.timeout(5_000) });
     assert.equal(response.status, 200, `Unservable precache URL: ${resource}`);

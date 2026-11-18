@@ -7,7 +7,7 @@ export const PRESETS: readonly { id: PresetId; name: string }[] = [
   { id: 'pumpkins', name: 'Pumpkin Patch' }, { id: 'witching', name: 'Witching Hour' },
 ];
 // Until someone picks one, the visualizer follows the look.
-const bySkin: Record<Skin, PresetId> = { overdrive: 'gridrunner', fantastic: 'cosmic', haunted: 'pumpkins', classic: 'receiver' };
+const bySkin: Record<Skin, PresetId> = { overdrive: 'gridrunner', fantastic: 'cosmic', haunted: 'pumpkins', classic: 'receiver', 'sleeve-light': 'receiver', 'sleeve-dark': 'receiver', broadcast: 'receiver', wall: 'cosmic' };
 
 const key = 'vybertron.visualizer';
 // MilkDrop took Neon's place in the picker, and someone who had chosen Neon keeps that place.

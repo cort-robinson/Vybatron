@@ -20,6 +20,8 @@ FORM: album-reactive receiver; spectrum and lighting are decorative and generate
   font-synthesis: none;
   font-weight: 450;
   color-scheme: dark;
+  --accent: var(--cover-accent, #5fdcd2);
+  --ground: var(--cover-ground, #0d0f14);
   --text: #f5f4f8;
   --text-soft: #e2e0e8;
   --muted: #b4b2bf;

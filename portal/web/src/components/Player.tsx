@@ -5,17 +5,18 @@ import { saveByLink, useSavingFavorite } from '../favorites';
 import type { Command, Track } from '../types';
 import { usePosition, type Clock } from '../position';
 import { publicUrl } from '../api';
-import { time, timestamp } from '../format';
+import { statusLabel, time, timestamp } from '../format';
 import { RESTART_AFTER_MS } from '../playback';
 import { ActionPopover, Artwork, Confirm, Dialog, IconButton, useSheet } from './ui';
 import { SaveSessionDialog, StopDialog } from './SessionMix';
 import { SleepDialog, useSleepText } from './SleepTimer';
+import { QueueFilmstrip } from './QueueFilmstrip';
 import { Queue } from './Queue';
 import { Spectrum } from './Spectrum';
 import { prefersReducedMotion, pulse } from '../motion';
 import { swipe, type SwipeDirection } from '../swipe';
 import { useBackLayers } from '../backLayers';
-import { skinLook, skinTint, type Skin } from '../skin';
+import { listeningLayout, skinLook, skinTint, type Skin } from '../skin';
 import { activeLine, LyricsPanel, useLyrics } from './Lyrics';
 import { useVisualizer } from '../visualizer/load';
 import type { Palette } from '../art';
@@ -36,6 +37,7 @@ export function Player({ portal, expanded, setExpanded, onAdd, palette, animate,
   const [sleepOpen, setSleepOpen] = useState(false);
   const [queueOpen, setQueueOpen] = useState(false);
   // The open player can show the current song's lyrics in place of its cover.
+  const [wallQueue, setWallQueue] = useState(false);
   const [lyricsOpen, setLyricsOpen] = useState(false);
   // Or a visualizer, there or over the whole screen. Its code loads the first time either opens.
   const [visualsOpen, setVisualsOpen] = useState(false);
@@ -69,12 +71,17 @@ export function Player({ portal, expanded, setExpanded, onAdd, palette, animate,
   const expand = useRef(setExpanded); expand.current = setExpanded;
   useEffect(() => swipe(playerRef.current, expanded ? 'down' : 'up', (_, settle) => { swiped.current = true; expand.current(!expanded, settle); }), [expanded]);
   // On phones the open player keeps Up next in a sheet: drag its handle up to open it, pull it down to close it.
-  useEffect(() => { if (!expanded) { setQueueOpen(false); setLyricsOpen(false); setVisualsOpen(false); setVisualsFull(false); } }, [expanded]);
+  useEffect(() => { if (!expanded) { setQueueOpen(false); setWallQueue(false); setLyricsOpen(false); setVisualsOpen(false); setVisualsFull(false); } }, [expanded]);
   useEffect(() => swipe(handleRef.current, queueOpen ? 'down' : 'up', (_, settle) => { settle(); setQueueOpen(!queueOpen); }, queueOpen ? sheetRef.current : handleRef.current), [expanded, queueOpen]);
   useEffect(() => queueOpen ? swipe(sheetRef.current, 'down', (_, settle) => { settle(); setQueueOpen(false); }) : undefined, [queueOpen]);
   // The full-screen visualizer, when open, is the top layer: Back closes it first.
-  const layers = expanded ? 1 + +queueOpen + +visualsFull : 0;
-  useBackLayers(layers, layer => { if (layer < layers) setVisualsFull(false); if (layer < 1 + +queueOpen) setQueueOpen(false); if (layer < 1) expand.current(false); });
+  const queueDepth = queueOpen || wallQueue ? 2 : 1;
+  const layers = expanded ? queueDepth + Number(visualsFull) : 0;
+  useBackLayers(layers, layer => {
+    if (layer < layers) setVisualsFull(false);
+    if (layer < queueDepth) { setQueueOpen(false); setWallQueue(false); }
+    if (layer < 1) expand.current(false);
+  });
   // Acknowledge state that changes under the controls, whoever changed it: a new song settles
   // into the deck, the play mark swaps, repeat cycles, and a saved heart lifts once.
   const index = useMemo(() => library?.favorites.findIndex(t => t.id === track?.id) ?? -1, [library?.favorites, track?.id]);
@@ -158,7 +165,7 @@ export function Player({ portal, expanded, setExpanded, onAdd, palette, animate,
   // An autoplay pick keeps its label, so nobody mistakes it for a friend's request.
   const where = local ? portal.playingOn || 'This device' : session?.voiceChannel?.name;
   const compactMetadata = track && where && !track.suggested ? <>{track.author}<span className="metadata-dot" aria-hidden="true">·</span><span className="compact-destination">{local ? <DesktopIcon size={14} aria-hidden="true" /> : <DiscordLogoIcon size={14} weight="fill" aria-hidden="true" />}<span><span className="sr-only">Playing on </span>{where}</span></span></> : metadata;
-  const identity = <div className="player-identity" data-glass><div className="player-title-row">{favorite && <span className="title-balance" aria-hidden="true" />}<h2 ref={headingRef} tabIndex={-1} title={track?.title}>{track?.title || 'Nothing playing'}</h2>{favorite}</div><p title={track ? `${track.author} · ${track.source}` : undefined}>{metadata}</p>
+  const identity = <div className="player-identity" data-glass>{expanded && listeningLayout(skin) && <span className="record-caption">{track ? 'Now playing' : 'Player'}</span>}<div className="player-title-row">{favorite && <span className="title-balance" aria-hidden="true" />}<h2 ref={headingRef} tabIndex={-1} title={track?.title}>{track?.title || 'Nothing playing'}</h2>{favorite}</div><p title={track ? `${track.author} · ${track.source}` : undefined}>{metadata}</p>
     {/* Where the sound comes out, and the shortest way to change it (More › Play on has it too). */}
     {track && <div className="player-chips">{lyricsToggle}{destinationChip && <ActionPopover label={`Playing on ${destination}. Choose where it plays`} className="player-destination" triggerClassName="player-destination-trigger"
       trigger={<>{local ? <DesktopIcon size={16} aria-hidden="true" /> : <DiscordLogoIcon size={16} weight="fill" aria-hidden="true" />}<span><span className="chip-prefix">Playing on </span><span className="chip-prefix-short">On </span>{destination}</span><CaretDownIcon size={14} aria-hidden="true" /></>}>
@@ -217,20 +224,22 @@ export function Player({ portal, expanded, setExpanded, onAdd, palette, animate,
   </div>;
   const upcoming = session?.queue.length || 0;
   return <section ref={playerRef} className={`persistent-player ${expanded ? 'expanded' : 'collapsed'} ${queueOpen ? 'queue-open' : ''} ${session?.status || 'idle'}`} aria-label="Music player" data-testid="player" data-tv-region>
-    {!expanded && spectrum('player-spectrum', 56, 0)}
+    {!expanded && !listeningLayout(skin) && spectrum('player-spectrum', 56, 0)}
     {expanded && <div className="sleeve-content"><button className="mobile-collapse text-button" onClick={() => setExpanded(false)}><CaretDownIcon size={22} />Close player</button>{phone && <div className="sleeve-corner">{extras}</div>}
       <div className="sleeve-main">{lyricsOpen ? <div className="sleeve-artwork showing-lyrics"><LyricsView id={lyricsId} clock={clock} guildId={snapshot?.guild.id} track={track} local={local} /></div>
-        : <div className="sleeve-artwork" onPointerMove={look?.tilt} onPointerLeave={look?.untilt}>{visualsOpen && visuals ? <visuals.SleeveVisualizer clock={clock} palette={palette} skin={skin} guildId={snapshot?.guild.id ?? null} local={local} animate={animate} onFail={visualsFailed} onFull={() => setVisualsFull(true)} /> : <Artwork track={track} large />}{spectrum('sleeve-spectrum', 40)}{look && <look.Sleeve track={track?.id || 'idle'} />}{visualsSwitch}</div>}{identity}<div className="player-context" data-glass>{permissionReason && <p className="player-permission" id={reasonId}><WarningCircleIcon size={18} aria-hidden="true" /><span>{permissionReason}</span></p>}{connection === 'live' && session?.status === 'recovering' && <p className="player-state warm-text" role="status">Recovering your place. Playback controls will return when it’s ready.</p>}{sleep && <p className="player-state sleep-state"><MoonIcon size={16} aria-hidden="true" /><span>Sleep timer · {sleep}</span></p>}{connection !== 'live' && session?.status === 'paused' && <p className="player-state warm-text">Last known: paused</p>}</div></div>
+        : <div className="sleeve-artwork" onPointerMove={look?.tilt} onPointerLeave={look?.untilt}>{visualsOpen && visuals ? <visuals.SleeveVisualizer clock={clock} palette={palette} skin={skin} guildId={snapshot?.guild.id ?? null} local={local} animate={animate} onFail={visualsFailed} onFull={() => setVisualsFull(true)} /> : <Artwork track={track} large />}{!listeningLayout(skin) && spectrum('sleeve-spectrum', 40)}{look && <look.Sleeve track={track?.id || 'idle'} />}{visualsSwitch}</div>}{identity}<div className="player-context" data-glass>{permissionReason && <p className="player-permission" id={reasonId}><WarningCircleIcon size={18} aria-hidden="true" /><span>{permissionReason}</span></p>}{connection === 'live' && session?.status === 'recovering' && <p className="player-state warm-text" role="status">Recovering your place. Playback controls will return when it’s ready.</p>}{sleep && <p className="player-state sleep-state"><MoonIcon size={16} aria-hidden="true" /><span>Sleep timer · {sleep}</span></p>}{connection !== 'live' && session?.status === 'paused' && <p className="player-state warm-text">Last known: paused</p>}</div></div>
+      {skin === 'wall' && <QueueFilmstrip tracks={session?.queue ?? []} onOpen={() => setWallQueue(true)} />}
       <div ref={sheetRef} id={queueId} className="sleeve-queue" data-glass>{queueOpen && <div className="queue-sheet-now"><span className="sheet-grabber" aria-hidden="true" /><Artwork track={track} /><span className="sheet-now-text"><strong>{track?.title || 'Nothing playing'}</strong><span>{track?.author}</span></span></div>}{queue}</div>
     </div>}
-    <div className="player-footer" data-glass>{!expanded && <CompactProgress clock={clock} track={track} duration={duration} />}{!expanded && <div className="compact-identity"><button ref={identityTriggerRef} type="button" className="player-expand-trigger" aria-label={track ? `Open player for ${track.title}` : 'Open player details'} aria-expanded={false} onClick={() => { openedFromIdentity.current = true; setExpanded(true); }}><Artwork track={track} /><span className="compact-title"><span className="compact-track-title" title={track?.title}>{track?.title || 'Nothing playing'}</span><span className="compact-track-meta" title={track ? `${track.author} · ${where ? `playing on ${local ? where : `Discord · ${where}`}` : track.source}` : undefined}>{compactMetadata}</span></span></button><span className="compact-favorite">{favorite}</span></div>}
-      
+    <div className="player-footer" data-glass>{!expanded && skin === 'broadcast' && <span className="desk-status">{statusLabel(snapshot)}</span>}{!expanded && <CompactProgress clock={clock} track={track} duration={duration} />}{!expanded && <div className="compact-identity"><button ref={identityTriggerRef} type="button" className="player-expand-trigger" aria-label={track ? `Open player for ${track.title}` : 'Open player details'} aria-expanded={false} onClick={() => { openedFromIdentity.current = true; setExpanded(true); }}><Artwork track={track} /><span className="compact-title"><span className="compact-track-title" title={track?.title}>{track?.title || 'Nothing playing'}</span><span className="compact-track-meta" title={track ? `${track.author} · ${where ? `playing on ${local ? where : `Discord · ${where}`}` : track.source}` : undefined}>{compactMetadata}</span></span></button><span className="compact-favorite">{favorite}</span></div>}
+      {!expanded && skin === 'broadcast' && track?.requestedBy && <span className="desk-requester" title={track.requestedBy.displayName}>Added by {track.requestedBy.displayName}</span>}
       <div className="playback-cluster">{controls}{timeline}</div>
       {!(expanded && phone) && extras}
       {expanded && <button ref={handleRef} type="button" className="up-next-handle" aria-expanded={queueOpen} aria-controls={queueId} onClick={() => setQueueOpen(!queueOpen)}><span className="sheet-grabber" aria-hidden="true" />{queueOpen ? <CaretDownIcon size={16} aria-hidden="true" /> : <CaretUpIcon size={16} aria-hidden="true" />}<span>{queueOpen ? 'Hide queue' : 'Up next'}</span>{!queueOpen && upcoming > 0 && <span className="count">{upcoming} {upcoming === 1 ? 'song' : 'songs'}</span>}</button>}
       {!expanded && permissionReason && <span className="sr-only" id={reasonId}>{permissionReason}</span>}
       <button ref={expandTriggerRef} className="expand-button" aria-expanded={expanded} aria-label={expanded ? 'Close player' : 'Open player'} title={expanded ? 'Close player' : 'Open player'} onClick={() => { openedFromIdentity.current = false; setExpanded(!expanded); }}>{expanded ? <CaretDownIcon size={29} /> : <CaretUpIcon size={29} />}<span>{expanded ? 'Close player' : 'Open player'}</span></button>
     </div>
+    {expanded && wallQueue && skin === 'wall' && <Dialog title="Up next" onClose={() => setWallQueue(false)}><Queue portal={portal} compact onAdd={() => { setWallQueue(false); onAdd(); }} /></Dialog>}
     {visualsFull && visuals && <visuals.FullscreenVisualizer clock={clock} palette={palette} skin={skin} guildId={snapshot?.guild.id ?? null} local={local} onClose={() => setVisualsFull(false)} fallback={spectrum('visualizer-fallback', 48, undefined, 6, 4)} />}
     {confirmStop && (local ? <Confirm title="Stop and clear your queue?" detail="Stops the current song and clears your queue on all your devices. The Discord session, your favorites and shared mixes aren’t affected." action="Stop" onClose={() => setConfirmStop(false)} onConfirm={() => { setConfirmStop(false); void run({ command: 'stop' }, 'control'); }} />
       : <StopDialog portal={portal} onClose={() => setConfirmStop(false)} />)}

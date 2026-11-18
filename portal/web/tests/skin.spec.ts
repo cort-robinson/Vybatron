@@ -8,7 +8,7 @@ test('Classic look renders without Overdrive scenery and switches back live from
   await expect(page.locator('html')).toHaveAttribute('data-skin', 'classic');
   await expect(page.locator('.od-horizon')).toHaveCount(0);
   await openSettings(page);
-  await page.getByLabel('Portal look').selectOption('overdrive');
+  await page.getByLabel('Portal look').getByRole('button', { name: 'Overdrive', exact: true }).click();
   await expect(page.locator('html')).toHaveAttribute('data-skin', 'overdrive');
   await expect(page.locator('.od-horizon')).toHaveCount(1);
   await page.reload();
@@ -20,7 +20,7 @@ test('Fantastic Four is opt-in: it swaps in the Earth-828 scenery and the sleeve
   await expect(page.getByRole('button', { name: 'Pause playback' })).toBeEnabled();
   await expect(page.locator('html')).toHaveAttribute('data-skin', 'overdrive');
   await openSettings(page);
-  await page.getByLabel('Portal look').selectOption('fantastic');
+  await page.getByLabel('Portal look').getByRole('button', { name: 'Fantastic Four', exact: true }).click();
   await expect(page.locator('html')).toHaveAttribute('data-skin', 'fantastic');
   await expect(page.locator('.ff-scene')).toHaveCount(1);
   await expect(page.locator('.od-horizon')).toHaveCount(0);
@@ -38,7 +38,7 @@ test('Haunted is opt-in: it swaps in the moonlit hollow and the candlelit sleeve
   await expect(page.getByRole('button', { name: 'Pause playback' })).toBeEnabled();
   expect(requested).toEqual([]);
   await openSettings(page);
-  await page.getByLabel('Portal look').selectOption('haunted');
+  await page.getByLabel('Portal look').getByRole('button', { name: 'Haunted', exact: true }).click();
   await expect(page.locator('html')).toHaveAttribute('data-skin', 'haunted');
   await expect(page.locator('.hh-scene')).toHaveCount(1);
   await expect(page.locator('.hh-scene .hh-moon')).toHaveCount(1);
@@ -98,7 +98,7 @@ test('Fantastic loads only when chosen, and every look is styled the moment it a
   await expect(page.locator('.od-horizon')).toHaveCount(1);
   expect(requested).toEqual([]);
   await openSettings(page);
-  await page.getByLabel('Portal look').selectOption('fantastic');
+  await page.getByLabel('Portal look').getByRole('button', { name: 'Fantastic Four', exact: true }).click();
   await expect(page.locator('.ff-scene')).toHaveCount(1);
   expect(requested.some(url => url.endsWith('.css'))).toBe(true);
   // Overdrive is styled at first commit; Fantastic's stylesheet is in place before it applies.
@@ -116,11 +116,11 @@ test('a look that fails to load keeps the current one, and choosing it again fet
   await expect(page.getByRole('button', { name: 'Pause playback' })).toBeEnabled();
   await openSettings(page);
   const look = page.getByLabel('Portal look');
-  await look.selectOption('fantastic');
+  await look.getByRole('button', { name: 'Fantastic Four', exact: true }).click();
   await expect(page.getByText('That look couldn’t load. Check your connection, then reload the page and try again.')).toBeVisible();
   await expect(page.locator('html')).toHaveAttribute('data-skin', 'overdrive');
-  await expect(look).toHaveValue('overdrive');
-  await look.selectOption('fantastic');
+  await expect(look.getByRole('button', { name: 'Overdrive' })).toHaveAttribute('aria-pressed', 'true');
+  await look.getByRole('button', { name: 'Fantastic Four', exact: true }).click();
   await expect(page.locator('.ff-scene')).toHaveCount(1);
   expect((await looks()).filter(entry => !entry.startsWith('flip:overdrive'))).toEqual(['commit:overdrive:od', 'flip:fantastic:ff']);
 });
@@ -131,13 +131,13 @@ test('a look whose script fails keeps the current one across the reload it asks 
   await mockPortal(page); await page.goto('/');
   await expect(page.getByRole('button', { name: 'Pause playback' })).toBeEnabled();
   await openSettings(page);
-  await page.getByLabel('Portal look').selectOption('fantastic');
+  await page.getByLabel('Portal look').getByRole('button', { name: 'Fantastic Four', exact: true }).click();
   await expect(page.getByText('That look couldn’t load. Check your connection, then reload the page and try again.')).toBeVisible();
   await expect(page.locator('html')).toHaveAttribute('data-skin', 'overdrive');
   await page.reload();
   await expect(page.locator('.od-horizon')).toHaveCount(1);
   await openSettings(page);
-  await page.getByLabel('Portal look').selectOption('fantastic');
+  await page.getByLabel('Portal look').getByRole('button', { name: 'Fantastic Four', exact: true }).click();
   await expect(page.locator('.ff-scene')).toHaveCount(1);
 });
 
@@ -183,4 +183,23 @@ test('a mouse drags an overflowing shelf sideways without pressing what it grabb
   // A press that barely moves is still an ordinary click.
   await play.click();
   await expect.poll(() => fixture.commands.length).toBe(before + 1);
+});
+
+test('all eight previews load and a keyboard choice stays selected after reload', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await mockPortal(page); await page.goto('/');
+  await openSettings(page);
+  const picker = page.getByRole('group', { name: 'Portal look' });
+  await expect(picker.getByRole('button')).toHaveCount(8);
+  await expect.poll(() => picker.locator('img').evaluateAll(images =>
+    images.filter(image => image instanceof HTMLImageElement && image.complete && image.naturalWidth > 0).length)).toBe(8);
+  const light = picker.getByRole('button', { name: 'Sleeve Notes · Light' });
+  const dark = picker.getByRole('button', { name: 'Sleeve Notes · Dark' });
+  await light.focus();
+  await page.keyboard.press('Tab');
+  await expect(dark).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(dark).toHaveAttribute('aria-pressed', 'true');
+  await page.reload(); await openSettings(page);
+  await expect(picker.getByRole('button', { pressed: true })).toHaveText('Sleeve Notes · Dark');
 });

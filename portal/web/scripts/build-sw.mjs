@@ -23,10 +23,10 @@ const hash = createHash('sha256');
 for (const path of files.sort()) hash.update(await readFile(path));
 const urls = files.map(path => '/' + relative(directory, path).replaceAll('\\', '/'));
 const version = hash.digest('hex').slice(0, 16);
-// Installed up front: what the first screen needs. The rest (the MilkDrop visualizer, the large
+// Installed up front: what the first screen needs. The rest (look previews, the MilkDrop visualizer, the large
 // fallback covers, the legacy font format and fonts for other scripts) is still served by this
 // worker, from the browser's own cache of these never-changing files, when a page asks for it.
-const onDemand = [/\/milkdrop-[\w-]+\.js$/, /\/fallback-cover-(?:640|1024)[\w.-]*\.webp$/, /\.woff$/, /-(?:latin-ext|cyrillic|cyrillic-ext|greek|greek-ext|vietnamese)-[^/]*\.woff2$/];
+const onDemand = [/\/look-preview-[\w-]+\.webp$/, /\/milkdrop-[\w-]+\.js$/, /\/fallback-cover-(?:640|1024)[\w.-]*\.webp$/, /\.woff$/, /-(?:latin-ext|cyrillic|cyrillic-ext|greek|greek-ext|vietnamese)-[^/]*\.woff2$/];
 const precached = urls.filter(url => !onDemand.some(pattern => pattern.test(url)));
 await writeFile(join(directory, 'sw.js'), `// Generated static-shell cache. Private API/auth/artwork responses are never cached.
 const CACHE = 'vybertron-shell-${version}';

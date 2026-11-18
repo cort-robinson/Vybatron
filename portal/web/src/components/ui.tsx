@@ -127,7 +127,11 @@ export function ActionPopover({ label, trigger, className = '', triggerClassName
     if (!open) return;
     const content = panel.current;
     // A menu may name the control it opens on (the choice already made); otherwise its first.
-    if (content) (content.querySelector<HTMLElement>('[data-autofocus]:not(:disabled)') || focusableElements(content)[0] || content).focus({ preventScroll: true });
+    if (content) {
+      const selected = content.querySelector<HTMLElement>('[data-autofocus]:not(:disabled)');
+      // Let the menu reveal its selected item when the list is taller than the panel.
+      (selected || focusableElements(content)[0] || content).focus({ preventScroll: !selected || content.scrollHeight <= content.clientHeight });
+    }
     const outside = (event: PointerEvent) => {
       if (!(event.target instanceof Node) || inside(event.target)) return;
       setOpen(false);

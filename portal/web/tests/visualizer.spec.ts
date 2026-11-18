@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import sharp from 'sharp';
 import { expect, test, type Locator, type Page } from './test';
 import { mockPortal, openSettings } from './fixtures';
 import type { GuildSnapshot } from '../src/types';
@@ -112,7 +113,7 @@ test('full screen opens from the sleeve and the menu, and closes with its button
   await expect(dialog.locator('.visualizer-source')).toHaveText(/^Ambient/);
   await expect(dialog.locator('.visualizer-stage')).toHaveAttribute('aria-hidden', 'true');
   await expect(dialog.locator('canvas[data-drawn]')).toHaveCount(1);
-  await expect(dialog.getByRole('group', { name: 'Visualizer' }).getByRole('radio')).toHaveCount(6);
+  await expect(dialog.getByRole('group', { name: 'Visualizer' }).getByRole('radio')).toHaveCount(9);
   await dialog.getByRole('button', { name: 'Close visualizer' }).click();
   await expect(dialog).toHaveCount(0);
   await expect(opener).toBeFocused();
@@ -323,7 +324,7 @@ test('MilkDrop takes Neon’s place, and someone who chose Neon lands on it', as
   await page.getByRole('button', { name: 'More playback controls' }).click();
   await page.getByRole('button', { name: 'Full-screen visualizer', exact: true }).click();
   const dialog = fullScreen(page);
-  await expect(dialog.locator('.visualizer-presets label')).toHaveText(['MilkDrop', 'Gridrunner', 'Cosmic Broadcast', 'Receiver', 'Pumpkin Patch', 'Witching Hour']);
+  await expect(dialog.locator('.visualizer-presets label')).toHaveText(['MilkDrop', 'Gridrunner', 'Cosmic Broadcast', 'Receiver', 'Pumpkin Patch', 'Witching Hour', 'Prism Drift', 'Slipstream', 'Fault Lines']);
   await expect(dialog.getByRole('radio', { name: 'MilkDrop' })).toBeChecked();
   await expect(dialog.locator('canvas[data-drawn]')).toHaveCount(1, slowly);
   expect(await page.evaluate(() => localStorage.getItem('vybertron.visualizer'))).toBe('milkdrop');
@@ -666,6 +667,46 @@ function energyMap(durationMs = 237_000) {
   return { version: 1, status: 'ready', frameRate: 30, frameCount, bandCount: 16, bandHz: [40, 58, 85, 123, 179, 260, 379, 551, 800, 1164, 1693, 2462, 3580, 5206, 7570, 11008, 16000],
     durationMs, tempo: 120, levels: Buffer.from(levels).toString('base64'), onsets: [], beats: Array.from({ length: Math.floor(durationMs / 500) }, (_, i) => i * 500) };
 }
+
+test('the phone picker draws all three 3D scenes and each responds to the measured bands', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  // Hold the camera and the song position fixed. Only the sixteen band levels change.
+  await page.clock.setFixedTime(new Date());
+  await countFrames(page);
+  const fixture = await mockPortal(page); onYouTube(fixture);
+  const map = energyMap();
+  await page.route('**/api/guilds/*/analysis/*', route => route.fulfill({ json: map }));
+  const quiet = new Map<string, Buffer>();
+  for (const level of [0, 255]) {
+    map.levels = Buffer.alloc(map.frameCount * 16, level).toString('base64');
+    await openPlayer(page);
+    await page.getByRole('button', { name: 'More playback controls' }).click();
+    await page.getByRole('button', { name: 'Full-screen visualizer', exact: true }).click();
+    const dialog = fullScreen(page);
+    await expect(dialog.locator('.visualizer-source')).toHaveText(/^Live/);
+    const picker = dialog.getByRole('combobox', { name: 'Visualizer' });
+    const draws = () => page.evaluate(() => (window as unknown as { visualFrames: { full: number } }).visualFrames.full);
+    for (const name of ['Prism Drift', 'Slipstream', 'Fault Lines']) {
+      const before = await draws();
+      await picker.selectOption({ label: name });
+      await expect.poll(draws).toBeGreaterThan(before);
+      await expect(dialog.locator('.visualizer-stage canvas[data-drawn]')).toBeVisible();
+      // Sample the picture between the two control strips, clear of changing UI.
+      const crop = await page.screenshot({ clip: { x: 0, y: 260, width: 390, height: 320 } });
+      const pixels = await sharp(crop).resize(48, 40).removeAlpha().raw().toBuffer();
+      expect(Math.max(...pixels) - Math.min(...pixels), name).toBeGreaterThan(50);
+      if (level === 0) quiet.set(name, pixels);
+      else {
+        const prior = quiet.get(name)!;
+        const changed = pixels.filter((value, i) => Math.abs(value - prior[i]) > 8);
+        expect(changed.length / pixels.length, name).toBeGreaterThan(.02);
+      }
+    }
+  }
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await expect(fullScreen(page).getByRole('radio', { name: 'Fault Lines' })).toBeChecked();
+});
 // The band levels each visualizer canvas last drew with (its uB uniform).
 async function recordBands(page: Page) {
   await page.addInitScript(() => {

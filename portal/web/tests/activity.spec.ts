@@ -28,7 +28,7 @@ test('Discord Activity follows the room and stows the canvas when the listener l
         if (op === 0) return send({cmd:'DISPATCH',evt:'READY',nonce:null,data:{v:1,config:{api_endpoint:'test',environment:'test'}}});
         if (op !== 1) return;
         const data = msg.cmd === 'AUTHORIZE' ? {code:'test-code'} : msg.cmd === 'AUTHENTICATE' ? {
-          access_token:'test-identify', scopes:['identify'], expires:'2099-01-01',
+          access_token:'test-identify', scopes:['identify','future-discord-scope'], expires:'2099-01-01',
           user:{id:'200',username:'Listener',discriminator:'0',public_flags:0},application:{id:'123456789012345678',name:'Vybatron',description:''}
         } : {};
         send({cmd:msg.cmd,nonce:msg.nonce,evt:null,data});
